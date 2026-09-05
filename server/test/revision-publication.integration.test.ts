@@ -1,3 +1,5 @@
+import { storageConfig } from '../src/config/config';
+import { RevisionDownloadService } from '../src/modules/book-revision/revision-download.service';
 import { Test } from '@nestjs/testing';
 import { ZipArchive } from 'archiver';
 import { randomUUID } from 'node:crypto';
@@ -26,6 +28,8 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
   let service: RevisionPublicationService;
   let manifests: EpubManifestService;
   let catalog: RevisionCatalogService;
+  let downloads: RevisionDownloadService;
+  const storage = { appDataPath: '' };
   let dir: string;
   let libraryId: number;
   let fileId: number;
@@ -41,11 +45,20 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
     const module = await Test.createTestingModule({
-      providers: [RevisionPublicationService, EpubManifestService, RevisionCatalogService, FileLockService, { provide: DB, useValue: db }],
+      providers: [
+        RevisionPublicationService,
+        EpubManifestService,
+        RevisionCatalogService,
+        RevisionDownloadService,
+        FileLockService,
+        { provide: DB, useValue: db },
+        { provide: storageConfig.KEY, useValue: storage },
+      ],
     }).compile();
     service = module.get(RevisionPublicationService);
     manifests = module.get(EpubManifestService);
     catalog = module.get(RevisionCatalogService);
+    downloads = module.get(RevisionDownloadService);
   }, 60_000);
 
   afterAll(async () => {
@@ -72,6 +85,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'bookorbit-publication-'));
+    storage.appDataPath = dir;
     target = join(dir, 'story.epub');
     input = join(dir, 'incoming.epub');
     await epub(target, 'Original passage');
@@ -257,5 +271,24 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     expect((await journal(publicationId)).state).toBe('failed');
     expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
     await expect(service.resume(publicationId, libraryId)).rejects.toThrow('cancelled');
+  });
+  it('serves immutable verified downloads and rejects stale or cross-library requests', async () => {
+    const original = await readFile(target);
+    const first = await downloads.download(fileId, libraryId, originalId, async () => {});
+    const second = await downloads.download(fileId, libraryId, originalId, async () => {});
+    await expect(downloads.download(fileId, libraryId, originalId, async () => {})).rejects.toThrow('capacity');
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    await service.resume(prepared.publicationId, libraryId);
+    for (const snapshot of [first, second]) {
+      const chunks: Buffer[] = [];
+      for await (const chunk of snapshot.stream) chunks.push(chunk as Buffer);
+      expect(Buffer.concat(chunks)).toEqual(original);
+      expect(snapshot.sha256).toBe(originalSha);
+    }
+    await expect(downloads.download(fileId, libraryId, originalId, async () => {})).rejects.toThrow('no longer current');
+    const row = await journal(prepared.publicationId);
+    await expect(downloads.download(fileId, libraryId + 1, row.nextRevisionId, async () => {})).rejects.toThrow('not found');
+    await writeFile(target, 'External replacement');
+    await expect(downloads.download(fileId, libraryId, row.nextRevisionId, async () => {})).rejects.toThrow('size changed');
   });
 });

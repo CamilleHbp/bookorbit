@@ -1,3 +1,6 @@
+import { ConfigModule } from '@nestjs/config';
+import { storageConfig } from '../../config/config';
+import { RevisionDownloadService } from './revision-download.service';
 import { CanonicalReadingService } from './canonical-reading.service';
 import { Module } from '@nestjs/common';
 import { FileLockModule } from '../../common/file-lock.module';
@@ -9,8 +12,22 @@ import { RevisionPublicationService } from './revision-publication.service';
 import { RevisionCatalogService } from './revision-catalog.service';
 
 @Module({
-  imports: [FileLockModule],
-  providers: [BookRevisionService, EpubManifestService, RevisionPublicationService, RevisionCatalogService, CanonicalReadingService],
-  exports: [BookRevisionService, EpubManifestService, RevisionPublicationService, RevisionCatalogService, CanonicalReadingService],
+  imports: [FileLockModule, ConfigModule.forFeature(storageConfig)],
+  providers: [
+    BookRevisionService,
+    EpubManifestService,
+    RevisionPublicationService,
+    RevisionCatalogService,
+    CanonicalReadingService,
+    RevisionDownloadService,
+  ],
+  exports: [
+    BookRevisionService,
+    EpubManifestService,
+    RevisionPublicationService,
+    RevisionCatalogService,
+    CanonicalReadingService,
+    RevisionDownloadService,
+  ],
 })
 export class BookRevisionModule {}
