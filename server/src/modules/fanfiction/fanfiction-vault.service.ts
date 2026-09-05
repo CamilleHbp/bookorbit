@@ -1,17 +1,20 @@
-import { BadRequestException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { constants } from 'node:fs';
 import { link, mkdir, open, unlink } from 'node:fs/promises';
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { storageConfig } from '../../config/config';
+import { fanficfareConfig, storageConfig } from '../../config/config';
 import type { EncryptedFanfictionDocument } from '@bookorbit/types';
 
 type ProfileKey = { version: 1; id: string; key: string };
 
 @Injectable()
 export class FanfictionVaultService {
-  constructor(@Inject(storageConfig.KEY) private readonly storage: ConfigType<typeof storageConfig>) {}
+  constructor(
+    @Inject(storageConfig.KEY) private readonly storage: ConfigType<typeof storageConfig>,
+    @Optional() @Inject(fanficfareConfig.KEY) private readonly config?: ConfigType<typeof fanficfareConfig>,
+  ) {}
 
   async encrypt(libraryId: number, profileId: string, value: string, allowProvision: boolean): Promise<EncryptedFanfictionDocument> {
     if (Buffer.byteLength(value) > 128 * 1024) throw new BadRequestException('Fanfiction profile storage limit exceeded');
@@ -38,7 +41,10 @@ export class FanfictionVaultService {
       decipher.setAuthTag(Buffer.from(value.tag, 'base64'));
       return Buffer.concat([decipher.update(Buffer.from(value.ciphertext, 'base64')), decipher.final()]).toString('utf8');
     } catch {
-      throw new ServiceUnavailableException('Fanfiction profile key is missing, mismatched, or unable to authenticate this profile');
+      throw new ServiceUnavailableException({
+        message: 'Fanfiction profile key is missing, mismatched, or unable to authenticate this profile',
+        errorCode: 'configuration_blocked',
+      });
     }
   }
 
@@ -47,13 +53,22 @@ export class FanfictionVaultService {
   }
 
   private async key(allowProvision: boolean): Promise<ProfileKey> {
+    if (this.config?.encryptionKey) {
+      const key = Buffer.from(this.config.encryptionKey, 'base64');
+      if (key.length !== 32 || key.toString('base64') !== this.config.encryptionKey)
+        throw new ServiceUnavailableException({ message: 'Invalid operator profile key', errorCode: 'configuration_blocked' });
+      return { version: 1, id: `operator-${createHash('sha256').update(key).digest('hex').slice(0, 32)}`, key: key.toString('base64') };
+    }
     const directory = join(this.storage.appDataPath, 'fanfiction', 'keys');
     const path = join(directory, 'profile-key-v1.json');
     try {
       return await this.readKey(path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !allowProvision) {
-        throw new ServiceUnavailableException('Fanfiction profile key is unavailable; restore the existing key');
+        throw new ServiceUnavailableException({
+          message: 'Fanfiction profile key is unavailable; restore the existing key',
+          errorCode: 'configuration_blocked',
+        });
       }
     }
     await mkdir(directory, { recursive: true, mode: 0o700 });

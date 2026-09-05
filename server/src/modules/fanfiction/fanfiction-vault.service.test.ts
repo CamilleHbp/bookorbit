@@ -4,17 +4,23 @@ import { mkdtemp, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { storageConfig } from '../../config/config';
+import { fanficfareConfig, storageConfig } from '../../config/config';
 import { FanfictionVaultService } from './fanfiction-vault.service';
 
 describe('Fanfiction profile encryption', () => {
   let directory: string;
   let vault: FanfictionVaultService;
   const profile = randomUUID();
+  const config: { encryptionKey: string | undefined } = { encryptionKey: undefined };
   beforeEach(async () => {
+    config.encryptionKey = undefined;
     directory = await mkdtemp(join(tmpdir(), 'bookorbit-vault-'));
     const module = await Test.createTestingModule({
-      providers: [FanfictionVaultService, { provide: storageConfig.KEY, useValue: { appDataPath: directory } }],
+      providers: [
+        FanfictionVaultService,
+        { provide: storageConfig.KEY, useValue: { appDataPath: directory } },
+        { provide: fanficfareConfig.KEY, useValue: config },
+      ],
     }).compile();
     vault = module.get(FanfictionVaultService);
   });
@@ -22,6 +28,14 @@ describe('Fanfiction profile encryption', () => {
     await rm(directory, { recursive: true, force: true });
   });
   const keyPath = () => join(directory, 'fanfiction/keys/profile-key-v1.json');
+  it('uses an operator key without provisioning a file and blocks a mismatched override', async () => {
+    config.encryptionKey = Buffer.alloc(32, 1).toString('base64');
+    const value = await vault.encrypt(1, profile, 'secret', true);
+    expect(await vault.decrypt(1, profile, value)).toBe('secret');
+    await expect(stat(keyPath())).rejects.toMatchObject({ code: 'ENOENT' });
+    config.encryptionKey = Buffer.alloc(32, 2).toString('base64');
+    await expect(vault.decrypt(1, profile, value)).rejects.toThrow('mismatched');
+  });
   it('atomically provisions one private key for concurrent profiles', async () => {
     const values = await Promise.all(Array.from({ length: 8 }, () => vault.encrypt(1, profile, 'secret', true)));
     expect(new Set(values.map((value) => value.keyId)).size).toBe(1);

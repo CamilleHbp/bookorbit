@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useFanfictionSettings } from './useFanfictionSettings'
 import { api } from '@/lib/api'
 
-vi.mock('@/lib/api', () => ({ api: vi.fn() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 const mockApi = vi.mocked(api)
 const response = (value: unknown, ok = true) => ({ ok, status: ok ? 200 : 503, json: async () => value }) as Response
 
