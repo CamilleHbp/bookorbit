@@ -23,7 +23,7 @@ class TransportPolicyTest(unittest.TestCase):
                 public_addresses('example.org')
 
     def test_ipv6_local_and_transition_addresses(self):
-        for address in ['::1', 'fc00::1', 'fe80::1', '::ffff:127.0.0.1', '2002:7f00:1::', '2001::1', 'ff02::1']:
+        for address in ['::1', 'fc00::1', 'fe80::1', '::ffff:127.0.0.1', '2002:7f00:1::', '2001::1', 'ff02::1', '64:ff9b::7f00:1', '64:ff9b:1::a00:1']:
             answer = (socket.AF_INET6, socket.SOCK_STREAM, 6, '', (address, 443, 0, 0))
             with self.subTest(address=address), patch('socket.getaddrinfo', return_value=[answer]), self.assertRaises(PolicyError):
                 public_addresses('example.org')

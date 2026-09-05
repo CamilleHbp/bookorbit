@@ -48,7 +48,11 @@ def public_addresses(hostname):
         raise PolicyError('Invalid DNS response')
     for family, _, _, _, address in addresses:
         ip = ipaddress.ip_address(address[0])
-        transitional = isinstance(ip, ipaddress.IPv6Address) and (ip.ipv4_mapped is not None or ip.sixtofour is not None or ip.teredo is not None)
+        transitional = isinstance(ip, ipaddress.IPv6Address) and (
+            ip.ipv4_mapped is not None or ip.sixtofour is not None or ip.teredo is not None
+            or ip in ipaddress.IPv6Network('64:ff9b::/96')
+            or ip in ipaddress.IPv6Network('64:ff9b:1::/48')
+        )
         if family not in (socket.AF_INET, socket.AF_INET6) or not ip.is_global or ip.is_multicast or transitional:
             raise PolicyError('Private and local destinations are disabled')
     return addresses
