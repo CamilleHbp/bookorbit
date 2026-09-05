@@ -12,6 +12,7 @@ import { RevisionCatalogService } from './revision-catalog.service';
 import { BookProgressModule } from '../book/book-progress.module';
 import { RevisionFileModule } from './revision-file.module';
 import { RevisionInterruptionService } from './revision-interruption.service';
+import { RevisionRetentionService } from './revision-retention.service';
 
 @Module({
   imports: [FileLockModule, ConfigModule.forFeature(storageConfig), BookProgressModule, RevisionFileModule],
@@ -19,6 +20,7 @@ import { RevisionInterruptionService } from './revision-interruption.service';
     BookRevisionService,
     RevisionPublicationService,
     RevisionInterruptionService,
+    RevisionRetentionService,
     RevisionCatalogService,
     CanonicalReadingService,
     RevisionDownloadService,

@@ -4,9 +4,9 @@ import { Test } from '@nestjs/testing';
 import { ZipArchive } from 'archiver';
 import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { copyFile, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Pool, type PoolConfig } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
@@ -25,6 +25,7 @@ import { FanfictionProfileService } from '../src/modules/fanfiction/fanfiction-p
 import type { RevisionPublicationAuthority } from '../src/modules/book-revision/revision-publication-authority';
 import { RevisionInterruptionService } from '../src/modules/book-revision/revision-interruption.service';
 import { FanfictionRecoveryService } from '../src/modules/fanfiction/fanfiction-recovery.service';
+import { RevisionRetentionService } from '../src/modules/book-revision/revision-retention.service';
 
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
 
@@ -57,6 +58,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const module = await Test.createTestingModule({
       providers: [
         RevisionPublicationService,
+        RevisionRetentionService,
         EpubManifestService,
         RevisionCatalogService,
         RevisionDownloadService,
@@ -109,8 +111,9 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'bookorbit-publication-'));
-    storage.appDataPath = dir;
-    target = join(dir, 'story.epub');
+    storage.appDataPath = join(dir, 'state');
+    target = join(dir, 'books', 'story.epub');
+    await mkdir(dirname(target));
     input = join(dir, 'incoming.epub');
     await epub(target, 'Original passage');
     await epub(input, 'Original passage and a new chapter');
@@ -120,7 +123,10 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
       .returning();
     libraryId = library.id;
     const [folder] = await db.insert(schema.libraryFolders).values({ libraryId, path: dir }).returning();
-    const [book] = await db.insert(schema.books).values({ libraryId, libraryFolderId: folder.id, folderPath: dir }).returning();
+    const [book] = await db
+      .insert(schema.books)
+      .values({ libraryId, libraryFolderId: folder.id, folderPath: dirname(target) })
+      .returning();
     const inspected = await requireInspectedFile(target);
     originalSha = inspected.sha256;
     const [file] = await db
@@ -317,7 +323,9 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const row = await journal(prepared.publicationId);
     expect(row.state).toBe('cleanup_complete');
     expect((await requireInspectedFile(target)).sha256).toBe(row.nextSha256);
-    expect((await requireInspectedFile(row.backupPath)).sha256).toBe(originalSha);
+    const [retained] = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.id, originalId));
+    expect((await requireInspectedFile(retained.storagePath!)).sha256).toBe(originalSha);
+    await expect(readFile(row.backupPath)).rejects.toMatchObject({ code: 'ENOENT' });
     const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
     expect(file.currentRevisionId).toBe(row.nextRevisionId);
     await expect(service.resume(row.id, libraryId)).resolves.toMatchObject({ revisionId: row.nextRevisionId });
@@ -403,7 +411,14 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
   it('serializes concurrent recovery without duplicate revisions', async () => {
     const { publicationId } = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
     const otherModule = await Test.createTestingModule({
-      providers: [RevisionPublicationService, FileLockService, { provide: EpubManifestService, useValue: manifests }, { provide: DB, useValue: db }],
+      providers: [
+        RevisionPublicationService,
+        RevisionRetentionService,
+        FileLockService,
+        { provide: storageConfig.KEY, useValue: storage },
+        { provide: EpubManifestService, useValue: manifests },
+        { provide: DB, useValue: db },
+      ],
     }).compile();
     const other = otherModule.get(RevisionPublicationService);
     const results = await Promise.all([service.resume(publicationId, libraryId), other.resume(publicationId, libraryId)]);
@@ -411,6 +426,23 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     expect(results[0]).toEqual(results[1]);
     const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
     expect(revisions).toHaveLength(2);
+  });
+
+  it('retains rollback bytes across a whole book-folder rename', async () => {
+    const first = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    const installed = await service.resume(first.publicationId, libraryId);
+    const folder = join(dir, 'renamed-books');
+    await rename(dirname(target), folder);
+    target = join(folder, 'renamed-story.epub');
+    await rename(join(folder, 'story.epub'), target);
+    await db.update(schema.bookFiles).set({ absolutePath: target }).where(eq(schema.bookFiles.id, fileId));
+    const previous = await catalog.retained(fileId, libraryId, originalId, installed.revisionId);
+    expect((await requireInspectedFile(previous.path)).sha256).toBe(originalSha);
+    const rollback = await service.prepare(fileId, libraryId, installed.revisionId, previous.path, 'rollback', undefined, previous.sha256);
+    const restored = await service.resume(rollback.publicationId, libraryId);
+    expect(restored.revisionId).not.toBe(originalId);
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+    expect((await catalog.list(fileId, libraryId)).items.filter((revision) => revision.canRollback)).toHaveLength(1);
   });
 
   it('rejects stale revision expectations, another library, and a second active replacement', async () => {

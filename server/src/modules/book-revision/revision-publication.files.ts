@@ -26,7 +26,11 @@ export async function removeCancelledPublication(targetPath: string, id: string)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
-  await syncPath(dirname(paths.directory));
+  try {
+    await syncPath(dirname(paths.directory));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
 }
 
 export async function requireInspectedFile(path: string, sha256?: string): Promise<InspectedFile> {

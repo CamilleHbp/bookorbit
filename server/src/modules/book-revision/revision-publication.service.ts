@@ -3,8 +3,7 @@ import { Interval } from '@nestjs/schedule';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
-import { rm, rmdir, stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { rm, stat } from 'node:fs/promises';
 import type { RevisionPublicationReason } from '@bookorbit/types';
 import { DB } from '../../db';
 import { FileLockService, bookOperationLockKey } from '../../common/file-lock.service';
@@ -16,11 +15,11 @@ import {
   publishStagedFile,
   requireInspectedFile,
   stagePublication,
-  syncPath,
   removeCancelledPublication,
 } from './revision-publication.files';
 import { inspectStableFile, sameFileSignature } from './file-inspection';
 import type { RevisionPublicationAuthority } from './revision-publication-authority';
+import { RevisionRetentionService } from './revision-retention.service';
 
 type Db = NodePgDatabase<typeof schema>;
 type Transaction = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -35,6 +34,7 @@ export class RevisionPublicationService {
     @Inject(DB) private readonly db: Db,
     private readonly manifests: EpubManifestService,
     private readonly locks: FileLockService,
+    private readonly retention: RevisionRetentionService,
   ) {}
 
   async prepare(
@@ -438,18 +438,20 @@ export class RevisionPublicationService {
       const [journal] = await tx.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, expected.id)).for('update');
       if (!journal || journal.state === 'cleanup_complete') return;
       if (journal.state !== 'database_committed') throw new ConflictException('Publication must be committed before cleanup');
-      await rm(journal.stagedPath, { force: true });
-      try {
-        await syncPath(dirname(journal.stagedPath));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        const [previous] = await tx
-          .select({ storagePath: schema.bookFileRevisions.storagePath })
-          .from(schema.bookFileRevisions)
-          .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)))
-          .limit(1);
-        if (!previous || previous.storagePath !== null) throw new ConflictException('Rollback backup is missing before cleanup');
+      const [previous] = await tx
+        .select({ storagePath: schema.bookFileRevisions.storagePath })
+        .from(schema.bookFileRevisions)
+        .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)))
+        .limit(1);
+      if (!previous) throw new ConflictException('Previous revision is missing during cleanup');
+      if (previous.storagePath !== null) {
+        const retainedPath = await this.retention.retain(journal.bookFileId, journal.expectedRevisionId, journal.backupPath, journal.previousSha256);
+        await tx
+          .update(schema.bookFileRevisions)
+          .set({ storagePath: retainedPath })
+          .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)));
       }
+      await removeCancelledPublication(journal.targetPath, journal.id);
       await this.pruneRetainedFiles(journal, tx);
       await tx
         .update(schema.revisionPublications)
@@ -471,14 +473,13 @@ export class RevisionPublicationService {
       .limit(1);
     if (!latest) return;
     const old = await tx
-      .select({ revisionId: schema.bookFileRevisions.id, journal: schema.revisionPublications })
+      .select({ revisionId: schema.bookFileRevisions.id, storagePath: schema.bookFileRevisions.storagePath, journal: schema.revisionPublications })
       .from(schema.bookFileRevisions)
       .innerJoin(
         schema.revisionPublications,
         and(
           eq(schema.revisionPublications.expectedRevisionId, schema.bookFileRevisions.id),
           eq(schema.revisionPublications.bookFileId, schema.bookFileRevisions.bookFileId),
-          eq(schema.revisionPublications.backupPath, schema.bookFileRevisions.storagePath),
         ),
       )
       .where(
@@ -493,16 +494,7 @@ export class RevisionPublicationService {
       .limit(100);
     for (const entry of old) {
       this.assertPaths(entry.journal);
-      await rm(entry.journal.backupPath, { force: true });
-      const directory = dirname(entry.journal.backupPath);
-      try {
-        await rmdir(directory);
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === 'ENOTEMPTY') await syncPath(directory);
-        else if (code !== 'ENOENT') throw error;
-      }
-      await syncPath(dirname(directory));
+      await this.retention.remove(journal.bookFileId, entry.revisionId, entry.storagePath!, entry.journal.backupPath);
       await tx.update(schema.bookFileRevisions).set({ storagePath: null }).where(eq(schema.bookFileRevisions.id, entry.revisionId));
     }
   }

@@ -27,6 +27,7 @@ import { FanfictionUpdateService } from '../src/modules/fanfiction/fanfiction-up
 import { FanfictionRollbackService } from '../src/modules/fanfiction/fanfiction-rollback.service';
 import { FanfictionRecoveryService } from '../src/modules/fanfiction/fanfiction-recovery.service';
 import { RevisionInterruptionService } from '../src/modules/book-revision/revision-interruption.service';
+import { RevisionRetentionService } from '../src/modules/book-revision/revision-retention.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
@@ -121,6 +122,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         FanfictionRollbackService,
         FanfictionRecoveryService,
         RevisionInterruptionService,
+        RevisionRetentionService,
         FanfictionSourceService,
         FanfictionJobService,
         FanfictionActivityService,
