@@ -9,18 +9,22 @@ import { Pool, type PoolConfig } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, inArray } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReadingAnchor } from '@bookorbit/types';
 import { DB } from '../src/db';
 import * as schema from '../src/db/schema';
 import { CanonicalReadingService, resetCanonicalReadingEvents } from '../src/modules/book-revision/canonical-reading.service';
 import { BookRepository } from '../src/modules/book/book.repository';
+import { BookProgressProjectionService } from '../src/modules/book/book-progress-projection.service';
+import { ReadingAttemptService } from '../src/modules/user-book-status/reading-attempt.service';
+import { ReadingAttemptRepository } from '../src/modules/user-book-status/reading-attempt.repository';
 
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
 describe.skipIf(!configPath)('canonical reading events with PostgreSQL', () => {
   let pool: Pool;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let service: CanonicalReadingService;
+  let projection: BookProgressProjectionService;
   let libraryId: number;
   let bookId: number;
   let fileId: number;
@@ -33,8 +37,17 @@ describe.skipIf(!configPath)('canonical reading events with PostgreSQL', () => {
     pool = new Pool(config);
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
-    const module = await Test.createTestingModule({ providers: [CanonicalReadingService, { provide: DB, useValue: db }] }).compile();
+    const module = await Test.createTestingModule({
+      providers: [
+        CanonicalReadingService,
+        BookProgressProjectionService,
+        ReadingAttemptService,
+        ReadingAttemptRepository,
+        { provide: DB, useValue: db },
+      ],
+    }).compile();
     service = module.get(CanonicalReadingService);
+    projection = module.get(BookProgressProjectionService);
   }, 60_000);
   afterAll(async () => {
     await pool?.end();
@@ -81,6 +94,64 @@ describe.skipIf(!configPath)('canonical reading events with PostgreSQL', () => {
     };
   }
   const record = (value: ReadingAnchor, userId = userIds[0]) => service.record(userId, fileId, libraryId, value);
+
+  it('projects genuine events once and keeps their occurrence time', async () => {
+    await db
+      .update(schema.bookFiles)
+      .set({ sha256: 'a'.repeat(64) })
+      .where(eq(schema.bookFiles.id, fileId));
+    const value = anchor();
+    await record(value);
+    const [progress] = await db.select().from(schema.readingProgress).where(eq(schema.readingProgress.bookFileId, fileId));
+    expect(progress.percentage).toBe(30);
+    expect(progress.koreaderProgress).toBe('/body/p[1]');
+    expect(progress.lastReadAt.toISOString()).toBe(value.event!.occurredAt);
+    expect(await db.select().from(schema.readingAttempts).where(eq(schema.readingAttempts.bookId, bookId))).toHaveLength(1);
+    await record(value);
+    expect(await db.select().from(schema.readingProgress).where(eq(schema.readingProgress.bookFileId, fileId))).toEqual([progress]);
+  });
+
+  it('rolls back the event and head if its projection fails', async () => {
+    const failure = vi.spyOn(projection, 'record').mockRejectedValueOnce(new Error('projection interrupted'));
+    try {
+      await expect(record(anchor())).rejects.toThrow('projection interrupted');
+    } finally {
+      failure.mockRestore();
+    }
+    expect((await service.state(userIds[0], fileId, libraryId)).anchor).toBeNull();
+    expect(await db.select().from(schema.canonicalReadingEvents).where(eq(schema.canonicalReadingEvents.bookFileId, fileId))).toHaveLength(0);
+    expect(await db.select().from(schema.readingProgress).where(eq(schema.readingProgress.bookFileId, fileId))).toHaveLength(0);
+  });
+
+  it('preserves manually assigned reading status', async () => {
+    await db.insert(schema.userBookStatus).values({ userId: userIds[0], bookId, status: 'on_hold', source: 'manual' });
+    await record(anchor());
+    const [status] = await db.select().from(schema.userBookStatus).where(eq(schema.userBookStatus.bookId, bookId));
+    expect(status).toMatchObject({ status: 'on_hold', source: 'manual' });
+  });
+
+  it('maps older content into the current revision without forwarding incompatible native locators or completing new chapters', async () => {
+    const chapters = Array.from({ length: 3 }, (_, index) => ({
+      href: `${index}.xhtml`,
+      title: `Chapter ${index}`,
+      textHash: String(index).repeat(64),
+      length: 100,
+    }));
+    const [target] = await db
+      .insert(schema.bookFileRevisions)
+      .values({ bookFileId: fileId, sha256: 'b'.repeat(64), fileHash: 'b'.repeat(32), sizeBytes: 100, reason: 'external_change', chapters })
+      .returning();
+    await db.update(schema.bookFiles).set({ sha256: target.sha256, currentRevisionId: target.id }).where(eq(schema.bookFiles.id, fileId));
+    const value = { ...anchor(), chapterTitle: 'Chapter 1', chapterFraction: 1, bookFraction: 1 };
+    await record(value);
+    const [progress] = await db.select().from(schema.readingProgress).where(eq(schema.readingProgress.bookFileId, fileId));
+    expect(progress.percentage).toBeCloseTo(200 / 3);
+    expect(progress.koreaderProgress).toBeNull();
+    expect(progress.cfi).toBeNull();
+    const [status] = await db.select().from(schema.userBookStatus).where(eq(schema.userBookStatus.bookId, bookId));
+    expect(status.status).toBe('reading');
+    expect((await service.state(userIds[0], fileId, libraryId)).anchor).toEqual(value);
+  });
 
   it('deduplicates retries and refuses to mutate an existing event', async () => {
     const value = anchor();
@@ -140,6 +211,8 @@ describe.skipIf(!configPath)('canonical reading events with PostgreSQL', () => {
   it('keeps separate copies and acknowledgements without replacing the richer canonical anchor', async () => {
     const value = anchor();
     await record(value);
+    const before = await db.select().from(schema.readingProgress).where(eq(schema.readingProgress.bookFileId, fileId));
+    const attempts = await db.select().from(schema.readingAttempts).where(eq(schema.readingAttempts.bookId, bookId));
     const acknowledgement = {
       eventId: value.event!.id,
       revision,
@@ -151,7 +224,8 @@ describe.skipIf(!configPath)('canonical reading events with PostgreSQL', () => {
       await db.select().from(schema.readingPositionAcknowledgements).where(eq(schema.readingPositionAcknowledgements.bookFileId, fileId)),
     ).toHaveLength(2);
     expect((await service.state(userIds[0], fileId, libraryId)).anchor).toEqual(value);
-    expect(await db.select().from(schema.readingProgress).where(eq(schema.readingProgress.bookFileId, fileId))).toHaveLength(0);
+    expect(await db.select().from(schema.readingProgress).where(eq(schema.readingProgress.bookFileId, fileId))).toEqual(before);
+    expect(await db.select().from(schema.readingAttempts).where(eq(schema.readingAttempts.bookId, bookId))).toEqual(attempts);
     await record(anchor(2));
     await expect(service.acknowledge(userIds[0], fileId, libraryId, 'reader', randomUUID(), acknowledgement)).rejects.toThrow('changed');
   });

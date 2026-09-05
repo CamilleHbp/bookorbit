@@ -6,6 +6,8 @@ import type { CanonicalReadingState, ReadingAnchor, ReadingEventReceipt, Revisio
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import { isNewerReadingEvent } from './reading-event';
+import { BookProgressProjectionService } from '../book/book-progress-projection.service';
+import { clampFraction, resolveReadingAnchor } from './reading-anchor';
 
 type RevisionDb = NodePgDatabase<typeof schema>;
 type RevisionTransaction = Parameters<Parameters<RevisionDb['transaction']>[0]>[0];
@@ -28,7 +30,10 @@ export async function resetCanonicalReadingEvents(tx: RevisionTransaction, userI
 
 @Injectable()
 export class CanonicalReadingService {
-  constructor(@Inject(DB) private readonly db: RevisionDb) {}
+  constructor(
+    @Inject(DB) private readonly db: RevisionDb,
+    private readonly progress: BookProgressProjectionService,
+  ) {}
 
   async state(userId: number, fileId: number, libraryId: number): Promise<CanonicalReadingState> {
     await this.requireFile(this.db, fileId, libraryId);
@@ -41,7 +46,7 @@ export class CanonicalReadingService {
     if (!identity || anchor.schemaVersion !== 1 || anchor.bookFileId !== fileId)
       throw new BadRequestException('A versioned file anchor and reading event are required');
     return this.db.transaction(async (tx) => {
-      const file = await this.requireFile(tx, fileId, libraryId);
+      const file = await this.requireFile(tx, fileId, libraryId, true);
       if (anchor.bookId !== file.bookId) throw new BadRequestException('Anchor book identity does not match the file');
       await this.requireRevision(tx, fileId, anchor.revision, anchor.provisionalSha256);
       await this.lockHead(tx, userId, fileId);
@@ -75,6 +80,44 @@ export class CanonicalReadingService {
       });
       if (state.anchor?.event && !isNewerReadingEvent(identity, state.anchor.event)) return { ...state, outcome: 'superseded' };
       await tx.update(heads).set({ eventId: identity.id }).where(scope(userId, fileId));
+      const nativeCompatible = anchor.revision === file.currentRevisionId || (file.sha256 !== null && anchor.revision === `sha256:${file.sha256}`);
+      let percentage = clampFraction(anchor.bookFraction) * 100;
+      if (!nativeCompatible && file.currentRevisionId) {
+        const [target] = await tx
+          .select({ chapters: schema.bookFileRevisions.chapters })
+          .from(schema.bookFileRevisions)
+          .where(and(eq(schema.bookFileRevisions.bookFileId, fileId), eq(schema.bookFileRevisions.id, file.currentRevisionId)))
+          .limit(1);
+        const [source] = !anchor.revision.startsWith('sha256:')
+          ? await tx
+              .select({ chapters: schema.bookFileRevisions.chapters })
+              .from(schema.bookFileRevisions)
+              .where(and(eq(schema.bookFileRevisions.bookFileId, fileId), eq(schema.bookFileRevisions.id, anchor.revision)))
+              .limit(1)
+          : [];
+        const chapter = source?.chapters?.[anchor.chapterIndex];
+        const evidence = chapter
+          ? {
+              ...anchor,
+              chapterHref: chapter.href,
+              chapterTitle: chapter.title,
+              chapterTextHash: chapter.textHash,
+              chapterSourceUrl: chapter.sourceUrl,
+            }
+          : anchor;
+        if (target?.chapters?.length)
+          percentage = resolveReadingAnchor(evidence, file.currentRevisionId, target.chapters, source?.chapters ?? []).bookFraction * 100;
+      }
+      await this.progress.record(tx, {
+        userId,
+        bookId: file.bookId,
+        bookFileId: fileId,
+        anchor,
+        previous: state.anchor,
+        percentage,
+        nativeCompatible,
+        finishThreshold: file.finishThreshold,
+      });
       return { resetGeneration: state.resetGeneration, anchor, outcome: 'accepted' };
     });
   }
@@ -120,13 +163,20 @@ export class CanonicalReadingService {
     return row ?? { resetGeneration: 0, anchor: null };
   }
 
-  private async requireFile(db: RevisionDb | RevisionTransaction, fileId: number, libraryId: number) {
-    const [file] = await db
-      .select({ bookId: schema.bookFiles.bookId })
+  private async requireFile(db: RevisionDb | RevisionTransaction, fileId: number, libraryId: number, lock = false) {
+    const query = db
+      .select({
+        bookId: schema.bookFiles.bookId,
+        currentRevisionId: schema.bookFiles.currentRevisionId,
+        sha256: schema.bookFiles.sha256,
+        finishThreshold: schema.libraries.markAsFinishedPercentComplete,
+      })
       .from(schema.bookFiles)
       .innerJoin(schema.books, eq(schema.books.id, schema.bookFiles.bookId))
+      .innerJoin(schema.libraries, eq(schema.libraries.id, schema.books.libraryId))
       .where(and(eq(schema.bookFiles.id, fileId), eq(schema.books.libraryId, libraryId)))
       .limit(1);
+    const [file] = await (lock ? query.for('share', { of: schema.bookFiles }) : query);
     if (!file) throw new NotFoundException('File not found in this library');
     return file;
   }

@@ -175,6 +175,10 @@ async function startTrackedReading() {
   delete query.mode
   await router.replace({ name: 'reader', params: route.params, query })
   await nextTick()
+  if (fileFormat === 'epub') {
+    await reopenEpubAtCurrentLocation()
+    await goToFraction(fraction.value)
+  }
   await progress.save({ deliberate: true })
   onActivity()
 }
@@ -317,6 +321,8 @@ onMounted(async () => {
   const hadProgress = progress.percentage.value > 0
   const resumeTarget = resolveReaderResumeTarget(deepLinkCfi ? undefined : route.query.checkpoint, progress.cfi.value, progress.percentage.value)
   await open(bookId, fileId, fileFormat, resumeTarget.cfi, resumeTarget.fraction, {
+    trackReading: trackingEnabled.value,
+    restoreCanonical: route.query.checkpoint === undefined,
     fixedLayoutSpread: state.value.fixedLayoutSpread,
   })
   setChapters(getChapters())
@@ -386,6 +392,8 @@ function seedState(partial: Partial<ReaderState>) {
 async function reopenEpubAtCurrentLocation() {
   const fallbackFraction = fraction.value > 0 ? fraction.value : progress.percentage.value > 0 ? progress.percentage.value / 100 : undefined
   await open(bookId, fileId, fileFormat, null, fallbackFraction, {
+    trackReading: trackingEnabled.value,
+    restoreCanonical: false,
     fixedLayoutSpread: state.value.fixedLayoutSpread,
   })
   setChapters(getChapters())

@@ -591,6 +591,7 @@ export class View extends HTMLElement {
     const koreaderDocFragmentIndex = getKoreaderDocFragmentIndex(this.book.sections, index)
     const koreaderProgress = getKoreaderProgress(koreaderDocFragmentIndex, range)
     this.lastLocation = {
+      reason,
       ...progress,
       tocItem,
       pageItem,
@@ -927,3 +928,4 @@ customElements.define('foliate-view', View)
 
 // Export makeStreamingBook to window for use from Angular
 window.makeStreamingBook = makeStreamingBook
+window.makeRevisionBook = makeBook

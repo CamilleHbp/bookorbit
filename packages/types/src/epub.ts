@@ -29,3 +29,12 @@ export interface EpubBookInfo {
   metadata: Record<string, unknown>;
   coverPath: string | null;
 }
+
+export interface EpubReadingRevision {
+  bookId: number;
+  bookFileId: number;
+  libraryId: number;
+  revision: string;
+  sha256: string;
+  sizeBytes: number;
+}

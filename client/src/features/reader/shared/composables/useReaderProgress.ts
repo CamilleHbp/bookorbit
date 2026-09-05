@@ -1,5 +1,7 @@
 import { onUnmounted, ref, unref, type MaybeRef, type Ref } from 'vue'
 import { api } from '@/lib/api'
+import type { ReadingAnchor, ReadingEventReceipt } from '@bookorbit/types'
+import { readingEventIdentity } from './reading-event-identity'
 import type { FoliateRenderer, RelocateDetail } from '../../epub/composables/useFoliate'
 
 export type FooterDisplayMode = 0 | 1 | 2
@@ -82,6 +84,9 @@ export function useReaderProgress(
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   let lastValidPercentage = 0
   let restorationPosition = false
+  let capturedReading: { anchor: ReadingAnchor; libraryId: number; generation: number; occurredAt: string; event?: ReadingAnchor } | null = null
+  let readingResetGeneration = 0
+  let savingReading: Promise<void> | null = null
 
   onUnmounted(() => {
     if (saveTimer) clearTimeout(saveTimer)
@@ -111,6 +116,14 @@ export function useReaderProgress(
 
   function onRelocate(detail: RelocateDetail) {
     restorationPosition = detail?.restoration === true
+    if (!restorationPosition && detail?.readingAnchor && detail.readingLibraryId !== undefined) {
+      capturedReading = {
+        anchor: detail.readingAnchor,
+        libraryId: detail.readingLibraryId,
+        generation: Math.max(detail.readingResetGeneration ?? 0, readingResetGeneration),
+        occurredAt: new Date().toISOString(),
+      }
+    }
     cfi.value = normalizeString(detail?.cfi)
     const relocatedFraction = normalizeFraction(detail?.fraction)
     if (relocatedFraction !== null) {
@@ -144,6 +157,29 @@ export function useReaderProgress(
     if (!unref(trackingEnabled)) return
     if (options.deliberate) restorationPosition = false
     if (restorationPosition) return
+    if (capturedReading) {
+      if (savingReading) return savingReading
+      const captured = capturedReading
+      savingReading = (async () => {
+        captured.event ??= { ...captured.anchor, event: await readingEventIdentity(captured.generation, captured.occurredAt) }
+        const response = await api(`/api/v1/libraries/${captured.libraryId}/files/${fileId}/reading-events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ anchor: captured.event }),
+        })
+        if (!response.ok) return
+        const receipt = (await response.json()) as ReadingEventReceipt
+        readingResetGeneration = Math.max(readingResetGeneration, receipt.resetGeneration)
+        if (capturedReading === captured && receipt.outcome === 'reset_required') {
+          capturedReading = null
+          restorationPosition = true
+        }
+      })().finally(() => {
+        savingReading = null
+        if (capturedReading && capturedReading !== captured && !restorationPosition) void save()
+      })
+      return savingReading
+    }
     const safePercentage = updatePercentage(percentage.value)
     await api(`/api/v1/books/files/${fileId}/progress`, {
       method: 'POST',

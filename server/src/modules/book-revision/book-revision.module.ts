@@ -10,9 +10,10 @@ import { EpubManifestService } from './epub-manifest.service';
 import { RevisionPublicationService } from './revision-publication.service';
 
 import { RevisionCatalogService } from './revision-catalog.service';
+import { BookProgressModule } from '../book/book-progress.module';
 
 @Module({
-  imports: [FileLockModule, ConfigModule.forFeature(storageConfig)],
+  imports: [FileLockModule, ConfigModule.forFeature(storageConfig), BookProgressModule],
   providers: [
     BookRevisionService,
     EpubManifestService,
