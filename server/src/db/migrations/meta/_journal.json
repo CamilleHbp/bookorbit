@@ -617,6 +617,13 @@
       "when": 1788603290337,
       "tag": "0087_revision_manifests",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1788605848507,
+      "tag": "0088_revision_publication_journal",
+      "breakpoints": true
     }
   ]
 }

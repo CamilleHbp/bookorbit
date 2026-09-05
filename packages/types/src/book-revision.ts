@@ -6,6 +6,17 @@ export interface RevisionChapter {
   length: number;
 }
 
+export interface EpubRevisionManifest {
+  version: 1;
+  chapters: RevisionChapter[];
+  contentHash: string;
+  metadataHash: string;
+  coverHash: string | null;
+}
+
+export type RevisionPublicationState = "prepared" | "filesystem_published" | "database_committed" | "cleanup_complete" | "failed";
+export type RevisionPublicationReason = "fanficfare" | "rollback";
+
 export interface ReadingAnchor {
   schemaVersion?: 1;
   bookId?: number;

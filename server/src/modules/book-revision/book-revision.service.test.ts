@@ -51,7 +51,11 @@ async function setup(locked = current) {
   const saved = { ...current, ...fresh, currentRevisionId: 'new' };
   const values = vi.fn(() => ({ returning: vi.fn().mockResolvedValue([{ id: 'new' }]), onConflictDoNothing: vi.fn().mockResolvedValue(undefined) }));
   const set = vi.fn(() => ({ where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([saved]) })) }));
-  const tx = { select: vi.fn(() => query([locked])), insert: vi.fn(() => ({ values })), update: vi.fn(() => ({ set })) };
+  const tx = {
+    select: vi.fn((fields?: unknown) => query(fields ? [] : [locked])),
+    insert: vi.fn(() => ({ values })),
+    update: vi.fn(() => ({ set })),
+  };
   const db = { select: vi.fn(() => query([current])), transaction: vi.fn((fn: (value: typeof tx) => unknown) => fn(tx)) };
   const module = await Test.createTestingModule({
     providers: [BookRevisionService, { provide: DB, useValue: db }, { provide: EpubManifestService, useValue: { inspect: vi.fn() } }],
@@ -98,6 +102,13 @@ describe('revision observation', () => {
     const { service, tx } = await setup();
     await service.observeFile(1, {});
     expect(tx.insert).toHaveBeenCalledExactlyOnceWith(schema.bookFileRevisions);
+  });
+
+  it('does not adopt bytes belonging to an incomplete publication', async () => {
+    const { service, tx } = await setup();
+    tx.select.mockImplementation((fields?: unknown) => query(fields ? [{ id: 'pending' }] : [current]));
+    await expect(service.observeFile(1, {})).rejects.toThrow('finish recovery');
+    expect(tx.insert).not.toHaveBeenCalled();
   });
 
   it('preserves database state when inspection fails', async () => {

@@ -1,0 +1,227 @@
+import { Test } from '@nestjs/testing';
+import { ZipArchive } from 'archiver';
+import { randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Pool, type PoolConfig } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { eq } from 'drizzle-orm';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { DB } from '../src/db';
+import * as schema from '../src/db/schema';
+import { EpubManifestService } from '../src/modules/book-revision/epub-manifest.service';
+import { RevisionPublicationService } from '../src/modules/book-revision/revision-publication.service';
+import { requireInspectedFile } from '../src/modules/book-revision/revision-publication.files';
+
+const configPath = process.env.REVISION_TEST_DB_CONFIG;
+
+describe.skipIf(!configPath)('revision publication with PostgreSQL and real files', () => {
+  let pool: Pool;
+  let db: ReturnType<typeof drizzle<typeof schema>>;
+  let service: RevisionPublicationService;
+  let manifests: EpubManifestService;
+  let dir: string;
+  let libraryId: number;
+  let fileId: number;
+  let originalId: string;
+  let target: string;
+  let input: string;
+  let originalSha: string;
+
+  beforeAll(async () => {
+    const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
+    if (config.database !== 'bookorbit_revision_validation') throw new Error('An isolated revision validation database is required');
+    pool = new Pool(config);
+    db = drizzle(pool, { schema });
+    await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
+    const module = await Test.createTestingModule({
+      providers: [RevisionPublicationService, EpubManifestService, { provide: DB, useValue: db }],
+    }).compile();
+    service = module.get(RevisionPublicationService);
+    manifests = module.get(EpubManifestService);
+  }, 60_000);
+
+  afterAll(async () => {
+    await pool?.end();
+  });
+
+  async function epub(path: string, text: string) {
+    await new Promise<void>((resolve, reject) => {
+      const out = createWriteStream(path);
+      const archive = new ZipArchive({ zlib: { level: 6 } });
+      out.on('close', resolve).on('error', reject);
+      archive.on('error', reject);
+      archive.pipe(out);
+      archive.append('application/epub+zip', { name: 'mimetype', store: true });
+      archive.append('<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>', { name: 'META-INF/container.xml' });
+      archive.append(
+        '<package><metadata><title>Story</title></metadata><manifest><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>',
+        { name: 'book.opf' },
+      );
+      archive.append(`<html><body><p>${text}</p></body></html>`, { name: 'c.xhtml' });
+      void archive.finalize();
+    });
+  }
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'bookorbit-publication-'));
+    target = join(dir, 'story.epub');
+    input = join(dir, 'incoming.epub');
+    await epub(target, 'Original passage');
+    await epub(input, 'Original passage and a new chapter');
+    const [library] = await db
+      .insert(schema.libraries)
+      .values({ name: `revision-test-${randomUUID()}` })
+      .returning();
+    libraryId = library.id;
+    const [folder] = await db.insert(schema.libraryFolders).values({ libraryId, path: dir }).returning();
+    const [book] = await db.insert(schema.books).values({ libraryId, libraryFolderId: folder.id, folderPath: dir }).returning();
+    const inspected = await requireInspectedFile(target);
+    originalSha = inspected.sha256;
+    const [file] = await db
+      .insert(schema.bookFiles)
+      .values({
+        bookId: book.id,
+        libraryFolderId: folder.id,
+        absolutePath: target,
+        ino: inspected.ino,
+        format: 'epub',
+        sha256: originalSha,
+        fileHash: inspected.fileHash,
+      })
+      .returning();
+    fileId = file.id;
+    originalId = randomUUID();
+    const manifest = await manifests.inspect(target);
+    await db.insert(schema.bookFileRevisions).values({
+      id: originalId,
+      bookFileId: fileId,
+      sha256: originalSha,
+      fileHash: inspected.fileHash,
+      sizeBytes: inspected.sizeBytes,
+      reason: 'baseline',
+      changeKind: 'baseline',
+      chapters: manifest.chapters,
+      contentHash: manifest.contentHash,
+      metadataHash: manifest.metadataHash,
+      coverHash: manifest.coverHash,
+    });
+    await db.update(schema.bookFiles).set({ currentRevisionId: originalId }).where(eq(schema.bookFiles.id, fileId));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    if (libraryId) await db.delete(schema.libraries).where(eq(schema.libraries.id, libraryId));
+    if (dir) await rm(dir, { recursive: true, force: true });
+  });
+
+  async function journal(id: string) {
+    const [row] = await db.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, id));
+    return row;
+  }
+
+  it('recovers a prepared operation and retains a verified previous EPUB', async () => {
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+    await service.recoverPending();
+    const row = await journal(prepared.publicationId);
+    expect(row.state).toBe('cleanup_complete');
+    expect((await requireInspectedFile(target)).sha256).toBe(row.nextSha256);
+    expect((await requireInspectedFile(row.backupPath)).sha256).toBe(originalSha);
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    expect(file.currentRevisionId).toBe(row.nextRevisionId);
+    await expect(service.resume(row.id, libraryId)).resolves.toMatchObject({ revisionId: row.nextRevisionId });
+  });
+
+  it('recovers after filesystem publication and a rolled-back database transaction', async () => {
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    const transaction = db.transaction.bind(db);
+    vi.spyOn(db, 'transaction').mockImplementationOnce((callback) =>
+      transaction(async (tx) => {
+        await callback(tx);
+        throw new Error('injected crash before database commit');
+      }),
+    );
+    await expect(service.resume(prepared.publicationId, libraryId)).rejects.toThrow('injected crash');
+    const row = await journal(prepared.publicationId);
+    expect(row.state).toBe('prepared');
+    expect((await requireInspectedFile(target)).sha256).toBe(row.nextSha256);
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    expect(file.currentRevisionId).toBe(originalId);
+    await expect(service.resume(row.id, libraryId)).resolves.toMatchObject({ state: 'cleanup_complete' });
+    const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
+    expect(revisions).toHaveLength(2);
+  });
+
+  it.each([2, 3])('recovers a crash at durable transaction boundary %s', async (boundary) => {
+    const { publicationId } = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    const transaction = db.transaction.bind(db);
+    let count = 0;
+    const spy = vi.spyOn(db, 'transaction').mockImplementation((callback) =>
+      transaction(async (tx) => {
+        const result = await callback(tx);
+        if (++count === boundary) throw new Error('injected durable checkpoint crash');
+        return result;
+      }),
+    );
+    await expect(service.resume(publicationId, libraryId)).rejects.toThrow('checkpoint crash');
+    spy.mockRestore();
+    expect((await journal(publicationId)).state).toBe(boundary === 2 ? 'filesystem_published' : 'database_committed');
+    await expect(service.resume(publicationId, libraryId)).resolves.toMatchObject({ state: 'cleanup_complete' });
+    const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
+    expect(revisions).toHaveLength(2);
+  });
+
+  it('retains one previous managed EPUB while keeping historical manifests', async () => {
+    const first = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    const installed = await service.resume(first.publicationId, libraryId);
+    await epub(input, 'Third version with more chapters');
+    const second = await service.prepare(fileId, libraryId, installed.revisionId, input, 'fanficfare');
+    await service.resume(second.publicationId, libraryId);
+    const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
+    expect(revisions).toHaveLength(3);
+    expect(revisions.filter((r) => r.storagePath !== null).map((r) => r.id)).toEqual([installed.revisionId]);
+    expect(revisions.every((r) => r.chapters.length > 0)).toBe(true);
+    await expect(readFile((await journal(first.publicationId)).backupPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('serializes concurrent recovery without duplicate revisions', async () => {
+    const { publicationId } = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    const results = await Promise.all([service.resume(publicationId, libraryId), service.resume(publicationId, libraryId)]);
+    expect(results[0]).toEqual(results[1]);
+    const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
+    expect(revisions).toHaveLength(2);
+  });
+
+  it('rejects stale revision expectations, another library, and a second active replacement', async () => {
+    await expect(service.prepare(fileId, libraryId, randomUUID(), input, 'fanficfare')).rejects.toThrow('Refresh');
+    await expect(service.prepare(fileId, libraryId + 1, originalId, input, 'fanficfare')).rejects.toThrow('not found');
+    const { publicationId } = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    await expect(service.prepare(fileId, libraryId, originalId, input, 'fanficfare')).rejects.toThrow('already pending');
+    await expect(service.resume(publicationId, libraryId + 1)).rejects.toThrow('not found');
+  });
+
+  it('does not overwrite an independently changed file or a damaged staged file', async () => {
+    const { publicationId } = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    const row = await journal(publicationId);
+    await writeFile(target, 'independent replacement');
+    await expect(service.resume(publicationId, libraryId)).rejects.toThrow('outside this publication');
+    expect(await readFile(target, 'utf8')).toBe('independent replacement');
+    await copyFile(row.backupPath, target);
+    await writeFile(row.stagedPath, 'damaged staging');
+    await expect(service.resume(publicationId, libraryId)).rejects.toThrow('no longer matches');
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+  });
+
+  it('keeps cancelled work from being recovered or installed', async () => {
+    const { publicationId } = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    await service.cancel(publicationId, libraryId);
+    await service.recoverPending();
+    expect((await journal(publicationId)).state).toBe('failed');
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+    await expect(service.resume(publicationId, libraryId)).rejects.toThrow('cancelled');
+  });
+});

@@ -2,5 +2,10 @@ import { Module } from '@nestjs/common';
 import { BookRevisionService } from './book-revision.service';
 import { EpubManifestService } from './epub-manifest.service';
 
-@Module({ providers: [BookRevisionService, EpubManifestService], exports: [BookRevisionService, EpubManifestService] })
+import { RevisionPublicationService } from './revision-publication.service';
+
+@Module({
+  providers: [BookRevisionService, EpubManifestService, RevisionPublicationService],
+  exports: [BookRevisionService, EpubManifestService, RevisionPublicationService],
+})
 export class BookRevisionModule {}

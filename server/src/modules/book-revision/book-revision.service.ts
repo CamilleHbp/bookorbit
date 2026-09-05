@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { stat } from 'node:fs/promises';
 import { DB } from '../../db';
@@ -52,6 +52,14 @@ export class BookRevisionService {
         ) {
           throw new ConflictException('Book file changed while inspecting; retry inspection');
         }
+        const [publication] = await tx
+          .select({ id: schema.revisionPublications.id })
+          .from(schema.revisionPublications)
+          .where(
+            and(eq(schema.revisionPublications.bookFileId, id), inArray(schema.revisionPublications.state, ['prepared', 'filesystem_published'])),
+          )
+          .limit(1);
+        if (publication) throw new ConflictException('A managed replacement must finish recovery before scanning this file');
         const atPath = await stat(path, { bigint: true });
         if (!sameFileSignature(fresh.signature, atPath)) throw new ConflictException('File changed before inspection could be saved');
         const changed = current.sha256 !== fresh.sha256 || !current.currentRevisionId;

@@ -5,7 +5,7 @@ import { stat } from 'node:fs/promises';
 import * as unzipper from 'unzipper';
 import { XMLParser } from 'fast-xml-parser';
 import { load } from 'cheerio';
-import type { RevisionChapter } from '@bookorbit/types';
+import type { EpubRevisionManifest, RevisionChapter } from '@bookorbit/types';
 import { normalizeAnchorText, scalarLength } from './anchor-text';
 
 const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
@@ -24,14 +24,6 @@ interface ManifestItem {
   '@_href'?: string;
   '@_media-type'?: string;
   '@_properties'?: string;
-}
-
-export interface EpubRevisionManifest {
-  version: 1;
-  chapters: RevisionChapter[];
-  contentHash: string;
-  metadataHash: string;
-  coverHash: string | null;
 }
 
 function list<T>(value: T | T[] | undefined): T[] {
