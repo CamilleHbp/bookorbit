@@ -1,0 +1,128 @@
+import { BadRequestException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
+import type { FanficfareRuntimeHealth, FanficfareSiteCatalog, FanfictionPreview, FanfictionProfileDocument } from '@bookorbit/types';
+import { spawn } from 'node:child_process';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fanficfareConfig, storageConfig } from '../../config/config';
+
+type RuntimeRequest = {
+  operation: 'health' | 'sites' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
+  url?: string;
+  configuration?: string;
+  cookies?: FanfictionProfileDocument['cookies'];
+  previous?: string;
+  edits?: { section?: string; username?: string; password?: string; isAdult?: boolean };
+  redact?: boolean;
+};
+type RuntimeResponse = { ok: true; result: unknown } | { ok: false; code: string; errorClass: string };
+
+@Injectable()
+export class FanficfareRuntimeService {
+  private active = 0;
+
+  constructor(
+    @Inject(fanficfareConfig.KEY) private readonly config: ConfigType<typeof fanficfareConfig>,
+    @Inject(storageConfig.KEY) private readonly storage: ConfigType<typeof storageConfig>,
+  ) {}
+
+  async health(): Promise<FanficfareRuntimeHealth> {
+    try {
+      const result = (await this.temporary({ operation: 'health' })) as FanficfareRuntimeHealth;
+      if (result.version !== '4.61.0' || result.protocolVersion !== 1 || result.ready !== true) throw new ServiceUnavailableException();
+      return result;
+    } catch {
+      return { version: null, protocolVersion: 1, ready: false, errorCode: 'runtime_unavailable' };
+    }
+  }
+
+  async sites(): Promise<FanficfareSiteCatalog> {
+    const result = (await this.temporary({ operation: 'sites' })) as FanficfareSiteCatalog;
+    if (!Array.isArray(result.sites) || result.sites.length > 2000) throw new ServiceUnavailableException('Invalid runtime site catalog');
+    return result;
+  }
+
+  async validateConfiguration(configuration: string): Promise<void> {
+    await this.temporary({ operation: 'validate', configuration });
+  }
+
+  async mergeConfiguration(previous: string, configuration?: string, edits?: RuntimeRequest['edits'], redact = false): Promise<string> {
+    const result = (await this.temporary({ operation: 'merge', previous, configuration, edits, redact })) as { configuration: string };
+    if (typeof result.configuration !== 'string' || Buffer.byteLength(result.configuration) > 65536)
+      throw new ServiceUnavailableException('Invalid configuration response');
+    return result.configuration;
+  }
+
+  async preview(url: string, document: FanfictionProfileDocument, signal?: AbortSignal): Promise<FanfictionPreview> {
+    return (await this.temporary({ operation: 'preview', url, ...document }, signal)) as FanfictionPreview;
+  }
+
+  async execute(request: RuntimeRequest, workspace: string, signal?: AbortSignal): Promise<unknown> {
+    if (this.active >= this.config.maxWorkers) throw new ServiceUnavailableException('FanFicFare runtime is busy');
+    if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
+    const input = JSON.stringify(request);
+    if (Buffer.byteLength(input) > 512 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
+    this.active++;
+    try {
+      return await new Promise((resolve, reject) => {
+        const child = spawn(this.config.python, ['-I', join(__dirname, 'runtime', 'fanficfare_wrapper.py')], {
+          cwd: workspace,
+          env: { HOME: workspace, TMPDIR: workspace, LANG: 'C.UTF-8', PYTHONDONTWRITEBYTECODE: '1' },
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+        });
+        const chunks: Buffer[] = [];
+        let bytes = 0;
+        let failed = false;
+        const stop = () => {
+          failed = true;
+          child.kill('SIGKILL');
+        };
+        const timer = setTimeout(stop, this.config.timeoutMs);
+        signal?.addEventListener('abort', stop, { once: true });
+        child.stdout.on('data', (chunk: Buffer) => {
+          bytes += chunk.length;
+          if (bytes > 1024 * 1024) stop();
+          else chunks.push(chunk);
+        });
+        child.stderr.on('data', (chunk: Buffer) => {
+          bytes += chunk.length;
+          if (bytes > 1024 * 1024) stop();
+        });
+        child.stdin.on('error', () => {
+          /* Early process exit is handled by close. */
+        });
+        child.once('error', () => {
+          failed = true;
+        });
+        child.once('close', (code) => {
+          clearTimeout(timer);
+          signal?.removeEventListener('abort', stop);
+          if (failed || code !== 0) return reject(new ServiceUnavailableException('FanFicFare runtime failed or exceeded its execution budget'));
+          try {
+            const response = JSON.parse(Buffer.concat(chunks).toString('utf8')) as RuntimeResponse;
+            if (response.ok !== true)
+              return reject(new BadRequestException({ message: 'FanFicFare could not complete the operation', errorCode: response.code }));
+            resolve(response.result);
+          } catch {
+            reject(new ServiceUnavailableException('Invalid FanFicFare runtime response'));
+          }
+        });
+        child.stdin.end(input);
+      });
+    } finally {
+      this.active--;
+    }
+  }
+
+  private async temporary(request: RuntimeRequest, signal?: AbortSignal): Promise<unknown> {
+    const root = join(this.storage.appDataPath, 'fanfiction', 'runtime');
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    const directory = await mkdtemp(join(root, 'operation-'));
+    try {
+      return await this.execute(request, directory, signal);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+}

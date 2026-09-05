@@ -1,0 +1,63 @@
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+from zipfile import ZipFile
+
+from controlled_config import merge_configuration, validate_ini
+from epub_policy import validate_epub
+from fanficfare_wrapper import run
+from safe_transport import PolicyError
+
+
+class ConfigurationTest(unittest.TestCase):
+    def test_rejects_unsafe_advanced_options_in_every_section(self):
+        for option in ['pre_process_cmd', 'post_process_cmd', 'use_browser_cache', 'http_proxy', 'https_proxy', 'use_flaresolverr_proxy', 'use_nsapa_proxy', 'browser_cache_path', 'username_filelist', 'output_filename', 'include_images_filelist', 'use_ssl_default_seclevelone']:
+            with self.subTest(option=option), self.assertRaises(PolicyError):
+                validate_ini('[archiveofourown.org:epub]\n' + option + ': unsafe\n')
+
+    def test_preserves_explicit_advanced_sections(self):
+        value = '[defaults]\ninclude_titlepage: true\n[archiveofourown.org]\nusername: reader\npassword: hidden\n'
+        self.assertEqual(validate_ini(value), value)
+
+    def test_masked_secrets_are_unchanged_and_structured_edits_preserve_advanced_sections(self):
+        previous = '[defaults]\ninclude_titlepage: true\n[archiveofourown.org]\npassword: secret\n'
+        masked = merge_configuration(previous, redact=True)
+        self.assertNotIn('secret', masked)
+        restored = merge_configuration(previous, masked, {'section': 'archiveofourown.org', 'username': 'reader'})
+        self.assertIn('password = secret', restored)
+        self.assertIn('include_titlepage = true', restored)
+        cleared = merge_configuration(restored, edits={'section': 'archiveofourown.org', 'password': ''})
+        self.assertNotIn('secret', cleared)
+
+    def test_hostile_archive_paths(self):
+        for filename in ['../outside', '/outside', 'C:/outside', 'a\\outside']:
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'hostile.epub'
+                with ZipFile(path, 'w') as archive:
+                    archive.writestr(filename, 'bad')
+                with self.assertRaises(PolicyError):
+                    validate_epub(path)
+
+    def test_pinned_adapter_can_generate_and_update_an_epub_without_cli_configuration(self):
+        from fanficfare.adapters.adapter_test1 import TestSiteAdapter
+        original = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory, patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'):
+            try:
+                os.chdir(directory)
+                Path('personal.ini').write_text('[defaults]\npre_process_cmd: invalid\noutput_filename: outside.epub\n')
+                request = {'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\n'}
+                result = run(request)
+                self.assertEqual(result['output'], 'output.epub')
+                self.assertGreater(validate_epub('output.epub'), 2)
+                Path('output.epub').rename('input.epub')
+                result = run({**request, 'operation': 'update'})
+                self.assertEqual(result['output'], 'output.epub')
+                self.assertFalse(Path('outside.epub').exists())
+            finally:
+                os.chdir(original)
+
+
+if __name__ == '__main__':
+    unittest.main()

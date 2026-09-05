@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { readdir, rm, stat } from 'fs/promises';
 import { join } from 'path';
 
-import { DEFAULT_FORMAT_PRIORITY } from '@bookorbit/types';
+import { DEFAULT_FORMAT_PRIORITY, Permission } from '@bookorbit/types';
 import type { AccessLevel, LibraryFileSyncProgressEvent, LibraryOverviewEntry, OrganizationMode, WriteResult } from '@bookorbit/types';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { normalizeIconValue } from '../../common/utils/icon-value.utils';
@@ -66,6 +66,26 @@ export class LibraryService {
     if (isSuperuser) return;
     const hasAccess = await this.libraryRepo.hasUserAccess(userId, libraryId);
     if (!hasAccess) throw new ForbiddenException('No access to this library');
+  }
+
+  async verifyAdministration(user: RequestUser, libraryId: number): Promise<void> {
+    const [library] = await this.libraryRepo.findById(libraryId);
+    if (!library) throw new NotFoundException('Library not found');
+    if (!user.active) throw new ForbiddenException('Account is inactive');
+    if (user.isSuperuser) return;
+    const access = await this.libraryRepo.findUserAccess(user.id, libraryId);
+    if (!user.permissions.includes(Permission.ManageLibraries) || access?.accessLevel !== 'owner') {
+      throw new ForbiddenException('Library administration permission is required');
+    }
+  }
+
+  async findAdministrable(user: RequestUser, afterId = 0, limit = 50) {
+    if (!user.active || (!user.isSuperuser && !user.permissions.includes(Permission.ManageLibraries)))
+      throw new ForbiddenException('Library administration permission is required');
+    const pageSize = Math.max(1, Math.min(100, limit));
+    const rows = await this.libraryRepo.findAdministrable(user.id, user.isSuperuser, afterId, pageSize + 1);
+    const items = rows.slice(0, pageSize);
+    return { items, nextCursor: rows.length > pageSize ? items[items.length - 1].id : null };
   }
 
   async findAll(user: RequestUser) {

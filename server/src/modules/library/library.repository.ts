@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, getTableColumns, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, eq, exists, getTableColumns, gt, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { AccessLevel, ContentFilterRules, LibraryStats } from '@bookorbit/types';
 
@@ -250,6 +250,40 @@ export class LibraryRepository {
       where: and(eq(schema.userLibraryAccess.userId, userId), eq(schema.userLibraryAccess.libraryId, libraryId)),
     });
     return row !== undefined;
+  }
+
+  findUserAccess(userId: number, libraryId: number) {
+    return this.db.query.userLibraryAccess.findFirst({
+      columns: { accessLevel: true },
+      where: and(eq(schema.userLibraryAccess.userId, userId), eq(schema.userLibraryAccess.libraryId, libraryId)),
+    });
+  }
+
+  findAdministrable(userId: number, isSuperuser: boolean, afterId: number, limit: number) {
+    return this.db
+      .select({ id: libraries.id, name: libraries.name })
+      .from(libraries)
+      .where(
+        and(
+          gt(libraries.id, afterId),
+          isSuperuser
+            ? undefined
+            : exists(
+                this.db
+                  .select({ userId: schema.userLibraryAccess.userId })
+                  .from(schema.userLibraryAccess)
+                  .where(
+                    and(
+                      eq(schema.userLibraryAccess.libraryId, libraries.id),
+                      eq(schema.userLibraryAccess.userId, userId),
+                      eq(schema.userLibraryAccess.accessLevel, 'owner'),
+                    ),
+                  ),
+              ),
+        ),
+      )
+      .orderBy(libraries.id)
+      .limit(limit);
   }
 
   getAccess(libraryId: number) {

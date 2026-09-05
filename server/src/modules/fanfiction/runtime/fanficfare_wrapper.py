@@ -1,0 +1,111 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import importlib.metadata
+import json
+import logging
+import os
+import resource
+
+from controlled_config import make_configuration, merge_configuration, validate_ini
+from epub_policy import validate_epub
+from safe_transport import PolicyError, SafeTransport, install_network_guard, validate_url
+
+VERSION = '4.61.0'
+
+
+def limits():
+    resource.setrlimit(resource.RLIMIT_CPU, (120, 120))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024 * 1024, 256 * 1024 * 1024))
+    resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
+    if sys.platform == 'linux':
+        resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
+
+
+def run(request):
+    actual = importlib.metadata.version('FanFicFare')
+    if actual != VERSION:
+        raise PolicyError('Pinned FanFicFare runtime version does not match')
+    from fanficfare import adapters, writers
+    operation = request.get('operation')
+    if operation == 'health':
+        return {'version': actual, 'protocolVersion': 1, 'ready': True}
+    if operation == 'sites':
+        examples = adapters.getSiteExamples()
+        return {'version': actual, 'sites': [{'id': site, 'examples': urls[:3]} for site, urls in examples]}
+    if operation == 'merge':
+        return {'configuration': merge_configuration(request.get('previous', ''), request.get('configuration'), request.get('edits'), request.get('redact', False))}
+    ini = validate_ini(request.get('configuration', ''))
+    if operation == 'validate':
+        return {'valid': True}
+    url = request.get('url')
+    validate_url(url)
+    transport = SafeTransport()
+    transport.load_cookies(request.get('cookies', []))
+    configuration = make_configuration(url, ini, transport)
+    adapter = adapters.getAdapter(configuration, url)
+    story = adapter.getStoryMetadataOnly(get_cover=False)
+    canonical = story.getMetadata('storyUrl')
+    validate_url(canonical.replace('http://', 'https://', 1))
+    chapter_count = int(story.getMetadata('numChapters') or 0)
+    if not 0 < chapter_count <= 10_000:
+        raise PolicyError('Chapter count limit exceeded')
+    preview = {
+        'canonicalUrl': canonical.replace('http://', 'https://', 1),
+        'site': adapter.getConfigSection(), 'title': story.getMetadata('title'),
+        'authors': story.getList('author'), 'description': story.getMetadata('description'),
+        'chapterCount': chapter_count, 'status': story.getMetadata('status'),
+        'tags': story.getSubjectTags(),
+    }
+    if operation == 'preview':
+        return preview
+    if operation not in ('download', 'update', 'refresh'):
+        raise PolicyError('Unsupported integration operation')
+    if operation in ('update', 'refresh'):
+        from fanficfare.epubutils import get_update_data
+        validate_epub('input.epub')
+        old = get_update_data('input.epub')
+        previous_url, previous_count = old[:2]
+        if adapters.getNormalStoryURL(previous_url) != adapters.getNormalStoryURL(canonical):
+            return {'reviewRequired': 'identity_mismatch', 'preview': preview}
+        if previous_count > chapter_count:
+            return {'reviewRequired': 'chapter_reduction', 'preview': preview}
+        if operation == 'update':
+            (adapter.oldchapters, adapter.oldimgs, adapter.oldcover, adapter.calibrebookmark,
+             adapter.logfile, adapter.oldchaptersmap, adapter.oldchaptersdata) = old[2:9]
+    with open('output.epub', 'xb') as output:
+        writers.getWriter('epub', configuration, adapter).writeStory(outstream=output)
+        output.flush()
+        os.fsync(output.fileno())
+    validate_epub('output.epub')
+    return {'preview': preview, 'output': 'output.epub'}
+
+
+def main():
+    limits()
+    logging.disable(logging.CRITICAL)
+    install_network_guard()
+    try:
+        raw = sys.stdin.buffer.read(512 * 1024 + 1)
+        if len(raw) > 512 * 1024:
+            raise PolicyError('Input limit exceeded')
+        request = json.loads(raw)
+        if not isinstance(request, dict):
+            raise PolicyError('Invalid integration request')
+        result = {'ok': True, 'result': run(request)}
+    except Exception as error:
+        name = type(error).__name__
+        code = 'configuration_blocked' if isinstance(error, (PolicyError, ValueError)) else 'source_failed'
+        if name in ('FailedToLogin', 'AdultCheckRequired', 'AccessDenied'):
+            code = 'authentication_required'
+        result = {'ok': False, 'code': code, 'errorClass': name}
+    encoded = json.dumps(result, ensure_ascii=True)
+    if len(encoded) > 1024 * 1024:
+        encoded = '{"ok":false,"code":"output_limit","errorClass":"PolicyError"}'
+    sys.stdout.write(encoded)
+
+
+if __name__ == '__main__':
+    main()

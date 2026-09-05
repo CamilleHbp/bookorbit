@@ -17,6 +17,12 @@ export const dbConfig = registerAs('db', () => ({
   url: process.env.DATABASE_URL ?? 'postgres://bookorbit:bookorbit@localhost:5432/bookorbit',
 }));
 
+export const fanficfareConfig = registerAs('fanficfare', () => ({
+  python: process.env.FANFICFARE_PYTHON?.trim() || process.env.KOBO_CLOUDSCRAPER_PYTHON?.trim() || resolve('.venv/kobo-cloudscraper/bin/python'),
+  timeoutMs: 600_000,
+  maxWorkers: 2,
+}));
+
 export const authConfig = registerAs('auth', () => ({
   jwtSecret: process.env.JWT_SECRET ?? 'change-me-in-production',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '15m',

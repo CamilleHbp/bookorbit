@@ -250,6 +250,15 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
         isVisible: anyPermission('manage_libraries'),
       },
       {
+        id: 'fanfiction',
+        routeName: 'settings-fanfiction',
+        labelKey: 'fanfiction.settingsTitle',
+        descriptionKey: 'fanfiction.settingsDescription',
+        icon: BookOpen,
+        keywords: 'fanfiction fanficfare stories sources authentication profiles',
+        isVisible: anyPermission('manage_libraries'),
+      },
+      {
         id: 'metadata',
         routeName: 'settings-metadata-providers',
         labelKey: 'settings.common.nav.metadata',

@@ -638,6 +638,20 @@
       "when": 1788610165999,
       "tag": "0090_reading_event_file_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1788633037079,
+      "tag": "0091_fanfiction_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1788633478247,
+      "tag": "0092_fanfiction_jobs",
+      "breakpoints": true
     }
   ]
 }
