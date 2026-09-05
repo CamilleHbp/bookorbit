@@ -137,3 +137,21 @@ export interface FanfictionJobPage {
   items: FanfictionJob[];
   nextCursor: string | null;
 }
+
+export interface FanfictionActivity {
+  id: string;
+  libraryId: number;
+  sourceId: string | null;
+  jobId: string | null;
+  kind: "imported" | "updated" | "attention" | "failed";
+  title: string;
+  bookId: number | null;
+  revisionId: string | null;
+  errorCode: string | null;
+  createdAt: string;
+}
+
+export interface FanfictionActivityPage {
+  items: FanfictionActivity[];
+  nextCursor: string | null;
+}

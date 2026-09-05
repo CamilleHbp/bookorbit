@@ -7,6 +7,7 @@ import type {
   FanfictionJobState,
   FanfictionSourceState,
   FanfictionImportRequest,
+  FanfictionActivity,
 } from '@bookorbit/types';
 import { libraries, libraryFolders } from './libraries';
 import { users } from './auth';
@@ -130,5 +131,41 @@ export const fanfictionJobs = pgTable(
       'fanfiction_jobs_state_chk',
       sql`${t.state} in ('queued', 'running', 'succeeded', 'no_change', 'review_required', 'configuration_blocked', 'failed', 'cancelled')`,
     ),
+  ],
+);
+
+export const fanfictionActivity = pgTable(
+  'fanfiction_activity',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    libraryId: integer('library_id')
+      .notNull()
+      .references(() => libraries.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    sourceId: uuid('source_id').references(() => fanfictionSources.id, { onDelete: 'set null' }),
+    jobId: uuid('job_id').references(() => fanfictionJobs.id, { onDelete: 'set null' }),
+    eventKey: varchar('event_key', { length: 100 }).notNull().unique(),
+    kind: varchar('kind', { length: 20 }).$type<FanfictionActivity['kind']>().notNull(),
+    title: varchar('title', { length: 500 }).notNull(),
+    bookId: integer('book_id').references(() => books.id, { onDelete: 'set null' }),
+    revisionId: uuid('revision_id'),
+    errorCode: varchar('error_code', { length: 100 }),
+    notifiedAt: timestamp('notified_at', { withTimezone: true }),
+    notificationAttempts: integer('notification_attempts').notNull().default(0),
+    notificationRunAfter: timestamp('notification_run_after', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('fanfiction_activity_library_idx').on(t.libraryId, t.createdAt, t.id),
+    index('fanfiction_activity_pending_idx')
+      .on(t.notificationRunAfter, t.id)
+      .where(sql`${t.notifiedAt} is null`),
+    index('fanfiction_activity_user_idx').on(t.userId),
+    index('fanfiction_activity_source_idx').on(t.sourceId),
+    index('fanfiction_activity_job_idx').on(t.jobId),
+    index('fanfiction_activity_book_idx').on(t.bookId),
+    check('fanfiction_activity_kind_chk', sql`${t.kind} in ('imported', 'updated', 'attention', 'failed')`),
   ],
 );

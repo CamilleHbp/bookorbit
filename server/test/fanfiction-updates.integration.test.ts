@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -32,6 +32,12 @@ import { FanficfareRuntimeService } from '../src/modules/fanfiction/fanficfare-r
 import { LibraryService } from '../src/modules/library/library.service';
 import { AppSettingsService } from '../src/modules/app-settings/app-settings.service';
 import { UploadValidatorService } from '../src/modules/upload/upload-validator.service';
+import { FanfictionActivityService } from '../src/modules/fanfiction/fanfiction-activity.service';
+import { recordFanfictionActivity } from '../src/modules/fanfiction/fanfiction-activity';
+import { NotificationService } from '../src/modules/notification/notification.service';
+import { NotificationRepository } from '../src/modules/notification/notification.repository';
+import { NotificationGateway } from '../src/modules/notification/notification.gateway';
+import { UserService } from '../src/modules/user/user.service';
 
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
 describe.skipIf(!configPath)('managed story updates with durable revisions', () => {
@@ -111,6 +117,9 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         FanfictionUpdateService,
         FanfictionSourceService,
         FanfictionJobService,
+        FanfictionActivityService,
+        NotificationService,
+        NotificationRepository,
         BookRevisionService,
         EpubManifestService,
         RevisionPublicationService,
@@ -122,6 +131,8 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         { provide: FanfictionAccessService, useValue: { administer: () => Promise.resolve() } },
         { provide: FanfictionProfileService, useValue: {} },
         { provide: FanficfareRuntimeService, useValue: runtime },
+        { provide: UserService, useValue: { findByIdWithPermissions: () => Promise.resolve(user) } },
+        { provide: NotificationGateway, useValue: { emitNew: vi.fn() } },
         { provide: LibraryService, useValue: {} },
         { provide: AppSettingsService, useValue: {} },
         { provide: UploadValidatorService, useValue: {} },
@@ -177,6 +188,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     runtime.update.mockClear();
     authorize.mockClear();
     await db.delete(schema.libraries).where(eq(schema.libraries.id, libraryId));
+    await db.delete(schema.notifications).where(eq(schema.notifications.userId, user.id));
     await rm(directory, { recursive: true, force: true });
   });
   afterAll(async () => {
@@ -206,6 +218,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     const retry = (await jobs.claim())!;
     expect(await run(retry)).toEqual(result);
     expect(runtime.update).toHaveBeenCalledTimes(1);
+    expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.libraryId, libraryId))).toHaveLength(1);
     expect(await jobs.finish(retry, 'succeeded', result)).toBe(true);
   }, 30_000);
   it('holds source metadata completion until its durable publication can be recovered', async () => {
@@ -230,6 +243,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect(await readFile(target)).toEqual(original);
     expect(await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId))).toHaveLength(1);
     expect(await jobs.finish(job, 'no_change', result)).toBe(true);
+    expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.libraryId, libraryId))).toHaveLength(0);
   }, 30_000);
   it('rejects source changes during a download before file publication', async () => {
     const original = await readFile(target);
@@ -255,5 +269,128 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       .set({ intervalMinutes: null, nextCheckAt: sql`now() - interval '1 minute'` })
       .where(eq(schema.fanfictionSources.id, source.id));
     expect(await jobs.enqueueDue()).toBe(0);
+  });
+  async function activityEvent() {
+    await db.transaction((tx) =>
+      recordFanfictionActivity(tx, {
+        libraryId,
+        userId: user.id,
+        sourceId: source.id,
+        eventKey: `${source.id}:test`,
+        kind: 'updated',
+        title: 'Updated story',
+        bookId: source.bookId,
+      }),
+    );
+  }
+  it('commits notifications and outbox acknowledgements atomically and deduplicates concurrent dispatch', async () => {
+    await activityEvent();
+    const repo = module.get(NotificationRepository);
+    const insert = repo.insertInTransaction.bind(repo);
+    vi.spyOn(repo, 'insertInTransaction').mockImplementationOnce(async (row, tx) => {
+      await insert(row, tx);
+      throw new ConflictException('Notification commit interrupted');
+    });
+    const activity = module.get(FanfictionActivityService);
+    await activity.dispatch();
+    expect(await db.select().from(schema.notifications).where(eq(schema.notifications.userId, user.id))).toHaveLength(0);
+    await db
+      .update(schema.fanfictionActivity)
+      .set({ notificationRunAfter: sql`now()` })
+      .where(eq(schema.fanfictionActivity.libraryId, libraryId));
+    const second = new FanfictionActivityService(db, module.get(FanfictionAccessService), module.get(UserService), module.get(NotificationService));
+    await Promise.all([activity.dispatch(), second.dispatch()]);
+    await activity.dispatch();
+    expect(await db.select().from(schema.notifications).where(eq(schema.notifications.userId, user.id))).toHaveLength(1);
+    const events = await activity.list(libraryId, { limit: 50 }, user);
+    expect(events.items).toHaveLength(1);
+    expect(events.nextCursor).toBeNull();
+    expect(await activity.list(libraryId + 100000, { limit: 50 }, user)).toEqual({ items: [], nextCursor: null });
+    await expect(activity.list(libraryId + 100000, { limit: 50, cursor: events.items[0].id }, user)).rejects.toThrow('not found in this library');
+  });
+  it('suppresses queued notifications after library access is revoked', async () => {
+    await activityEvent();
+    vi.spyOn(module.get(FanfictionAccessService), 'administer').mockRejectedValue(new ForbiddenException());
+    await module.get(FanfictionActivityService).dispatch();
+    expect(await db.select().from(schema.notifications).where(eq(schema.notifications.userId, user.id))).toHaveLength(0);
+    const [event] = await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.libraryId, libraryId));
+    expect(event.notifiedAt).not.toBeNull();
+  });
+  it('respects notification preferences while keeping durable activity', async () => {
+    await activityEvent();
+    await db
+      .update(schema.users)
+      .set({ settings: { notificationPreferences: { fanfiction: 'off' } } })
+      .where(eq(schema.users.id, user.id));
+    await module.get(FanfictionActivityService).dispatch();
+    expect(await db.select().from(schema.notifications).where(eq(schema.notifications.userId, user.id))).toHaveLength(0);
+    expect((await module.get(FanfictionActivityService).list(libraryId, { limit: 50 }, user)).items).toHaveLength(1);
+  });
+  it('records an actionable failure when the last worker lease expires', async () => {
+    const job = await claim();
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ attempts: 3, leaseExpiresAt: sql`now() - interval '1 second'` })
+      .where(eq(schema.fanfictionJobs.id, job.id));
+    expect(await jobs.claim()).toBeNull();
+    const [event] = await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.jobId, job.id));
+    expect(event).toMatchObject({ kind: 'failed', errorCode: 'worker_lease_expired', sourceId: source.id });
+    expect((await sources.get(libraryId, source.id, user)).attentionCode).toBe('worker_lease_expired');
+  });
+  it('records failed imports even when authentication fails before a source is reserved', async () => {
+    await jobs.importStory(libraryId, { url: 'https://example.org/story/unknown', folderId: source.folderId!, idempotencyKey: randomUUID() }, user);
+    const job = (await jobs.claim())!;
+    expect(await jobs.finish(job, 'configuration_blocked', null, 'authentication_required')).toBe(true);
+    const [event] = await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.jobId, job.id));
+    expect(event).toMatchObject({ kind: 'attention', errorCode: 'authentication_required', sourceId: null, libraryId, userId: user.id });
+  });
+  it('paginates batches with PostgreSQL microsecond timestamps without dropping records', async () => {
+    const createdAt = sql`'2026-01-01 00:00:00.123456+00'::timestamptz`;
+    await db.update(schema.fanfictionSources).set({ createdAt }).where(eq(schema.fanfictionSources.id, source.id));
+    const sourceRows = Array.from({ length: 104 }, (_, i) => ({
+      libraryId,
+      createdBy: user.id,
+      canonicalUrl: `https://example.org/story/batch-${i}`,
+      canonicalKey: createHash('sha256').update(`batch-${i}`).digest('hex'),
+      site: 'example.org',
+      title: `Story ${i}`,
+      importOperationId: randomUUID(),
+      relativePath: `batch-${i}.epub`,
+      createdAt,
+    }));
+    await db.insert(schema.fanfictionSources).values(sourceRows);
+    const jobRows = Array.from({ length: 105 }, () => ({
+      libraryId,
+      userId: user.id,
+      tokenVersion: user.tokenVersion,
+      idempotencyKey: randomUUID(),
+      kind: 'preview' as const,
+      state: 'succeeded' as const,
+      url: preview.canonicalUrl,
+      site: preview.site,
+      createdAt,
+    }));
+    await db.insert(schema.fanfictionJobs).values(jobRows);
+    const activityRows = Array.from({ length: 105 }, () => ({
+      libraryId,
+      userId: user.id,
+      eventKey: randomUUID(),
+      kind: 'imported' as const,
+      title: 'Imported story',
+      createdAt,
+    }));
+    await db.insert(schema.fanfictionActivity).values(activityRows);
+    for (const service of [sources, jobs, module.get(FanfictionActivityService)]) {
+      let cursor: string | undefined;
+      const ids: string[] = [];
+      for (let page = 0; page < 4; page++) {
+        const result = await service.list(libraryId, { limit: 50, cursor }, user);
+        ids.push(...result.items.map((row) => row.id));
+        cursor = result.nextCursor ?? undefined;
+        if (!cursor) break;
+      }
+      expect(ids).toHaveLength(105);
+      expect(new Set(ids).size).toBe(105);
+    }
   });
 });

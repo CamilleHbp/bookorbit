@@ -680,6 +680,20 @@
       "when": 1788640012589,
       "tag": "0096_fanfiction_update_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1788641598688,
+      "tag": "0097_fanfiction_activity_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1788641860401,
+      "tag": "0098_fanfiction_activity_retry",
+      "breakpoints": true
     }
   ]
 }

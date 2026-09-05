@@ -24,6 +24,9 @@ const {
   sourceCursor,
   jobs,
   jobCursor,
+  activity,
+  activityCursor,
+  moreActivity,
   candidates,
   urls,
   search,
@@ -212,6 +215,16 @@ onMounted(() => {
         </article>
       </section>
       <section v-else class="space-y-3">
+        <h2 class="text-lg font-medium">{{ t('fanfiction.recentChanges') }}</h2>
+        <article v-for="event in activity" :key="event.id" class="border-border bg-card rounded-lg border p-4">
+          <p class="font-medium">{{ event.title }}</p>
+          <p class="text-muted-foreground text-sm">{{ t(`fanfiction.activityKinds.${event.kind}`) }} · {{ dateLabel(event.createdAt) }}</p>
+          <RouterLink v-if="event.bookId" :to="{ name: 'book-detail', params: { bookId: event.bookId } }" class="text-primary text-sm underline">{{
+            t('fanfiction.openBook')
+          }}</RouterLink>
+        </article>
+        <Button v-if="activityCursor" variant="outline" :disabled="busy" @click="moreActivity">{{ t('fanfiction.nextPage') }}</Button>
+        <h2 class="text-lg font-medium">{{ t('fanfiction.operations') }}</h2>
         <p class="text-muted-foreground text-sm">{{ t('fanfiction.serverActivityHelp') }}</p>
         <p v-if="!jobs.length" class="text-muted-foreground text-sm">{{ t('fanfiction.noActivity') }}</p>
         <article

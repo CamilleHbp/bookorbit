@@ -8,6 +8,8 @@ import type {
   FanfictionProfilePage,
   FanfictionSource,
   FanfictionSourcePage,
+  FanfictionActivity,
+  FanfictionActivityPage,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
 
@@ -35,6 +37,8 @@ export function useFanfiction() {
   const sourceCursor = ref<string | null>(null)
   const jobs = ref<FanfictionJob[]>([])
   const jobCursor = ref<string | null>(null)
+  const activity = ref<FanfictionActivity[]>([])
+  const activityCursor = ref<string | null>(null)
   const candidates = ref<Candidate[]>([])
   const urls = ref('')
   const search = ref('')
@@ -58,6 +62,8 @@ export function useFanfiction() {
   let jobPage: string | null = null
   let sourceRequest = 0
   let jobRequest = 0
+  let activityRequest = 0
+  let activityPage: string | null = null
   const pendingChecks = new Map<string, string>()
 
   async function request<T>(path: string, body?: unknown, method = 'POST'): Promise<T> {
@@ -105,6 +111,17 @@ export function useFanfiction() {
     jobCursor.value = page.nextCursor
     jobPage = cursor
   }
+  async function loadActivity(current: number, path: string, cursor: string | null) {
+    const requestId = ++activityRequest
+    const page = await request<FanfictionActivityPage>(`${path}/activity?limit=50${cursor ? `&cursor=${cursor}` : ''}`)
+    if (!currentScope(current) || requestId !== activityRequest) return
+    activity.value = page.items
+    activityCursor.value = page.nextCursor
+    activityPage = cursor
+  }
+  async function moreActivity() {
+    await perform((current, path) => loadActivity(current, path, activityCursor.value))
+  }
   async function loadLibraries() {
     await perform(async (current) => {
       const page = await request<FanfictionLibraryPage>(
@@ -123,6 +140,9 @@ export function useFanfiction() {
     candidates.value = []
     sources.value = []
     jobs.value = []
+    activity.value = []
+    activityCursor.value = null
+    activityPage = null
     profiles.value = []
     folders.value = []
     profileId.value = ''
@@ -135,6 +155,7 @@ export function useFanfiction() {
         request<FanfictionProfilePage>(`${path}/profiles?limit=50`),
         loadSources(current, path, null),
         loadJobs(current, path, null),
+        loadActivity(current, path, null),
       ])
       if (!currentScope(current)) return
       folders.value = folderPage.items
@@ -167,7 +188,7 @@ export function useFanfiction() {
   }
   async function refresh() {
     await perform(async (current, path) => {
-      await Promise.all([loadSources(current, path, null), loadJobs(current, path, null)])
+      await Promise.all([loadSources(current, path, null), loadJobs(current, path, null), loadActivity(current, path, null)])
     })
   }
   async function moreSources() {
@@ -287,7 +308,7 @@ export function useFanfiction() {
     try {
       if (!busy.value) {
         const path = base.value
-        await Promise.all([loadJobs(current, path, jobPage), loadSources(current, path, sourcePage)])
+        await Promise.all([loadJobs(current, path, jobPage), loadSources(current, path, sourcePage), loadActivity(current, path, activityPage)])
         const ids = candidates.value.flatMap((candidate) =>
           candidate.job && ['queued', 'running'].includes(candidate.job.state) ? [candidate.job.id] : [],
         )
@@ -338,6 +359,9 @@ export function useFanfiction() {
     sourceCursor,
     jobs,
     jobCursor,
+    activity,
+    activityCursor,
+    moreActivity,
     candidates,
     urls,
     search,

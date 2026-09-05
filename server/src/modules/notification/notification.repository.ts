@@ -6,12 +6,27 @@ import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import { notifications, users, userPermissions, userLibraryAccess } from '../../db/schema';
 import type { NewNotification, Notification } from '../../db/schema';
+import type { DatabaseTransaction } from '../../db/transaction';
 
 type Db = NodePgDatabase<typeof schema>;
 
 @Injectable()
 export class NotificationRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
+
+  async userSettingsInTransaction(userId: number, tx: DatabaseTransaction) {
+    const [user] = await tx
+      .select({ settings: users.settings })
+      .from(users)
+      .where(and(eq(users.id, userId), eq(users.active, true)))
+      .limit(1);
+    return user ? ((user.settings ?? {}) as Record<string, unknown>) : null;
+  }
+
+  async insertInTransaction(row: NewNotification, tx: DatabaseTransaction) {
+    const [created] = await tx.insert(notifications).values(row).returning();
+    return created;
+  }
 
   async insertOrCollapse(rows: NewNotification[]): Promise<Notification[]> {
     if (rows.length === 0) return [];

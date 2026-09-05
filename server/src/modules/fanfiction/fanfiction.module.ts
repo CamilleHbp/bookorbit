@@ -20,6 +20,8 @@ import { FanfictionSourceController } from './fanfiction-source.controller';
 import { FanfictionImportService } from './fanfiction-import.service';
 import { FanfictionUpdateService } from './fanfiction-update.service';
 import { FanfictionSchedulerService } from './fanfiction-scheduler.service';
+import { FanfictionActivityService } from './fanfiction-activity.service';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
@@ -31,6 +33,7 @@ import { FanfictionSchedulerService } from './fanfiction-scheduler.service';
     UploadModule,
     BookDockModule,
     BookRevisionModule,
+    NotificationModule,
   ],
   providers: [
     FanfictionAccessService,
@@ -43,6 +46,7 @@ import { FanfictionSchedulerService } from './fanfiction-scheduler.service';
     FanfictionImportService,
     FanfictionUpdateService,
     FanfictionSchedulerService,
+    FanfictionActivityService,
   ],
   controllers: [FanfictionController, FanfictionLibraryController, FanfictionSourceController],
 })

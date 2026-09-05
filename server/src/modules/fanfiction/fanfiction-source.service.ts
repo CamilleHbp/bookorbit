@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, ilike, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -16,6 +16,7 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { ImportFanfictionDto, ListFanfictionSourcesDto, UpdateFanfictionSourceDto } from './dto/fanfiction-source.dto';
+import { recordFanfictionActivity } from './fanfiction-activity';
 
 const sources = schema.fanfictionSources;
 type Job = typeof schema.fanfictionJobs.$inferSelect;
@@ -89,7 +90,7 @@ export class FanfictionSourceService {
 
   async completeUpdate(job: Job, result: NonNullable<import('@bookorbit/types').FanfictionJob['result']>, preview?: FanfictionPreview) {
     return this.db.transaction(async (tx) => {
-      await this.assertUpdatable(job, tx);
+      const source = await this.assertUpdatable(job, tx);
       await tx
         .update(sources)
         .set({
@@ -103,6 +104,18 @@ export class FanfictionSourceService {
         })
         .where(and(eq(sources.id, job.sourceId!), eq(sources.libraryId, job.libraryId)));
       await tx.update(schema.fanfictionJobs).set({ result }).where(eq(schema.fanfictionJobs.id, job.id));
+      if (!result.noChange)
+        await recordFanfictionActivity(tx, {
+          libraryId: job.libraryId,
+          userId: job.userId,
+          sourceId: source.id,
+          jobId: job.id,
+          eventKey: `${job.id}:updated`,
+          kind: 'updated',
+          title: preview?.title ?? source.title,
+          bookId: source.bookId,
+          revisionId: result.revisionId,
+        });
       return result;
     });
   }
@@ -118,7 +131,9 @@ export class FanfictionSourceService {
           eq(sources.libraryId, libraryId),
           dto.state ? eq(sources.state, dto.state) : sql`${sources.state} <> 'unlinked'`,
           dto.search ? ilike(sources.title, `%${dto.search.replace(/[\\%_]/g, '\\$&')}%`) : undefined,
-          before ? or(lt(sources.createdAt, before.createdAt), and(eq(sources.createdAt, before.createdAt), lt(sources.id, before.id))) : undefined,
+          before
+            ? sql`(${sources.createdAt}, ${sources.id}) < (select ${sources.createdAt}, ${sources.id} from ${sources} where ${sources.id} = ${before.id} and ${sources.libraryId} = ${libraryId})`
+            : undefined,
         ),
       )
       .orderBy(desc(sources.createdAt), desc(sources.id))
@@ -270,6 +285,16 @@ export class FanfictionSourceService {
         })
         .where(and(eq(sources.id, sourceId), eq(sources.libraryId, job.libraryId)))
         .returning();
+      await recordFanfictionActivity(tx, {
+        libraryId: job.libraryId,
+        userId: job.userId,
+        sourceId,
+        jobId: job.id,
+        eventKey: `${job.id}:imported`,
+        kind: 'imported',
+        title: source!.title,
+        bookId: installed.bookId,
+      });
       return source!;
     });
   }

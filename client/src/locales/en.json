@@ -8614,6 +8614,18 @@
           "label": "Achievements",
           "description": "When you unlock a new reading achievement."
         },
+        "fanfiction": {
+          "recentChanges": "Recent story changes",
+          "operations": "Operations",
+          "activityKinds": {
+            "imported": "Imported",
+            "updated": "Updated on the server",
+            "attention": "Needs attention",
+            "failed": "Failed"
+          },
+          "label": "Fanfiction",
+          "description": "Story imports, updates, and sources that need attention. Scheduled checks without changes stay silent."
+        },
         "bookRequests": {
           "label": "Book requests",
           "description": "When a book request is submitted, decided, or the book becomes available."
@@ -10099,6 +10111,14 @@
     "bookRequestReleases": "Pick a release"
   },
   "fanfiction": {
+    "recentChanges": "Recent story changes",
+    "operations": "Operations",
+    "activityKinds": {
+      "imported": "Imported",
+      "updated": "Updated on the server",
+      "attention": "Needs attention",
+      "failed": "Failed"
+    },
     "retry": "Retry operation",
     "checkNow": "Check for new chapters",
     "refreshChapters": "Refresh existing chapters",

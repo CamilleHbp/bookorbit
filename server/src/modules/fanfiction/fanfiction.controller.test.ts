@@ -12,12 +12,14 @@ import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionSourceController } from './fanfiction-source.controller';
 import { FanfictionSourceService } from './fanfiction-source.service';
+import { FanfictionActivityService } from './fanfiction-activity.service';
 
 describe('Fanfiction HTTP contracts', () => {
   let app: NestFastifyApplication;
   const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn() };
   const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn(), retry: vi.fn() };
   const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), check: vi.fn() };
+  const activity = { list: vi.fn() };
   const uuid = '97e5bb69-36e8-43a2-9e3b-0fb924d1ca2f';
   const base = '/api/v1/libraries/5/fanfiction';
   beforeAll(async () => {
@@ -27,6 +29,7 @@ describe('Fanfiction HTTP contracts', () => {
         { provide: FanfictionProfileService, useValue: profiles },
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionSourceService, useValue: sources },
+        { provide: FanfictionActivityService, useValue: activity },
         { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
         { provide: FanficfareRuntimeService, useValue: { health: vi.fn(), sites: vi.fn() } },
       ],
@@ -58,6 +61,31 @@ describe('Fanfiction HTTP contracts', () => {
     expect(sources.check).toHaveBeenCalledWith(5, uuid, 'update', uuid, undefined);
     for (const payload of [{ kind: 'update' }, { kind: 'overwrite', idempotencyKey: uuid }, { kind: 'refresh', idempotencyKey: uuid, force: true }])
       expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/check`, payload })).statusCode).toBe(400);
+  });
+  it('returns bounded durable activity with the frontend response contract', async () => {
+    const page = {
+      items: [
+        {
+          id: uuid,
+          libraryId: 5,
+          sourceId: null,
+          jobId: uuid,
+          kind: 'imported',
+          title: 'Story',
+          bookId: 8,
+          revisionId: null,
+          errorCode: null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      nextCursor: null,
+    };
+    activity.list.mockResolvedValue(page);
+    const result = await app.inject({ method: 'GET', url: `${base}/activity?limit=50` });
+    expect(result.statusCode).toBe(200);
+    expect(result.json()).toEqual(page);
+    expect(activity.list).toHaveBeenCalledWith(5, expect.objectContaining({ limit: 50 }), undefined);
+    expect((await app.inject({ method: 'GET', url: `${base}/activity?limit=101` })).statusCode).toBe(400);
   });
   it('accepts settings profile fields and returns the exact summary response', async () => {
     const summary = { id: uuid, libraryId: 5, name: 'AO3', version: 1, updatedAt: new Date().toISOString() };

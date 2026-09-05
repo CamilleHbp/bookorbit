@@ -10,6 +10,7 @@ import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { ListFanfictionProfilesDto, PreviewFanfictionDto } from './dto/fanfiction-profile.dto';
+import { recordFanfictionActivity } from './fanfiction-activity';
 
 const jobs = schema.fanfictionJobs;
 
@@ -204,7 +205,9 @@ export class FanfictionJobService {
       .where(
         and(
           eq(jobs.libraryId, libraryId),
-          before ? or(lt(jobs.createdAt, before.createdAt), and(eq(jobs.createdAt, before.createdAt), lt(jobs.id, before.id))) : undefined,
+          before
+            ? sql`(${jobs.createdAt}, ${jobs.id}) < (select ${jobs.createdAt}, ${jobs.id} from ${jobs} where ${jobs.id} = ${before.id} and ${jobs.libraryId} = ${libraryId})`
+            : undefined,
         ),
       )
       .orderBy(desc(jobs.createdAt), desc(jobs.id))
@@ -307,8 +310,8 @@ export class FanfictionJobService {
         )
         .limit(100)
         .for('update', { skipLocked: true });
-      if (exhausted.length)
-        await tx
+      if (exhausted.length) {
+        const failed = await tx
           .update(jobs)
           .set({
             state: sql`case when ${jobs.cancellationRequested} then 'cancelled' else 'failed' end`,
@@ -322,7 +325,10 @@ export class FanfictionJobService {
               jobs.id,
               exhausted.map((row) => row.id),
             ),
-          );
+          )
+          .returning();
+        for (const job of failed) await this.recordFailure(tx, job);
+      }
       const active = await tx
         .select({ site: jobs.site })
         .from(jobs)
@@ -397,27 +403,8 @@ export class FanfictionJobService {
             : {}),
         })
         .where(this.owned(job))
-        .returning({ id: jobs.id, sourceId: jobs.sourceId, sourceVersion: jobs.sourceVersion, state: jobs.state });
-      const completed = rows[0];
-      if (completed?.sourceId && ['configuration_blocked', 'review_required', 'failed', 'cancelled'].includes(completed.state)) {
-        await tx
-          .update(schema.fanfictionSources)
-          .set({
-            ...(completed.state === 'configuration_blocked' || completed.state === 'review_required' ? { state: completed.state } : {}),
-            attentionCode: errorCode ?? completed.state,
-            nextCheckAt: null,
-            updatedAt: sql`now()`,
-          })
-          .where(
-            and(
-              eq(schema.fanfictionSources.id, completed.sourceId),
-              eq(schema.fanfictionSources.libraryId, job.libraryId),
-              completed.sourceVersion === null
-                ? eq(schema.fanfictionSources.state, 'pending')
-                : eq(schema.fanfictionSources.version, completed.sourceVersion),
-            ),
-          );
-      }
+        .returning();
+      if (rows[0]) await this.recordFailure(tx, rows[0]);
       return rows.length === 1;
     });
   }
@@ -437,6 +424,49 @@ export class FanfictionJobService {
       )
       .for('update');
     if (!owned) throw new ConflictException('Queued operation ownership expired or was cancelled');
+  }
+
+  private async recordFailure(tx: DatabaseTransaction, job: typeof jobs.$inferSelect): Promise<void> {
+    if (!['configuration_blocked', 'review_required', 'failed', 'cancelled'].includes(job.state)) return;
+    let title = 'Story import';
+    let bookId: number | null = null;
+    if (job.sourceId) {
+      await tx
+        .update(schema.fanfictionSources)
+        .set({
+          ...(job.state === 'configuration_blocked' || job.state === 'review_required' ? { state: job.state } : {}),
+          attentionCode: job.errorCode ?? job.state,
+          nextCheckAt: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(schema.fanfictionSources.id, job.sourceId),
+            eq(schema.fanfictionSources.libraryId, job.libraryId),
+            job.sourceVersion === null ? eq(schema.fanfictionSources.state, 'pending') : eq(schema.fanfictionSources.version, job.sourceVersion),
+          ),
+        );
+      const [source] = await tx
+        .select({ title: schema.fanfictionSources.title, bookId: schema.fanfictionSources.bookId })
+        .from(schema.fanfictionSources)
+        .where(and(eq(schema.fanfictionSources.id, job.sourceId), eq(schema.fanfictionSources.libraryId, job.libraryId)))
+        .limit(1);
+      if (!source) return;
+      title = source.title;
+      bookId = source.bookId;
+    } else if (job.kind !== 'import') return;
+    if (job.state !== 'cancelled')
+      await recordFanfictionActivity(tx, {
+        libraryId: job.libraryId,
+        userId: job.userId,
+        sourceId: job.sourceId,
+        jobId: job.id,
+        eventKey: `${job.id}:${job.state}`,
+        kind: job.state === 'failed' ? 'failed' : 'attention',
+        title,
+        bookId,
+        errorCode: job.errorCode,
+      });
   }
 
   async bindSource(job: typeof jobs.$inferSelect, sourceId: string, transaction: DatabaseTransaction): Promise<boolean> {

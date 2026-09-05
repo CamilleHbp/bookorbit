@@ -59,6 +59,7 @@ describe('managed Fanfiction page requests', () => {
       expect.arrayContaining([
         '/api/v1/libraries/5/fanfiction/sources?limit=50',
         '/api/v1/libraries/5/fanfiction/jobs?limit=50',
+        '/api/v1/libraries/5/fanfiction/activity?limit=50',
         '/api/v1/libraries/5/fanfiction/profiles?limit=50',
         '/api/v1/libraries/5/fanfiction/sources/folders?limit=50',
       ]),

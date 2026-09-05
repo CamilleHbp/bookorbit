@@ -27,6 +27,10 @@ export const NotificationType = {
   BulkRenameCompleted: "bulk_rename_completed",
   BulkRenameFailed: "bulk_rename_failed",
   AchievementUnlocked: "achievement_unlocked",
+  FanfictionImported: "fanfiction_imported",
+  FanfictionUpdated: "fanfiction_updated",
+  FanfictionAttention: "fanfiction_attention",
+  FanfictionFailed: "fanfiction_failed",
 } as const;
 
 export type NotificationType = (typeof NotificationType)[keyof typeof NotificationType];
@@ -56,6 +60,7 @@ export const NOTIFICATION_CATEGORY_IDS = [
   "fileRename",
   "bulkRename",
   "achievements",
+  "fanfiction",
 ] as const;
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORY_IDS)[number];
@@ -99,6 +104,10 @@ export const NOTIFICATION_TYPE_META: Record<NotificationType, NotificationTypeMe
   [NotificationType.BulkRenameCompleted]: { category: "bulkRename", severity: "success" },
   [NotificationType.BulkRenameFailed]: { category: "bulkRename", severity: "warning" },
   [NotificationType.AchievementUnlocked]: { category: "achievements", severity: "success" },
+  [NotificationType.FanfictionImported]: { category: "fanfiction", severity: "success" },
+  [NotificationType.FanfictionUpdated]: { category: "fanfiction", severity: "success" },
+  [NotificationType.FanfictionAttention]: { category: "fanfiction", severity: "warning" },
+  [NotificationType.FanfictionFailed]: { category: "fanfiction", severity: "error" },
 };
 
 export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, readonly NotificationType[]> = NOTIFICATION_CATEGORY_IDS.reduce(
