@@ -1,3 +1,4 @@
+local ReadingContinuity = require("bookorbit_reading_continuity")
 --[[--
 Per-book snapshot sync: pushes progress, highlights, status/rating and page
 stats for ONE book, sourced from live memory instead of the sidecar file, so
@@ -67,6 +68,8 @@ end
 -- flush writes pending page stats to statistics.sqlite3, which run() reads
 -- later; the DB outlives the document.
 function BookOrbitBookSync.capture(plugin)
+    if not ReadingContinuity.canSync(plugin) then return nil end
+    ReadingContinuity.capture(plugin)
     local ui = plugin.ui
     if not ui or not ui.document then return nil end
 
@@ -110,8 +113,8 @@ function BookOrbitBookSync.capture(plugin)
         metadata_ambiguous = false,
         stats_metadata_ambiguous = stats_ambiguous,
         stats_ids = stats_ids,
-        percentage = plugin:getLastPercent(),
-        progress = plugin:getLastProgress(),
+        percentage = not (plugin.reading_continuity and plugin.reading_continuity.protocol) and plugin:getLastPercent() or nil,
+        progress = not (plugin.reading_continuity and plugin.reading_continuity.protocol) and plugin:getLastProgress() or nil,
         status = summary.status,
         status_modified = summary.status_modified,
         rating = summary.rating,

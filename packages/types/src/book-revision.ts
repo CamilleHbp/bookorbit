@@ -57,6 +57,13 @@ export interface CanonicalReadingState {
   anchor: ReadingAnchor | null;
 }
 
+export interface DeviceCanonicalReadingState extends CanonicalReadingState {
+  bookId: number;
+  bookFileId: number;
+  revision: string | null;
+  sha256: string | null;
+}
+
 export interface ReadingEventReceipt extends CanonicalReadingState {
   outcome: "accepted" | "duplicate" | "superseded" | "reset_required";
 }

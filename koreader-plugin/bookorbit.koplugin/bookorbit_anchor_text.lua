@@ -59,4 +59,14 @@ function AnchorText.bound(text, limit)
     return text:sub(1, position - 1)
 end
 
+function AnchorText.scalarLength(text)
+    local position, count = 1, 0
+    while position <= #text do
+        local code, width = scalarAt(text, position)
+        if not code then return nil, "invalid_utf8" end
+        position, count = position + width, count + 1
+    end
+    return count
+end
+
 return AnchorText

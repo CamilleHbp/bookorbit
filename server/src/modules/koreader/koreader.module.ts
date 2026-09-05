@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
+import { KoreaderReadingController } from './koreader-reading.controller';
+import { KoreaderReadingService } from './koreader-reading.service';
 
 import { CommonModule } from '../../common/common.module';
 import { AchievementModule } from '../achievement/achievement.module';
@@ -45,6 +48,7 @@ import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cle
     AppSettingsModule,
     AnnotationModule,
     BookModule,
+    BookRevisionModule,
     BookmarkModule,
     BrowseCountsModule,
     DashboardModule,
@@ -53,9 +57,10 @@ import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cle
     ReadingSessionModule,
     RecommendationModule,
   ],
-  controllers: [KoreaderController, KoreaderPluginController, KoreaderCatalogController],
+  controllers: [KoreaderController, KoreaderPluginController, KoreaderCatalogController, KoreaderReadingController],
   providers: [
     KoreaderService,
+    KoreaderReadingService,
     KoreaderHashLinkService,
     KoreaderRepository,
     KoreaderAuthGuard,

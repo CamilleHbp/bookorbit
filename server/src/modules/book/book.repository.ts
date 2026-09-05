@@ -1466,6 +1466,7 @@ export class BookRepository {
         libraryId: books.libraryId,
         fileHash: bookFiles.fileHash,
         currentRevisionId: bookFiles.currentRevisionId,
+        sha256: bookFiles.sha256,
         sizeBytes: bookFiles.sizeBytes,
         durationSeconds: bookFiles.durationSeconds,
       })
@@ -1880,9 +1881,7 @@ export class BookRepository {
       .orderBy(asc(books.id));
   }
 
-  async findAllFilesByBookIds(
-    bookIds: number[],
-  ): Promise<{ bookId: number; absolutePath: string; format: string | null; sizeBytes: number | null; sortOrder: number }[]> {
+  async findAllFilesByBookIds(bookIds: number[]) {
     if (bookIds.length === 0) return [];
     return this.db
       .select({
