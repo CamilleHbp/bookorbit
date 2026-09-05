@@ -7,6 +7,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { load } from 'cheerio';
 import type { EpubRevisionManifest, RevisionChapter } from '@bookorbit/types';
 import { boundAnchorText, normalizeAnchorText, scalarLength } from './anchor-text';
+import { generatedPageText, isFanficfarePackage, semanticPackageMetadata, visibleChapterText } from './epub-semantic-metadata';
 
 const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const MAX_ENTRY_BYTES = 32 * 1024 * 1024;
@@ -130,6 +131,9 @@ export class EpubManifestService {
       items.set(item['@_id'], item);
     }
     const chapters: RevisionChapter[] = [];
+    const contentChapters: string[] = [];
+    const generatedMetadata: string[] = [];
+    const fanficfare = isFanficfarePackage(pkg.metadata);
     const spine = list(pkg.spine?.itemref);
     if (spine.length > MAX_ENTRIES || items.size > MAX_ENTRIES) throw new BadRequestException('EPUB manifest exceeds the item limit');
     for (const ref of spine) {
@@ -137,22 +141,27 @@ export class EpubManifestService {
       if (!item) throw new BadRequestException('EPUB spine references a missing chapter');
       if (ref['@_linear'] === 'no') continue;
       const href = resolveHref(base, item['@_href']!);
-      const $ = load((await read(href)).toString());
+      const html = (await read(href)).toString();
+      const $ = load(html);
+      const sourceUrl = $('meta[name="chapterurl"]').first().attr('content') ?? $('a.chapterurl').first().attr('href');
       $('script, style, head, [hidden]').remove();
       const title = boundAnchorText(normalizeAnchorText($('h1,h2,h3').first().text()), 512);
-      const sourceUrl = $('a.chapterurl').first().attr('href');
-      $('br').replaceWith(' ');
-      $('p,div,section,li,h1,h2,h3,h4,h5,h6').append(' ');
-      const text = normalizeAnchorText($('body').text());
+      const generated =
+        fanficfare && ['title_page', 'toc_page', 'log_page', 'cover'].includes(item['@_id']!) && posix.basename(href) === `${item['@_id']}.xhtml`;
+      const text = visibleChapterText($);
+      const textHash = digest(text);
+      if (!generated) contentChapters.push(textHash);
+      else if (item['@_id'] !== 'log_page' && item['@_id'] !== 'cover')
+        generatedMetadata.push(digest(generatedPageText(html, item['@_id'] === 'title_page')));
       chapters.push({
         href,
         title,
         ...(sourceUrl && sourceUrl.length <= 2048 && /^https?:\/\//i.test(sourceUrl) ? { sourceUrl } : {}),
-        textHash: digest(text),
+        textHash,
         length: scalarLength(text),
       });
     }
-    if (!chapters.length) throw new BadRequestException('EPUB has no readable chapters');
+    if (!chapters.length || (fanficfare && !contentChapters.length)) throw new BadRequestException('EPUB has no readable chapters');
     let coverHash: string | null = null;
     const metadata = pkg.metadata as
       { meta?: { '@_name'?: string; '@_content'?: string } | { '@_name'?: string; '@_content'?: string }[] } | undefined;
@@ -169,8 +178,8 @@ export class EpubManifestService {
     return {
       version: 1,
       chapters,
-      contentHash: digest(JSON.stringify({ chapters: chapters.map((chapter) => chapter.textHash), resources: resources.sort() })),
-      metadataHash: digest(JSON.stringify(canonical(pkg.metadata ?? {}))),
+      contentHash: digest(JSON.stringify({ chapters: contentChapters, resources: resources.sort() })),
+      metadataHash: digest(JSON.stringify(canonical({ package: semanticPackageMetadata(pkg.metadata), generated: generatedMetadata }))),
       coverHash,
     };
   }

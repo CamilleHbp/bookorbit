@@ -36,7 +36,10 @@ export class BookRevisionService {
       if (inspected.status !== 'stable') throw new ServiceUnavailableException('File changed or could not be read; retry inspection');
       const fresh = inspected.file;
       const format = changes.format ?? expected.format;
-      const manifest = (format === 'epub' || format === 'kepub') && fresh.sha256 !== expected.sha256 ? await this.manifests.inspect(path) : null;
+      const manifest =
+        (format === 'epub' || format === 'kepub') && (!expected.currentRevisionId || fresh.sha256 !== expected.sha256)
+          ? await this.manifests.inspect(path)
+          : null;
       const result = await this.db.transaction(async (tx) => {
         const [current] = await tx
           .select()
