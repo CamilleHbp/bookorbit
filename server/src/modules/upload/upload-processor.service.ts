@@ -12,6 +12,7 @@ import { bookFiles, bookMetadata, books } from '../../db/schema';
 import { BookMetadataFetchOrchestratorService } from '../book-metadata-fetch/book-metadata-fetch-orchestrator.service';
 import { MetadataService } from '../metadata/metadata.service';
 import { computeFileHash } from '../scanner/lib/hash';
+import type { DatabaseTransaction } from '../../db/transaction';
 
 type Db = NodePgDatabase<typeof schema>;
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -104,7 +105,12 @@ export class UploadProcessorService {
    *
    * Files must arrive **primary first**: `primaryFileId` is set on the row that creates the book.
    */
-  async createUnitBookRecords(libraryId: number, libraryFolderId: number, files: UnitBookFileInput[]): Promise<UnitBookRecords> {
+  async createUnitBookRecords(
+    libraryId: number,
+    libraryFolderId: number,
+    files: UnitBookFileInput[],
+    transaction?: DatabaseTransaction,
+  ): Promise<UnitBookRecords> {
     if (files.length === 0) throw new InternalServerErrorException('Cannot create a book from an empty unit');
 
     // Hashing is the expensive half and needs no transaction, so it happens before one is open
@@ -112,7 +118,7 @@ export class UploadProcessorService {
     const measured: MeasuredFile[] = [];
     for (const file of files) measured.push(await this.measureFile(file.absolutePath));
 
-    return this.db.transaction(async (tx) => {
+    const write = async (tx: DatabaseTransaction) => {
       const bookIds: number[] = [];
       const createdBookIds: number[] = [];
       const attachedFileIds: number[] = [];
@@ -128,7 +134,18 @@ export class UploadProcessorService {
       }
 
       return { bookIds, createdBookIds, attachedFileIds };
-    });
+    };
+    return transaction ? write(transaction) : this.db.transaction(write);
+  }
+
+  async findPlacedFile(libraryId: number, absolutePath: string, transaction: DatabaseTransaction) {
+    const [file] = await transaction
+      .select({ id: bookFiles.id, bookId: bookFiles.bookId })
+      .from(bookFiles)
+      .innerJoin(books, eq(books.id, bookFiles.bookId))
+      .where(and(eq(books.libraryId, libraryId), eq(bookFiles.absolutePath, absolutePath)))
+      .limit(1);
+    return file;
   }
 
   /**

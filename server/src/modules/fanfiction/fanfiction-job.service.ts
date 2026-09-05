@@ -2,10 +2,11 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, asc, desc, eq, gt, inArray, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
-import type { FanfictionJob, FanfictionJobState } from '@bookorbit/types';
+import type { FanfictionJob, FanfictionJobState, FanfictionImportRequest } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
+import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { ListFanfictionProfilesDto, PreviewFanfictionDto } from './dto/fanfiction-profile.dto';
@@ -21,6 +22,20 @@ export class FanfictionJobService {
   ) {}
 
   async preview(libraryId: number, dto: PreviewFanfictionDto, user: RequestUser): Promise<FanfictionJob> {
+    return this.enqueue(libraryId, dto, user, 'preview');
+  }
+
+  async importStory(libraryId: number, dto: FanfictionImportRequest, user: RequestUser): Promise<FanfictionJob> {
+    return this.enqueue(libraryId, dto, user, 'import', { ...dto, intervalMinutes: dto.intervalMinutes === undefined ? 1440 : dto.intervalMinutes });
+  }
+
+  private async enqueue(
+    libraryId: number,
+    dto: PreviewFanfictionDto,
+    user: RequestUser,
+    kind: 'preview' | 'import',
+    input?: FanfictionImportRequest,
+  ): Promise<FanfictionJob> {
     await this.access.administer(user, libraryId);
     if (dto.profileId) await this.profiles.document(libraryId, dto.profileId, user);
     let url: URL;
@@ -40,7 +55,8 @@ export class FanfictionJobService {
         tokenVersion: user.tokenVersion,
         idempotencyKey: dto.idempotencyKey,
         profileId: dto.profileId,
-        kind: 'preview',
+        kind,
+        input,
         url: url.href,
         site: url.hostname.replace(/^www\./, ''),
       })
@@ -52,7 +68,14 @@ export class FanfictionJobService {
       .from(jobs)
       .where(and(eq(jobs.libraryId, libraryId), eq(jobs.userId, user.id), eq(jobs.idempotencyKey, dto.idempotencyKey)))
       .limit(1);
-    if (!existing || existing.url !== url.href || existing.profileId !== (dto.profileId ?? null) || existing.kind !== 'preview')
+    if (
+      !existing ||
+      existing.url !== url.href ||
+      existing.profileId !== (dto.profileId ?? null) ||
+      existing.kind !== kind ||
+      existing.input?.folderId !== input?.folderId ||
+      existing.input?.intervalMinutes !== input?.intervalMinutes
+    )
       throw new ConflictException('Operation identity was reused with different input');
     return this.view(existing);
   }
@@ -78,6 +101,18 @@ export class FanfictionJobService {
   async get(libraryId: number, id: string, user: RequestUser) {
     await this.access.administer(user, libraryId);
     return this.view(await this.find(libraryId, id));
+  }
+
+  async status(libraryId: number, ids: string[], user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    if (ids.length > 100) throw new BadRequestException('Job status batch exceeds 100 items');
+    if (!ids.length) return { items: [] };
+    const rows = await this.db
+      .select()
+      .from(jobs)
+      .where(and(eq(jobs.libraryId, libraryId), inArray(jobs.id, ids)))
+      .limit(100);
+    return { items: rows.map((row) => this.view(row)) };
   }
 
   async cancel(libraryId: number, id: string, user: RequestUser) {
@@ -132,7 +167,7 @@ export class FanfictionJobService {
         .from(jobs)
         .where(
           and(
-            inArray(jobs.kind, ['preview']),
+            inArray(jobs.kind, ['preview', 'import']),
             eq(jobs.cancellationRequested, false),
             lt(jobs.attempts, 3),
             active.length
@@ -196,6 +231,35 @@ export class FanfictionJobService {
       .where(this.owned(job))
       .returning({ id: jobs.id });
     return rows.length === 1;
+  }
+
+  async assertOwnership(job: typeof jobs.$inferSelect, transaction: DatabaseTransaction): Promise<void> {
+    const [owned] = await transaction
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        and(
+          this.owned(job),
+          eq(jobs.libraryId, job.libraryId),
+          eq(jobs.userId, job.userId),
+          eq(jobs.cancellationRequested, false),
+          gt(jobs.leaseExpiresAt, sql`clock_timestamp()`),
+        ),
+      )
+      .for('update');
+    if (!owned) throw new ConflictException('Queued operation ownership expired or was cancelled');
+  }
+
+  async bindSource(job: typeof jobs.$inferSelect, sourceId: string, transaction: DatabaseTransaction): Promise<boolean> {
+    await this.assertOwnership(job, transaction);
+    const [active] = await transaction
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.sourceId, sourceId), inArray(jobs.state, ['queued', 'running'])))
+      .limit(1);
+    if (active && active.id !== job.id) return false;
+    await transaction.update(jobs).set({ sourceId }).where(eq(jobs.id, job.id));
+    return true;
   }
 
   private owned(job: typeof jobs.$inferSelect) {

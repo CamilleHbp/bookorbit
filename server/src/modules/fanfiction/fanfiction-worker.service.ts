@@ -5,6 +5,7 @@ import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
+import { FanfictionImportService } from './fanfiction-import.service';
 
 type ClaimedJob = NonNullable<Awaited<ReturnType<FanfictionJobService['claim']>>>;
 
@@ -21,6 +22,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
     private readonly profiles: FanfictionProfileService,
     private readonly runtime: FanficfareRuntimeService,
     private readonly users: UserService,
+    private readonly imports: FanfictionImportService,
   ) {}
 
   @Interval(2000)
@@ -30,12 +32,13 @@ export class FanfictionWorkerService implements OnModuleDestroy {
     try {
       while (!this.closing && this.active.size < 2) {
         const job = await this.jobs.claim();
-        if (!job) break;
+        if (!job || this.closing) break;
+        const startedAt = Date.now();
         const controller = new AbortController();
         const task = this.run(job, controller)
           .catch(() => {
             this.logger.error(
-              `[fanfiction.job] [fail] jobId=${job.id} libraryId=${job.libraryId} errorClass=WorkerError - worker could not finalize the job`,
+              `[fanfiction.job] [fail] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} errorClass=WorkerError - worker could not finalize the job`,
             );
           })
           .finally(() => this.active.delete(controller));
@@ -82,9 +85,12 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const document = job.profileId
         ? (await this.profiles.document(job.libraryId, job.profileId, user)).document
         : { configuration: '', cookies: [] };
-      const preview = await this.runtime.preview(job.url, document, controller.signal);
+      const result =
+        job.kind === 'import'
+          ? await this.imports.run(job, user, document, () => this.authorized(job), controller.signal)
+          : { preview: await this.runtime.preview(job.url, document, controller.signal) };
       await this.authorized(job);
-      const committed = await this.jobs.finish(job, 'succeeded', { preview });
+      const committed = await this.jobs.finish(job, 'succeeded', result);
       this.logger.log(
         `[fanfiction.job] [end] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} committed=${committed} - job completed`,
       );
@@ -97,7 +103,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const blocked = error instanceof ForbiddenException || ['configuration_blocked', 'authentication_required'].includes(code);
       await this.jobs.finish(
         job,
-        blocked ? 'configuration_blocked' : job.attempts < 3 ? 'queued' : 'failed',
+        blocked ? 'configuration_blocked' : code === 'review_required' ? 'review_required' : job.attempts < 3 ? 'queued' : 'failed',
         null,
         blocked && error instanceof ForbiddenException ? 'access_revoked' : code,
       );

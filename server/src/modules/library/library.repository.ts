@@ -91,6 +91,23 @@ export class LibraryRepository {
     return this.db.select().from(libraryFolders).where(eq(libraryFolders.libraryId, libraryId));
   }
 
+  findFolder(libraryId: number, folderId: number) {
+    return this.db
+      .select()
+      .from(libraryFolders)
+      .where(and(eq(libraryFolders.libraryId, libraryId), eq(libraryFolders.id, folderId)))
+      .limit(1);
+  }
+
+  findFolderPage(libraryId: number, afterId: number, limit: number) {
+    return this.db
+      .select({ id: libraryFolders.id, path: libraryFolders.path })
+      .from(libraryFolders)
+      .where(and(eq(libraryFolders.libraryId, libraryId), sql`${libraryFolders.id} > ${afterId}`))
+      .orderBy(libraryFolders.id)
+      .limit(limit);
+  }
+
   findAllFolders() {
     return this.db.select().from(libraryFolders);
   }

@@ -10144,7 +10144,52 @@
       "access_revoked": "Library administration access was revoked.",
       "source_failed": "The source could not be read.",
       "runtime_failed": "The runtime could not finish this operation.",
-      "worker_lease_expired": "The worker stopped before this operation completed."
+      "worker_lease_expired": "The worker stopped before this operation completed.",
+      "review_required": "The story identity or chapter changes need review."
+    },
+    "title": "Fanfiction",
+    "description": "Import stories and manage their source updates.",
+    "stories": "Stories",
+    "addStories": "Add stories",
+    "never": "Not yet",
+    "search": "Search stories",
+    "status": "Status",
+    "allStates": "All states",
+    "noStories": "No managed stories match this selection.",
+    "lastChecked": "Last checked",
+    "nextCheck": "Next check",
+    "manualOnly": "Manual only",
+    "pauseUpdates": "Pause updates",
+    "resumeUpdates": "Resume updates",
+    "nextPage": "Next page",
+    "folder": "Destination folder",
+    "moreFolders": "More folders",
+    "moreProfiles": "More profiles",
+    "storyUrls": "Story URLs",
+    "urlsHelp": "One HTTPS story URL per line, up to 100 stories.",
+    "schedule": "Update schedule",
+    "daily": "Daily",
+    "hourly": "Hourly",
+    "previewStories": "Preview stories",
+    "importSelected": "Import selected stories",
+    "openBook": "Open book",
+    "serverActivityHelp": "These operations update the server library. Device installation and reading-position restoration are tracked separately.",
+    "noActivity": "No story operations yet.",
+    "sourceStates": {
+      "pending": "Import pending",
+      "active": "Updates enabled",
+      "paused": "Updates paused",
+      "review_required": "Review required",
+      "configuration_blocked": "Configuration blocked",
+      "unlinked": "Unlinked"
+    },
+    "kinds": {
+      "preview": "Preview",
+      "import": "Import",
+      "update": "Check for updates",
+      "refresh": "Refresh chapters",
+      "discovery": "Discover sources",
+      "rollback": "Rollback"
     }
   }
 }

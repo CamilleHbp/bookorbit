@@ -85,7 +85,7 @@ export class RevisionCatalogService {
     return revision;
   }
 
-  private async requireFile(bookFileId: number, libraryId: number) {
+  async requireFile(bookFileId: number, libraryId: number) {
     const [file] = await this.db
       .select({ bookId: schema.bookFiles.bookId })
       .from(schema.bookFiles)

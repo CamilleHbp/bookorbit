@@ -12,6 +12,7 @@ import {
   ListFanfictionProfilesDto,
   PreviewFanfictionDto,
   UpdateFanfictionProfileDto,
+  FanfictionJobsStatusDto,
 } from './dto/fanfiction-profile.dto';
 import { FanfictionJobService } from './fanfiction-job.service';
 
@@ -35,6 +36,12 @@ export class FanfictionController {
   @Get('jobs')
   listJobs(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: ListFanfictionProfilesDto, @CurrentUser() user: RequestUser) {
     return this.jobs.list(libraryId, dto, user);
+  }
+
+  @Post('jobs/status')
+  @HttpCode(200)
+  jobStatus(@Param('libraryId', ParseIntPipe) libraryId: number, @Body() dto: FanfictionJobsStatusDto, @CurrentUser() user: RequestUser) {
+    return this.jobs.status(libraryId, dto.ids, user);
   }
 
   @Get('jobs/:jobId')

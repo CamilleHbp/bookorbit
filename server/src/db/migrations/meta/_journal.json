@@ -652,6 +652,20 @@
       "when": 1788633478247,
       "tag": "0092_fanfiction_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1788636117175,
+      "tag": "0093_managed_dock_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1788636924458,
+      "tag": "0094_fanfiction_sources",
+      "breakpoints": true
     }
   ]
 }

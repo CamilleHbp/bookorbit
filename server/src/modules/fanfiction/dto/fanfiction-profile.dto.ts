@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsDefined,
@@ -57,4 +58,8 @@ export class PreviewFanfictionDto {
 export class FanfictionLibrariesDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) cursor = 0;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 50;
+}
+
+export class FanfictionJobsStatusDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @IsUUID(undefined, { each: true }) ids!: string[];
 }

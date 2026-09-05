@@ -57,6 +57,22 @@ export class FanficfareRuntimeService {
     return (await this.temporary({ operation: 'preview', url, ...document }, signal)) as FanfictionPreview;
   }
 
+  async download<T>(
+    url: string,
+    document: FanfictionProfileDocument,
+    consume: (path: string, preview: FanfictionPreview) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    return this.workspace(async (directory) => {
+      const result = (await this.execute({ operation: 'download', url, ...document }, directory, signal)) as {
+        output?: string;
+        preview?: FanfictionPreview;
+      };
+      if (result.output !== 'output.epub' || !result.preview) throw new ServiceUnavailableException('Invalid FanFicFare download response');
+      return consume(join(directory, 'output.epub'), result.preview);
+    });
+  }
+
   async execute(request: RuntimeRequest, workspace: string, signal?: AbortSignal): Promise<unknown> {
     if (this.active >= this.config.maxWorkers) throw new ServiceUnavailableException('FanFicFare runtime is busy');
     if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
@@ -116,11 +132,15 @@ export class FanficfareRuntimeService {
   }
 
   private async temporary(request: RuntimeRequest, signal?: AbortSignal): Promise<unknown> {
+    return this.workspace((directory) => this.execute(request, directory, signal));
+  }
+
+  private async workspace<T>(operation: (directory: string) => Promise<T>): Promise<T> {
     const root = join(this.storage.appDataPath, 'fanfiction', 'runtime');
     await mkdir(root, { recursive: true, mode: 0o700 });
     const directory = await mkdtemp(join(root, 'operation-'));
     try {
-      return await this.execute(request, directory, signal);
+      return await operation(directory);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

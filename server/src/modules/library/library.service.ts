@@ -135,6 +135,19 @@ export class LibraryService {
     return { ...normalizeLibraryOrganizationMode(library), folders };
   }
 
+  async importDestination(libraryId: number, folderId: number) {
+    const [[library], [folder]] = await Promise.all([this.libraryRepo.findById(libraryId), this.libraryRepo.findFolder(libraryId, folderId)]);
+    if (!library || !folder) throw new NotFoundException('Import folder does not belong to this library');
+    return { library: normalizeLibraryOrganizationMode(library), folder };
+  }
+
+  async folderPage(libraryId: number, afterId = 0, limit = 50) {
+    const size = Math.max(1, Math.min(100, limit));
+    const rows = await this.libraryRepo.findFolderPage(libraryId, afterId, size + 1);
+    const items = rows.slice(0, size);
+    return { items, nextCursor: rows.length > size ? items.at(-1)!.id : null };
+  }
+
   async create(dto: CreateLibraryDto) {
     await this.assertNameAvailable(dto.name);
     const folderPaths = await this.assertFolderPathsWithinBrowseRoot(dto.folders);

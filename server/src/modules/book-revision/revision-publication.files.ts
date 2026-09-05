@@ -53,7 +53,7 @@ export async function publishStagedFile(stagedPath: string, targetPath: string):
   await syncPath(dirname(targetPath));
 }
 
-async function copyBoundedFile(source: string, destination: string): Promise<void> {
+export async function copyBoundedFile(source: string, destination: string): Promise<void> {
   const input = await open(source, 'r');
   try {
     const before = await input.stat({ bigint: true });

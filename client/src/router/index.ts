@@ -494,6 +494,12 @@ export const routes: RouteRecordRaw[] = [
         ],
       },
       {
+        path: '/fanfiction',
+        name: 'fanfiction',
+        component: () => import('@/features/fanfiction/FanfictionPage.vue'),
+        meta: { title: () => t('fanfiction.title') },
+      },
+      {
         path: '/book-dock',
         name: 'book-dock',
         component: () => import('@/views/BookDockView.vue'),

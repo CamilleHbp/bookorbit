@@ -454,6 +454,14 @@ describe('BookDockIngestService', () => {
   });
 
   describe('autoFetchMetadataAsync', () => {
+    it('does not fetch unrelated metadata for a managed import, including an explicit force', async () => {
+      const { service, repo, metadataFetchPipeline } = makeService();
+      (metadataFetchPipeline as any).runWithSources = vi.fn();
+      repo.findById.mockResolvedValue({ id: 8, status: 'ready', ingestionMode: 'managed', embeddedMetadata: { title: 'Story' } });
+      await (service as any).autoFetchMetadataAsync(8, true);
+      expect(metadataFetchPipeline.runWithSources).not.toHaveBeenCalled();
+      expect(repo.update).not.toHaveBeenCalled();
+    });
     it('returns early when auto-fetch is disabled', async () => {
       const { service, appSettings, repo } = makeService();
       appSettings.isBookDockAutoFetchEnabled.mockResolvedValue(false);

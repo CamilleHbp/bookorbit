@@ -10,19 +10,23 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanfictionJobService } from './fanfiction-job.service';
+import { FanfictionSourceController } from './fanfiction-source.controller';
+import { FanfictionSourceService } from './fanfiction-source.service';
 
 describe('Fanfiction HTTP contracts', () => {
   let app: NestFastifyApplication;
   const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn() };
-  const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn() };
+  const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn() };
+  const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn() };
   const uuid = '97e5bb69-36e8-43a2-9e3b-0fb924d1ca2f';
   const base = '/api/v1/libraries/5/fanfiction';
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [FanfictionController],
+      controllers: [FanfictionController, FanfictionSourceController],
       providers: [
         { provide: FanfictionProfileService, useValue: profiles },
         { provide: FanfictionJobService, useValue: jobs },
+        { provide: FanfictionSourceService, useValue: sources },
         { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
         { provide: FanficfareRuntimeService, useValue: { health: vi.fn(), sites: vi.fn() } },
       ],
@@ -42,6 +46,8 @@ describe('Fanfiction HTTP contracts', () => {
   it('requires library administration at both permission and library role boundaries', () => {
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionController)).toBe(Permission.ManageLibraries);
     expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionController)).toBe('owner');
+    expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionSourceController)).toBe(Permission.ManageLibraries);
+    expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionSourceController)).toBe('owner');
   });
   it('accepts settings profile fields and returns the exact summary response', async () => {
     const summary = { id: uuid, libraryId: 5, name: 'AO3', version: 1, updatedAt: new Date().toISOString() };
@@ -69,5 +75,29 @@ describe('Fanfiction HTTP contracts', () => {
     expect((await app.inject({ method: 'POST', url: `${base}/jobs/${uuid}/cancel`, payload: {} })).statusCode).toBe(202);
     expect((await app.inject({ method: 'GET', url: `${base}/jobs?limit=101` })).statusCode).toBe(400);
     expect((await app.inject({ method: 'POST', url: `${base}/previews`, payload: { ...payload, url: 'file:///etc/passwd' } })).statusCode).toBe(400);
+    jobs.status.mockResolvedValue({ items: [job] });
+    const status = await app.inject({ method: 'POST', url: `${base}/jobs/status`, payload: { ids: [uuid] } });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toEqual({ items: [job] });
+    expect(jobs.status).toHaveBeenCalledWith(5, [uuid], undefined);
+    expect((await app.inject({ method: 'POST', url: `${base}/jobs/status`, payload: { ids: Array(101).fill(uuid) } })).statusCode).toBe(400);
+  });
+
+  it('validates import, manual scheduling, bounded source queries, and optimistic source changes', async () => {
+    const job = { id: uuid, state: 'queued', kind: 'import', libraryId: 5 };
+    sources.create.mockResolvedValue(job);
+    const payload = { url: 'https://archiveofourown.org/works/123', idempotencyKey: uuid, folderId: 8, intervalMinutes: null };
+    const response = await app.inject({ method: 'POST', url: `${base}/sources`, payload });
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual(job);
+    expect(sources.create).toHaveBeenCalledWith(5, expect.objectContaining(payload), undefined);
+    expect((await app.inject({ method: 'POST', url: `${base}/sources`, payload: { ...payload, intervalMinutes: 59 } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: `${base}/sources`, payload: { ...payload, absolutePath: '/tmp/story.epub' } })).statusCode).toBe(
+      400,
+    );
+    expect((await app.inject({ method: 'GET', url: `${base}/sources?limit=101` })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'PATCH', url: `${base}/sources/${uuid}`, payload: { state: 'paused' } })).statusCode).toBe(400);
+    sources.update.mockResolvedValue({ id: uuid, state: 'paused', version: 2 });
+    expect((await app.inject({ method: 'PATCH', url: `${base}/sources/${uuid}`, payload: { state: 'paused', version: 1 } })).statusCode).toBe(200);
   });
 });

@@ -62,7 +62,8 @@ export interface FanfictionProfileView extends FanfictionProfileSummary {
 }
 
 export type FanfictionJobKind = "preview" | "discovery" | "import" | "update" | "refresh" | "rollback";
-export type FanfictionJobState = "queued" | "running" | "succeeded" | "no_change" | "review_required" | "configuration_blocked" | "failed" | "cancelled";
+export type FanfictionJobState =
+  "queued" | "running" | "succeeded" | "no_change" | "review_required" | "configuration_blocked" | "failed" | "cancelled";
 
 export interface FanfictionJob {
   id: string;
@@ -72,10 +73,54 @@ export interface FanfictionJob {
   url: string;
   attempts: number;
   cancellationRequested: boolean;
-  result: { preview?: FanfictionPreview; urls?: string[] } | null;
+  result: { preview?: FanfictionPreview; urls?: string[]; sourceId?: string; bookId?: number; bookFileId?: number } | null;
   errorCode: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type FanfictionSourceState = "pending" | "active" | "paused" | "review_required" | "configuration_blocked" | "unlinked";
+
+export interface FanfictionSource {
+  id: string;
+  libraryId: number;
+  folderId: number | null;
+  profileId: string | null;
+  bookId: number | null;
+  bookFileId: number | null;
+  canonicalUrl: string;
+  site: string;
+  title: string;
+  authors: string[];
+  state: FanfictionSourceState;
+  chapterCount: number;
+  wordCount: number | null;
+  storyStatus: string;
+  intervalMinutes: number | null;
+  nextCheckAt: string | null;
+  lastCheckedAt: string | null;
+  lastUpdatedAt: string | null;
+  attentionCode: string | null;
+  version: number;
+  createdAt: string;
+}
+
+export interface FanfictionSourcePage {
+  items: FanfictionSource[];
+  nextCursor: string | null;
+}
+
+export interface FanfictionFolderPage {
+  items: { id: number; path: string }[];
+  nextCursor: number | null;
+}
+
+export interface FanfictionImportRequest {
+  url: string;
+  idempotencyKey: string;
+  profileId?: string;
+  folderId: number;
+  intervalMinutes?: number | null;
 }
 
 export interface FanfictionLibraryPage {

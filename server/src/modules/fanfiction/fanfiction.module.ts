@@ -11,9 +11,25 @@ import { FanfictionController } from './fanfiction.controller';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionWorkerService } from './fanfiction-worker.service';
 import { FanfictionLibraryController } from './fanfiction-library.controller';
+import { AppSettingsModule } from '../app-settings/app-settings.module';
+import { UploadModule } from '../upload/upload.module';
+import { BookDockModule } from '../book-dock/book-dock.module';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
+import { FanfictionSourceService } from './fanfiction-source.service';
+import { FanfictionSourceController } from './fanfiction-source.controller';
+import { FanfictionImportService } from './fanfiction-import.service';
 
 @Module({
-  imports: [ConfigModule.forFeature(fanficfareConfig), ConfigModule.forFeature(storageConfig), LibraryModule, UserModule],
+  imports: [
+    ConfigModule.forFeature(fanficfareConfig),
+    ConfigModule.forFeature(storageConfig),
+    LibraryModule,
+    UserModule,
+    AppSettingsModule,
+    UploadModule,
+    BookDockModule,
+    BookRevisionModule,
+  ],
   providers: [
     FanfictionAccessService,
     FanficfareRuntimeService,
@@ -21,7 +37,9 @@ import { FanfictionLibraryController } from './fanfiction-library.controller';
     FanfictionProfileService,
     FanfictionJobService,
     FanfictionWorkerService,
+    FanfictionSourceService,
+    FanfictionImportService,
   ],
-  controllers: [FanfictionController, FanfictionLibraryController],
+  controllers: [FanfictionController, FanfictionLibraryController, FanfictionSourceController],
 })
 export class FanfictionModule {}
