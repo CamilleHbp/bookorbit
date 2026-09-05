@@ -42,6 +42,7 @@ export class ReadingEventIdentityDto implements ReadingEventIdentity {
   deviceSequence!: number;
 
   @IsISO8601({ strict: true })
+  @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
   @MaxLength(40)
   occurredAt!: string;
 

@@ -1,3 +1,4 @@
+import { resetCanonicalReadingEvents } from '../book-revision/canonical-reading.service';
 import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
 import { SQL, and, asc, count, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { SUPPORTED_BOOK_FORMATS } from '../upload/upload-validator.service';
@@ -2348,6 +2349,7 @@ export class BookRepository {
    */
   private async clearExternalDeviceProgress(tx: BookRepositoryTx, userId: number, fileIds: number[]): Promise<void> {
     if (fileIds.length === 0) return;
+    await resetCanonicalReadingEvents(tx, userId, fileIds);
     await tx
       .delete(koreaderDeviceProgress)
       .where(

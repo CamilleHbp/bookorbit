@@ -624,6 +624,20 @@
       "when": 1788605848507,
       "tag": "0088_revision_publication_journal",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1788609995164,
+      "tag": "0089_canonical_reading_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1788610165999,
+      "tag": "0090_reading_event_file_indexes",
+      "breakpoints": true
     }
   ]
 }

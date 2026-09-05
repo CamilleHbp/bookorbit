@@ -52,6 +52,15 @@ export interface RevisionPositionAcknowledgement {
   quality: PositionResolutionQuality;
 }
 
+export interface CanonicalReadingState {
+  resetGeneration: number;
+  anchor: ReadingAnchor | null;
+}
+
+export interface ReadingEventReceipt extends CanonicalReadingState {
+  outcome: "accepted" | "duplicate" | "superseded" | "reset_required";
+}
+
 export type PositionResolutionQuality = "exact" | "relocated" | "approximate";
 
 export interface ResolvedReadingAnchor {

@@ -2,26 +2,26 @@ import { ForbiddenException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RequestUser } from '../../common/types/request-user';
-import { LibraryService } from '../library/library.service';
+import { BookService } from '../book/book.service';
 import { RevisionApiService } from './revision-api.service';
 import { RevisionCatalogService } from './revision-catalog.service';
 import { ListRevisionsDto } from './dto/reading-anchor.dto';
 
 const user = { id: 1, isSuperuser: false } as RequestUser;
-const libraries = { verifyUserAccess: vi.fn() };
+const libraries = { verifyFileAccess: vi.fn() };
 const revisions = { list: vi.fn(), manifest: vi.fn(), resolve: vi.fn() };
 let service: RevisionApiService;
 beforeEach(async () => {
   vi.resetAllMocks();
   const module = await Test.createTestingModule({
-    providers: [RevisionApiService, { provide: LibraryService, useValue: libraries }, { provide: RevisionCatalogService, useValue: revisions }],
+    providers: [RevisionApiService, { provide: BookService, useValue: libraries }, { provide: RevisionCatalogService, useValue: revisions }],
   }).compile();
   service = module.get(RevisionApiService);
 });
 
 describe('revision access', () => {
   it('rechecks library access before reading history, manifests, or resolving anchors', async () => {
-    libraries.verifyUserAccess.mockRejectedValue(new ForbiddenException());
+    libraries.verifyFileAccess.mockRejectedValue(new ForbiddenException());
     await expect(service.list(7, 9, new ListRevisionsDto(), user)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.manifest(7, 9, 'revision', user)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(
@@ -33,7 +33,7 @@ describe('revision access', () => {
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
     for (const method of Object.values(revisions)) expect(method).not.toHaveBeenCalled();
-    expect(libraries.verifyUserAccess).toHaveBeenCalledWith(1, 7, false);
+    expect(libraries.verifyFileAccess).toHaveBeenCalledWith(9, user);
   });
 
   it('passes a scoped bounded request and preserves the response contract', async () => {

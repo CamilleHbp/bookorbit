@@ -7,6 +7,7 @@ export * from './migration';
 export * from './libraries';
 export * from './books';
 export * from './book-revisions';
+export * from './reading-events';
 export * from './book-duplicates';
 export * from './book-move';
 export * from './collections';
