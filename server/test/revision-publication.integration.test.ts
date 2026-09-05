@@ -11,8 +11,10 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq } from 'drizzle-orm';
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { DB } from '../src/db';
+import { FileLockService } from '../src/common/file-lock.service';
 import * as schema from '../src/db/schema';
 import { EpubManifestService } from '../src/modules/book-revision/epub-manifest.service';
+import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import { RevisionPublicationService } from '../src/modules/book-revision/revision-publication.service';
 import { requireInspectedFile } from '../src/modules/book-revision/revision-publication.files';
 
@@ -23,6 +25,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let service: RevisionPublicationService;
   let manifests: EpubManifestService;
+  let catalog: RevisionCatalogService;
   let dir: string;
   let libraryId: number;
   let fileId: number;
@@ -38,10 +41,11 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
     const module = await Test.createTestingModule({
-      providers: [RevisionPublicationService, EpubManifestService, { provide: DB, useValue: db }],
+      providers: [RevisionPublicationService, EpubManifestService, RevisionCatalogService, FileLockService, { provide: DB, useValue: db }],
     }).compile();
     service = module.get(RevisionPublicationService);
     manifests = module.get(EpubManifestService);
+    catalog = module.get(RevisionCatalogService);
   }, 60_000);
 
   afterAll(async () => {
@@ -178,19 +182,49 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
   it('retains one previous managed EPUB while keeping historical manifests', async () => {
     const first = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
     const installed = await service.resume(first.publicationId, libraryId);
+    await db.update(schema.revisionPublications).set({ state: 'database_committed' }).where(eq(schema.revisionPublications.id, first.publicationId));
     await epub(input, 'Third version with more chapters');
     const second = await service.prepare(fileId, libraryId, installed.revisionId, input, 'fanficfare');
     await service.resume(second.publicationId, libraryId);
     const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
     expect(revisions).toHaveLength(3);
+    await expect(service.resume(first.publicationId, libraryId)).resolves.toMatchObject({ state: 'cleanup_complete' });
     expect(revisions.filter((r) => r.storagePath !== null).map((r) => r.id)).toEqual([installed.revisionId]);
     expect(revisions.every((r) => r.chapters.length > 0)).toBe(true);
+    const page = await catalog.list(fileId, libraryId, 2);
+    expect(page.items).toHaveLength(2);
+    expect(page.nextCursor).not.toBeNull();
+    const older = await catalog.list(fileId, libraryId, 2, page.nextCursor!);
+    expect(older.items).toHaveLength(1);
+    expect(older.nextCursor).toBeNull();
+    expect(new Set([...page.items, ...older.items].map((item) => item.revision)).size).toBe(3);
+    expect(page.items[0]).not.toHaveProperty('storagePath');
+    await expect(catalog.list(fileId, libraryId + 1)).rejects.toThrow('not found');
+    await expect(catalog.manifest(fileId, libraryId, originalId)).resolves.toMatchObject({ revision: originalId, sha256: originalSha });
+    await expect(
+      catalog.resolve(fileId, libraryId, installed.revisionId, {
+        bookFileId: fileId + 1,
+        revision: originalId,
+        chapterIndex: 0,
+        chapterFraction: 0.5,
+        bookFraction: 0.5,
+      }),
+    ).rejects.toThrow('different book file');
+    await expect(
+      catalog.resolve(fileId, libraryId, installed.revisionId, { revision: originalId, chapterIndex: 0, chapterFraction: 0.5, bookFraction: 0.5 }),
+    ).resolves.toMatchObject({ revision: installed.revisionId, quality: 'approximate' });
+
     await expect(readFile((await journal(first.publicationId)).backupPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('serializes concurrent recovery without duplicate revisions', async () => {
     const { publicationId } = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
-    const results = await Promise.all([service.resume(publicationId, libraryId), service.resume(publicationId, libraryId)]);
+    const otherModule = await Test.createTestingModule({
+      providers: [RevisionPublicationService, FileLockService, { provide: EpubManifestService, useValue: manifests }, { provide: DB, useValue: db }],
+    }).compile();
+    const other = otherModule.get(RevisionPublicationService);
+    const results = await Promise.all([service.resume(publicationId, libraryId), other.resume(publicationId, libraryId)]);
+    await otherModule.close();
     expect(results[0]).toEqual(results[1]);
     const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
     expect(revisions).toHaveLength(2);

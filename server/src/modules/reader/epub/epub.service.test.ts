@@ -284,12 +284,30 @@ describe('EpubService', () => {
     await expect(service.streamFile(1, 'OPS/text/ch1.xhtml', undefined, user)).rejects.toThrow(NotFoundException);
   });
 
+  it('invalidates cached manifests when only the revision or inode changes', async () => {
+    mockOpenFile.mockImplementation(() => Promise.resolve(makeEpubArchive() as any));
+    bookReadService.findPrimaryFilesByBookIds.mockResolvedValue([{ format: 'epub', absolutePath: '/books/book.epub', currentRevisionId: 'one' }]);
+    await service.getBookInfo(1, undefined, user);
+    bookReadService.findPrimaryFilesByBookIds.mockResolvedValue([{ format: 'epub', absolutePath: '/books/book.epub', currentRevisionId: 'two' }]);
+    await service.getBookInfo(1, undefined, user);
+    mockStat.mockResolvedValue({ mtimeMs: 100, ino: 9n } as Awaited<ReturnType<typeof stat>>);
+    await service.getBookInfo(1, undefined, user);
+    expect(mockOpenFile).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not cache a manifest parsed while the file is being replaced', async () => {
+    mockOpenFile.mockImplementation(() => Promise.resolve(makeEpubArchive() as any));
+    mockStat.mockResolvedValueOnce({ mtimeMs: 100, ino: 1n } as Awaited<ReturnType<typeof stat>>);
+    mockStat.mockResolvedValue({ mtimeMs: 100, ino: 2n } as Awaited<ReturnType<typeof stat>>);
+    await expect(service.getBookInfo(1, undefined, user)).rejects.toThrow('changed while reading');
+    await expect(service.getBookInfo(1, undefined, user)).resolves.toBeDefined();
+    expect(mockOpenFile).toHaveBeenCalledTimes(2);
+  });
+
   it('uses cache when mtime is unchanged and reparses after mtime update', async () => {
     const titleOne = OPF_XML.replace('Reader Test', 'Title One');
     const titleTwo = OPF_XML.replace('Reader Test', 'Title Two');
-    mockStat
-      .mockResolvedValueOnce({ mtimeMs: 200 } as Awaited<ReturnType<typeof stat>>)
-      .mockResolvedValueOnce({ mtimeMs: 200 } as Awaited<ReturnType<typeof stat>>);
+    mockStat.mockResolvedValue({ mtimeMs: 200 } as Awaited<ReturnType<typeof stat>>);
     mockOpenFile.mockResolvedValueOnce(
       makeArchive([
         { path: 'META-INF/container.xml', content: CONTAINER_XML },
@@ -305,7 +323,7 @@ describe('EpubService', () => {
     expect(second.metadata['title']).toBe('Title One');
     expect(mockOpenFile).toHaveBeenCalledTimes(1);
 
-    mockStat.mockResolvedValueOnce({ mtimeMs: 300 } as Awaited<ReturnType<typeof stat>>);
+    mockStat.mockResolvedValue({ mtimeMs: 300 } as Awaited<ReturnType<typeof stat>>);
     mockOpenFile.mockResolvedValueOnce(
       makeArchive([
         { path: 'META-INF/container.xml', content: CONTAINER_XML },
@@ -351,7 +369,7 @@ describe('EpubService', () => {
 
     await service.getBookInfo(5, 88, user);
 
-    expect(mockStat).toHaveBeenCalledWith('/books/alt.epub');
+    expect(mockStat).toHaveBeenCalledWith('/books/alt.epub', { bigint: true });
     expect(mockOpenFile).toHaveBeenCalledWith('/books/alt.epub');
   });
 

@@ -3,13 +3,15 @@ import { Interval } from '@nestjs/schedule';
 import { and, asc, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
-import { rm, stat } from 'node:fs/promises';
+import { rm, rmdir, stat } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { RevisionPublicationReason } from '@bookorbit/types';
 import { DB } from '../../db';
+import { FileLockService, bookOperationLockKey } from '../../common/file-lock.service';
 import * as schema from '../../db/schema';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { EpubManifestService } from './epub-manifest.service';
-import { publicationPaths, publishStagedFile, requireInspectedFile, stagePublication } from './revision-publication.files';
+import { publicationPaths, publishStagedFile, requireInspectedFile, stagePublication, syncPath } from './revision-publication.files';
 import { inspectStableFile, sameFileSignature } from './file-inspection';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -24,6 +26,7 @@ export class RevisionPublicationService {
   constructor(
     @Inject(DB) private readonly db: Db,
     private readonly manifests: EpubManifestService,
+    private readonly locks: FileLockService,
   ) {}
 
   async prepare(bookFileId: number, libraryId: number, expectedRevisionId: string, inputPath: string, reason: RevisionPublicationReason) {
@@ -121,6 +124,19 @@ export class RevisionPublicationService {
   }
 
   async resume(id: string, libraryId: number): Promise<{ revisionId: string; state: 'cleanup_complete' }> {
+    const [journal] = await this.db
+      .select({ bookFileId: schema.revisionPublications.bookFileId, targetPath: schema.revisionPublications.targetPath })
+      .from(schema.revisionPublications)
+      .where(and(eq(schema.revisionPublications.id, id), eq(schema.revisionPublications.libraryId, libraryId)))
+      .limit(1);
+    if (!journal) throw new NotFoundException('Revision publication not found');
+    const file = await this.scopedFile(this.db, journal.bookFileId, libraryId);
+    return this.locks.withLock(bookOperationLockKey(file.bookId), () =>
+      this.locks.withLock(journal.targetPath, () => this.resumeLocked(id, libraryId)),
+    );
+  }
+
+  private async resumeLocked(id: string, libraryId: number): Promise<{ revisionId: string; state: 'cleanup_complete' }> {
     const event = 'book.revision_publish';
     const startedAt = Date.now();
     this.logger.log(`[${event}] [start] publicationId=${id} libraryId=${libraryId} - revision publication started`);
@@ -305,7 +321,19 @@ export class RevisionPublicationService {
   }
 
   private async cleanup(journal: typeof schema.revisionPublications.$inferSelect): Promise<void> {
+    if (journal.state === 'cleanup_complete') return;
     await rm(journal.stagedPath, { force: true });
+    try {
+      await syncPath(dirname(journal.stagedPath));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const [previous] = await this.db
+        .select({ storagePath: schema.bookFileRevisions.storagePath })
+        .from(schema.bookFileRevisions)
+        .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)))
+        .limit(1);
+      if (!previous || previous.storagePath !== null) throw new ConflictException('Rollback backup is missing before cleanup');
+    }
     await this.pruneRetainedFiles(journal);
     await this.db
       .update(schema.revisionPublications)
@@ -351,6 +379,15 @@ export class RevisionPublicationService {
       for (const entry of old) {
         this.assertPaths(entry.journal);
         await rm(entry.journal.backupPath, { force: true });
+        const directory = dirname(entry.journal.backupPath);
+        try {
+          await rmdir(directory);
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === 'ENOTEMPTY') await syncPath(directory);
+          else if (code !== 'ENOENT') throw error;
+        }
+        await syncPath(dirname(directory));
         await tx.update(schema.bookFileRevisions).set({ storagePath: null }).where(eq(schema.bookFileRevisions.id, entry.revisionId));
       }
     });

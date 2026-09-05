@@ -64,6 +64,14 @@ describe('EPUB revision manifests', () => {
     expect(cover.contentHash).toBe(original.contentHash);
     expect(cover.coverHash).not.toBe(original.coverHash);
   });
+  it('bounds retained chapter evidence without truncating its content identity', async () => {
+    const title = '😀'.repeat(1024);
+    const manifest = await service.inspect(await epub('long-heading.epub', [`<h1>${title}</h1>`]));
+    expect([...manifest.chapters[0].title]).toHaveLength(512);
+    expect(manifest.chapters[0].length).toBe(1024);
+    await expect(service.inspect(await epub('long-path.epub', undefined, { href: 'x'.repeat(4097) }))).rejects.toThrow('unsafe archive path');
+  });
+
   it('excludes scripts and hidden content from visible-text anchors', async () => {
     const manifest = await service.inspect(await epub('hidden.epub', ['<p>Hello</p><script>secret</script><span hidden>hidden</span>']));
     expect(manifest.chapters[0].length).toBe(5);

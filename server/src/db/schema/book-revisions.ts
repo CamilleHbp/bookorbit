@@ -1,6 +1,13 @@
 import { bigint, check, index, integer, jsonb, pgTable, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import type { EpubRevisionManifest, RevisionChapter, RevisionPublicationReason, RevisionPublicationState } from '@bookorbit/types';
+import type {
+  BookRevisionChangeKind,
+  BookRevisionReason,
+  EpubRevisionManifest,
+  RevisionChapter,
+  RevisionPublicationReason,
+  RevisionPublicationState,
+} from '@bookorbit/types';
 import { bookFiles } from './books';
 import { libraries } from './libraries';
 
@@ -14,13 +21,13 @@ export const bookFileRevisions = pgTable(
     sha256: varchar('sha256', { length: 64 }).notNull(),
     fileHash: varchar('file_hash', { length: 32 }).notNull(),
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
-    reason: varchar('reason', { length: 30 }).notNull(),
+    reason: varchar('reason', { length: 30 }).$type<BookRevisionReason>().notNull(),
     chapters: jsonb('chapters').$type<RevisionChapter[]>(),
     manifestVersion: integer('manifest_version'),
     contentHash: varchar('content_hash', { length: 64 }),
     metadataHash: varchar('metadata_hash', { length: 64 }),
     coverHash: varchar('cover_hash', { length: 64 }),
-    changeKind: varchar('change_kind', { length: 20 }).notNull().default('unknown'),
+    changeKind: varchar('change_kind', { length: 20 }).$type<BookRevisionChangeKind>().notNull().default('unknown'),
     storagePath: varchar('storage_path', { length: 4096 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

@@ -1464,6 +1464,7 @@ export class BookRepository {
         bookId: bookFiles.bookId,
         libraryId: books.libraryId,
         fileHash: bookFiles.fileHash,
+        currentRevisionId: bookFiles.currentRevisionId,
         sizeBytes: bookFiles.sizeBytes,
         durationSeconds: bookFiles.durationSeconds,
       })
@@ -1843,12 +1844,16 @@ export class BookRepository {
     return row ?? null;
   }
 
-  async findPrimaryFilesByBookIds(
-    bookIds: number[],
-  ): Promise<{ bookId: number; absolutePath: string; format: string | null; sizeBytes: number | null }[]> {
+  async findPrimaryFilesByBookIds(bookIds: number[]) {
     if (bookIds.length === 0) return [];
     return this.db
-      .select({ bookId: books.id, absolutePath: bookFiles.absolutePath, format: bookFiles.format, sizeBytes: bookFiles.sizeBytes })
+      .select({
+        bookId: books.id,
+        absolutePath: bookFiles.absolutePath,
+        format: bookFiles.format,
+        sizeBytes: bookFiles.sizeBytes,
+        currentRevisionId: bookFiles.currentRevisionId,
+      })
       .from(books)
       .innerJoin(bookFiles, eq(bookFiles.id, books.primaryFileId))
       .where(inArray(books.id, bookIds))

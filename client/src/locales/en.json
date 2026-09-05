@@ -5405,6 +5405,20 @@
           "failed": "Write failed",
           "indexed": "{name} indexed",
           "indexedMany": "{count} {format} files indexed"
+        },
+        "revisions": {
+          "title": "Revision history",
+          "empty": "No revisions recorded yet.",
+          "error": "Could not load revision history.",
+          "older": "Older revisions",
+          "newest": "Latest revisions",
+          "loading": "Loading revision history…",
+          "baseline": "Initial revision",
+          "unknown": "File changed",
+          "content": "Content changed",
+          "cover": "Cover changed",
+          "metadata": "Metadata changed",
+          "container": "EPUB packaging changed"
         }
       },
       "highlights": {

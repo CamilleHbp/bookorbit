@@ -6,7 +6,7 @@ import * as unzipper from 'unzipper';
 import { XMLParser } from 'fast-xml-parser';
 import { load } from 'cheerio';
 import type { EpubRevisionManifest, RevisionChapter } from '@bookorbit/types';
-import { normalizeAnchorText, scalarLength } from './anchor-text';
+import { boundAnchorText, normalizeAnchorText, scalarLength } from './anchor-text';
 
 const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const MAX_ENTRY_BYTES = 32 * 1024 * 1024;
@@ -46,6 +46,7 @@ function canonical(value: unknown): unknown {
 function archivePath(value: string): string {
   if (
     !value ||
+    value.length > 4096 ||
     value.includes('\\') ||
     value.includes('\0') ||
     value.startsWith('/') ||
@@ -138,7 +139,7 @@ export class EpubManifestService {
       const href = resolveHref(base, item['@_href']!);
       const $ = load((await read(href)).toString());
       $('script, style, head, [hidden]').remove();
-      const title = normalizeAnchorText($('h1,h2,h3').first().text());
+      const title = boundAnchorText(normalizeAnchorText($('h1,h2,h3').first().text()), 512);
       const sourceUrl = $('a.chapterurl').first().attr('href');
       $('br').replaceWith(' ');
       $('p,div,section,li,h1,h2,h3,h4,h5,h6').append(' ');
@@ -146,7 +147,7 @@ export class EpubManifestService {
       chapters.push({
         href,
         title,
-        ...(sourceUrl && /^https?:\/\//i.test(sourceUrl) ? { sourceUrl } : {}),
+        ...(sourceUrl && sourceUrl.length <= 2048 && /^https?:\/\//i.test(sourceUrl) ? { sourceUrl } : {}),
         textHash: digest(text),
         length: scalarLength(text),
       });

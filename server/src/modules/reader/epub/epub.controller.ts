@@ -28,7 +28,7 @@ export class EpubController {
 
     reply.header('Content-Type', contentType);
     if (size > 0) reply.header('Content-Length', size);
-    reply.header('Cache-Control', 'public, max-age=3600');
+    reply.header('Cache-Control', 'private, no-store');
     reply.send(stream);
   }
 

@@ -14,6 +14,7 @@ import { useBookFileTree, type SortKey, type TreeFile } from '@/features/book/co
 import FilesHeroBar from '../files/FilesHeroBar.vue'
 import FileListCard from '../files/FileListCard.vue'
 import FileDetailCard from '../files/FileDetailCard.vue'
+import BookRevisionHistory from '@/features/book-revision/components/BookRevisionHistory.vue'
 import WriteBackCard from '../files/WriteBackCard.vue'
 import AddBookFileModal from './AddBookFileModal.vue'
 
@@ -315,6 +316,8 @@ async function confirmDelete() {
             @remove="openDeleteModal"
             @copy-path="copyPath"
           />
+
+          <BookRevisionHistory v-if="selectedFile.formatKey === 'epub'" :library-id="book.libraryId" :file-id="selectedFile.id" />
 
           <WriteBackCard :book="book" :can-edit="canEdit" @edit-metadata="goToMetadata" />
         </div>

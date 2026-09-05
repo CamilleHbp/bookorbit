@@ -64,11 +64,27 @@ export interface ResolvedReadingAnchor {
   offset?: number;
 }
 
+export type BookRevisionChangeKind = "baseline" | "unknown" | "content" | "cover" | "metadata" | "container";
+export type BookRevisionReason = "baseline" | "external_change" | "file_write" | "fanficfare" | "rollback";
+
 export interface BookFileRevisionSummary {
   revision: string;
+  changeKind: BookRevisionChangeKind;
+  reason: BookRevisionReason;
   bookFileId: number;
   sha256: string;
   fileHash: string;
   sizeBytes: number;
   createdAt: string;
+}
+
+export interface BookFileRevisionPage {
+  items: BookFileRevisionSummary[];
+  nextCursor: string | null;
+}
+export interface BookFileRevisionManifest {
+  revision: string;
+  bookFileId: number;
+  sha256: string;
+  chapters: RevisionChapter[];
 }
