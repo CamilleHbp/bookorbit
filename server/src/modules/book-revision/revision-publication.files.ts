@@ -1,5 +1,5 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
-import { chmod, mkdir, open, rename, rm, stat } from 'node:fs/promises';
+import { chmod, mkdir, open, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { inspectStableFile, sameFileSignature, type InspectedFile } from './file-inspection';
 
@@ -15,6 +15,18 @@ export async function syncPath(path: string): Promise<void> {
   } finally {
     await handle.close();
   }
+}
+
+export async function removeCancelledPublication(targetPath: string, id: string): Promise<void> {
+  const paths = publicationPaths(targetPath, id);
+  await rm(paths.stagedPath, { force: true });
+  await rm(paths.backupPath, { force: true });
+  try {
+    await rmdir(paths.directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  await syncPath(dirname(paths.directory));
 }
 
 export async function requireInspectedFile(path: string, sha256?: string): Promise<InspectedFile> {

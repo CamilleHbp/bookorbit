@@ -25,6 +25,8 @@ import { RevisionCatalogService } from '../src/modules/book-revision/revision-ca
 import { RevisionDownloadService } from '../src/modules/book-revision/revision-download.service';
 import { FanfictionUpdateService } from '../src/modules/fanfiction/fanfiction-update.service';
 import { FanfictionRollbackService } from '../src/modules/fanfiction/fanfiction-rollback.service';
+import { FanfictionRecoveryService } from '../src/modules/fanfiction/fanfiction-recovery.service';
+import { RevisionInterruptionService } from '../src/modules/book-revision/revision-interruption.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
@@ -117,6 +119,8 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       providers: [
         FanfictionUpdateService,
         FanfictionRollbackService,
+        FanfictionRecoveryService,
+        RevisionInterruptionService,
         FanfictionSourceService,
         FanfictionJobService,
         FanfictionActivityService,
@@ -247,6 +251,37 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect(await jobs.finish(job, 'no_change', result)).toBe(true);
     expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.libraryId, libraryId))).toHaveLength(0);
   }, 30_000);
+
+  it('reconciles cancellation after publication with source metadata and one activity event', async () => {
+    const job = await claim();
+    vi.spyOn(sources, 'completeUpdate').mockRejectedValueOnce(new ConflictException('Completion interrupted'));
+    await expect(run(job)).rejects.toThrow('Completion interrupted');
+    await jobs.cancel(libraryId, job.id, user);
+    await module.get(FanfictionRecoveryService).recover();
+    expect(await sources.get(libraryId, source.id, user)).toMatchObject({ state: 'paused', nextCheckAt: null, chapterCount: 2 });
+    expect(await jobs.get(libraryId, job.id, user)).toMatchObject({
+      state: 'succeeded',
+      cancellationRequested: true,
+      result: { bookFileId: fileId },
+    });
+    expect(await jobs.finish(job, 'failed')).toBe(false);
+    await module.get(FanfictionRecoveryService).recover();
+    expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.jobId, job.id))).toHaveLength(1);
+    expect(runtime.update).toHaveBeenCalledTimes(1);
+  }, 60_000);
+
+  it('acknowledges successful journals without changing source settings or duplicating activity', async () => {
+    const job = await claim();
+    const result = await run(job);
+    await jobs.finish(job, 'succeeded', result);
+    const before = await sources.get(libraryId, source.id, user);
+    await module.get(FanfictionRecoveryService).recover();
+    expect(await sources.get(libraryId, source.id, user)).toEqual(before);
+    expect(
+      (await db.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.ownerKey, job.id)))[0].ownerSettledAt,
+    ).not.toBeNull();
+    expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.jobId, job.id))).toHaveLength(1);
+  }, 60_000);
   it('rejects source changes during a download before file publication', async () => {
     const original = await readFile(target);
     const job = await claim();

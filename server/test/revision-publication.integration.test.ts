@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import { ZipArchive } from 'archiver';
 import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Pool, type PoolConfig } from 'pg';
@@ -23,6 +23,8 @@ import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.s
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
 import { FanfictionProfileService } from '../src/modules/fanfiction/fanfiction-profile.service';
 import type { RevisionPublicationAuthority } from '../src/modules/book-revision/revision-publication-authority';
+import { RevisionInterruptionService } from '../src/modules/book-revision/revision-interruption.service';
+import { FanfictionRecoveryService } from '../src/modules/fanfiction/fanfiction-recovery.service';
 
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
 
@@ -43,6 +45,8 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
   let originalSha: string;
   let jobs: FanfictionJobService;
   let ownerUserId: number;
+  let interruptions: RevisionInterruptionService;
+  let recovery: FanfictionRecoveryService;
 
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
@@ -58,6 +62,8 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
         RevisionDownloadService,
         FileLockService,
         FanfictionJobService,
+        RevisionInterruptionService,
+        FanfictionRecoveryService,
         { provide: FanfictionAccessService, useValue: {} },
         { provide: FanfictionProfileService, useValue: {} },
         { provide: DB, useValue: db },
@@ -69,6 +75,8 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     catalog = module.get(RevisionCatalogService);
     downloads = module.get(RevisionDownloadService);
     jobs = module.get(FanfictionJobService);
+    interruptions = module.get(RevisionInterruptionService);
+    recovery = module.get(FanfictionRecoveryService);
     const [user] = await db
       .insert(schema.users)
       .values({ username: `publication-owner-${randomUUID()}`, name: 'Publication owner test', passwordHash: 'not-a-login-hash' })
@@ -221,6 +229,85 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
     expect((await journal(prepared.publicationId)).state).toBe('prepared');
     await service.resume(prepared.publicationId, libraryId, authority(job));
+  });
+
+  it('discards staged bytes after cancellation and allows an explicit retry with the same operation', async () => {
+    const job = await owner();
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare', authority(job));
+    await db.update(schema.fanfictionJobs).set({ cancellationRequested: true, state: 'cancelled' }).where(eq(schema.fanfictionJobs.id, job.id));
+    await recovery.recover();
+    const cancelled = await journal(prepared.publicationId);
+    expect(cancelled.state).toBe('failed');
+    expect(cancelled.ownerSettledAt).not.toBeNull();
+    await expect(readFile(cancelled.stagedPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(cancelled.backupPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+    const [retry] = await db
+      .update(schema.fanfictionJobs)
+      .set({ cancellationRequested: false, state: 'running', fence: 2 })
+      .where(eq(schema.fanfictionJobs.id, job.id))
+      .returning();
+    const next = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare', authority(retry));
+    expect(next.publicationId).not.toBe(prepared.publicationId);
+    await service.resume(next.publicationId, libraryId, authority(retry));
+  });
+
+  it('recovers installed bytes after cancellation and a lost completion acknowledgement without installing again', async () => {
+    const job = await owner();
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare', authority(job));
+    const initial = await journal(prepared.publicationId);
+    await rename(initial.stagedPath, target);
+    await db.update(schema.fanfictionJobs).set({ cancellationRequested: true, state: 'cancelled' }).where(eq(schema.fanfictionJobs.id, job.id));
+    vi.spyOn(interruptions, 'acknowledge').mockRejectedValueOnce(new Error('lost recovery acknowledgement'));
+    await recovery.recover();
+    expect((await journal(prepared.publicationId)).state).toBe('cleanup_complete');
+    expect((await journal(prepared.publicationId)).ownerSettledAt).toBeNull();
+    expect((await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, job.id)))[0].state).toBe('cancelled');
+    await recovery.recover();
+    expect((await journal(prepared.publicationId)).ownerSettledAt).not.toBeNull();
+    expect((await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, job.id)))[0]).toMatchObject({
+      state: 'succeeded',
+      result: { revisionId: initial.nextRevisionId },
+    });
+    expect((await requireInspectedFile(target)).sha256).toBe(initial.nextSha256);
+    expect(await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId))).toHaveLength(2);
+  });
+
+  it('fences interruption recovery when a retry takes ownership before publication inspection', async () => {
+    const job = await owner();
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare', authority(job));
+    await db.update(schema.fanfictionJobs).set({ state: 'failed' }).where(eq(schema.fanfictionJobs.id, job.id));
+    const settle = interruptions.settle.bind(interruptions);
+    vi.spyOn(interruptions, 'settle').mockImplementationOnce(async (...args) => {
+      await db
+        .update(schema.fanfictionJobs)
+        .set({ state: 'running', cancellationRequested: false, fence: 2 })
+        .where(eq(schema.fanfictionJobs.id, job.id));
+      return settle(...args);
+    });
+    await recovery.recover();
+    expect((await journal(prepared.publicationId)).state).toBe('prepared');
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+    expect((await journal(prepared.publicationId)).ownerSettledAt).toBeNull();
+  });
+
+  it('cleans an orphaned operation without publishing staged bytes', async () => {
+    const job = await owner();
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare', authority(job));
+    await db.delete(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, job.id));
+    await recovery.recover();
+    expect((await journal(prepared.publicationId)).state).toBe('failed');
+    expect((await journal(prepared.publicationId)).ownerSettledAt).not.toBeNull();
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+  });
+
+  it('does not mistake identical staged bytes for a completed replacement after cancellation', async () => {
+    const job = await owner();
+    const prepared = await service.prepare(fileId, libraryId, originalId, target, 'rollback', authority(job));
+    await db.update(schema.fanfictionJobs).set({ cancellationRequested: true, state: 'cancelled' }).where(eq(schema.fanfictionJobs.id, job.id));
+    await recovery.recover();
+    expect((await journal(prepared.publicationId)).state).toBe('failed');
+    expect(await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId))).toHaveLength(1);
   });
 
   it('recovers a prepared operation and retains a verified previous EPUB', async () => {

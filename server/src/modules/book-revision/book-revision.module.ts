@@ -11,14 +11,23 @@ import { RevisionPublicationService } from './revision-publication.service';
 import { RevisionCatalogService } from './revision-catalog.service';
 import { BookProgressModule } from '../book/book-progress.module';
 import { RevisionFileModule } from './revision-file.module';
+import { RevisionInterruptionService } from './revision-interruption.service';
 
 @Module({
   imports: [FileLockModule, ConfigModule.forFeature(storageConfig), BookProgressModule, RevisionFileModule],
-  providers: [BookRevisionService, RevisionPublicationService, RevisionCatalogService, CanonicalReadingService, RevisionDownloadService],
+  providers: [
+    BookRevisionService,
+    RevisionPublicationService,
+    RevisionInterruptionService,
+    RevisionCatalogService,
+    CanonicalReadingService,
+    RevisionDownloadService,
+  ],
   exports: [
     BookRevisionService,
     RevisionFileModule,
     RevisionPublicationService,
+    RevisionInterruptionService,
     RevisionCatalogService,
     CanonicalReadingService,
     RevisionDownloadService,

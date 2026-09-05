@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
 import { rm, rmdir, stat } from 'node:fs/promises';
@@ -11,7 +11,14 @@ import { FileLockService, bookOperationLockKey } from '../../common/file-lock.se
 import * as schema from '../../db/schema';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { EpubManifestService } from './epub-manifest.service';
-import { publicationPaths, publishStagedFile, requireInspectedFile, stagePublication, syncPath } from './revision-publication.files';
+import {
+  publicationPaths,
+  publishStagedFile,
+  requireInspectedFile,
+  stagePublication,
+  syncPath,
+  removeCancelledPublication,
+} from './revision-publication.files';
 import { inspectStableFile, sameFileSignature } from './file-inspection';
 import type { RevisionPublicationAuthority } from './revision-publication-authority';
 
@@ -173,6 +180,7 @@ export class RevisionPublicationService {
             eq(schema.revisionPublications.ownerKey, authority.ownerKey),
             eq(schema.revisionPublications.bookFileId, bookFileId),
             eq(schema.revisionPublications.libraryId, libraryId),
+            ne(schema.revisionPublications.state, 'failed'),
           ),
         )
         .limit(1);
@@ -189,7 +197,12 @@ export class RevisionPublicationService {
     await authority?.authorize(transaction);
   }
 
-  async resume(id: string, libraryId: number, authority?: RevisionPublicationAuthority): Promise<{ revisionId: string; state: 'cleanup_complete' }> {
+  async resume(
+    id: string,
+    libraryId: number,
+    authority?: RevisionPublicationAuthority,
+    publishedOnly = false,
+  ): Promise<{ revisionId: string; state: 'cleanup_complete' }> {
     const [journal] = await this.db
       .select({ bookFileId: schema.revisionPublications.bookFileId, targetPath: schema.revisionPublications.targetPath })
       .from(schema.revisionPublications)
@@ -198,7 +211,7 @@ export class RevisionPublicationService {
     if (!journal) throw new NotFoundException('Revision publication not found');
     const file = await this.scopedFile(this.db, journal.bookFileId, libraryId);
     return this.locks.withLock(bookOperationLockKey(file.bookId), () =>
-      this.locks.withLock(journal.targetPath, () => this.resumeLocked(id, libraryId, authority)),
+      this.locks.withLock(journal.targetPath, () => this.resumeLocked(id, libraryId, authority, publishedOnly)),
     );
   }
 
@@ -206,6 +219,7 @@ export class RevisionPublicationService {
     id: string,
     libraryId: number,
     authority?: RevisionPublicationAuthority,
+    publishedOnly = false,
   ): Promise<{ revisionId: string; state: 'cleanup_complete' }> {
     const event = 'book.revision_publish';
     const startedAt = Date.now();
@@ -230,6 +244,7 @@ export class RevisionPublicationService {
         const actual = await inspectStableFile(journal.targetPath);
         if (actual.status !== 'stable') throw new ConflictException('Current EPUB is unavailable; replacement requires review');
         if (actual.file.sha256 !== journal.nextSha256) {
+          if (publishedOnly) throw new ConflictException('Interrupted publication has not installed the expected bytes');
           if (actual.file.sha256 !== journal.previousSha256) throw new ConflictException('Current EPUB changed outside this publication');
           await requireInspectedFile(journal.backupPath, journal.previousSha256);
           await requireInspectedFile(journal.stagedPath, journal.nextSha256);
@@ -264,6 +279,7 @@ export class RevisionPublicationService {
       .where(and(eq(schema.revisionPublications.id, id), eq(schema.revisionPublications.libraryId, libraryId)))
       .limit(1);
     if (!expected) throw new NotFoundException('Revision publication not found');
+    this.assertPaths(expected);
     await this.db.transaction(async (tx) => {
       await this.authorize(expected, tx, authority);
       await this.scopedFile(tx, expected.bookFileId, libraryId, true);
@@ -280,6 +296,9 @@ export class RevisionPublicationService {
       if (current.sha256 !== journal.previousSha256) throw new ConflictException('Publication must be recovered before cancellation');
       await tx.update(schema.revisionPublications).set({ state: 'failed', updatedAt: new Date() }).where(eq(schema.revisionPublications.id, id));
     });
+    await removeCancelledPublication(expected.targetPath, id);
+    if (!expected.ownerKey)
+      await this.db.update(schema.revisionPublications).set({ ownerSettledAt: new Date() }).where(eq(schema.revisionPublications.id, id));
   }
 
   @Interval(30_000)
@@ -288,19 +307,23 @@ export class RevisionPublicationService {
     this.recovering = true;
     try {
       const pending = await this.db
-        .select({ id: schema.revisionPublications.id, libraryId: schema.revisionPublications.libraryId })
+        .select({ id: schema.revisionPublications.id, libraryId: schema.revisionPublications.libraryId, state: schema.revisionPublications.state })
         .from(schema.revisionPublications)
         .where(
           and(
             isNull(schema.revisionPublications.ownerKey),
-            inArray(schema.revisionPublications.state, ['prepared', 'filesystem_published', 'database_committed']),
+            or(
+              inArray(schema.revisionPublications.state, ['prepared', 'filesystem_published', 'database_committed']),
+              and(eq(schema.revisionPublications.state, 'failed'), isNull(schema.revisionPublications.ownerSettledAt)),
+            ),
           ),
         )
         .orderBy(asc(schema.revisionPublications.updatedAt), asc(schema.revisionPublications.id))
         .limit(100);
       for (const journal of pending) {
         try {
-          await this.resume(journal.id, journal.libraryId);
+          if (journal.state === 'failed') await this.cancel(journal.id, journal.libraryId);
+          else await this.resume(journal.id, journal.libraryId);
         } catch {
           await this.db.update(schema.revisionPublications).set({ updatedAt: new Date() }).where(eq(schema.revisionPublications.id, journal.id));
         }
