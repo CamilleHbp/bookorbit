@@ -39,6 +39,74 @@ export class FanfictionSourceService {
     return this.jobs.importStory(libraryId, dto, user);
   }
 
+  async check(libraryId: number, id: string, kind: 'update' | 'refresh', idempotencyKey: string, user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    return this.jobs.updateStory(await this.find(libraryId, id), kind, idempotencyKey, user);
+  }
+
+  async updateContext(job: Job) {
+    return this.db.transaction((tx) => this.assertUpdatable(job, tx));
+  }
+
+  async assertUpdatable(job: Job, tx: DatabaseTransaction) {
+    await this.jobs.assertOwnership(job, tx);
+    if (!job.sourceId) throw new BadRequestException('Update has no managed story source');
+    const [source] = await tx
+      .select()
+      .from(sources)
+      .where(and(eq(sources.id, job.sourceId), eq(sources.libraryId, job.libraryId)))
+      .for('update');
+    if (
+      !source ||
+      !source.bookFileId ||
+      source.version !== job.sourceVersion ||
+      source.profileId !== job.profileId ||
+      !['active', 'paused'].includes(source.state) ||
+      (job.scheduled && source.state !== 'active')
+    )
+      throw new ConflictException({ message: 'Story source settings changed before publication', errorCode: 'configuration_blocked' });
+    return source;
+  }
+
+  async expectRevision(job: Job, revisionId: string): Promise<string> {
+    return this.db.transaction(async (tx) => {
+      await this.assertUpdatable(job, tx);
+      const [row] = await tx
+        .update(schema.fanfictionJobs)
+        .set({ expectedRevisionId: sql`coalesce(${schema.fanfictionJobs.expectedRevisionId}, ${revisionId}::uuid)` })
+        .where(eq(schema.fanfictionJobs.id, job.id))
+        .returning({ revisionId: schema.fanfictionJobs.expectedRevisionId });
+      return row.revisionId!;
+    });
+  }
+
+  async stageUpdatePreview(job: Job, preview: FanfictionPreview): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await this.assertUpdatable(job, tx);
+      await tx.update(schema.fanfictionJobs).set({ result: { preview } }).where(eq(schema.fanfictionJobs.id, job.id));
+    });
+  }
+
+  async completeUpdate(job: Job, result: NonNullable<import('@bookorbit/types').FanfictionJob['result']>, preview?: FanfictionPreview) {
+    return this.db.transaction(async (tx) => {
+      await this.assertUpdatable(job, tx);
+      await tx
+        .update(sources)
+        .set({
+          ...(preview ? { title: preview.title, authors: preview.authors, chapterCount: preview.chapterCount, storyStatus: preview.status } : {}),
+          attentionCode: null,
+          lastCheckedAt: sql`now()`,
+          ...(!result.noChange ? { lastUpdatedAt: sql`now()` } : {}),
+          nextCheckAt: sql`case when ${sources.state} <> 'active' or ${sources.intervalMinutes} is null then null else now() + (${sources.intervalMinutes} * interval '1 minute') end`,
+          updatedAt: sql`now()`,
+          version: sql`${sources.version} + 1`,
+        })
+        .where(and(eq(sources.id, job.sourceId!), eq(sources.libraryId, job.libraryId)));
+      await tx.update(schema.fanfictionJobs).set({ result }).where(eq(schema.fanfictionJobs.id, job.id));
+      return result;
+    });
+  }
+
   async list(libraryId: number, dto: ListFanfictionSourcesDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
     const before = dto.cursor ? await this.find(libraryId, dto.cursor) : null;

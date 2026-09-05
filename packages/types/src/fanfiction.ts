@@ -73,7 +73,7 @@ export interface FanfictionJob {
   url: string;
   attempts: number;
   cancellationRequested: boolean;
-  result: { preview?: FanfictionPreview; urls?: string[]; sourceId?: string; bookId?: number; bookFileId?: number } | null;
+  result: { preview?: FanfictionPreview; urls?: string[]; sourceId?: string; bookId?: number; bookFileId?: number; revisionId?: string; noChange?: boolean } | null;
   errorCode: string | null;
   createdAt: string;
   updatedAt: string;

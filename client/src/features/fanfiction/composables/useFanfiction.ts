@@ -58,6 +58,7 @@ export function useFanfiction() {
   let jobPage: string | null = null
   let sourceRequest = 0
   let jobRequest = 0
+  const pendingChecks = new Map<string, string>()
 
   async function request<T>(path: string, body?: unknown, method = 'POST'): Promise<T> {
     const response = await api(
@@ -250,12 +251,30 @@ export function useFanfiction() {
       if (currentScope(current)) await loadJobs(current, path, jobPage)
     })
   }
+  async function retryJob(job: FanfictionJob) {
+    await perform(async (current, path) => {
+      await request(`${path}/jobs/${job.id}/retry`, {})
+      if (currentScope(current)) await loadJobs(current, path, jobPage)
+    })
+  }
   async function togglePaused(source: FanfictionSource) {
     await perform(async (current, path) => {
       await request(`${path}/sources/${source.id}`, { version: source.version, state: source.state === 'paused' ? 'active' : 'paused' }, 'PATCH')
       if (currentScope(current)) await loadSources(current, path, sourcePage)
     })
   }
+  async function checkSource(source: FanfictionSource, kind: 'update' | 'refresh') {
+    await perform(async (current, path) => {
+      const key = `${source.libraryId}:${source.id}:${kind}`
+      const idempotencyKey = pendingChecks.get(key) ?? crypto.randomUUID()
+      pendingChecks.set(key, idempotencyKey)
+      await request<FanfictionJob>(`${path}/sources/${source.id}/check`, { kind, idempotencyKey })
+      pendingChecks.delete(key)
+      if (currentScope(current)) await loadJobs(current, path, null)
+    })
+  }
+  const checkNow = (source: FanfictionSource) => checkSource(source, 'update')
+  const refreshChapters = (source: FanfictionSource) => checkSource(source, 'refresh')
   function schedulePoll(current: number) {
     clearTimeout(timer)
     if (!currentScope(current)) return
@@ -338,7 +357,10 @@ export function useFanfiction() {
     previewStories,
     importSelected,
     cancelJob,
+    retryJob,
     togglePaused,
+    checkNow,
+    refreshChapters,
     showStories,
     showAdd,
     showActivity,

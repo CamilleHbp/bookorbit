@@ -61,6 +61,12 @@ export class FanfictionController {
     return this.runtime.health();
   }
 
+  @Post('jobs/:jobId/retry')
+  @HttpCode(202)
+  retryJob(@Param('libraryId', ParseIntPipe) libraryId: number, @Param('jobId', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+    return this.jobs.retry(libraryId, id, user);
+  }
+
   @Get('sites')
   async sites(@Param('libraryId', ParseIntPipe) libraryId: number, @CurrentUser() user: RequestUser) {
     await this.access.administer(user, libraryId);

@@ -16,8 +16,8 @@ import { FanfictionSourceService } from './fanfiction-source.service';
 describe('Fanfiction HTTP contracts', () => {
   let app: NestFastifyApplication;
   const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn() };
-  const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn() };
-  const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn() };
+  const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn(), retry: vi.fn() };
+  const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), check: vi.fn() };
   const uuid = '97e5bb69-36e8-43a2-9e3b-0fb924d1ca2f';
   const base = '/api/v1/libraries/5/fanfiction';
   beforeAll(async () => {
@@ -49,6 +49,16 @@ describe('Fanfiction HTTP contracts', () => {
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionSourceController)).toBe(Permission.ManageLibraries);
     expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionSourceController)).toBe('owner');
   });
+  it('validates separate update and refresh jobs with a durable operation identity', async () => {
+    const job = { id: uuid, kind: 'update', state: 'queued', libraryId: 5 };
+    sources.check.mockResolvedValue(job);
+    const result = await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/check`, payload: { kind: 'update', idempotencyKey: uuid } });
+    expect(result.statusCode).toBe(202);
+    expect(result.json()).toEqual(job);
+    expect(sources.check).toHaveBeenCalledWith(5, uuid, 'update', uuid, undefined);
+    for (const payload of [{ kind: 'update' }, { kind: 'overwrite', idempotencyKey: uuid }, { kind: 'refresh', idempotencyKey: uuid, force: true }])
+      expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/check`, payload })).statusCode).toBe(400);
+  });
   it('accepts settings profile fields and returns the exact summary response', async () => {
     const summary = { id: uuid, libraryId: 5, name: 'AO3', version: 1, updatedAt: new Date().toISOString() };
     profiles.create.mockResolvedValue(summary);
@@ -68,11 +78,14 @@ describe('Fanfiction HTTP contracts', () => {
     const job = { id: uuid, state: 'queued', libraryId: 5 };
     jobs.preview.mockResolvedValue(job);
     jobs.cancel.mockResolvedValue({ ...job, state: 'cancelled' });
+    jobs.retry.mockResolvedValue(job);
     const payload = { url: 'https://archiveofourown.org/works/123', profileId: uuid, idempotencyKey: uuid };
     const response = await app.inject({ method: 'POST', url: `${base}/previews`, payload });
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual(job);
     expect((await app.inject({ method: 'POST', url: `${base}/jobs/${uuid}/cancel`, payload: {} })).statusCode).toBe(202);
+    expect((await app.inject({ method: 'POST', url: `${base}/jobs/${uuid}/retry`, payload: {} })).statusCode).toBe(202);
+    expect(jobs.retry).toHaveBeenCalledWith(5, uuid, undefined);
     expect((await app.inject({ method: 'GET', url: `${base}/jobs?limit=101` })).statusCode).toBe(400);
     expect((await app.inject({ method: 'POST', url: `${base}/previews`, payload: { ...payload, url: 'file:///etc/passwd' } })).statusCode).toBe(400);
     jobs.status.mockResolvedValue({ items: [job] });

@@ -10099,6 +10099,9 @@
     "bookRequestReleases": "Pick a release"
   },
   "fanfiction": {
+    "retry": "Retry operation",
+    "checkNow": "Check for new chapters",
+    "refreshChapters": "Refresh existing chapters",
     "settingsTitle": "FanFicFare",
     "settingsDescription": "Manage authenticated story sources and library profiles.",
     "library": "Library",

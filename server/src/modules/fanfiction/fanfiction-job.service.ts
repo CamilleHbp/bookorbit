@@ -29,6 +29,121 @@ export class FanfictionJobService {
     return this.enqueue(libraryId, dto, user, 'import', { ...dto, intervalMinutes: dto.intervalMinutes === undefined ? 1440 : dto.intervalMinutes });
   }
 
+  async updateStory(
+    source: typeof schema.fanfictionSources.$inferSelect,
+    kind: 'update' | 'refresh',
+    idempotencyKey: string,
+    user: RequestUser,
+    scheduled = false,
+  ): Promise<FanfictionJob> {
+    await this.access.administer(user, source.libraryId);
+    return this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(schema.fanfictionSources)
+        .where(and(eq(schema.fanfictionSources.id, source.id), eq(schema.fanfictionSources.libraryId, source.libraryId)))
+        .for('update');
+      const [existing] = await tx
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.libraryId, source.libraryId), eq(jobs.userId, user.id), eq(jobs.idempotencyKey, idempotencyKey)))
+        .limit(1);
+      if (existing) {
+        if (existing.sourceId !== source.id || existing.kind !== kind)
+          throw new ConflictException('Operation identity was reused with different input');
+        return this.view(existing);
+      }
+      if (
+        !current ||
+        current.version !== source.version ||
+        !current.bookFileId ||
+        !['active', 'paused'].includes(current.state) ||
+        (scheduled && current.state !== 'active')
+      )
+        throw new ConflictException('Story source changed or requires attention before updating');
+      const [active] = await tx
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(and(eq(jobs.sourceId, source.id), inArray(jobs.state, ['queued', 'running'])))
+        .limit(1);
+      if (active) throw new ConflictException('An operation for this story is already active');
+      const [row] = await tx
+        .insert(jobs)
+        .values({
+          libraryId: source.libraryId,
+          userId: user.id,
+          tokenVersion: user.tokenVersion,
+          idempotencyKey,
+          sourceId: source.id,
+          sourceVersion: current.version,
+          profileId: current.profileId,
+          kind,
+          scheduled,
+          url: current.canonicalUrl,
+          site: current.site,
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (!row) throw new ConflictException('An operation for this story is already active');
+      return this.view(row);
+    });
+  }
+
+  async enqueueDue(): Promise<number> {
+    return this.db.transaction(async (tx) => {
+      const sources = schema.fanfictionSources;
+      const due = await tx
+        .select({ source: sources, tokenVersion: schema.users.tokenVersion })
+        .from(sources)
+        .innerJoin(schema.users, eq(schema.users.id, sources.createdBy))
+        .where(
+          and(
+            eq(sources.state, 'active'),
+            lte(sources.nextCheckAt, sql`now()`),
+            sql`${sources.intervalMinutes} is not null`,
+            sql`not exists (select 1 from ${jobs} where ${jobs.sourceId} = ${sources.id} and ${jobs.state} in ('queued', 'running'))`,
+          ),
+        )
+        .orderBy(asc(sources.nextCheckAt), asc(sources.id))
+        .limit(100)
+        .for('update', { of: sources, skipLocked: true });
+      let count = 0;
+      for (const { source, tokenVersion } of due) {
+        const [active] = await tx
+          .select({ id: jobs.id })
+          .from(jobs)
+          .where(and(eq(jobs.sourceId, source.id), inArray(jobs.state, ['queued', 'running'])))
+          .limit(1);
+        if (active) continue;
+        const rows = await tx
+          .insert(jobs)
+          .values({
+            libraryId: source.libraryId,
+            userId: source.createdBy,
+            tokenVersion,
+            idempotencyKey: randomUUID(),
+            profileId: source.profileId,
+            sourceId: source.id,
+            sourceVersion: source.version,
+            kind: 'update',
+            scheduled: true,
+            url: source.canonicalUrl,
+            site: source.site,
+            runAfter: sql`now() + (${Math.floor(Math.random() * 60)} * interval '1 second')`,
+          })
+          .onConflictDoNothing()
+          .returning({ id: jobs.id });
+        if (!rows.length) continue;
+        await tx
+          .update(sources)
+          .set({ nextCheckAt: sql`now() + (${sources.intervalMinutes} * interval '1 minute')` })
+          .where(eq(sources.id, source.id));
+        count++;
+      }
+      return count;
+    });
+  }
+
   private async enqueue(
     libraryId: number,
     dto: PreviewFanfictionDto,
@@ -129,6 +244,58 @@ export class FanfictionJobService {
     return this.get(libraryId, id, user);
   }
 
+  async retry(libraryId: number, id: string, user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    return this.db.transaction(async (tx) => {
+      const [job] = await tx
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.libraryId, libraryId), eq(jobs.id, id)))
+        .for('update');
+      if (!job) throw new NotFoundException('Fanfiction job not found in this library');
+      if (['queued', 'running', 'succeeded', 'no_change'].includes(job.state)) return this.view(job);
+      if (job.sourceId) {
+        const [source] = await tx
+          .select()
+          .from(schema.fanfictionSources)
+          .where(and(eq(schema.fanfictionSources.id, job.sourceId), eq(schema.fanfictionSources.libraryId, libraryId)))
+          .for('update');
+        if (!source || source.state === 'unlinked' || (job.sourceVersion !== null && source.version !== job.sourceVersion && !job.result?.revisionId))
+          throw new ConflictException('Source settings changed; review the pending operation before retrying');
+        const [other] = await tx
+          .select({ id: jobs.id })
+          .from(jobs)
+          .where(and(eq(jobs.sourceId, source.id), inArray(jobs.state, ['queued', 'running'])))
+          .limit(1);
+        if (other) throw new ConflictException('Another operation for this story is already active');
+        if (!job.result?.revisionId)
+          await tx
+            .update(schema.fanfictionSources)
+            .set({ state: source.bookFileId ? 'paused' : 'pending', attentionCode: null })
+            .where(eq(schema.fanfictionSources.id, source.id));
+      }
+      await this.access.administer(user, libraryId);
+      const [updated] = await tx
+        .update(jobs)
+        .set({
+          state: 'queued',
+          userId: user.id,
+          tokenVersion: user.tokenVersion,
+          scheduled: false,
+          cancellationRequested: false,
+          attempts: 0,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          errorCode: null,
+          runAfter: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(jobs.id, id))
+        .returning();
+      return this.view(updated);
+    });
+  }
+
   async claim() {
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(184719, 1)`);
@@ -167,7 +334,7 @@ export class FanfictionJobService {
         .from(jobs)
         .where(
           and(
-            inArray(jobs.kind, ['preview', 'import']),
+            inArray(jobs.kind, ['preview', 'import', 'update', 'refresh']),
             eq(jobs.cancellationRequested, false),
             lt(jobs.attempts, 3),
             active.length
@@ -215,22 +382,44 @@ export class FanfictionJobService {
     result: FanfictionJob['result'] = null,
     errorCode: string | null = null,
   ): Promise<boolean> {
-    const rows = await this.db
-      .update(jobs)
-      .set({
-        state: sql`case when ${jobs.cancellationRequested} then 'cancelled' else ${state} end`,
-        result,
-        errorCode,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        updatedAt: sql`now()`,
-        ...(state === 'queued'
-          ? { runAfter: sql`now() + (${Math.min(300, 15 * 2 ** job.attempts) + Math.floor(Math.random() * 15)} * interval '1 second')` }
-          : {}),
-      })
-      .where(this.owned(job))
-      .returning({ id: jobs.id });
-    return rows.length === 1;
+    return this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(jobs)
+        .set({
+          state: sql`case when ${jobs.cancellationRequested} then 'cancelled' else ${state} end`,
+          result: result ?? sql`${jobs.result}`,
+          errorCode,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          updatedAt: sql`now()`,
+          ...(state === 'queued'
+            ? { runAfter: sql`now() + (${Math.min(300, 15 * 2 ** job.attempts) + Math.floor(Math.random() * 15)} * interval '1 second')` }
+            : {}),
+        })
+        .where(this.owned(job))
+        .returning({ id: jobs.id, sourceId: jobs.sourceId, sourceVersion: jobs.sourceVersion, state: jobs.state });
+      const completed = rows[0];
+      if (completed?.sourceId && ['configuration_blocked', 'review_required', 'failed', 'cancelled'].includes(completed.state)) {
+        await tx
+          .update(schema.fanfictionSources)
+          .set({
+            ...(completed.state === 'configuration_blocked' || completed.state === 'review_required' ? { state: completed.state } : {}),
+            attentionCode: errorCode ?? completed.state,
+            nextCheckAt: null,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(schema.fanfictionSources.id, completed.sourceId),
+              eq(schema.fanfictionSources.libraryId, job.libraryId),
+              completed.sourceVersion === null
+                ? eq(schema.fanfictionSources.state, 'pending')
+                : eq(schema.fanfictionSources.version, completed.sourceVersion),
+            ),
+          );
+      }
+      return rows.length === 1;
+    });
   }
 
   async assertOwnership(job: typeof jobs.$inferSelect, transaction: DatabaseTransaction): Promise<void> {

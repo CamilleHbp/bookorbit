@@ -2,6 +2,7 @@ import { effectScope } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useFanfiction } from './useFanfiction'
+import type { FanfictionSource } from '@bookorbit/types'
 
 vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 const mockApi = vi.mocked(api)
@@ -30,6 +31,19 @@ describe('managed Fanfiction page requests', () => {
     vi.useRealTimers()
   })
   const create = () => scope.run(() => useFanfiction())!
+  it('keeps the same update request identity after an uncertain response and sends refresh separately', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    const source = { id: 'source-id', libraryId: 5 } as FanfictionSource
+    mockApi.mockRejectedValueOnce(new Error('Connection interrupted')).mockResolvedValue(response({ items: [], nextCursor: null }))
+    await state.checkNow(source)
+    await state.checkNow(source)
+    expect(mockApi.mock.calls[0]?.[0]).toBe('/api/v1/libraries/5/fanfiction/sources/source-id/check')
+    expect(mockApi.mock.calls[0]?.[1]?.body).toBe(mockApi.mock.calls[1]?.[1]?.body)
+    expect(JSON.parse(mockApi.mock.calls[1]?.[1]?.body as string)).toEqual({ kind: 'update', idempotencyKey: expect.any(String) })
+    await state.refreshChapters(source)
+    expect(JSON.parse(mockApi.mock.calls[3]?.[1]?.body as string)).toEqual({ kind: 'refresh', idempotencyKey: expect.any(String) })
+  })
 
   it('loads bounded, administrable library, folder, profile, source, and job pages', async () => {
     mockApi.mockImplementation(async (url) => {

@@ -8,6 +8,11 @@ export class ImportFanfictionDto extends PreviewFanfictionDto implements Fanfict
   @IsOptional() @IsInt() @Min(60) @Max(525600) intervalMinutes?: number | null;
 }
 
+export class CheckFanfictionSourceDto {
+  @IsUUID() idempotencyKey!: string;
+  @IsIn(['update', 'refresh']) kind!: 'update' | 'refresh';
+}
+
 export class ListFanfictionSourcesDto {
   @IsOptional() @IsUUID() cursor?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 50;

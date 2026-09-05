@@ -18,6 +18,8 @@ import { BookRevisionModule } from '../book-revision/book-revision.module';
 import { FanfictionSourceService } from './fanfiction-source.service';
 import { FanfictionSourceController } from './fanfiction-source.controller';
 import { FanfictionImportService } from './fanfiction-import.service';
+import { FanfictionUpdateService } from './fanfiction-update.service';
+import { FanfictionSchedulerService } from './fanfiction-scheduler.service';
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { FanfictionImportService } from './fanfiction-import.service';
     FanfictionWorkerService,
     FanfictionSourceService,
     FanfictionImportService,
+    FanfictionUpdateService,
+    FanfictionSchedulerService,
   ],
   controllers: [FanfictionController, FanfictionLibraryController, FanfictionSourceController],
 })

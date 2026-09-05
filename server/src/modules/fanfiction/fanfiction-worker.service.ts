@@ -6,6 +6,7 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionImportService } from './fanfiction-import.service';
+import { FanfictionUpdateService } from './fanfiction-update.service';
 
 type ClaimedJob = NonNullable<Awaited<ReturnType<FanfictionJobService['claim']>>>;
 
@@ -23,6 +24,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
     private readonly runtime: FanficfareRuntimeService,
     private readonly users: UserService,
     private readonly imports: FanfictionImportService,
+    private readonly updates: FanfictionUpdateService,
   ) {}
 
   @Interval(2000)
@@ -88,9 +90,11 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const result =
         job.kind === 'import'
           ? await this.imports.run(job, user, document, () => this.authorized(job), controller.signal)
-          : { preview: await this.runtime.preview(job.url, document, controller.signal) };
+          : job.kind === 'update' || job.kind === 'refresh'
+            ? await this.updates.run(job, document, () => this.authorized(job), controller.signal)
+            : { preview: await this.runtime.preview(job.url, document, controller.signal) };
       await this.authorized(job);
-      const committed = await this.jobs.finish(job, 'succeeded', result);
+      const committed = await this.jobs.finish(job, result?.noChange ? 'no_change' : 'succeeded', result);
       this.logger.log(
         `[fanfiction.job] [end] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} committed=${committed} - job completed`,
       );

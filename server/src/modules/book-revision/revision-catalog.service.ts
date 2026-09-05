@@ -56,6 +56,12 @@ export class RevisionCatalogService {
     return { revision: revision.id, bookFileId, sha256: revision.sha256, chapters: revision.chapters ?? [] };
   }
 
+  async current(bookFileId: number, libraryId: number) {
+    const file = await this.requireFile(bookFileId, libraryId);
+    if (!file.currentRevisionId) throw new NotFoundException('Book file has no inspected revision');
+    return this.get(bookFileId, file.currentRevisionId);
+  }
+
   async resolve(bookFileId: number, libraryId: number, targetRevisionId: string, anchor: ReadingAnchor) {
     const file = await this.requireFile(bookFileId, libraryId);
     if ((anchor.bookFileId !== undefined && anchor.bookFileId !== bookFileId) || (anchor.bookId !== undefined && anchor.bookId !== file.bookId)) {
@@ -87,7 +93,7 @@ export class RevisionCatalogService {
 
   async requireFile(bookFileId: number, libraryId: number) {
     const [file] = await this.db
-      .select({ bookId: schema.bookFiles.bookId })
+      .select({ bookId: schema.bookFiles.bookId, currentRevisionId: schema.bookFiles.currentRevisionId })
       .from(schema.bookFiles)
       .innerJoin(schema.books, eq(schema.books.id, schema.bookFiles.bookId))
       .where(and(eq(schema.bookFiles.id, bookFileId), eq(schema.books.libraryId, libraryId)))

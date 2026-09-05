@@ -666,6 +666,20 @@
       "when": 1788636924458,
       "tag": "0094_fanfiction_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1788639040238,
+      "tag": "0095_publication_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1788640012589,
+      "tag": "0096_fanfiction_update_jobs",
+      "breakpoints": true
     }
   ]
 }

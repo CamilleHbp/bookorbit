@@ -52,8 +52,22 @@ class ConfigurationTest(unittest.TestCase):
                 self.assertEqual(result['output'], 'output.epub')
                 self.assertGreater(validate_epub('output.epub'), 2)
                 Path('output.epub').rename('input.epub')
-                result = run({**request, 'operation': 'update'})
+                with patch.object(TestSiteAdapter, 'getChapterText', side_effect=AssertionError('Existing chapters must be preserved')):
+                    result = run({**request, 'operation': 'update'})
                 self.assertEqual(result['output'], 'output.epub')
+                Path('output.epub').unlink()
+                original_chapter = TestSiteAdapter.getChapterText
+                refreshed = []
+
+                def chapter(adapter, url):
+                    refreshed.append(url)
+                    return original_chapter(adapter, url) + '<p>Refreshed passage.</p>'
+
+                with patch.object(TestSiteAdapter, 'getChapterText', chapter):
+                    run({**request, 'operation': 'refresh'})
+                self.assertGreater(len(refreshed), 0)
+                with ZipFile('output.epub') as archive:
+                    self.assertTrue(any(b'Refreshed passage.' in archive.read(name) for name in archive.namelist() if name.endswith('.xhtml')))
                 self.assertFalse(Path('outside.epub').exists())
             finally:
                 os.chdir(original)

@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fanficfareConfig, storageConfig } from '../../config/config';
+import { validateFanfictionPreview } from './fanfiction-preview';
 
 type RuntimeRequest = {
   operation: 'health' | 'sites' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
@@ -54,7 +55,7 @@ export class FanficfareRuntimeService {
   }
 
   async preview(url: string, document: FanfictionProfileDocument, signal?: AbortSignal): Promise<FanfictionPreview> {
-    return (await this.temporary({ operation: 'preview', url, ...document }, signal)) as FanfictionPreview;
+    return validateFanfictionPreview(await this.temporary({ operation: 'preview', url, ...document }, signal));
   }
 
   async download<T>(
@@ -69,7 +70,29 @@ export class FanficfareRuntimeService {
         preview?: FanfictionPreview;
       };
       if (result.output !== 'output.epub' || !result.preview) throw new ServiceUnavailableException('Invalid FanFicFare download response');
-      return consume(join(directory, 'output.epub'), result.preview);
+      return consume(join(directory, 'output.epub'), validateFanfictionPreview(result.preview));
+    });
+  }
+
+  async update<T>(
+    operation: 'update' | 'refresh',
+    url: string,
+    document: FanfictionProfileDocument,
+    prepare: (inputPath: string) => Promise<void>,
+    consume: (path: string, preview: FanfictionPreview) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    return this.workspace(async (directory) => {
+      await prepare(join(directory, 'input.epub'));
+      const result = (await this.execute({ operation, url, ...document }, directory, signal)) as {
+        output?: string;
+        reviewRequired?: string;
+        preview?: FanfictionPreview;
+      };
+      if (result.reviewRequired)
+        throw new BadRequestException({ message: 'Story identity or chapter count requires review', errorCode: 'review_required' });
+      if (result.output !== 'output.epub' || !result.preview) throw new ServiceUnavailableException('Invalid FanFicFare update response');
+      return consume(join(directory, 'output.epub'), validateFanfictionPreview(result.preview));
     });
   }
 

@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { and, asc, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
 import { rm, rmdir, stat } from 'node:fs/promises';
@@ -13,6 +13,7 @@ import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { EpubManifestService } from './epub-manifest.service';
 import { publicationPaths, publishStagedFile, requireInspectedFile, stagePublication, syncPath } from './revision-publication.files';
 import { inspectStableFile, sameFileSignature } from './file-inspection';
+import type { RevisionPublicationAuthority } from './revision-publication-authority';
 
 type Db = NodePgDatabase<typeof schema>;
 type Transaction = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -29,7 +30,14 @@ export class RevisionPublicationService {
     private readonly locks: FileLockService,
   ) {}
 
-  async prepare(bookFileId: number, libraryId: number, expectedRevisionId: string, inputPath: string, reason: RevisionPublicationReason) {
+  async prepare(
+    bookFileId: number,
+    libraryId: number,
+    expectedRevisionId: string,
+    inputPath: string,
+    reason: RevisionPublicationReason,
+    authority?: RevisionPublicationAuthority,
+  ) {
     if (this.activePreparations >= 2) throw new ServiceUnavailableException('Revision preparation is busy; retry later');
     this.activePreparations++;
     const startedAt = Date.now();
@@ -37,7 +45,18 @@ export class RevisionPublicationService {
       `[book.revision_prepare] [start] bookFileId=${bookFileId} libraryId=${libraryId} reason=${reason} - revision preparation started`,
     );
     try {
-      const result = await this.prepareInternal(bookFileId, libraryId, expectedRevisionId, inputPath, reason);
+      if (authority) {
+        const existing = await this.ownedPublication(bookFileId, libraryId, authority);
+        if (existing) {
+          if (existing.expectedRevisionId !== expectedRevisionId)
+            throw new ConflictException('Publication ownership was reused for another revision');
+          this.logger.log(
+            `[book.revision_prepare] [end] bookFileId=${bookFileId} libraryId=${libraryId} durationMs=${Date.now() - startedAt} publicationId=${existing.id} reused=true - revision preparation recovered`,
+          );
+          return { publicationId: existing.id, state: existing.state };
+        }
+      }
+      const result = await this.prepareInternal(bookFileId, libraryId, expectedRevisionId, inputPath, reason, authority);
       this.logger.log(
         `[book.revision_prepare] [end] bookFileId=${bookFileId} libraryId=${libraryId} durationMs=${Date.now() - startedAt} publicationId=${result.publicationId} - revision preparation completed`,
       );
@@ -58,6 +77,7 @@ export class RevisionPublicationService {
     expectedRevisionId: string,
     inputPath: string,
     reason: RevisionPublicationReason,
+    authority?: RevisionPublicationAuthority,
   ) {
     const file = await this.scopedFile(this.db, bookFileId, libraryId);
     if (!file.sha256 || file.currentRevisionId !== expectedRevisionId)
@@ -72,6 +92,7 @@ export class RevisionPublicationService {
       await requireInspectedFile(staged.stagedPath, staged.fresh.sha256);
       attemptedCommit = true;
       await this.db.transaction(async (tx) => {
+        await authority?.authorize(tx);
         const locked = await this.scopedFile(tx, bookFileId, libraryId, true);
         if (locked.currentRevisionId !== expectedRevisionId || locked.absolutePath !== file.absolutePath || locked.sha256 !== file.sha256) {
           throw new ConflictException('Book file changed while preparing its replacement');
@@ -87,6 +108,7 @@ export class RevisionPublicationService {
           )
           .limit(1);
         if (active) throw new ConflictException('A replacement for this file is already pending');
+        await authority?.authorize(tx);
         await tx.insert(schema.revisionPublications).values({
           id,
           bookFileId,
@@ -102,6 +124,7 @@ export class RevisionPublicationService {
           nextSizeBytes: staged.fresh.sizeBytes,
           manifest,
           reason,
+          ownerKey: authority?.ownerKey,
         });
       });
       committed = true;
@@ -123,7 +146,40 @@ export class RevisionPublicationService {
     }
   }
 
-  async resume(id: string, libraryId: number): Promise<{ revisionId: string; state: 'cleanup_complete' }> {
+  async ownedPublication(bookFileId: number, libraryId: number, authority: RevisionPublicationAuthority) {
+    return this.db.transaction(async (tx) => {
+      await authority.authorize(tx);
+      await this.scopedFile(tx, bookFileId, libraryId);
+      const [journal] = await tx
+        .select({
+          id: schema.revisionPublications.id,
+          state: schema.revisionPublications.state,
+          expectedRevisionId: schema.revisionPublications.expectedRevisionId,
+          nextRevisionId: schema.revisionPublications.nextRevisionId,
+        })
+        .from(schema.revisionPublications)
+        .where(
+          and(
+            eq(schema.revisionPublications.ownerKey, authority.ownerKey),
+            eq(schema.revisionPublications.bookFileId, bookFileId),
+            eq(schema.revisionPublications.libraryId, libraryId),
+          ),
+        )
+        .limit(1);
+      return journal ?? null;
+    });
+  }
+
+  private async authorize(
+    journal: typeof schema.revisionPublications.$inferSelect,
+    transaction: Transaction,
+    authority?: RevisionPublicationAuthority,
+  ) {
+    if (journal.ownerKey && journal.ownerKey !== authority?.ownerKey) throw new ConflictException('This publication requires its owning operation');
+    await authority?.authorize(transaction);
+  }
+
+  async resume(id: string, libraryId: number, authority?: RevisionPublicationAuthority): Promise<{ revisionId: string; state: 'cleanup_complete' }> {
     const [journal] = await this.db
       .select({ bookFileId: schema.revisionPublications.bookFileId, targetPath: schema.revisionPublications.targetPath })
       .from(schema.revisionPublications)
@@ -132,11 +188,15 @@ export class RevisionPublicationService {
     if (!journal) throw new NotFoundException('Revision publication not found');
     const file = await this.scopedFile(this.db, journal.bookFileId, libraryId);
     return this.locks.withLock(bookOperationLockKey(file.bookId), () =>
-      this.locks.withLock(journal.targetPath, () => this.resumeLocked(id, libraryId)),
+      this.locks.withLock(journal.targetPath, () => this.resumeLocked(id, libraryId, authority)),
     );
   }
 
-  private async resumeLocked(id: string, libraryId: number): Promise<{ revisionId: string; state: 'cleanup_complete' }> {
+  private async resumeLocked(
+    id: string,
+    libraryId: number,
+    authority?: RevisionPublicationAuthority,
+  ): Promise<{ revisionId: string; state: 'cleanup_complete' }> {
     const event = 'book.revision_publish';
     const startedAt = Date.now();
     this.logger.log(`[${event}] [start] publicationId=${id} libraryId=${libraryId} - revision publication started`);
@@ -149,6 +209,7 @@ export class RevisionPublicationService {
       if (!expected) throw new NotFoundException('Revision publication not found');
       this.assertPaths(expected);
       await this.db.transaction(async (tx) => {
+        await this.authorize(expected, tx, authority);
         const file = await this.scopedFile(tx, expected.bookFileId, libraryId, true);
         const [journal] = await tx.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, id)).for('update');
         if (journal.state === 'failed') throw new ConflictException('Revision publication is cancelled or requires review');
@@ -164,6 +225,7 @@ export class RevisionPublicationService {
           await requireInspectedFile(journal.stagedPath, journal.nextSha256);
           const currentStat = await stat(journal.targetPath, { bigint: true });
           if (!sameFileSignature(actual.file.signature, currentStat)) throw new ConflictException('Current EPUB changed during publication');
+          await this.authorize(journal, tx, authority);
           await publishStagedFile(journal.stagedPath, journal.targetPath);
         }
         await tx
@@ -171,8 +233,8 @@ export class RevisionPublicationService {
           .set({ state: 'filesystem_published', updatedAt: new Date() })
           .where(eq(schema.revisionPublications.id, id));
       });
-      await this.commitPublished(expected);
-      await this.cleanup(expected);
+      await this.commitPublished(expected, authority);
+      await this.cleanup(expected, authority);
       this.logger.log(
         `[${event}] [end] publicationId=${id} libraryId=${libraryId} durationMs=${Date.now() - startedAt} revisionId=${expected.nextRevisionId} - revision publication completed`,
       );
@@ -185,14 +247,23 @@ export class RevisionPublicationService {
     }
   }
 
-  async cancel(id: string, libraryId: number): Promise<void> {
+  async cancel(id: string, libraryId: number, authority?: RevisionPublicationAuthority): Promise<void> {
+    const [expected] = await this.db
+      .select()
+      .from(schema.revisionPublications)
+      .where(and(eq(schema.revisionPublications.id, id), eq(schema.revisionPublications.libraryId, libraryId)))
+      .limit(1);
+    if (!expected) throw new NotFoundException('Revision publication not found');
     await this.db.transaction(async (tx) => {
+      await this.authorize(expected, tx, authority);
+      await this.scopedFile(tx, expected.bookFileId, libraryId, true);
       const [journal] = await tx
         .select()
         .from(schema.revisionPublications)
         .where(and(eq(schema.revisionPublications.id, id), eq(schema.revisionPublications.libraryId, libraryId)))
         .for('update');
       if (!journal) throw new NotFoundException('Revision publication not found');
+      await this.authorize(journal, tx, authority);
       if (journal.state === 'failed') return;
       if (journal.state !== 'prepared') throw new ConflictException('This revision has already been published');
       const current = await requireInspectedFile(journal.targetPath);
@@ -209,7 +280,12 @@ export class RevisionPublicationService {
       const pending = await this.db
         .select({ id: schema.revisionPublications.id, libraryId: schema.revisionPublications.libraryId })
         .from(schema.revisionPublications)
-        .where(inArray(schema.revisionPublications.state, ['prepared', 'filesystem_published', 'database_committed']))
+        .where(
+          and(
+            isNull(schema.revisionPublications.ownerKey),
+            inArray(schema.revisionPublications.state, ['prepared', 'filesystem_published', 'database_committed']),
+          ),
+        )
         .orderBy(asc(schema.revisionPublications.updatedAt), asc(schema.revisionPublications.id))
         .limit(100);
       for (const journal of pending) {
@@ -224,8 +300,9 @@ export class RevisionPublicationService {
     }
   }
 
-  private async commitPublished(expected: typeof schema.revisionPublications.$inferSelect): Promise<void> {
+  private async commitPublished(expected: typeof schema.revisionPublications.$inferSelect, authority?: RevisionPublicationAuthority): Promise<void> {
     await this.db.transaction(async (tx) => {
+      await this.authorize(expected, tx, authority);
       const file = await this.scopedFile(tx, expected.bookFileId, expected.libraryId, true);
       const [journal] = await tx.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, expected.id)).for('update');
       if (journal.state === 'database_committed' || journal.state === 'cleanup_complete') return;
@@ -237,6 +314,7 @@ export class RevisionPublicationService {
         throw new ConflictException('Publication state changed before database commit');
       }
       const installed = await requireInspectedFile(journal.targetPath, journal.nextSha256);
+      await this.authorize(journal, tx, authority);
       await this.commitRevision(tx, journal, installed);
     });
   }
@@ -320,76 +398,79 @@ export class RevisionPublicationService {
       .where(eq(schema.revisionPublications.id, journal.id));
   }
 
-  private async cleanup(journal: typeof schema.revisionPublications.$inferSelect): Promise<void> {
-    if (journal.state === 'cleanup_complete') return;
-    await rm(journal.stagedPath, { force: true });
-    try {
-      await syncPath(dirname(journal.stagedPath));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      const [previous] = await this.db
-        .select({ storagePath: schema.bookFileRevisions.storagePath })
-        .from(schema.bookFileRevisions)
-        .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)))
-        .limit(1);
-      if (!previous || previous.storagePath !== null) throw new ConflictException('Rollback backup is missing before cleanup');
-    }
-    await this.pruneRetainedFiles(journal);
-    await this.db
-      .update(schema.revisionPublications)
-      .set({ state: 'cleanup_complete', updatedAt: new Date() })
-      .where(and(eq(schema.revisionPublications.id, journal.id), eq(schema.revisionPublications.state, 'database_committed')));
-  }
-  private async pruneRetainedFiles(journal: typeof schema.revisionPublications.$inferSelect): Promise<void> {
+  private async cleanup(expected: typeof schema.revisionPublications.$inferSelect, authority?: RevisionPublicationAuthority): Promise<void> {
     await this.db.transaction(async (tx) => {
-      await this.scopedFile(tx, journal.bookFileId, journal.libraryId, true);
-      const [latest] = await tx
-        .select({ expectedRevisionId: schema.revisionPublications.expectedRevisionId })
-        .from(schema.revisionPublications)
-        .where(
-          and(
-            eq(schema.revisionPublications.bookFileId, journal.bookFileId),
-            inArray(schema.revisionPublications.state, ['database_committed', 'cleanup_complete']),
-          ),
-        )
-        .orderBy(desc(schema.revisionPublications.createdAt), desc(schema.revisionPublications.id))
-        .limit(1);
-      if (!latest) return;
-      const old = await tx
-        .select({ revisionId: schema.bookFileRevisions.id, journal: schema.revisionPublications })
-        .from(schema.bookFileRevisions)
-        .innerJoin(
-          schema.revisionPublications,
-          and(
-            eq(schema.revisionPublications.expectedRevisionId, schema.bookFileRevisions.id),
-            eq(schema.revisionPublications.bookFileId, schema.bookFileRevisions.bookFileId),
-            eq(schema.revisionPublications.backupPath, schema.bookFileRevisions.storagePath),
-          ),
-        )
-        .where(
-          and(
-            eq(schema.bookFileRevisions.bookFileId, journal.bookFileId),
-            ne(schema.bookFileRevisions.id, latest.expectedRevisionId),
-            isNotNull(schema.bookFileRevisions.storagePath),
-            inArray(schema.revisionPublications.state, ['database_committed', 'cleanup_complete']),
-          ),
-        )
-        .orderBy(asc(schema.bookFileRevisions.createdAt), asc(schema.bookFileRevisions.id))
-        .limit(100);
-      for (const entry of old) {
-        this.assertPaths(entry.journal);
-        await rm(entry.journal.backupPath, { force: true });
-        const directory = dirname(entry.journal.backupPath);
-        try {
-          await rmdir(directory);
-        } catch (error) {
-          const code = (error as NodeJS.ErrnoException).code;
-          if (code === 'ENOTEMPTY') await syncPath(directory);
-          else if (code !== 'ENOENT') throw error;
-        }
-        await syncPath(dirname(directory));
-        await tx.update(schema.bookFileRevisions).set({ storagePath: null }).where(eq(schema.bookFileRevisions.id, entry.revisionId));
+      await this.authorize(expected, tx, authority);
+      await this.scopedFile(tx, expected.bookFileId, expected.libraryId, true);
+      const [journal] = await tx.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, expected.id)).for('update');
+      if (!journal || journal.state === 'cleanup_complete') return;
+      if (journal.state !== 'database_committed') throw new ConflictException('Publication must be committed before cleanup');
+      await rm(journal.stagedPath, { force: true });
+      try {
+        await syncPath(dirname(journal.stagedPath));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        const [previous] = await tx
+          .select({ storagePath: schema.bookFileRevisions.storagePath })
+          .from(schema.bookFileRevisions)
+          .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)))
+          .limit(1);
+        if (!previous || previous.storagePath !== null) throw new ConflictException('Rollback backup is missing before cleanup');
       }
+      await this.pruneRetainedFiles(journal, tx);
+      await tx
+        .update(schema.revisionPublications)
+        .set({ state: 'cleanup_complete', updatedAt: new Date() })
+        .where(eq(schema.revisionPublications.id, journal.id));
     });
+  }
+  private async pruneRetainedFiles(journal: typeof schema.revisionPublications.$inferSelect, tx: Transaction): Promise<void> {
+    const [latest] = await tx
+      .select({ expectedRevisionId: schema.revisionPublications.expectedRevisionId })
+      .from(schema.revisionPublications)
+      .where(
+        and(
+          eq(schema.revisionPublications.bookFileId, journal.bookFileId),
+          inArray(schema.revisionPublications.state, ['database_committed', 'cleanup_complete']),
+        ),
+      )
+      .orderBy(desc(schema.revisionPublications.createdAt), desc(schema.revisionPublications.id))
+      .limit(1);
+    if (!latest) return;
+    const old = await tx
+      .select({ revisionId: schema.bookFileRevisions.id, journal: schema.revisionPublications })
+      .from(schema.bookFileRevisions)
+      .innerJoin(
+        schema.revisionPublications,
+        and(
+          eq(schema.revisionPublications.expectedRevisionId, schema.bookFileRevisions.id),
+          eq(schema.revisionPublications.bookFileId, schema.bookFileRevisions.bookFileId),
+          eq(schema.revisionPublications.backupPath, schema.bookFileRevisions.storagePath),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.bookFileRevisions.bookFileId, journal.bookFileId),
+          ne(schema.bookFileRevisions.id, latest.expectedRevisionId),
+          isNotNull(schema.bookFileRevisions.storagePath),
+          inArray(schema.revisionPublications.state, ['database_committed', 'cleanup_complete']),
+        ),
+      )
+      .orderBy(asc(schema.bookFileRevisions.createdAt), asc(schema.bookFileRevisions.id))
+      .limit(100);
+    for (const entry of old) {
+      this.assertPaths(entry.journal);
+      await rm(entry.journal.backupPath, { force: true });
+      const directory = dirname(entry.journal.backupPath);
+      try {
+        await rmdir(directory);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ENOTEMPTY') await syncPath(directory);
+        else if (code !== 'ENOENT') throw error;
+      }
+      await syncPath(dirname(directory));
+      await tx.update(schema.bookFileRevisions).set({ storagePath: null }).where(eq(schema.bookFileRevisions.id, entry.revisionId));
+    }
   }
 }

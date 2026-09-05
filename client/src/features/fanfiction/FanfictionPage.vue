@@ -43,7 +43,10 @@ const {
   previewStories,
   importSelected,
   cancelJob,
+  retryJob,
   togglePaused,
+  checkNow,
+  refreshChapters,
   showStories,
   showAdd,
   showActivity,
@@ -126,13 +129,17 @@ onMounted(() => {
               </div>
             </dl>
           </div>
-          <Button
-            v-if="source.state === 'active' || (source.state === 'paused' && source.bookFileId)"
-            variant="outline"
-            :disabled="busy"
-            @click="togglePaused(source)"
-            >{{ source.state === 'paused' ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates') }}</Button
-          >
+          <div v-if="source.bookFileId && ['active', 'paused'].includes(source.state)" class="flex flex-wrap items-start gap-2">
+            <Button variant="outline" :disabled="busy" @click="checkNow(source)">{{ t('fanfiction.checkNow') }}</Button>
+            <Button variant="outline" :disabled="busy" @click="refreshChapters(source)">{{ t('fanfiction.refreshChapters') }}</Button>
+            <Button
+              v-if="source.state === 'active' || (source.state === 'paused' && source.bookFileId)"
+              variant="outline"
+              :disabled="busy"
+              @click="togglePaused(source)"
+              >{{ source.state === 'paused' ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates') }}</Button
+            >
+          </div>
         </article>
         <Button v-if="sourceCursor" variant="outline" :disabled="busy" @click="moreSources">{{ t('fanfiction.nextPage') }}</Button>
       </section>
@@ -231,6 +238,13 @@ onMounted(() => {
             :disabled="busy || job.cancellationRequested"
             @click="cancelJob(job)"
             >{{ t('fanfiction.cancel') }}</Button
+          >
+          <Button
+            v-else-if="['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)"
+            variant="outline"
+            :disabled="busy"
+            @click="retryJob(job)"
+            >{{ t('fanfiction.retry') }}</Button
           >
         </article>
         <Button v-if="jobCursor" variant="outline" :disabled="busy" @click="moreJobs">{{ t('fanfiction.nextPage') }}</Button>

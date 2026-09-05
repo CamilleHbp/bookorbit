@@ -1,0 +1,88 @@
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import type { FanfictionJob, FanfictionPreview, FanfictionProfileDocument } from '@bookorbit/types';
+import type * as schema from '../../db/schema';
+import { BookRevisionService } from '../book-revision/book-revision.service';
+import { EpubManifestService } from '../book-revision/epub-manifest.service';
+import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
+import { RevisionDownloadService } from '../book-revision/revision-download.service';
+import { RevisionPublicationService } from '../book-revision/revision-publication.service';
+import type { RevisionPublicationAuthority } from '../book-revision/revision-publication-authority';
+import { FanficfareRuntimeService } from './fanficfare-runtime.service';
+import { FanfictionSourceService } from './fanfiction-source.service';
+
+type Job = typeof schema.fanfictionJobs.$inferSelect;
+
+@Injectable()
+export class FanfictionUpdateService {
+  constructor(
+    private readonly runtime: FanficfareRuntimeService,
+    private readonly sources: FanfictionSourceService,
+    private readonly revisions: BookRevisionService,
+    private readonly catalog: RevisionCatalogService,
+    private readonly downloads: RevisionDownloadService,
+    private readonly publications: RevisionPublicationService,
+    private readonly manifests: EpubManifestService,
+  ) {}
+
+  async run(job: Job, document: FanfictionProfileDocument, authorize: () => Promise<unknown>, signal: AbortSignal): Promise<FanfictionJob['result']> {
+    if (job.result?.revisionId) return job.result;
+    const source = await this.sources.updateContext(job);
+    const fileId = source.bookFileId!;
+    const access = async () => {
+      if (signal.aborted) throw new ConflictException('Story update was cancelled');
+      await authorize();
+    };
+    const authority: RevisionPublicationAuthority = {
+      ownerKey: job.id,
+      authorize: async (tx) => {
+        await access();
+        await this.sources.assertUpdatable(job, tx);
+      },
+    };
+    const finish = async (revisionId: string, noChange: boolean, preview?: FanfictionPreview) => {
+      await access();
+      return this.sources.completeUpdate(job, { sourceId: source.id, bookId: source.bookId!, bookFileId: fileId, revisionId, noChange }, preview);
+    };
+    const owned = await this.publications.ownedPublication(fileId, source.libraryId, authority);
+    if (owned) {
+      const installed = await this.publications.resume(owned.id, source.libraryId, authority);
+      return finish(installed.revisionId, false, job.result?.preview);
+    }
+    await access();
+    await this.catalog.requireFile(fileId, source.libraryId);
+    await this.revisions.observeFile(fileId, {});
+    const current = await this.catalog.current(fileId, source.libraryId);
+    const expected = await this.sources.expectRevision(job, current.id);
+    if (expected !== current.id)
+      throw new ConflictException({ message: 'Installed EPUB changed before the update could resume', errorCode: 'review_required' });
+    if (job.kind !== 'update' && job.kind !== 'refresh') throw new BadRequestException('Invalid source update operation');
+    return this.runtime.update(
+      job.kind,
+      source.canonicalUrl,
+      document,
+      async (path) => {
+        const snapshot = await this.downloads.download(fileId, source.libraryId, expected, access);
+        await pipeline(snapshot.stream, createWriteStream(path, { flags: 'wx', mode: 0o600 }), { signal });
+      },
+      async (path, preview) => {
+        await access();
+        if (this.sources.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl || preview.chapterCount < source.chapterCount)
+          throw new BadRequestException({ message: 'Story identity or chapter count requires review', errorCode: 'review_required' });
+        const next = await this.manifests.inspect(path);
+        if (current.contentHash === next.contentHash && current.metadataHash === next.metadataHash && current.coverHash === next.coverHash) {
+          await this.revisions.observeFile(fileId, {});
+          if ((await this.catalog.current(fileId, source.libraryId)).id !== expected)
+            throw new ConflictException('Installed EPUB changed during update');
+          return finish(expected, true, preview);
+        }
+        await this.sources.stageUpdatePreview(job, preview);
+        const prepared = await this.publications.prepare(fileId, source.libraryId, expected, path, 'fanficfare', authority);
+        const installed = await this.publications.resume(prepared.publicationId, source.libraryId, authority);
+        return finish(installed.revisionId, false, preview);
+      },
+      signal,
+    );
+  }
+}

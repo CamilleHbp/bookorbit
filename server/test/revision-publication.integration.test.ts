@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { Pool, type PoolConfig } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { DB } from '../src/db';
 import { FileLockService } from '../src/common/file-lock.service';
@@ -19,6 +19,10 @@ import { EpubManifestService } from '../src/modules/book-revision/epub-manifest.
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import { RevisionPublicationService } from '../src/modules/book-revision/revision-publication.service';
 import { requireInspectedFile } from '../src/modules/book-revision/revision-publication.files';
+import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
+import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
+import { FanfictionProfileService } from '../src/modules/fanfiction/fanfiction-profile.service';
+import type { RevisionPublicationAuthority } from '../src/modules/book-revision/revision-publication-authority';
 
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
 
@@ -37,6 +41,8 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
   let target: string;
   let input: string;
   let originalSha: string;
+  let jobs: FanfictionJobService;
+  let ownerUserId: number;
 
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
@@ -51,6 +57,9 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
         RevisionCatalogService,
         RevisionDownloadService,
         FileLockService,
+        FanfictionJobService,
+        { provide: FanfictionAccessService, useValue: {} },
+        { provide: FanfictionProfileService, useValue: {} },
         { provide: DB, useValue: db },
         { provide: storageConfig.KEY, useValue: storage },
       ],
@@ -59,9 +68,16 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     manifests = module.get(EpubManifestService);
     catalog = module.get(RevisionCatalogService);
     downloads = module.get(RevisionDownloadService);
+    jobs = module.get(FanfictionJobService);
+    const [user] = await db
+      .insert(schema.users)
+      .values({ username: `publication-owner-${randomUUID()}`, name: 'Publication owner test', passwordHash: 'not-a-login-hash' })
+      .returning();
+    ownerUserId = user.id;
   }, 60_000);
 
   afterAll(async () => {
+    if (ownerUserId) await db.delete(schema.users).where(eq(schema.users.id, ownerUserId));
     await pool?.end();
   });
 
@@ -140,6 +156,72 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const [row] = await db.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, id));
     return row;
   }
+
+  async function owner() {
+    const [job] = await db
+      .insert(schema.fanfictionJobs)
+      .values({
+        libraryId,
+        userId: ownerUserId,
+        tokenVersion: 0,
+        idempotencyKey: randomUUID(),
+        kind: 'preview',
+        url: 'https://example.org/story/1',
+        site: 'example.org',
+        state: 'running',
+        fence: 1,
+        leaseOwner: randomUUID(),
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+      })
+      .returning();
+    return job!;
+  }
+  function authority(job: typeof schema.fanfictionJobs.$inferSelect): RevisionPublicationAuthority {
+    return { ownerKey: job.id, authorize: (tx) => jobs.assertOwnership(job, tx) };
+  }
+
+  it('excludes owned journals from generic recovery and fences workers after a lease takeover', async () => {
+    const first = await owner();
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare', authority(first));
+    await service.recoverPending();
+    expect((await journal(prepared.publicationId)).state).toBe('prepared');
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+    await expect(service.resume(prepared.publicationId, libraryId)).rejects.toThrow('owning operation');
+    await expect(service.cancel(prepared.publicationId, libraryId)).rejects.toThrow('owning operation');
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ leaseExpiresAt: sql`now() - interval '1 second'` })
+      .where(eq(schema.fanfictionJobs.id, first.id));
+    const replacement = (await jobs.claim())!;
+    expect(replacement.id).toBe(first.id);
+    await expect(service.resume(prepared.publicationId, libraryId, authority(first))).rejects.toThrow('ownership expired');
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+    expect(await service.prepare(fileId, libraryId, originalId, '/missing-after-restart', 'fanficfare', authority(replacement))).toEqual(prepared);
+    await expect(service.resume(prepared.publicationId, libraryId, authority(replacement))).resolves.toMatchObject({ state: 'cleanup_complete' });
+  });
+
+  it('uses the current clock to reject a lease that expires inside the publication transaction', async () => {
+    const job = await owner();
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare', authority(job));
+    let checks = 0;
+    const expiresDuringPublication: RevisionPublicationAuthority = {
+      ownerKey: job.id,
+      authorize: async (tx) => {
+        await jobs.assertOwnership(job, tx);
+        if (++checks === 1) {
+          await tx
+            .update(schema.fanfictionJobs)
+            .set({ leaseExpiresAt: sql`clock_timestamp() + interval '10 milliseconds'` })
+            .where(eq(schema.fanfictionJobs.id, job.id));
+          await tx.execute(sql`select pg_sleep(0.02)`);
+        }
+      },
+    };
+    await expect(service.resume(prepared.publicationId, libraryId, expiresDuringPublication)).rejects.toThrow('ownership expired');
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+    expect((await journal(prepared.publicationId)).state).toBe('prepared');
+    await service.resume(prepared.publicationId, libraryId, authority(job));
+  });
 
   it('recovers a prepared operation and retains a verified previous EPUB', async () => {
     const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');

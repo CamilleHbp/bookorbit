@@ -60,11 +60,13 @@ export const revisionPublications = pgTable(
     nextSizeBytes: bigint('next_size_bytes', { mode: 'number' }).notNull(),
     manifest: jsonb('manifest').$type<EpubRevisionManifest>().notNull(),
     reason: varchar('reason', { length: 30 }).$type<RevisionPublicationReason>().notNull(),
+    ownerKey: uuid('owner_key'),
     state: varchar('state', { length: 30 }).$type<RevisionPublicationState>().notNull().default('prepared'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    uniqueIndex('revision_publications_owner_idx').on(t.ownerKey),
     uniqueIndex('revision_publications_active_file_idx')
       .on(t.bookFileId)
       .where(sql`${t.state} in ('prepared', 'filesystem_published')`),
