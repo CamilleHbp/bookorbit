@@ -2163,8 +2163,9 @@ export class ScannerService implements OnApplicationBootstrap {
 
     await waitForStability(fileStat.absolutePath, fileStat.mtime.getTime());
 
+    let observed = { ...fileStat, fileHash: byPath.fileHash };
     if (!sizeUnchanged || !mtimeUnchanged || !inoUnchanged || reassigned) {
-      await this.scannerRepo.updateBookFile(byPath.id, {
+      const saved = await this.scannerRepo.updateBookFile(byPath.id, {
         ...(reassigned && { bookId }),
         libraryFolderId,
         ino: fileStat.ino,
@@ -2174,11 +2175,18 @@ export class ScannerService implements OnApplicationBootstrap {
         role,
         sortOrder,
       });
+      observed = {
+        ...fileStat,
+        ino: saved.ino,
+        sizeBytes: saved.sizeBytes ?? fileStat.sizeBytes,
+        mtime: saved.mtime ?? fileStat.mtime,
+        fileHash: saved.fileHash,
+      };
       counts.updatedCount++;
     } else {
       await this.scannerRepo.updateBookFile(byPath.id, { sortOrder });
     }
-    if (byPath.ino !== fileStat.ino) {
+    if (byPath.ino !== observed.ino) {
       const previousIno = fileByIno.get(byPath.ino);
       if (previousIno?.id === byPath.id) {
         fileByIno.delete(byPath.ino);
@@ -2187,22 +2195,22 @@ export class ScannerService implements OnApplicationBootstrap {
     fileByPath.set(fileStat.absolutePath, {
       id: byPath.id,
       bookId,
-      ino: fileStat.ino,
-      sizeBytes: fileStat.sizeBytes,
-      mtime: fileStat.mtime,
-      fileHash: byPath.fileHash,
+      ino: observed.ino,
+      sizeBytes: observed.sizeBytes,
+      mtime: observed.mtime,
+      fileHash: observed.fileHash,
       sortOrder,
     });
-    if (fileStat.ino !== 0n) {
-      fileByIno.set(fileStat.ino, {
+    if (observed.ino !== 0n) {
+      fileByIno.set(observed.ino, {
         id: byPath.id,
         bookId,
         absolutePath: fileStat.absolutePath,
-        sizeBytes: fileStat.sizeBytes,
-        mtime: fileStat.mtime,
+        sizeBytes: observed.sizeBytes,
+        mtime: observed.mtime,
       });
     }
-    return { isNew: false, reassigned, changed: !sizeUnchanged || !mtimeUnchanged, fileId: byPath.id };
+    return { isNew: false, reassigned, changed: !sizeUnchanged || !mtimeUnchanged || !inoUnchanged || reassigned, fileId: byPath.id };
   }
 
   private async resolveByLocalIno(

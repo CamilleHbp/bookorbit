@@ -603,6 +603,20 @@
       "when": 1788321273908,
       "tag": "0085_add_authentication_method",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1788602679190,
+      "tag": "0086_book_file_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1788603290337,
+      "tag": "0087_revision_manifests",
+      "breakpoints": true
     }
   ]
 }
