@@ -21,6 +21,7 @@ import { FanfictionImportService } from './fanfiction-import.service';
 import { FanfictionUpdateService } from './fanfiction-update.service';
 import { FanfictionSchedulerService } from './fanfiction-scheduler.service';
 import { FanfictionActivityService } from './fanfiction-activity.service';
+import { FanfictionRollbackService } from './fanfiction-rollback.service';
 import { NotificationModule } from '../notification/notification.module';
 
 @Module({
@@ -47,6 +48,7 @@ import { NotificationModule } from '../notification/notification.module';
     FanfictionUpdateService,
     FanfictionSchedulerService,
     FanfictionActivityService,
+    FanfictionRollbackService,
   ],
   controllers: [FanfictionController, FanfictionLibraryController, FanfictionSourceController],
 })

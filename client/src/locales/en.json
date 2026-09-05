@@ -8615,9 +8615,20 @@
           "description": "When you unlock a new reading achievement."
         },
         "fanfiction": {
+          "storyUpdates": "Story updates",
+          "noManagedSource": "This book has no managed story source.",
+          "lastUpdated": "Last server update",
+          "unlink": "Unlink source",
+          "unlinkHelp": "Unlinking keeps this book, its files, and reading history.",
+          "currentProfile": "Current profile",
+          "intervalMinutes": "Check every (minutes)",
+          "rollbackHelp": "Restoring the retained EPUB creates a new revision and pauses source updates. Reading history and annotations are preserved.",
+          "currentRevision": "Current revision",
+          "rollback": "Restore this revision",
           "recentChanges": "Recent story changes",
           "operations": "Operations",
           "activityKinds": {
+            "rolled_back": "Rolled back on the server",
             "imported": "Imported",
             "updated": "Updated on the server",
             "attention": "Needs attention",
@@ -10111,9 +10122,20 @@
     "bookRequestReleases": "Pick a release"
   },
   "fanfiction": {
+    "storyUpdates": "Story updates",
+    "noManagedSource": "This book has no managed story source.",
+    "lastUpdated": "Last server update",
+    "unlink": "Unlink source",
+    "unlinkHelp": "Unlinking keeps this book, its files, and reading history.",
+    "currentProfile": "Current profile",
+    "intervalMinutes": "Check every (minutes)",
+    "rollbackHelp": "Restoring the retained EPUB creates a new revision and pauses source updates. Reading history and annotations are preserved.",
+    "currentRevision": "Current revision",
+    "rollback": "Restore this revision",
     "recentChanges": "Recent story changes",
     "operations": "Operations",
     "activityKinds": {
+      "rolled_back": "Rolled back on the server",
       "imported": "Imported",
       "updated": "Updated on the server",
       "attention": "Needs attention",

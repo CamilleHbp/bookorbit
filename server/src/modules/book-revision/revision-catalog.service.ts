@@ -1,5 +1,5 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, lt, or } from 'drizzle-orm';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { BookFileRevisionPage, BookFileRevisionManifest, ReadingAnchor, RevisionChapter } from '@bookorbit/types';
 import { DB } from '../../db';
@@ -11,7 +11,7 @@ export class RevisionCatalogService {
   constructor(@Inject(DB) private readonly db: NodePgDatabase<typeof schema>) {}
 
   async list(bookFileId: number, libraryId: number, limit = 50, cursor?: string): Promise<BookFileRevisionPage> {
-    await this.requireFile(bookFileId, libraryId);
+    const file = await this.requireFile(bookFileId, libraryId);
     const pageSize = Math.max(1, Math.min(100, Number.isFinite(limit) ? Math.floor(limit) : 50));
     const [before] = cursor
       ? await this.db
@@ -31,23 +31,31 @@ export class RevisionCatalogService {
         fileHash: schema.bookFileRevisions.fileHash,
         sizeBytes: schema.bookFileRevisions.sizeBytes,
         createdAt: schema.bookFileRevisions.createdAt,
+        canRollback: sql<boolean>`${schema.bookFileRevisions.storagePath} is not null and ${schema.bookFileRevisions.id} <> ${file.currentRevisionId}::uuid`,
       })
       .from(schema.bookFileRevisions)
       .where(
         and(
           eq(schema.bookFileRevisions.bookFileId, bookFileId),
           before
-            ? or(
-                lt(schema.bookFileRevisions.createdAt, before.createdAt),
-                and(eq(schema.bookFileRevisions.createdAt, before.createdAt), lt(schema.bookFileRevisions.id, before.id)),
-              )
+            ? sql`(${schema.bookFileRevisions.createdAt}, ${schema.bookFileRevisions.id}) < (select ${schema.bookFileRevisions.createdAt}, ${schema.bookFileRevisions.id} from ${schema.bookFileRevisions} where ${schema.bookFileRevisions.id} = ${before.id} and ${schema.bookFileRevisions.bookFileId} = ${bookFileId})`
             : undefined,
         ),
       )
       .orderBy(desc(schema.bookFileRevisions.createdAt), desc(schema.bookFileRevisions.id))
       .limit(pageSize + 1);
     const items = rows.slice(0, pageSize).map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
-    return { items, nextCursor: rows.length > pageSize ? items[items.length - 1].revision : null };
+    return { items, nextCursor: rows.length > pageSize ? items[items.length - 1].revision : null, currentRevisionId: file.currentRevisionId };
+  }
+
+  async retained(bookFileId: number, libraryId: number, revisionId: string, expectedRevisionId: string) {
+    const file = await this.requireFile(bookFileId, libraryId);
+    if (file.currentRevisionId !== expectedRevisionId || revisionId === expectedRevisionId)
+      throw new ConflictException({ errorCode: 'review_required', message: 'Refresh revision history before requesting rollback' });
+    const revision = await this.get(bookFileId, revisionId);
+    if (!revision.storagePath)
+      throw new ConflictException({ errorCode: 'review_required', message: 'This historical EPUB is no longer retained for rollback' });
+    return { path: revision.storagePath, sha256: revision.sha256 };
   }
 
   async manifest(bookFileId: number, libraryId: number, revisionId: string): Promise<BookFileRevisionManifest> {

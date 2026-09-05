@@ -4,7 +4,13 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { RequireLibraryAccess } from '../../common/decorators/require-library-access.decorator';
 import type { RequestUser } from '../../common/types/request-user';
-import { CheckFanfictionSourceDto, ImportFanfictionDto, ListFanfictionSourcesDto, UpdateFanfictionSourceDto } from './dto/fanfiction-source.dto';
+import {
+  CheckFanfictionSourceDto,
+  ImportFanfictionDto,
+  ListFanfictionSourcesDto,
+  UpdateFanfictionSourceDto,
+  RollbackFanfictionSourceDto,
+} from './dto/fanfiction-source.dto';
 import { FanfictionSourceService } from './fanfiction-source.service';
 import { FanfictionLibrariesDto } from './dto/fanfiction-profile.dto';
 
@@ -54,5 +60,16 @@ export class FanfictionSourceController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.sources.check(libraryId, id, dto.kind, dto.idempotencyKey, user);
+  }
+
+  @Post(':sourceId/rollback')
+  @HttpCode(202)
+  rollback(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('sourceId', ParseUUIDPipe) id: string,
+    @Body() dto: RollbackFanfictionSourceDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.sources.rollback(libraryId, id, dto, user);
   }
 }

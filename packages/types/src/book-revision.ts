@@ -92,11 +92,13 @@ export interface BookFileRevisionSummary {
   fileHash: string;
   sizeBytes: number;
   createdAt: string;
+  canRollback?: boolean;
 }
 
 export interface BookFileRevisionPage {
   items: BookFileRevisionSummary[];
   nextCursor: string | null;
+  currentRevisionId?: string | null;
 }
 export interface BookFileRevisionManifest {
   revision: string;

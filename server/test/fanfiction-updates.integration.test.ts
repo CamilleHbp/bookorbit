@@ -24,6 +24,7 @@ import { RevisionPublicationService } from '../src/modules/book-revision/revisio
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import { RevisionDownloadService } from '../src/modules/book-revision/revision-download.service';
 import { FanfictionUpdateService } from '../src/modules/fanfiction/fanfiction-update.service';
+import { FanfictionRollbackService } from '../src/modules/fanfiction/fanfiction-rollback.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
@@ -115,6 +116,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     module = await Test.createTestingModule({
       providers: [
         FanfictionUpdateService,
+        FanfictionRollbackService,
         FanfictionSourceService,
         FanfictionJobService,
         FanfictionActivityService,
@@ -393,4 +395,58 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       expect(new Set(ids).size).toBe(105);
     }
   });
+  it('rolls back to retained bytes with a new revision and pauses updates without contacting the runtime', async () => {
+    const catalog = module.get(RevisionCatalogService);
+    const original = await catalog.current(fileId, libraryId);
+    const originalBytes = await readFile(target);
+    const updateJob = await claim();
+    const update = await run(updateJob);
+    await jobs.finish(updateJob, 'succeeded', update);
+    const request = { idempotencyKey: randomUUID(), revisionId: original.id, expectedRevisionId: update!.revisionId! };
+    const queued = await sources.rollback(libraryId, source.id, request, user);
+    expect((await sources.rollback(libraryId, source.id, request, user)).id).toBe(queued.id);
+    const rollbackJob = (await jobs.claim())!;
+    const rollback = module.get(FanfictionRollbackService);
+    vi.spyOn(sources, 'completeRollback').mockRejectedValueOnce(new ConflictException('Rollback completion interrupted'));
+    await expect(rollback.run(rollbackJob, authorize, new AbortController().signal)).rejects.toThrow('completion interrupted');
+    await jobs.finish(rollbackJob, 'failed', null, 'runtime_failed');
+    await jobs.retry(libraryId, rollbackJob.id, user);
+    const retry = (await jobs.claim())!;
+    const result = await rollback.run(retry, authorize, new AbortController().signal);
+    expect(result?.revisionId).not.toBe(original.id);
+    expect(result?.revisionId).not.toBe(update?.revisionId);
+    expect(await readFile(target)).toEqual(originalBytes);
+    expect((await catalog.current(fileId, libraryId)).reason).toBe('rollback');
+    expect(await sources.get(libraryId, source.id, user)).toMatchObject({ state: 'paused', nextCheckAt: null });
+    expect(runtime.update).toHaveBeenCalledTimes(1);
+    const history = await catalog.list(fileId, libraryId);
+    expect(history.items).toHaveLength(3);
+    expect(history.items.filter((row) => row.canRollback)).toHaveLength(1);
+    expect(history.currentRevisionId).toBe(result?.revisionId);
+  }, 60_000);
+  it('rejects a retained EPUB whose bytes changed after choosing rollback', async () => {
+    const catalog = module.get(RevisionCatalogService);
+    const original = await catalog.current(fileId, libraryId);
+    const updateJob = await claim();
+    const update = await run(updateJob);
+    await jobs.finish(updateJob, 'succeeded', update);
+    const before = await readFile(target);
+    await sources.rollback(
+      libraryId,
+      source.id,
+      { idempotencyKey: randomUUID(), revisionId: original.id, expectedRevisionId: update!.revisionId! },
+      user,
+    );
+    const retained = catalog.retained.bind(catalog);
+    vi.spyOn(catalog, 'retained').mockImplementationOnce(async (...args) => {
+      const selected = await retained(...args);
+      await epub(selected.path, 'Unexpected replacement of the retained copy');
+      return selected;
+    });
+    await expect(module.get(FanfictionRollbackService).run((await jobs.claim())!, authorize, new AbortController().signal)).rejects.toThrow(
+      'checksum',
+    );
+    expect(await readFile(target)).toEqual(before);
+    expect((await catalog.current(fileId, libraryId)).id).toBe(update?.revisionId);
+  }, 60_000);
 });

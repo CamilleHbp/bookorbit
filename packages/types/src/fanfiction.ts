@@ -143,7 +143,7 @@ export interface FanfictionActivity {
   libraryId: number;
   sourceId: string | null;
   jobId: string | null;
-  kind: "imported" | "updated" | "attention" | "failed";
+  kind: "imported" | "updated" | "rolled_back" | "attention" | "failed";
   title: string;
   bookId: number | null;
   revisionId: string | null;

@@ -98,6 +98,7 @@ export const fanfictionJobs = pgTable(
     input: jsonb('input').$type<FanfictionImportRequest>(),
     sourceVersion: integer('source_version'),
     expectedRevisionId: uuid('expected_revision_id'),
+    rollbackRevisionId: uuid('rollback_revision_id'),
     scheduled: boolean('scheduled').notNull().default(false),
     kind: varchar('kind', { length: 20 }).$type<FanfictionJobKind>().notNull(),
     state: varchar('state', { length: 30 }).$type<FanfictionJobState>().notNull().default('queued'),
@@ -166,6 +167,6 @@ export const fanfictionActivity = pgTable(
     index('fanfiction_activity_source_idx').on(t.sourceId),
     index('fanfiction_activity_job_idx').on(t.jobId),
     index('fanfiction_activity_book_idx').on(t.bookId),
-    check('fanfiction_activity_kind_chk', sql`${t.kind} in ('imported', 'updated', 'attention', 'failed')`),
+    check('fanfiction_activity_kind_chk', sql`${t.kind} in ('imported', 'updated', 'rolled_back', 'attention', 'failed')`),
   ],
 );

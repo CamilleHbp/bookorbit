@@ -2,7 +2,8 @@
 import { computed, defineAsyncComponent, onMounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import type { BookDetail, BookMetadataLockField } from '@bookorbit/types'
+import { Permission, type BookDetail, type BookMetadataLockField } from '@bookorbit/types'
+import { BOOK_STORY_ADMIN_KEY, useBookStory } from '@/features/fanfiction/composables/useBookStory'
 import BookDetailLayout from '@/features/book/components/detail/BookDetailLayout.vue'
 import DetailsTab from '@/features/book/components/detail/tabs/DetailsTab.vue'
 import FilesTab from '@/features/book/components/detail/tabs/FilesTab.vue'
@@ -24,6 +25,7 @@ const loadReadingLogTab = () => import('@/features/book/components/detail/tabs/R
 const loadHighlightsTab = () => import('@/features/book/components/detail/tabs/HighlightsTab.vue')
 const ReadingLogTab = defineAsyncComponent(loadReadingLogTab)
 const HighlightsTab = defineAsyncComponent(loadHighlightsTab)
+const StoryUpdatesTab = defineAsyncComponent(() => import('@/features/fanfiction/components/StoryUpdatesTab.vue'))
 
 const KEPT_ALIVE_TABS = ['ReadingLogTab', 'HighlightsTab']
 
@@ -45,6 +47,12 @@ const bookId = computed(() => Number(route.params.bookId))
 const tab = computed(() => normalizeBookDetailTab(route.query.tab))
 
 const { detail, loading, notFound, fetch } = useBookDetail()
+const story = useBookStory(
+  bookId,
+  () => detail.value?.libraryId,
+  () => hasPermission(Permission.ManageLibraries),
+)
+provide(BOOK_STORY_ADMIN_KEY, story.allowed)
 const pageTitle = computed(() => {
   const title = detail.value?.title?.trim()
   const base = title || (Number.isFinite(bookId.value) ? t('views.bookDetail.titleWithId', { id: bookId.value }) : t('views.bookDetail.title'))
@@ -152,6 +160,7 @@ function onCoverChanged(source: 'extracted' | 'custom' | null) {
           <FilesTab v-else-if="tab === 'files'" :book="detail" @refetch="fetch(detail.id)" />
           <ReadingLogTab v-else-if="tab === 'reading-log'" :book="detail" @saved="onMetadataSaved" />
           <HighlightsTab v-else-if="tab === 'highlights'" :book="detail" />
+          <StoryUpdatesTab v-else-if="tab === 'story-updates' && story.allowed.value" :state="story" />
         </KeepAlive>
       </div>
 

@@ -29,6 +29,7 @@ export const NotificationType = {
   AchievementUnlocked: "achievement_unlocked",
   FanfictionImported: "fanfiction_imported",
   FanfictionUpdated: "fanfiction_updated",
+  FanfictionRolledBack: "fanfiction_rolled_back",
   FanfictionAttention: "fanfiction_attention",
   FanfictionFailed: "fanfiction_failed",
 } as const;
@@ -106,6 +107,7 @@ export const NOTIFICATION_TYPE_META: Record<NotificationType, NotificationTypeMe
   [NotificationType.AchievementUnlocked]: { category: "achievements", severity: "success" },
   [NotificationType.FanfictionImported]: { category: "fanfiction", severity: "success" },
   [NotificationType.FanfictionUpdated]: { category: "fanfiction", severity: "success" },
+  [NotificationType.FanfictionRolledBack]: { category: "fanfiction", severity: "success" },
   [NotificationType.FanfictionAttention]: { category: "fanfiction", severity: "warning" },
   [NotificationType.FanfictionFailed]: { category: "fanfiction", severity: "error" },
 };

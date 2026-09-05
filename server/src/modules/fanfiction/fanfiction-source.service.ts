@@ -15,7 +15,7 @@ import { UploadValidatorService } from '../upload/upload-validator.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
-import { ImportFanfictionDto, ListFanfictionSourcesDto, UpdateFanfictionSourceDto } from './dto/fanfiction-source.dto';
+import { ImportFanfictionDto, ListFanfictionSourcesDto, UpdateFanfictionSourceDto, RollbackFanfictionSourceDto } from './dto/fanfiction-source.dto';
 import { recordFanfictionActivity } from './fanfiction-activity';
 
 const sources = schema.fanfictionSources;
@@ -45,6 +45,11 @@ export class FanfictionSourceService {
     return this.jobs.updateStory(await this.find(libraryId, id), kind, idempotencyKey, user);
   }
 
+  async rollback(libraryId: number, id: string, dto: RollbackFanfictionSourceDto, user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    return this.jobs.updateStory(await this.find(libraryId, id), 'rollback', dto.idempotencyKey, user, false, dto);
+  }
+
   async updateContext(job: Job) {
     return this.db.transaction((tx) => this.assertUpdatable(job, tx));
   }
@@ -62,7 +67,7 @@ export class FanfictionSourceService {
       !source.bookFileId ||
       source.version !== job.sourceVersion ||
       source.profileId !== job.profileId ||
-      !['active', 'paused'].includes(source.state) ||
+      !(job.kind === 'rollback' ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']).includes(source.state) ||
       (job.scheduled && source.state !== 'active')
     )
       throw new ConflictException({ message: 'Story source settings changed before publication', errorCode: 'configuration_blocked' });
@@ -120,6 +125,37 @@ export class FanfictionSourceService {
     });
   }
 
+  async completeRollback(job: Job, revisionId: string) {
+    return this.db.transaction(async (tx) => {
+      const source = await this.assertUpdatable(job, tx);
+      await tx
+        .update(sources)
+        .set({
+          state: 'paused',
+          nextCheckAt: null,
+          attentionCode: null,
+          lastUpdatedAt: sql`now()`,
+          updatedAt: sql`now()`,
+          version: sql`${sources.version} + 1`,
+        })
+        .where(eq(sources.id, source.id));
+      const result = { sourceId: source.id, bookId: source.bookId!, bookFileId: source.bookFileId!, revisionId };
+      await tx.update(schema.fanfictionJobs).set({ result }).where(eq(schema.fanfictionJobs.id, job.id));
+      await recordFanfictionActivity(tx, {
+        libraryId: job.libraryId,
+        userId: job.userId,
+        sourceId: source.id,
+        jobId: job.id,
+        eventKey: `${job.id}:rolled_back`,
+        kind: 'rolled_back',
+        title: source.title,
+        bookId: source.bookId,
+        revisionId,
+      });
+      return result;
+    });
+  }
+
   async list(libraryId: number, dto: ListFanfictionSourcesDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
     const before = dto.cursor ? await this.find(libraryId, dto.cursor) : null;
@@ -129,6 +165,7 @@ export class FanfictionSourceService {
       .where(
         and(
           eq(sources.libraryId, libraryId),
+          dto.bookId ? eq(sources.bookId, dto.bookId) : undefined,
           dto.state ? eq(sources.state, dto.state) : sql`${sources.state} <> 'unlinked'`,
           dto.search ? ilike(sources.title, `%${dto.search.replace(/[\\%_]/g, '\\$&')}%`) : undefined,
           before

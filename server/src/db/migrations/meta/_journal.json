@@ -694,6 +694,13 @@
       "when": 1788641860401,
       "tag": "0098_fanfiction_activity_retry",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1788643374186,
+      "tag": "0099_managed_story_rollback",
+      "breakpoints": true
     }
   ]
 }

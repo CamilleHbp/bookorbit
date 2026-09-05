@@ -37,6 +37,7 @@ export class RevisionPublicationService {
     inputPath: string,
     reason: RevisionPublicationReason,
     authority?: RevisionPublicationAuthority,
+    expectedInputSha256?: string,
   ) {
     if (this.activePreparations >= 2) throw new ServiceUnavailableException('Revision preparation is busy; retry later');
     this.activePreparations++;
@@ -48,7 +49,11 @@ export class RevisionPublicationService {
       if (authority) {
         const existing = await this.ownedPublication(bookFileId, libraryId, authority);
         if (existing) {
-          if (existing.expectedRevisionId !== expectedRevisionId)
+          if (
+            existing.expectedRevisionId !== expectedRevisionId ||
+            existing.reason !== reason ||
+            (expectedInputSha256 && existing.nextSha256 !== expectedInputSha256)
+          )
             throw new ConflictException('Publication ownership was reused for another revision');
           this.logger.log(
             `[book.revision_prepare] [end] bookFileId=${bookFileId} libraryId=${libraryId} durationMs=${Date.now() - startedAt} publicationId=${existing.id} reused=true - revision preparation recovered`,
@@ -56,7 +61,7 @@ export class RevisionPublicationService {
           return { publicationId: existing.id, state: existing.state };
         }
       }
-      const result = await this.prepareInternal(bookFileId, libraryId, expectedRevisionId, inputPath, reason, authority);
+      const result = await this.prepareInternal(bookFileId, libraryId, expectedRevisionId, inputPath, reason, authority, expectedInputSha256);
       this.logger.log(
         `[book.revision_prepare] [end] bookFileId=${bookFileId} libraryId=${libraryId} durationMs=${Date.now() - startedAt} publicationId=${result.publicationId} - revision preparation completed`,
       );
@@ -78,6 +83,7 @@ export class RevisionPublicationService {
     inputPath: string,
     reason: RevisionPublicationReason,
     authority?: RevisionPublicationAuthority,
+    expectedInputSha256?: string,
   ) {
     const file = await this.scopedFile(this.db, bookFileId, libraryId);
     if (!file.sha256 || file.currentRevisionId !== expectedRevisionId)
@@ -88,6 +94,8 @@ export class RevisionPublicationService {
     let attemptedCommit = false;
     let committed = false;
     try {
+      if (expectedInputSha256 && staged.fresh.sha256 !== expectedInputSha256)
+        throw new ConflictException('The retained EPUB checksum no longer matches its revision');
       const manifest = await this.manifests.inspect(staged.stagedPath);
       await requireInspectedFile(staged.stagedPath, staged.fresh.sha256);
       attemptedCommit = true;
@@ -156,6 +164,8 @@ export class RevisionPublicationService {
           state: schema.revisionPublications.state,
           expectedRevisionId: schema.revisionPublications.expectedRevisionId,
           nextRevisionId: schema.revisionPublications.nextRevisionId,
+          nextSha256: schema.revisionPublications.nextSha256,
+          reason: schema.revisionPublications.reason,
         })
         .from(schema.revisionPublications)
         .where(

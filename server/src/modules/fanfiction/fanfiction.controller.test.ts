@@ -18,7 +18,7 @@ describe('Fanfiction HTTP contracts', () => {
   let app: NestFastifyApplication;
   const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn() };
   const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn(), retry: vi.fn() };
-  const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), check: vi.fn() };
+  const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), check: vi.fn(), rollback: vi.fn() };
   const activity = { list: vi.fn() };
   const uuid = '97e5bb69-36e8-43a2-9e3b-0fb924d1ca2f';
   const base = '/api/v1/libraries/5/fanfiction';
@@ -86,6 +86,23 @@ describe('Fanfiction HTTP contracts', () => {
     expect(result.json()).toEqual(page);
     expect(activity.list).toHaveBeenCalledWith(5, expect.objectContaining({ limit: 50 }), undefined);
     expect((await app.inject({ method: 'GET', url: `${base}/activity?limit=101` })).statusCode).toBe(400);
+  });
+  it('requires explicit revision identities for rollback and validates book source filtering', async () => {
+    const job = { id: uuid, state: 'queued', kind: 'rollback' };
+    sources.rollback.mockResolvedValue(job);
+    const payload = { idempotencyKey: uuid, revisionId: uuid, expectedRevisionId: uuid };
+    const result = await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/rollback`, payload });
+    expect(result.statusCode).toBe(202);
+    expect(result.json()).toEqual(job);
+    expect(sources.rollback).toHaveBeenCalledWith(5, uuid, expect.objectContaining(payload), undefined);
+    expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/rollback`, payload: { revisionId: uuid } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/rollback`, payload: { ...payload, force: true } })).statusCode).toBe(
+      400,
+    );
+    sources.list.mockResolvedValue({ items: [], nextCursor: null });
+    expect((await app.inject({ method: 'GET', url: `${base}/sources?bookId=12&limit=50` })).statusCode).toBe(200);
+    expect(sources.list).toHaveBeenCalledWith(5, expect.objectContaining({ bookId: 12, limit: 50 }), undefined);
+    expect((await app.inject({ method: 'GET', url: `${base}/sources?bookId=0` })).statusCode).toBe(400);
   });
   it('accepts settings profile fields and returns the exact summary response', async () => {
     const summary = { id: uuid, libraryId: 5, name: 'AO3', version: 1, updatedAt: new Date().toISOString() };

@@ -32,10 +32,11 @@ export class FanfictionJobService {
 
   async updateStory(
     source: typeof schema.fanfictionSources.$inferSelect,
-    kind: 'update' | 'refresh',
+    kind: 'update' | 'refresh' | 'rollback',
     idempotencyKey: string,
     user: RequestUser,
     scheduled = false,
+    rollback?: { revisionId: string; expectedRevisionId: string },
   ): Promise<FanfictionJob> {
     await this.access.administer(user, source.libraryId);
     return this.db.transaction(async (tx) => {
@@ -50,7 +51,12 @@ export class FanfictionJobService {
         .where(and(eq(jobs.libraryId, source.libraryId), eq(jobs.userId, user.id), eq(jobs.idempotencyKey, idempotencyKey)))
         .limit(1);
       if (existing) {
-        if (existing.sourceId !== source.id || existing.kind !== kind)
+        if (
+          existing.sourceId !== source.id ||
+          existing.kind !== kind ||
+          (kind === 'rollback' &&
+            (existing.rollbackRevisionId !== rollback?.revisionId || existing.expectedRevisionId !== rollback?.expectedRevisionId))
+        )
           throw new ConflictException('Operation identity was reused with different input');
         return this.view(existing);
       }
@@ -58,7 +64,7 @@ export class FanfictionJobService {
         !current ||
         current.version !== source.version ||
         !current.bookFileId ||
-        !['active', 'paused'].includes(current.state) ||
+        !(kind === 'rollback' ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']).includes(current.state) ||
         (scheduled && current.state !== 'active')
       )
         throw new ConflictException('Story source changed or requires attention before updating');
@@ -78,6 +84,7 @@ export class FanfictionJobService {
           sourceId: source.id,
           sourceVersion: current.version,
           profileId: current.profileId,
+          ...(rollback ? { rollbackRevisionId: rollback.revisionId, expectedRevisionId: rollback.expectedRevisionId } : {}),
           kind,
           scheduled,
           url: current.canonicalUrl,
@@ -340,7 +347,7 @@ export class FanfictionJobService {
         .from(jobs)
         .where(
           and(
-            inArray(jobs.kind, ['preview', 'import', 'update', 'refresh']),
+            inArray(jobs.kind, ['preview', 'import', 'update', 'refresh', 'rollback']),
             eq(jobs.cancellationRequested, false),
             lt(jobs.attempts, 3),
             active.length

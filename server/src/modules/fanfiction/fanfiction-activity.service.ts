@@ -15,10 +15,17 @@ const activity = schema.fanfictionActivity;
 const notificationTypes = {
   imported: NotificationType.FanfictionImported,
   updated: NotificationType.FanfictionUpdated,
+  rolled_back: NotificationType.FanfictionRolledBack,
   attention: NotificationType.FanfictionAttention,
   failed: NotificationType.FanfictionFailed,
 };
-const titles = { imported: 'Story imported', updated: 'Story updated', attention: 'Story source needs attention', failed: 'Story operation failed' };
+const titles = {
+  imported: 'Story imported',
+  updated: 'Story updated',
+  rolled_back: 'Story rolled back',
+  attention: 'Story source needs attention',
+  failed: 'Story operation failed',
+};
 
 @Injectable()
 export class FanfictionActivityService {

@@ -13,7 +13,14 @@ export class CheckFanfictionSourceDto {
   @IsIn(['update', 'refresh']) kind!: 'update' | 'refresh';
 }
 
+export class RollbackFanfictionSourceDto {
+  @IsUUID() idempotencyKey!: string;
+  @IsUUID() revisionId!: string;
+  @IsUUID() expectedRevisionId!: string;
+}
+
 export class ListFanfictionSourcesDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) bookId?: number;
   @IsOptional() @IsUUID() cursor?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 50;
   @IsOptional() @IsString() @MaxLength(200) search?: string;
