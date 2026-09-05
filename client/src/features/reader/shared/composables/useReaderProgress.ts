@@ -81,6 +81,7 @@ export function useReaderProgress(
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   let lastValidPercentage = 0
+  let restorationPosition = false
 
   onUnmounted(() => {
     if (saveTimer) clearTimeout(saveTimer)
@@ -109,6 +110,7 @@ export function useReaderProgress(
   }
 
   function onRelocate(detail: RelocateDetail) {
+    restorationPosition = detail?.restoration === true
     cfi.value = normalizeString(detail?.cfi)
     const relocatedFraction = normalizeFraction(detail?.fraction)
     if (relocatedFraction !== null) {
@@ -134,12 +136,14 @@ export function useReaderProgress(
     timeTotal.value = detail?.time?.total ?? 0
 
     if (saveTimer) clearTimeout(saveTimer)
-    if (!unref(trackingEnabled) || !hasSaveableLocation) return
+    if (!unref(trackingEnabled) || !hasSaveableLocation || restorationPosition) return
     saveTimer = setTimeout(() => save(), 2000)
   }
 
-  async function save() {
+  async function save(options: { deliberate?: boolean } = {}) {
     if (!unref(trackingEnabled)) return
+    if (options.deliberate) restorationPosition = false
+    if (restorationPosition) return
     const safePercentage = updatePercentage(percentage.value)
     await api(`/api/v1/books/files/${fileId}/progress`, {
       method: 'POST',

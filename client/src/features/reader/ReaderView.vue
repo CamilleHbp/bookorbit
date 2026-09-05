@@ -175,7 +175,7 @@ async function startTrackedReading() {
   delete query.mode
   await router.replace({ name: 'reader', params: route.params, query })
   await nextTick()
-  await progress.save()
+  await progress.save({ deliberate: true })
   onActivity()
 }
 
@@ -224,7 +224,7 @@ function handleTranslate() {
 
 function onRelocateHandler(detail: RelocateDetail) {
   progress.onRelocate(detail)
-  onActivity()
+  if (!detail.restoration) onActivity()
   bookmarks.setCfi(detail?.cfi ?? null)
   toc.setActiveHref(detail?.tocItem?.href ?? '')
   const renderer = getRenderer()

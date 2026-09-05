@@ -74,3 +74,4 @@ export * from "./sidebar";
 export * from "./cover-search-preferences";
 export * from "./cron";
 export * from "./book-revision";
+export * from "./anchor-text";

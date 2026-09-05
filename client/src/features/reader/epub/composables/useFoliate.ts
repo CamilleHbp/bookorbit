@@ -6,6 +6,7 @@ import { useFoliateInput } from './useFoliateInput'
 import type { EpubBookInfo, EpubReaderSettings } from '@bookorbit/types'
 
 export interface RelocateDetail {
+  restoration?: boolean
   cfi?: string | null
   fraction?: number
   index?: number
@@ -218,7 +219,7 @@ export function useFoliate(
             cfi: detail?.cfi ?? null,
           })
         }
-        onRelocate?.(detail)
+        onRelocate?.({ ...detail, restoration: initialNavigationPending })
       })
 
       view.addEventListener('error', (e: Event) => {
