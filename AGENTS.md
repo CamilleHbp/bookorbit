@@ -1,5 +1,14 @@
 ## Project
 
+### Live environment and repository synchronization
+
+- The actual BookOrbit server runs on `nf-showcases`, accessible with `ssh nf-showcases`, at `https://books.camille.studio`.
+- Deployment is managed from `/home/debian/HomeServer` on that host. Read its `AGENTS.md` before operating the deployment. The corresponding local project is `/Users/camille/Dev/Personal/HomeServer`.
+- BookOrbit uses the shared HomeServer PostgreSQL service with its own database and role. Do not create another PostgreSQL container. Use an isolated database in that shared instance for migration and integration tests; do not test destructive fixtures against the live `bookorbit` database.
+- Persistent BookOrbit files belong under `/srv/homeserver/data/bookorbit`. Inspect the current Compose configuration and container mounts before changing them. Do not recursively change permissions or ownership of shared storage.
+- The GitHub fork is `git@github.com:CamilleHbp/bookorbit.git` (`origin`). Fetch before starting work, preserve existing changes on a feature branch, and keep the implementation branch synchronized with GitHub as work is verified. Do not overwrite remote work or deploy an incomplete feature to the live service.
+- A missing local Docker daemon or local `server/.env` does not imply the deployment or database is unavailable. Inspect `nf-showcases` first.
+
 - Book/library management app with Kobo device support.
 - pnpm monorepo: `server/` (NestJS), `client/` (Vue 3), `packages/types/` (shared types).
 - Requires Node >= 24, pnpm >= 9.
