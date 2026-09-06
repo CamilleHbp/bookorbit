@@ -708,6 +708,27 @@
       "when": 1788645556608,
       "tag": "0100_interrupted_revision_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1788647911948,
+      "tag": "0101_story_discovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1788648833152,
+      "tag": "0102_discovery_review_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1788678168533,
+      "tag": "0103_discovery_job_recovery",
+      "breakpoints": true
     }
   ]
 }

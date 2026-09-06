@@ -8,15 +8,23 @@ import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionImportService } from './fanfiction-import.service';
 import { FanfictionUpdateService } from './fanfiction-update.service';
 import { FanfictionRollbackService } from './fanfiction-rollback.service';
+import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
+import { FanfictionAdoptionService } from './fanfiction-adoption.service';
 import { UserService } from '../user/user.service';
 
 describe('Fanfiction queued execution', () => {
-  it('runs rollback without decrypting a broken source profile or contacting FanFicFare', async () => {
-    const job = { id: 'job', kind: 'rollback', libraryId: 5, userId: 7, tokenVersion: 1, profileId: 'broken-profile', attempts: 1 };
-    const result = { revisionId: 'new-rollback-revision' };
+  it.each(['rollback', 'discovery', 'adopt'] as const)('runs %s without decrypting a profile or contacting FanFicFare', async (kind) => {
+    const job = { id: 'job', kind, libraryId: 5, userId: 7, tokenVersion: 1, profileId: 'broken-profile', attempts: 1 };
+    const result =
+      kind === 'rollback'
+        ? { revisionId: 'new-rollback-revision' }
+        : kind === 'discovery'
+          ? { discovery: { finished: false } }
+          : { selection: { processed: 3, failed: 1, finished: true } };
     const jobs = {
       claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null),
       finish: vi.fn().mockResolvedValue(true),
+      yieldBatch: vi.fn().mockResolvedValue(true),
       renew: vi.fn().mockResolvedValue(true),
     };
     const profiles = { document: vi.fn().mockRejectedValue(new Error('Encryption key unavailable')) };
@@ -33,12 +41,25 @@ describe('Fanfiction queued execution', () => {
         { provide: FanfictionImportService, useValue: {} },
         { provide: FanfictionUpdateService, useValue: {} },
         { provide: FanfictionRollbackService, useValue: rollback },
+        { provide: FanfictionDiscoveryService, useValue: rollback },
+        { provide: FanfictionAdoptionService, useValue: rollback },
       ],
     }).compile();
     const worker = module.get(FanfictionWorkerService);
     try {
       await worker.tick();
-      await vi.waitFor(() => expect(jobs.finish).toHaveBeenCalledWith(job, 'succeeded', result));
+      if (kind === 'discovery') {
+        await vi.waitFor(() => expect(jobs.yieldBatch).toHaveBeenCalledWith(job, result));
+        expect(jobs.finish).not.toHaveBeenCalled();
+      } else
+        await vi.waitFor(() =>
+          expect(jobs.finish).toHaveBeenCalledWith(
+            job,
+            kind === 'adopt' ? 'review_required' : 'succeeded',
+            result,
+            kind === 'adopt' ? 'discovery_review_required' : null,
+          ),
+        );
       expect(rollback.run).toHaveBeenCalledOnce();
       expect(profiles.document).not.toHaveBeenCalled();
       expect(runtime.preview).not.toHaveBeenCalled();

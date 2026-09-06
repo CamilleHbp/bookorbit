@@ -14,6 +14,43 @@ from epub_policy import validate_epub
 from safe_transport import PolicyError, SafeTransport, install_network_guard, validate_url
 
 VERSION = '4.61.0'
+TEST_SITES = {'test1.com', 'test2.com'}
+
+
+class RecognitionNeedsAccess(Exception):
+    pass
+
+
+class RecognitionTransport(SafeTransport):
+    def request(self, method, url, parameters=None, headers=None):
+        raise RecognitionNeedsAccess()
+
+
+def recognize_urls(urls):
+    from fanficfare import adapters, exceptions
+    if not isinstance(urls, list) or not 0 < len(urls) <= 100:
+        raise PolicyError('URL recognition batch exceeds its limit')
+    result = []
+    for url in urls:
+        if not isinstance(url, str) or len(url) > 4096:
+            raise PolicyError('Invalid URL recognition input')
+        try:
+            validate_url(url)
+            adapter = adapters.getAdapter(make_configuration(url, '', RecognitionTransport()), url)
+            canonical = adapter.url.replace('http://', 'https://', 1)
+            validate_url(canonical)
+            site = adapter.getSiteDomain()
+            if site.removeprefix('www.') in TEST_SITES:
+                result.append({'url': url, 'recognized': False, 'reason': 'unsupported'})
+            else:
+                result.append({'url': url, 'recognized': True, 'canonicalUrl': canonical, 'site': site})
+        except (exceptions.UnknownSite, exceptions.InvalidStoryURL):
+            result.append({'url': url, 'recognized': False, 'reason': 'unsupported'})
+        except RecognitionNeedsAccess:
+            result.append({'url': url, 'recognized': False, 'reason': 'access_required'})
+        except PolicyError:
+            result.append({'url': url, 'recognized': False, 'reason': 'unsafe'})
+    return result
 
 
 def limits():
@@ -34,7 +71,9 @@ def run(request):
         return {'version': actual, 'protocolVersion': 1, 'ready': True}
     if operation == 'sites':
         examples = adapters.getSiteExamples()
-        return {'version': actual, 'sites': [{'id': site, 'examples': urls[:3]} for site, urls in examples]}
+        return {'version': actual, 'sites': [{'id': site, 'examples': urls[:3]} for site, urls in examples if site.removeprefix('www.') not in TEST_SITES]}
+    if operation == 'recognize':
+        return recognize_urls(request.get('urls'))
     if operation == 'merge':
         return {'configuration': merge_configuration(request.get('previous', ''), request.get('configuration'), request.get('edits'), request.get('redact', False))}
     ini = validate_ini(request.get('configuration', ''))

@@ -1,14 +1,85 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { BookFileRevisionPage, BookFileRevisionManifest, ReadingAnchor, RevisionChapter } from '@bookorbit/types';
 import { DB } from '../../db';
+import type { DatabaseTransaction } from '../../db/transaction';
 import * as schema from '../../db/schema';
 import { resolveReadingAnchor } from './reading-anchor';
 
 @Injectable()
 export class RevisionCatalogService {
   constructor(@Inject(DB) private readonly db: NodePgDatabase<typeof schema>) {}
+
+  async discoveryCutoff(libraryId: number): Promise<number> {
+    const [row] = await this.db
+      .select({ id: sql<number>`coalesce(max(${schema.bookFiles.id}), 0)` })
+      .from(schema.bookFiles)
+      .innerJoin(schema.books, eq(schema.books.id, schema.bookFiles.bookId))
+      .where(eq(schema.books.libraryId, libraryId));
+    return row.id;
+  }
+
+  async discoveryFile(id: number, libraryId: number) {
+    const [file] = await this.db
+      .select({
+        id: schema.bookFiles.id,
+        bookId: schema.bookFiles.bookId,
+        absolutePath: schema.bookFiles.absolutePath,
+        libraryFolderId: schema.bookFiles.libraryFolderId,
+        relPath: schema.bookFiles.relPath,
+      })
+      .from(schema.bookFiles)
+      .innerJoin(schema.books, eq(schema.books.id, schema.bookFiles.bookId))
+      .where(and(eq(schema.bookFiles.id, id), eq(schema.books.libraryId, libraryId)))
+      .limit(1);
+    if (!file) throw new NotFoundException('Discovery file is no longer in this library');
+    return file;
+  }
+
+  async discoveryFiles(libraryId: number, afterId: number, cutoffId: number) {
+    return this.db
+      .select({
+        id: schema.bookFiles.id,
+        bookId: schema.bookFiles.bookId,
+        absolutePath: schema.bookFiles.absolutePath,
+        libraryFolderId: schema.bookFiles.libraryFolderId,
+      })
+      .from(schema.bookFiles)
+      .innerJoin(schema.books, eq(schema.books.id, schema.bookFiles.bookId))
+      .where(
+        and(
+          eq(schema.books.libraryId, libraryId),
+          inArray(schema.bookFiles.format, ['epub']),
+          gt(schema.bookFiles.id, afterId),
+          lte(schema.bookFiles.id, cutoffId),
+        ),
+      )
+      .orderBy(asc(schema.bookFiles.id))
+      .limit(100);
+  }
+
+  async lockDiscoveryFile(
+    tx: DatabaseTransaction,
+    libraryId: number,
+    expected: { id: number; bookId: number; absolutePath: string; libraryFolderId: number },
+  ) {
+    const [file] = await tx
+      .select({ id: schema.bookFiles.id })
+      .from(schema.bookFiles)
+      .innerJoin(schema.books, eq(schema.books.id, schema.bookFiles.bookId))
+      .where(
+        and(
+          eq(schema.books.libraryId, libraryId),
+          eq(schema.bookFiles.id, expected.id),
+          eq(schema.bookFiles.bookId, expected.bookId),
+          eq(schema.bookFiles.absolutePath, expected.absolutePath),
+          eq(schema.bookFiles.libraryFolderId, expected.libraryFolderId),
+        ),
+      )
+      .for('update', { of: schema.bookFiles });
+    if (!file) throw new ConflictException('Book file changed library or location during discovery');
+  }
 
   async list(bookFileId: number, libraryId: number, limit = 50, cursor?: string): Promise<BookFileRevisionPage> {
     const file = await this.requireFile(bookFileId, libraryId);

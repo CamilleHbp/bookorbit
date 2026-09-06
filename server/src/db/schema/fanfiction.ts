@@ -8,6 +8,10 @@ import type {
   FanfictionSourceState,
   FanfictionImportRequest,
   FanfictionActivity,
+  FanfictionDiscoveryProgress,
+  FanfictionDiscoverySelection,
+  FanfictionCandidateState,
+  FanfictionRecognizedUrl,
 } from '@bookorbit/types';
 import { libraries, libraryFolders } from './libraries';
 import { users } from './auth';
@@ -101,6 +105,8 @@ export const fanfictionJobs = pgTable(
     rollbackRevisionId: uuid('rollback_revision_id'),
     scheduled: boolean('scheduled').notNull().default(false),
     kind: varchar('kind', { length: 20 }).$type<FanfictionJobKind>().notNull(),
+    discovery: jsonb('discovery').$type<FanfictionDiscoveryProgress>(),
+    selection: jsonb('selection').$type<FanfictionDiscoverySelection>(),
     state: varchar('state', { length: 30 }).$type<FanfictionJobState>().notNull().default('queued'),
     url: text('url').notNull(),
     site: varchar('site', { length: 255 }).notNull(),
@@ -120,6 +126,10 @@ export const fanfictionJobs = pgTable(
     index('fanfiction_jobs_queue_idx').on(t.state, t.runAfter, t.id),
     index('fanfiction_jobs_lease_idx').on(t.state, t.leaseExpiresAt),
     index('fanfiction_jobs_library_created_idx').on(t.libraryId, t.createdAt, t.id),
+    index('fanfiction_jobs_library_kind_created_idx').on(t.libraryId, t.kind, t.createdAt, t.id),
+    index('fanfiction_jobs_library_kind_active_idx')
+      .on(t.libraryId, t.kind, t.createdAt, t.id)
+      .where(sql`${t.state} in ('queued', 'running')`),
     index('fanfiction_jobs_user_idx').on(t.userId),
     index('fanfiction_jobs_profile_idx').on(t.profileId),
     uniqueIndex('fanfiction_jobs_active_source_idx')
@@ -127,11 +137,52 @@ export const fanfictionJobs = pgTable(
       .where(sql`${t.sourceId} is not null and ${t.state} in ('queued', 'running')`),
     index('fanfiction_jobs_source_idx').on(t.sourceId),
     check('fanfiction_jobs_attempts_chk', sql`${t.attempts} >= 0 and ${t.fence} >= 0`),
-    check('fanfiction_jobs_kind_chk', sql`${t.kind} in ('preview', 'discovery', 'import', 'update', 'refresh', 'rollback')`),
+    check('fanfiction_jobs_kind_chk', sql`${t.kind} in ('preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback')`),
+    uniqueIndex('fanfiction_jobs_discovery_active_idx')
+      .on(t.libraryId)
+      .where(sql`${t.kind} = 'discovery' and ${t.state} in ('queued', 'running')`),
     check(
       'fanfiction_jobs_state_chk',
       sql`${t.state} in ('queued', 'running', 'succeeded', 'no_change', 'review_required', 'configuration_blocked', 'failed', 'cancelled')`,
     ),
+  ],
+);
+
+export const fanfictionDiscoveryCandidates = pgTable(
+  'fanfiction_discovery_candidates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    libraryId: integer('library_id')
+      .notNull()
+      .references(() => libraries.id, { onDelete: 'cascade' }),
+    bookId: integer('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    bookFileId: integer('book_file_id')
+      .notNull()
+      .references(() => bookFiles.id, { onDelete: 'cascade' }),
+    sha256: varchar('sha256', { length: 64 }).notNull(),
+    title: varchar('title', { length: 500 }).notNull(),
+    authors: jsonb('authors').$type<string[]>().notNull().default([]),
+    chapterCount: integer('chapter_count').notNull(),
+    urls: jsonb('urls').$type<FanfictionRecognizedUrl[]>().notNull(),
+    state: varchar('state', { length: 20 }).$type<FanfictionCandidateState>().notNull(),
+    errorCode: varchar('error_code', { length: 100 }),
+    sourceId: uuid('source_id').references(() => fanfictionSources.id, { onDelete: 'set null' }),
+    reviewJobId: uuid('review_job_id').references(() => fanfictionJobs.id, { onDelete: 'set null' }),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('fanfiction_candidates_file_revision_idx').on(t.libraryId, t.bookFileId, t.sha256),
+    index('fanfiction_candidates_review_idx').on(t.libraryId, t.state, t.id),
+    index('fanfiction_candidates_book_idx').on(t.bookId),
+    index('fanfiction_candidates_file_idx').on(t.bookFileId),
+    index('fanfiction_candidates_source_idx').on(t.sourceId),
+    index('fanfiction_candidates_review_job_idx').on(t.reviewJobId, t.state, t.id),
+    check('fanfiction_candidates_state_chk', sql`${t.state} in ('pending', 'ambiguous', 'rejected', 'linked', 'failed')`),
+    check('fanfiction_candidates_chapters_chk', sql`${t.chapterCount} >= 0 and ${t.chapterCount} <= 10000`),
   ],
 );
 

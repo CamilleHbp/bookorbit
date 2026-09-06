@@ -46,7 +46,7 @@ export function useFanfiction() {
   const schedule = ref('1440')
   const busy = ref(false)
   const error = ref('')
-  const tab = ref<'stories' | 'add' | 'activity'>('stories')
+  const tab = ref<'stories' | 'add' | 'discovery' | 'activity'>('stories')
   const base = computed(() => `/api/v1/libraries/${libraryId.value}/fanfiction`)
   const canImport = computed(
     () =>
@@ -337,6 +337,9 @@ export function useFanfiction() {
   function showAdd() {
     tab.value = 'add'
   }
+  function showDiscovery() {
+    tab.value = 'discovery'
+  }
   function showActivity() {
     tab.value = 'activity'
   }
@@ -388,5 +391,6 @@ export function useFanfiction() {
     showStories,
     showAdd,
     showActivity,
+    showDiscovery,
   }
 }

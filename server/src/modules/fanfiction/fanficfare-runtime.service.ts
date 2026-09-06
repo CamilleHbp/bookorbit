@@ -1,6 +1,12 @@
 import { BadRequestException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import type { FanficfareRuntimeHealth, FanficfareSiteCatalog, FanfictionPreview, FanfictionProfileDocument } from '@bookorbit/types';
+import type {
+  FanficfareRuntimeHealth,
+  FanficfareSiteCatalog,
+  FanfictionPreview,
+  FanfictionProfileDocument,
+  FanfictionRecognizedUrl,
+} from '@bookorbit/types';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,7 +14,8 @@ import { fanficfareConfig, storageConfig } from '../../config/config';
 import { validateFanfictionPreview } from './fanfiction-preview';
 
 type RuntimeRequest = {
-  operation: 'health' | 'sites' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
+  operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
+  urls?: string[];
   url?: string;
   configuration?: string;
   cookies?: FanfictionProfileDocument['cookies'];
@@ -45,6 +52,40 @@ export class FanficfareRuntimeService {
 
   async validateConfiguration(configuration: string): Promise<void> {
     await this.temporary({ operation: 'validate', configuration });
+  }
+
+  async recognize(urls: string[], signal?: AbortSignal): Promise<FanfictionRecognizedUrl[]> {
+    if (!urls.length || urls.length > 100 || urls.some((url) => typeof url !== 'string' || url.length > 4096))
+      throw new BadRequestException('URL recognition requires a bounded batch');
+    const result = await this.temporary({ operation: 'recognize', urls }, signal);
+    if (!Array.isArray(result) || result.length !== urls.length) throw new ServiceUnavailableException('Invalid URL recognition response');
+    return result.map((item: unknown, index) => {
+      if (!item || typeof item !== 'object' || !('url' in item) || item.url !== urls[index] || !('recognized' in item))
+        throw new ServiceUnavailableException('Invalid URL recognition identity');
+      if (item.recognized === false && 'reason' in item && ['unsupported', 'unsafe', 'access_required'].includes(String(item.reason)))
+        return { url: urls[index], recognized: false, reason: item.reason } as FanfictionRecognizedUrl;
+      if (
+        item.recognized !== true ||
+        !('canonicalUrl' in item) ||
+        typeof item.canonicalUrl !== 'string' ||
+        item.canonicalUrl.length > 4096 ||
+        !('site' in item) ||
+        typeof item.site !== 'string' ||
+        !item.site ||
+        item.site.length > 255
+      )
+        throw new ServiceUnavailableException('Invalid recognized story identity');
+      let canonical: URL;
+      try {
+        canonical = new URL(item.canonicalUrl);
+      } catch {
+        throw new ServiceUnavailableException('Invalid canonical URL');
+      }
+      if (canonical.protocol !== 'https:' || canonical.username || canonical.password || (canonical.port && canonical.port !== '443'))
+        throw new ServiceUnavailableException('Unsafe canonical URL');
+      canonical.hash = '';
+      return { url: urls[index], recognized: true, canonicalUrl: canonical.href, site: item.site };
+    });
   }
 
   async mergeConfiguration(previous: string, configuration?: string, edits?: RuntimeRequest['edits'], redact = false): Promise<string> {

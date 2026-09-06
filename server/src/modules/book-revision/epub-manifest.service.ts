@@ -8,6 +8,7 @@ import { load } from 'cheerio';
 import type { EpubRevisionManifest, RevisionChapter } from '@bookorbit/types';
 import { boundAnchorText, normalizeAnchorText, scalarLength } from './anchor-text';
 import { generatedPageText, isFanficfarePackage, semanticPackageMetadata, visibleChapterText } from './epub-semantic-metadata';
+import { checkEpubDirectoryBudget } from './epub-directory-budget';
 
 const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const MAX_ENTRY_BYTES = 32 * 1024 * 1024;
@@ -74,56 +75,45 @@ function resolveHref(base: string, href: string): string {
 
 @Injectable()
 export class EpubManifestService {
+  async sourceEvidence(path: string) {
+    const { pkg } = await this.openPackage(path);
+    const metadata = pkg.metadata && typeof pkg.metadata === 'object' ? (pkg.metadata as Record<string, unknown>) : {};
+    const values = (field: string) =>
+      list(metadata[field])
+        .slice(0, 100)
+        .map((value) =>
+          typeof value === 'string'
+            ? value
+            : value && typeof value === 'object' && '#text' in value && typeof value['#text'] === 'string'
+              ? value['#text']
+              : '',
+        );
+    const sourceUrls = [
+      ...new Set(
+        [...values('source'), ...values('identifier')]
+          .map((value) => value.trim().replace(/^url:/i, ''))
+          .filter((value) => /^https?:\/\//i.test(value) && value.length <= 4096),
+      ),
+    ].slice(0, 10);
+    const fanficfare = isFanficfarePackage(metadata);
+    const chapterCount = list(pkg.manifest?.item).filter(
+      (item) =>
+        item['@_media-type'] === 'application/xhtml+xml' &&
+        (fanficfare ? /^file\d+$/.test(item['@_id'] ?? '') : !['cover', 'nav', 'toc'].includes(item['@_id'] ?? '')),
+    ).length;
+    return {
+      sourceUrls,
+      fanficfare,
+      chapterCount,
+      title: boundAnchorText(normalizeAnchorText(values('title')[0] ?? ''), 500),
+      authors: values('creator')
+        .filter(Boolean)
+        .map((author) => boundAnchorText(normalizeAnchorText(author), 500)),
+    };
+  }
+
   async inspect(path: string): Promise<EpubRevisionManifest> {
-    if ((await stat(path)).size > MAX_ARCHIVE_BYTES) throw new BadRequestException('EPUB exceeds the archive size limit');
-    let zip: unzipper.CentralDirectory;
-    try {
-      zip = await unzipper.Open.file(path);
-    } catch {
-      throw new BadRequestException('Invalid EPUB archive');
-    }
-    if (zip.files.length > MAX_ENTRIES) throw new BadRequestException('EPUB contains too many archive entries');
-    const files = new Map<string, unzipper.File>();
-    let expanded = 0;
-    for (const entry of zip.files) {
-      const name = archivePath(entry.path);
-      if (files.has(name)) throw new BadRequestException('EPUB contains duplicate archive entries');
-      if (entry.uncompressedSize > MAX_ENTRY_BYTES || (expanded += entry.uncompressedSize) > MAX_EXPANDED_BYTES) {
-        throw new BadRequestException('EPUB exceeds the expanded size limit');
-      }
-      files.set(name, entry);
-    }
-    const read = async (name: string): Promise<Buffer> => {
-      const entry = files.get(name);
-      if (!entry || entry.type !== 'File') throw new BadRequestException('EPUB is missing a required resource');
-      const chunks: Buffer[] = [];
-      let bytes = 0;
-      const stream = entry.stream();
-      try {
-        for await (const chunk of stream) {
-          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          bytes += buffer.length;
-          if (bytes > MAX_ENTRY_BYTES || bytes > entry.uncompressedSize) throw new BadRequestException('EPUB resource exceeds its declared size');
-          chunks.push(buffer);
-        }
-      } catch {
-        throw new BadRequestException('EPUB resource is invalid or exceeds its size limit');
-      } finally {
-        stream.destroy();
-      }
-      if (bytes !== entry.uncompressedSize) throw new BadRequestException('EPUB resource is truncated');
-      return Buffer.concat(chunks, bytes);
-    };
-    if ((await read('mimetype')).toString().trim() !== 'application/epub+zip') throw new BadRequestException('File is not an EPUB');
-    const container = this.parseXml((await read('META-INF/container.xml')).toString()) as {
-      container?: { rootfiles?: { rootfile?: { '@_full-path'?: string } | { '@_full-path'?: string }[] } };
-    };
-    const rootPath = list(container.container?.rootfiles?.rootfile)[0]?.['@_full-path'];
-    if (!rootPath) throw new BadRequestException('EPUB has no package document');
-    const packagePath = archivePath(rootPath);
-    const document = this.parseXml((await read(packagePath)).toString()) as { package?: PackageDocument };
-    const pkg = document.package;
-    if (!pkg) throw new BadRequestException('Invalid EPUB package document');
+    const { pkg, packagePath, read } = await this.openPackage(path);
     const base = posix.dirname(packagePath);
     const items = new Map<string, ManifestItem>();
     for (const item of list(pkg.manifest?.item)) {
@@ -182,6 +172,62 @@ export class EpubManifestService {
       metadataHash: digest(JSON.stringify(canonical({ package: semanticPackageMetadata(pkg.metadata), generated: generatedMetadata }))),
       coverHash,
     };
+  }
+
+  private async openPackage(path: string) {
+    if ((await stat(path)).size > MAX_ARCHIVE_BYTES) throw new BadRequestException('EPUB exceeds the archive size limit');
+    await checkEpubDirectoryBudget(path);
+    let zip: unzipper.CentralDirectory;
+    try {
+      zip = await unzipper.Open.file(path);
+    } catch {
+      throw new BadRequestException('Invalid EPUB archive');
+    }
+    if (zip.files.length > MAX_ENTRIES) throw new BadRequestException('EPUB contains too many archive entries');
+    const files = new Map<string, unzipper.File>();
+    let expanded = 0;
+    for (const entry of zip.files) {
+      const name = archivePath(entry.path);
+      if (files.has(name)) throw new BadRequestException('EPUB contains duplicate archive entries');
+      if (entry.uncompressedSize > MAX_ENTRY_BYTES || (expanded += entry.uncompressedSize) > MAX_EXPANDED_BYTES) {
+        throw new BadRequestException('EPUB exceeds the expanded size limit');
+      }
+      files.set(name, entry);
+    }
+    const read = async (name: string): Promise<Buffer> => {
+      const entry = files.get(name);
+      if (!entry || entry.type !== 'File') throw new BadRequestException('EPUB is missing a required resource');
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      const stream = entry.stream();
+      try {
+        for await (const chunk of stream) {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          bytes += buffer.length;
+          if (bytes > MAX_ENTRY_BYTES || bytes > entry.uncompressedSize) throw new BadRequestException('EPUB resource exceeds its declared size');
+          chunks.push(buffer);
+        }
+      } catch {
+        throw new BadRequestException('EPUB resource is invalid or exceeds its size limit');
+      } finally {
+        stream.destroy();
+      }
+      if (bytes !== entry.uncompressedSize) throw new BadRequestException('EPUB resource is truncated');
+      return Buffer.concat(chunks, bytes);
+    };
+    if ((await read('mimetype')).toString().trim() !== 'application/epub+zip') throw new BadRequestException('File is not an EPUB');
+    const container = this.parseXml((await read('META-INF/container.xml')).toString()) as {
+      container?: { rootfiles?: { rootfile?: { '@_full-path'?: string } | { '@_full-path'?: string }[] } };
+    };
+    const rootPath = list(container.container?.rootfiles?.rootfile)[0]?.['@_full-path'];
+    if (!rootPath) throw new BadRequestException('EPUB has no package document');
+    const packagePath = archivePath(rootPath);
+    const document = this.parseXml((await read(packagePath)).toString()) as { package?: PackageDocument };
+    const pkg = document.package;
+    if (!pkg) throw new BadRequestException('Invalid EPUB package document');
+    if (list(pkg.manifest?.item).length > MAX_ENTRIES || list(pkg.spine?.itemref).length > MAX_ENTRIES)
+      throw new BadRequestException('EPUB manifest exceeds the item limit');
+    return { pkg, packagePath, read };
   }
 
   private parseXml(text: string): unknown {

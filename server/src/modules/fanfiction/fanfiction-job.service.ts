@@ -9,7 +9,8 @@ import * as schema from '../../db/schema';
 import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
-import { ListFanfictionProfilesDto, PreviewFanfictionDto } from './dto/fanfiction-profile.dto';
+import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
+import { PreviewFanfictionDto } from './dto/fanfiction-profile.dto';
 import { recordFanfictionActivity } from './fanfiction-activity';
 
 const jobs = schema.fanfictionJobs;
@@ -203,7 +204,7 @@ export class FanfictionJobService {
     return this.view(existing);
   }
 
-  async list(libraryId: number, dto: ListFanfictionProfilesDto, user: RequestUser) {
+  async list(libraryId: number, dto: ListFanfictionJobsDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
     const before = dto.cursor ? await this.find(libraryId, dto.cursor) : null;
     const rows = await this.db
@@ -212,6 +213,8 @@ export class FanfictionJobService {
       .where(
         and(
           eq(jobs.libraryId, libraryId),
+          dto.kind ? eq(jobs.kind, dto.kind) : undefined,
+          dto.activeOnly ? inArray(jobs.state, ['queued', 'running']) : undefined,
           before
             ? sql`(${jobs.createdAt}, ${jobs.id}) < (select ${jobs.createdAt}, ${jobs.id} from ${jobs} where ${jobs.id} = ${before.id} and ${jobs.libraryId} = ${libraryId})`
             : undefined,
@@ -294,6 +297,12 @@ export class FanfictionJobService {
           scheduled: false,
           cancellationRequested: false,
           attempts: 0,
+          ...(job.kind === 'adopt' && job.selection && job.state === 'review_required'
+            ? {
+                selection: { ...job.selection, cursor: null, processed: 0, failed: 0, retryFailedOnly: true },
+                result: { selection: { processed: 0, failed: 0, finished: false } },
+              }
+            : {}),
           leaseOwner: null,
           leaseExpiresAt: null,
           errorCode: null,
@@ -347,7 +356,7 @@ export class FanfictionJobService {
         .from(jobs)
         .where(
           and(
-            inArray(jobs.kind, ['preview', 'import', 'update', 'refresh', 'rollback']),
+            inArray(jobs.kind, ['preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback']),
             eq(jobs.cancellationRequested, false),
             lt(jobs.attempts, 3),
             active.length
@@ -387,6 +396,26 @@ export class FanfictionJobService {
       .where(and(this.owned(job), eq(jobs.cancellationRequested, false)))
       .returning({ id: jobs.id });
     return rows.length === 1;
+  }
+
+  async yieldBatch(job: typeof jobs.$inferSelect, result: FanfictionJob['result']): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      await this.assertOwnership(job, tx);
+      const rows = await tx
+        .update(jobs)
+        .set({
+          state: 'queued',
+          result,
+          attempts: 0,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          runAfter: sql`now() + interval '1 second'`,
+          updatedAt: sql`now()`,
+        })
+        .where(this.owned(job))
+        .returning({ id: jobs.id });
+      return rows.length === 1;
+    });
   }
 
   async finish(
@@ -435,7 +464,7 @@ export class FanfictionJobService {
 
   private async recordFailure(tx: DatabaseTransaction, job: typeof jobs.$inferSelect): Promise<void> {
     if (!['configuration_blocked', 'review_required', 'failed', 'cancelled'].includes(job.state)) return;
-    let title = 'Story import';
+    let title = job.kind === 'discovery' ? 'Existing book discovery' : job.kind === 'adopt' ? 'Existing book selection' : 'Story import';
     let bookId: number | null = null;
     if (job.sourceId) {
       await tx
@@ -461,7 +490,7 @@ export class FanfictionJobService {
       if (!source) return;
       title = source.title;
       bookId = source.bookId;
-    } else if (job.kind !== 'import') return;
+    } else if (!['import', 'discovery', 'adopt'].includes(job.kind)) return;
     if (job.state !== 'cancelled')
       await recordFanfictionActivity(tx, {
         libraryId: job.libraryId,

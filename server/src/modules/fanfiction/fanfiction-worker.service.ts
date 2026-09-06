@@ -1,5 +1,6 @@
 import { ForbiddenException, HttpException, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
+import type { FanfictionJob } from '@bookorbit/types';
 import { UserService } from '../user/user.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
@@ -8,6 +9,8 @@ import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionImportService } from './fanfiction-import.service';
 import { FanfictionUpdateService } from './fanfiction-update.service';
 import { FanfictionRollbackService } from './fanfiction-rollback.service';
+import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
+import { FanfictionAdoptionService } from './fanfiction-adoption.service';
 
 type ClaimedJob = NonNullable<Awaited<ReturnType<FanfictionJobService['claim']>>>;
 
@@ -27,6 +30,8 @@ export class FanfictionWorkerService implements OnModuleDestroy {
     private readonly imports: FanfictionImportService,
     private readonly updates: FanfictionUpdateService,
     private readonly rollbacks: FanfictionRollbackService,
+    private readonly discovery: FanfictionDiscoveryService,
+    private readonly adoption: FanfictionAdoptionService,
   ) {}
 
   @Interval(2000)
@@ -87,19 +92,32 @@ export class FanfictionWorkerService implements OnModuleDestroy {
     try {
       const user = await this.authorized(job);
       const document =
-        job.profileId && job.kind !== 'rollback'
+        job.profileId && !['rollback', 'discovery', 'adopt'].includes(job.kind)
           ? (await this.profiles.document(job.libraryId, job.profileId, user)).document
           : { configuration: '', cookies: [] };
-      const result =
-        job.kind === 'rollback'
-          ? await this.rollbacks.run(job, () => this.authorized(job), controller.signal)
-          : job.kind === 'import'
-            ? await this.imports.run(job, user, document, () => this.authorized(job), controller.signal)
-            : job.kind === 'update' || job.kind === 'refresh'
-              ? await this.updates.run(job, document, () => this.authorized(job), controller.signal)
-              : { preview: await this.runtime.preview(job.url, document, controller.signal) };
+      const result: FanfictionJob['result'] =
+        job.kind === 'discovery'
+          ? await this.discovery.run(job, () => this.authorized(job), controller.signal)
+          : job.kind === 'adopt'
+            ? await this.adoption.run(job, user, () => this.authorized(job), controller.signal)
+            : job.kind === 'rollback'
+              ? await this.rollbacks.run(job, () => this.authorized(job), controller.signal)
+              : job.kind === 'import'
+                ? await this.imports.run(job, user, document, () => this.authorized(job), controller.signal)
+                : job.kind === 'update' || job.kind === 'refresh'
+                  ? await this.updates.run(job, document, () => this.authorized(job), controller.signal)
+                  : { preview: await this.runtime.preview(job.url, document, controller.signal) };
       await this.authorized(job);
-      const committed = await this.jobs.finish(job, result?.noChange ? 'no_change' : 'succeeded', result);
+      const continuation = result?.discovery?.finished === false || result?.selection?.finished === false;
+      const needsReview = (result?.selection?.failed ?? 0) > 0;
+      const committed = continuation
+        ? await this.jobs.yieldBatch(job, result)
+        : await this.jobs.finish(
+            job,
+            needsReview ? 'review_required' : result?.noChange ? 'no_change' : 'succeeded',
+            result,
+            needsReview ? 'discovery_review_required' : null,
+          );
       this.logger.log(
         `[fanfiction.job] [end] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} committed=${committed} - job completed`,
       );

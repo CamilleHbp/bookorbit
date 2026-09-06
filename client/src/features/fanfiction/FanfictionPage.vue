@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { Permission } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
+import ExistingStories from './components/ExistingStories.vue'
 import { useFanfiction } from './composables/useFanfiction'
 
 const { t } = useI18n()
@@ -53,6 +54,7 @@ const {
   showStories,
   showAdd,
   showActivity,
+  showDiscovery,
 } = useFanfiction()
 function dateLabel(value: string | null) {
   return value ? new Date(value).toLocaleString() : t('fanfiction.never')
@@ -87,6 +89,7 @@ onMounted(() => {
       <nav class="flex flex-wrap gap-2" :aria-label="t('fanfiction.title')">
         <Button :variant="tab === 'stories' ? 'default' : 'outline'" @click="showStories">{{ t('fanfiction.stories') }}</Button>
         <Button :variant="tab === 'add' ? 'default' : 'outline'" @click="showAdd">{{ t('fanfiction.addStories') }}</Button>
+        <Button :variant="tab === 'discovery' ? 'default' : 'outline'" @click="showDiscovery">{{ t('fanfiction.discovery.title') }}</Button>
         <Button :variant="tab === 'activity' ? 'default' : 'outline'" @click="showActivity">{{ t('fanfiction.activity') }}</Button>
       </nav>
       <section v-if="tab === 'stories'" class="space-y-4">
@@ -214,6 +217,16 @@ onMounted(() => {
           >
         </article>
       </section>
+      <ExistingStories
+        v-else-if="tab === 'discovery'"
+        :key="libraryId"
+        v-model:profile-id="profileId"
+        v-model:schedule="schedule"
+        :library-id="libraryId"
+        :profiles="profiles"
+        :profile-cursor="profileCursor"
+        @more-profiles="moreProfiles"
+      />
       <section v-else class="space-y-3">
         <h2 class="text-lg font-medium">{{ t('fanfiction.recentChanges') }}</h2>
         <article v-for="event in activity" :key="event.id" class="border-border bg-card rounded-lg border p-4">

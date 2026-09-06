@@ -10190,7 +10190,13 @@
       "source_failed": "The source could not be read.",
       "runtime_failed": "The runtime could not finish this operation.",
       "worker_lease_expired": "The worker stopped before this operation completed.",
-      "review_required": "The story identity or chapter changes need review."
+      "review_required": "The story identity or chapter changes need review.",
+      "candidate_unavailable": "The EPUB is unavailable or changing. Scan again when it is stable.",
+      "candidate_changed": "The EPUB or its assignment changed after discovery. Scan its current contents again.",
+      "source_unrecognized": "No supported source was recognized. Use upload replacement for this book.",
+      "source_ambiguous": "Choose one recognized source URL for this book.",
+      "source_conflict": "This story or EPUB already has a different managed source. Review its story settings.",
+      "discovery_review_required": "Some candidates need attention. Retry revisits only failures from this selection."
     },
     "title": "Fanfiction",
     "description": "Import stories and manage their source updates.",
@@ -10234,7 +10240,31 @@
       "update": "Check for updates",
       "refresh": "Refresh chapters",
       "discovery": "Discover sources",
-      "rollback": "Rollback"
+      "rollback": "Rollback",
+      "adopt": "Link existing stories"
+    },
+    "discovery": {
+      "title": "Existing books",
+      "help": "Find story URLs inside EPUBs already in this library, then link the books you want to update. Linking keeps the existing books and files.",
+      "scan": "Scan existing EPUBs",
+      "uncertain": "The operation may have been accepted. Retry to recover the same operation.",
+      "scanProgress": "{scanned} files scanned, {candidates} candidates found, {failed} files unavailable or invalid.",
+      "selectionProgress": "{processed} candidates reviewed, {failed} need attention.",
+      "states": {
+        "pending": "Ready to link",
+        "ambiguous": "Choose a source",
+        "failed": "Needs attention",
+        "linked": "Linked",
+        "rejected": "Rejected"
+      },
+      "selectPage": "Select this page",
+      "allMatching": "All matching candidates",
+      "cutoffHelp": "This selection includes matching candidates available when submitted. Later discoveries are excluded.",
+      "link": "Link selected books",
+      "reject": "Reject selected candidates",
+      "empty": "No candidates in this category.",
+      "selectBook": "Select {title}",
+      "chooseSource": "Choose a recognized source URL"
     }
   }
 }

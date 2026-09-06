@@ -12,6 +12,20 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_recognizes_canonical_urls_without_network_or_authenticated_access(self):
+        from safe_transport import SafeTransport
+        with patch.object(SafeTransport, 'request', side_effect=AssertionError('Recognition must stay offline')):
+            result = run({'operation': 'recognize', 'urls': ['https://archiveofourown.org/works/12345/chapters/45678', 'https://example.org/no-adapter', 'file:///etc/passwd']})
+        self.assertEqual(result[0], {'url': 'https://archiveofourown.org/works/12345/chapters/45678', 'recognized': True, 'canonicalUrl': 'https://archiveofourown.org/works/12345', 'site': 'archiveofourown.org'})
+        self.assertEqual(result[1]['reason'], 'unsupported')
+        self.assertEqual(result[2]['reason'], 'unsafe')
+        self.assertNotIn('authenticated', result[0])
+
+    def test_site_catalog_excludes_fixture_adapters_and_recognition_is_bounded(self):
+        self.assertFalse(any(site['id'] in ['test1.com', 'test2.com'] for site in run({'operation': 'sites'})['sites']))
+        with self.assertRaises(PolicyError):
+            run({'operation': 'recognize', 'urls': ['https://example.org'] * 101})
+
     def test_rejects_unsafe_advanced_options_in_every_section(self):
         for option in ['pre_process_cmd', 'post_process_cmd', 'use_browser_cache', 'http_proxy', 'https_proxy', 'use_flaresolverr_proxy', 'use_nsapa_proxy', 'browser_cache_path', 'username_filelist', 'output_filename', 'include_images_filelist', 'use_ssl_default_seclevelone']:
             with self.subTest(option=option), self.assertRaises(PolicyError):

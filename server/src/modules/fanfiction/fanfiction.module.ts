@@ -23,6 +23,9 @@ import { FanfictionSchedulerService } from './fanfiction-scheduler.service';
 import { FanfictionActivityService } from './fanfiction-activity.service';
 import { FanfictionRollbackService } from './fanfiction-rollback.service';
 import { FanfictionRecoveryService } from './fanfiction-recovery.service';
+import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
+import { FanfictionAdoptionService } from './fanfiction-adoption.service';
+import { FanfictionDiscoveryController } from './fanfiction-discovery.controller';
 import { NotificationModule } from '../notification/notification.module';
 
 @Module({
@@ -51,7 +54,9 @@ import { NotificationModule } from '../notification/notification.module';
     FanfictionActivityService,
     FanfictionRollbackService,
     FanfictionRecoveryService,
+    FanfictionDiscoveryService,
+    FanfictionAdoptionService,
   ],
-  controllers: [FanfictionController, FanfictionLibraryController, FanfictionSourceController],
+  controllers: [FanfictionController, FanfictionLibraryController, FanfictionSourceController, FanfictionDiscoveryController],
 })
 export class FanfictionModule {}

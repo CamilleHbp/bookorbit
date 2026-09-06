@@ -1,10 +1,11 @@
 import { Test } from '@nestjs/testing';
 import { ZipArchive } from 'archiver';
 import { createWriteStream } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeEach, afterEach, describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { Open } from 'unzipper';
 import { EpubManifestService } from './epub-manifest.service';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -17,6 +18,7 @@ beforeEach(async () => {
   service = module.get(EpubManifestService);
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -62,6 +64,31 @@ async function epub(
 }
 
 describe('EPUB revision manifests', () => {
+  it('extracts bounded source evidence without using a title as story identity', async () => {
+    const path = await epub('source.epub', undefined, {
+      metadata:
+        '<source>https://archiveofourown.org/works/123</source><identifier>url:https://www.fanfiction.net/s/456/1/Title</identifier><source>file:///private</source><creator>Writer 😀</creator>',
+    });
+    expect(await service.sourceEvidence(path)).toEqual({
+      title: 'Story',
+      authors: ['Writer 😀'],
+      fanficfare: false,
+      chapterCount: 1,
+      sourceUrls: ['https://archiveofourown.org/works/123', 'https://www.fanfiction.net/s/456/1/Title'],
+    });
+  });
+
+  it('rejects oversized ZIP directories before the ZIP library allocates entries', async () => {
+    const path = await epub('directory.epub');
+    const bytes = await readFile(path);
+    bytes.writeUInt16LE(10001, bytes.length - 22 + 8);
+    bytes.writeUInt16LE(10001, bytes.length - 22 + 10);
+    await writeFile(path, bytes);
+    const open = vi.spyOn(Open, 'file');
+    await expect(service.sourceEvidence(path)).rejects.toThrow('directory exceeds');
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it.skipIf(!process.env.FANFICFARE_TEST_PYTHON)(
     'ignores packaging dates in actual pinned FanFicFare output',
     async () => {
@@ -73,6 +100,10 @@ describe('EPUB revision manifests', () => {
       );
       const first = await service.inspect(join(dir, 'first.epub'));
       const second = await service.inspect(join(dir, 'second.epub'));
+      const evidence = await service.sourceEvidence(join(dir, 'first.epub'));
+      expect(evidence.fanficfare).toBe(true);
+      expect(evidence.chapterCount).toBeGreaterThan(0);
+      expect(evidence.sourceUrls).toHaveLength(1);
       expect(first.chapters[0]?.textHash).not.toBe(second.chapters[0]?.textHash);
       expect(first.contentHash).toBe(second.contentHash);
       expect(first.metadataHash).toBe(second.metadataHash);

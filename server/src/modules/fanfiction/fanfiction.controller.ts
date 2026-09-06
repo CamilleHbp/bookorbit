@@ -15,6 +15,7 @@ import {
   FanfictionJobsStatusDto,
 } from './dto/fanfiction-profile.dto';
 import { FanfictionJobService } from './fanfiction-job.service';
+import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { FanfictionActivityService } from './fanfiction-activity.service';
 
 @Controller('libraries/:libraryId/fanfiction')
@@ -36,7 +37,7 @@ export class FanfictionController {
   }
 
   @Get('jobs')
-  listJobs(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: ListFanfictionProfilesDto, @CurrentUser() user: RequestUser) {
+  listJobs(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: ListFanfictionJobsDto, @CurrentUser() user: RequestUser) {
     return this.jobs.list(libraryId, dto, user);
   }
 

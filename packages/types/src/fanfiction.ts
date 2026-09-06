@@ -26,6 +26,10 @@ export interface FanficfareSiteCatalog {
   sites: FanficfareSite[];
 }
 
+export type FanfictionRecognizedUrl =
+  | { url: string; recognized: true; canonicalUrl: string; site: string }
+  | { url: string; recognized: false; reason: "unsupported" | "unsafe" | "access_required" };
+
 export interface FanfictionCookie {
   name: string;
   value: string;
@@ -61,7 +65,7 @@ export interface FanfictionProfileView extends FanfictionProfileSummary {
   cookieCount: number;
 }
 
-export type FanfictionJobKind = "preview" | "discovery" | "import" | "update" | "refresh" | "rollback";
+export type FanfictionJobKind = "preview" | "discovery" | "adopt" | "import" | "update" | "refresh" | "rollback";
 export type FanfictionJobState =
   "queued" | "running" | "succeeded" | "no_change" | "review_required" | "configuration_blocked" | "failed" | "cancelled";
 
@@ -73,13 +77,71 @@ export interface FanfictionJob {
   url: string;
   attempts: number;
   cancellationRequested: boolean;
-  result: { preview?: FanfictionPreview; urls?: string[]; sourceId?: string; bookId?: number; bookFileId?: number; revisionId?: string; noChange?: boolean } | null;
+  result: {
+    preview?: FanfictionPreview;
+    urls?: string[];
+    sourceId?: string;
+    bookId?: number;
+    bookFileId?: number;
+    revisionId?: string;
+    noChange?: boolean;
+    discovery?: FanfictionDiscoveryProgress;
+    selection?: { processed: number; failed: number; finished: boolean };
+  } | null;
   errorCode: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export type FanfictionSourceState = "pending" | "active" | "paused" | "review_required" | "configuration_blocked" | "unlinked";
+
+export interface FanfictionDiscoveryProgress {
+  cutoffFileId: number;
+  cursorFileId: number;
+  scanned: number;
+  candidates: number;
+  failed: number;
+  finished: boolean;
+}
+
+export type FanfictionCandidateState = "pending" | "ambiguous" | "rejected" | "linked" | "failed";
+
+export interface FanfictionDiscoveryCandidate {
+  id: string;
+  libraryId: number;
+  bookId: number;
+  bookFileId: number;
+  sha256: string;
+  title: string;
+  authors: string[];
+  chapterCount: number;
+  urls: FanfictionRecognizedUrl[];
+  state: FanfictionCandidateState;
+  errorCode: string | null;
+  sourceId: string | null;
+  reviewJobId: string | null;
+  version: number;
+  createdAt: string;
+}
+
+export interface FanfictionDiscoveryPage {
+  items: FanfictionDiscoveryCandidate[];
+  nextCursor: string | null;
+}
+
+export interface FanfictionDiscoverySelection {
+  cutoff: string;
+  cursor: string | null;
+  ids: string[] | null;
+  state: FanfictionCandidateState;
+  decision: "approve" | "reject";
+  profileId: string | null;
+  intervalMinutes: number | null;
+  canonicalUrl?: string;
+  processed: number;
+  failed: number;
+  retryFailedOnly?: boolean;
+}
 
 export interface FanfictionSource {
   id: string;
