@@ -9,6 +9,15 @@ from fanficfare_wrapper import run
 
 def generate(directory):
     original = TestSiteAdapter.getStoryMetadataOnly
+    original_chapter = TestSiteAdapter.getChapterText
+    chapters = {}
+
+    def chapter(adapter, url):
+        # The upstream test adapter embeds wall-clock timestamps in chapter text.
+        if url not in chapters:
+            chapters[url] = original_chapter(adapter, url)
+        return chapters[url]
+
     packaged = datetime(2026, 1, 1, 12, 0, 0)
 
     def metadata(adapter, *args, **kwargs):
@@ -19,7 +28,7 @@ def generate(directory):
     previous = os.getcwd()
     try:
         os.chdir(directory)
-        with patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'), patch.object(TestSiteAdapter, 'getStoryMetadataOnly', metadata):
+        with patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'), patch.object(TestSiteAdapter, 'getStoryMetadataOnly', metadata), patch.object(TestSiteAdapter, 'getChapterText', chapter):
             request = {'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\n'}
             run(request)
             Path('output.epub').rename('first.epub')
