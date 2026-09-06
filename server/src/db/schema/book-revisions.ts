@@ -35,7 +35,10 @@ export const bookFileRevisions = pgTable(
     index('book_file_revisions_file_created_idx').on(t.bookFileId, t.createdAt, t.id),
     index('book_file_revisions_file_sha256_idx').on(t.bookFileId, t.sha256),
     check('book_file_revisions_size_chk', sql`${t.sizeBytes} >= 0`),
-    check('book_file_revisions_reason_chk', sql`${t.reason} in ('baseline', 'external_change', 'file_write', 'fanficfare', 'rollback')`),
+    check(
+      'book_file_revisions_reason_chk',
+      sql`${t.reason} in ('baseline', 'external_change', 'file_write', 'fanficfare', 'rollback', 'replacement')`,
+    ),
   ],
 );
 
@@ -84,7 +87,7 @@ export const revisionPublications = pgTable(
       'revision_publications_state_chk',
       sql`${t.state} in ('prepared', 'filesystem_published', 'database_committed', 'cleanup_complete', 'failed')`,
     ),
-    check('revision_publications_reason_chk', sql`${t.reason} in ('fanficfare', 'rollback', 'file_write')`),
+    check('revision_publications_reason_chk', sql`${t.reason} in ('fanficfare', 'rollback', 'file_write', 'replacement')`),
     check('revision_publications_size_chk', sql`${t.nextSizeBytes} >= 0`),
   ],
 );

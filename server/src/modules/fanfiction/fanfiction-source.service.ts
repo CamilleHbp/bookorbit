@@ -76,10 +76,12 @@ export class FanfictionSourceService {
     if (
       !source ||
       !source.bookFileId ||
-      (job.kind !== 'rollback' && source.attentionCode === 'destination_profile_required') ||
+      (!['rollback', 'replacement'].includes(job.kind) && source.attentionCode === 'destination_profile_required') ||
       source.version !== job.sourceVersion ||
       source.profileId !== job.profileId ||
-      !(job.kind === 'rollback' ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']).includes(source.state) ||
+      !(
+        ['rollback', 'replacement'].includes(job.kind) ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']
+      ).includes(source.state) ||
       (job.scheduled && source.state !== 'active')
     )
       throw new ConflictException({ message: 'Story source settings changed before publication', errorCode: 'configuration_blocked' });
@@ -126,10 +128,21 @@ export class FanfictionSourceService {
                 storyStatus: preview.status,
               }
             : {}),
-          attentionCode: null,
-          lastCheckedAt: sql`now()`,
+          ...(job.kind === 'replacement' && result.replacement
+            ? {
+                title: result.replacement.title,
+                authors: result.replacement.authors,
+                chapterCount: result.replacement.chapterCount,
+                state: 'paused' as const,
+              }
+            : {}),
+          attentionCode: job.kind === 'replacement' && source.attentionCode === 'destination_profile_required' ? source.attentionCode : null,
+          lastCheckedAt: job.kind === 'replacement' ? source.lastCheckedAt : sql`now()`,
           ...(!result.noChange ? { lastUpdatedAt: sql`now()` } : {}),
-          nextCheckAt: sql`case when ${sources.state} <> 'active' or ${sources.intervalMinutes} is null then null else now() + (${sources.intervalMinutes} * interval '1 minute') end`,
+          nextCheckAt:
+            job.kind === 'replacement'
+              ? null
+              : sql`case when ${sources.state} <> 'active' or ${sources.intervalMinutes} is null then null else now() + (${sources.intervalMinutes} * interval '1 minute') end`,
           updatedAt: sql`now()`,
           version: sql`${sources.version} + 1`,
         })

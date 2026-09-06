@@ -1,3 +1,6 @@
+import { BookDockManagedUploadService } from '../src/modules/book-dock/book-dock-managed-upload.service';
+import { RevisionFileService } from '../src/modules/book-revision/revision-file.service';
+import { FanfictionReplacementService } from '../src/modules/fanfiction/fanfiction-replacement.service';
 import { BookMetadataLockRepository } from '../src/modules/book-metadata-lock/book-metadata-lock.repository';
 import { ConfigService } from '@nestjs/config';
 import { BookMetadataLockService } from '../src/modules/book-metadata-lock/book-metadata-lock.service';
@@ -12,8 +15,8 @@ import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ZipArchive } from 'archiver';
@@ -71,7 +74,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
   let fileId: number;
   let source: typeof schema.fanfictionSources.$inferSelect;
   let user: RequestUser;
-  const storage = { appDataPath: '' };
+  const storage = { appDataPath: '', bookDockPath: '' };
   const document = { configuration: '', cookies: [] };
   const authorize = vi.fn(() => Promise.resolve());
   const preview: FanfictionPreview = {
@@ -86,6 +89,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     tags: ['Source tag'],
   };
   const runtime = {
+    recognize: vi.fn((urls: string[]) => Promise.resolve(urls.map((canonicalUrl) => ({ recognized: true, canonicalUrl })))),
     update: vi.fn(
       async <T>(
         _operation: string,
@@ -101,7 +105,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       },
     ),
   };
-  async function epub(path: string, text: string) {
+  async function epub(path: string, text: string, sourceUrl = '') {
     await new Promise<void>((resolve, reject) => {
       const stream = createWriteStream(path);
       const zip = new ZipArchive({ zlib: { level: 6 } });
@@ -111,7 +115,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       zip.append('application/epub+zip', { name: 'mimetype', store: true });
       zip.append('<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>', { name: 'META-INF/container.xml' });
       zip.append(
-        '<package><metadata><title>Story</title></metadata><manifest><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>',
+        `<package><metadata><title>Story</title>${sourceUrl ? `<source>${sourceUrl}</source>` : ''}</metadata><manifest><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>`,
         { name: 'book.opf' },
       );
       zip.append(`<html><body><p>${text}</p></body></html>`, { name: 'c.xhtml' });
@@ -132,6 +136,9 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     module = await Test.createTestingModule({
       providers: [
         FanfictionUpdateService,
+        FanfictionReplacementService,
+        BookDockManagedUploadService,
+        RevisionFileService,
         FanfictionRollbackService,
         FanfictionRecoveryService,
         RevisionInterruptionService,
@@ -176,6 +183,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'bookorbit-story-update-'));
     storage.appDataPath = directory;
+    storage.bookDockPath = join(directory, 'dock');
     target = join(directory, 'story.epub');
     output = join(directory, 'output.epub');
     await epub(target, 'Original passage');
@@ -218,6 +226,8 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     vi.restoreAllMocks();
     runtime.update.mockClear();
     authorize.mockClear();
+    const artifacts = await db.select().from(schema.bookDockManagedUploads).where(eq(schema.bookDockManagedUploads.userId, user.id)).limit(128);
+    for (const artifact of artifacts) await module.get(BookDockManagedUploadService).discard(artifact.id, user.id, artifact.ownerKey ?? undefined);
     await db.delete(schema.libraries).where(eq(schema.libraries.id, libraryId));
     await db.delete(schema.notifications).where(eq(schema.notifications.userId, user.id));
     await rm(directory, { recursive: true, force: true });
@@ -232,6 +242,147 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     return (await jobs.claim())!;
   }
   const run = (job: NonNullable<Awaited<ReturnType<typeof jobs.claim>>>) => updates.run(job, document, authorize, new AbortController().signal);
+  async function uploadReplacement(idempotencyKey = randomUUID()) {
+    const current = await module.get(RevisionCatalogService).current(fileId, libraryId);
+    return module.get(FanfictionReplacementService).upload(
+      libraryId,
+      source.id,
+      {
+        idempotencyKey,
+        expectedRevisionId: current.id,
+      },
+      'replacement.epub',
+      createReadStream(output),
+      user,
+    );
+  }
+  const runReplacement = (job: NonNullable<Awaited<ReturnType<typeof jobs.claim>>>) =>
+    module.get(FanfictionReplacementService).run(job, authorize, new AbortController().signal);
+  it('uploaded replacement preserves book identity and metadata, retains rollback, and releases staging', async () => {
+    const original = await readFile(target);
+    await epub(output, 'Replacement passage', preview.canonicalUrl);
+    const queued = await uploadReplacement();
+    const claimed = (await jobs.claim())!;
+    expect(claimed.id).toBe(queued.id);
+    const result = await runReplacement(claimed);
+    expect(result).toMatchObject({ bookFileId: fileId, sourceId: source.id, noChange: false });
+    expect(await readFile(target)).toEqual(await readFile(output));
+    expect((await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, source.bookId!)))[0].title).toBe('Original title');
+    expect((await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.id, source.id)))[0]).toMatchObject({
+      state: 'paused',
+      bookFileId: fileId,
+      bookId: source.bookId,
+      nextCheckAt: null,
+    });
+    const history = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
+    expect(history).toHaveLength(2);
+    expect(await readFile(history.find((row) => row.storagePath)!.storagePath!)).toEqual(original);
+    expect(await db.select().from(schema.bookDockManagedUploads).where(eq(schema.bookDockManagedUploads.userId, user.id))).toHaveLength(0);
+    expect(runtime.update).not.toHaveBeenCalled();
+  }, 60_000);
+  it('uploaded replacement deduplicates requests without leaking a second staged EPUB', async () => {
+    await epub(output, 'Replacement passage', preview.canonicalUrl);
+    const key = randomUUID();
+    const first = await uploadReplacement(key);
+    expect((await uploadReplacement(key)).id).toBe(first.id);
+    expect(await db.select().from(schema.bookDockManagedUploads).where(eq(schema.bookDockManagedUploads.userId, user.id))).toHaveLength(1);
+    await epub(output, 'Different uploaded bytes', preview.canonicalUrl);
+    await expect(uploadReplacement(key)).rejects.toBeInstanceOf(ConflictException);
+    expect(await db.select().from(schema.bookDockManagedUploads).where(eq(schema.bookDockManagedUploads.userId, user.id))).toHaveLength(1);
+  }, 60_000);
+  it('uploaded replacement rejects a different story before touching installed bytes', async () => {
+    const original = await readFile(target);
+    await epub(output, 'Different story', 'https://example.org/story/2');
+    await uploadReplacement();
+    const claimed = (await jobs.claim())!;
+    await expect(runReplacement(claimed)).rejects.toMatchObject({ response: { errorCode: 'replacement_identity_mismatch' } });
+    expect(await readFile(target)).toEqual(original);
+    const saved = await jobs.get(libraryId, claimed.id, user);
+    expect(saved.result?.replacement?.identityMatches).toBe(false);
+  }, 60_000);
+  it('uploaded replacement binds chapter reduction approval to the exact upload and installed revision', async () => {
+    await db.update(schema.fanfictionSources).set({ chapterCount: 2 }).where(eq(schema.fanfictionSources.id, source.id));
+    await epub(output, 'Reduced story', preview.canonicalUrl);
+    await uploadReplacement();
+    const claimed = (await jobs.claim())!;
+    await expect(runReplacement(claimed)).rejects.toMatchObject({ response: { errorCode: 'replacement_chapter_reduction' } });
+    await jobs.finish(claimed, 'review_required', null, 'replacement_chapter_reduction');
+    const review = (await jobs.get(libraryId, claimed.id, user)).result!.replacement!;
+    await expect(jobs.approveReplacement(libraryId, claimed.id, 'b'.repeat(64), review.expectedRevisionId, user)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    await jobs.approveReplacement(libraryId, claimed.id, review.sha256, review.expectedRevisionId, user);
+    const retry = (await jobs.claim())!;
+    expect(retry.replacementReductionApproved).toBe(true);
+    await runReplacement(retry);
+    expect(await readFile(target)).toEqual(await readFile(output));
+  }, 60_000);
+  it('uploaded replacement recovers publication after losing source completion without replaying publication', async () => {
+    await epub(output, 'Recovery passage', preview.canonicalUrl);
+    await uploadReplacement();
+    const claimed = (await jobs.claim())!;
+    const completion = vi.spyOn(sources, 'completeUpdate').mockRejectedValueOnce(new ConflictException('Interrupted after publication'));
+    await expect(runReplacement(claimed)).rejects.toThrow('Interrupted after publication');
+    expect(await readFile(target)).toEqual(await readFile(output));
+    await jobs.finish(claimed, 'queued');
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ runAfter: sql`now()` })
+      .where(eq(schema.fanfictionJobs.id, claimed.id));
+    const retry = (await jobs.claim())!;
+    const result = await runReplacement(retry);
+    expect(result?.revisionId).toBeTruthy();
+    expect(completion).toHaveBeenCalledTimes(2);
+    expect(await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId))).toHaveLength(2);
+    expect(await db.select().from(schema.bookDockManagedUploads).where(eq(schema.bookDockManagedUploads.userId, user.id))).toHaveLength(0);
+  }, 60_000);
+  it('uploaded replacement preserves installed bytes when execution access is revoked', async () => {
+    const original = await readFile(target);
+    await epub(output, 'Revoked replacement', preview.canonicalUrl);
+    await uploadReplacement();
+    const claimed = (await jobs.claim())!;
+    authorize.mockRejectedValueOnce(new ForbiddenException('Access revoked'));
+    await expect(runReplacement(claimed)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(await readFile(target)).toEqual(original);
+  }, 60_000);
+  it('uploaded replacement rejects malformed EPUBs and removes their durable staging reservation', async () => {
+    await writeFile(output, 'not an EPUB');
+    await expect(uploadReplacement()).rejects.toThrow();
+    expect(await db.select().from(schema.bookDockManagedUploads).where(eq(schema.bookDockManagedUploads.userId, user.id))).toHaveLength(0);
+    expect(await db.select().from(schema.bookDockFiles).where(eq(schema.bookDockFiles.uploadedBy, user.id))).toHaveLength(0);
+  }, 60_000);
+  it('uploaded replacement settles cancelled publication and preserves the uploaded chapter evidence', async () => {
+    await epub(output, 'Cancelled completion', preview.canonicalUrl);
+    await uploadReplacement();
+    const claimed = (await jobs.claim())!;
+    vi.spyOn(sources, 'completeUpdate').mockRejectedValueOnce(new ConflictException('Interrupted completion'));
+    await expect(runReplacement(claimed)).rejects.toThrow('Interrupted completion');
+    await jobs.finish(claimed, 'cancelled');
+    await module.get(FanfictionRecoveryService).recover();
+    expect((await jobs.get(libraryId, claimed.id, user)).state).toBe('succeeded');
+    const [saved] = await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.id, source.id));
+    expect(saved).toMatchObject({ state: 'paused', chapterCount: 1, nextCheckAt: null });
+    expect(await readFile(target)).toEqual(await readFile(output));
+    await module.get(FanfictionRecoveryService).recover();
+    expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.jobId, claimed.id))).toHaveLength(1);
+  }, 60_000);
+  it('uploaded replacement cleanup isolates damaged directories and continues with other expired uploads', async () => {
+    const uploads = module.get(BookDockManagedUploadService);
+    const first = await uploads.stage(createReadStream(output), 'story.epub', libraryId, user.id, authorize);
+    const second = await uploads.stage(createReadStream(output), 'story.epub', libraryId, user.id, authorize);
+    const unexpected = join(storage.bookDockPath, `managed-upload-${first.id}`, 'unexpected');
+    await writeFile(unexpected, 'preserve unexpected files');
+    await db
+      .update(schema.bookDockManagedUploads)
+      .set({ expiresAt: sql`now() - interval '1 minute'` })
+      .where(eq(schema.bookDockManagedUploads.userId, user.id));
+    await uploads.cleanupExpired();
+    const remaining = await db.select().from(schema.bookDockManagedUploads).where(eq(schema.bookDockManagedUploads.userId, user.id));
+    expect(remaining.map((row) => row.id)).toEqual([first.id]);
+    expect(remaining.some((row) => row.id === second.id)).toBe(false);
+    expect(await readFile(unexpected, 'utf8')).toBe('preserve unexpected files');
+    await rm(unexpected);
+  }, 60_000);
   it('updates the existing file, retains rollback bytes, and resumes a lost job completion without fetching twice', async () => {
     const original = await readFile(target);
     const [manual] = await db

@@ -1,3 +1,6 @@
+import multipart from '@fastify/multipart';
+import { FanfictionReplacementController } from './fanfiction-replacement.controller';
+import { FanfictionReplacementService } from './fanfiction-replacement.service';
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -22,8 +25,9 @@ import { FanfictionSourceBatchService } from './fanfiction-source-batch.service'
 
 describe('Fanfiction HTTP contracts', () => {
   let app: NestFastifyApplication;
+  const replacements = { upload: vi.fn() };
   const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn() };
-  const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn(), retry: vi.fn() };
+  const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn(), retry: vi.fn(), approveReplacement: vi.fn() };
   const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), check: vi.fn(), rollback: vi.fn() };
   const discovery = { start: vi.fn(), list: vi.fn() };
   const adoption = { start: vi.fn() };
@@ -33,8 +37,15 @@ describe('Fanfiction HTTP contracts', () => {
   const base = '/api/v1/libraries/5/fanfiction';
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [FanfictionController, FanfictionSourceController, FanfictionDiscoveryController, FanfictionSourceBatchController],
+      controllers: [
+        FanfictionReplacementController,
+        FanfictionController,
+        FanfictionSourceController,
+        FanfictionDiscoveryController,
+        FanfictionSourceBatchController,
+      ],
       providers: [
+        { provide: FanfictionReplacementService, useValue: replacements },
         { provide: FanfictionProfileService, useValue: profiles },
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionSourceService, useValue: sources },
@@ -47,6 +58,7 @@ describe('Fanfiction HTTP contracts', () => {
       ],
     }).compile();
     app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    await app.register(multipart);
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
     await app.init();
@@ -59,6 +71,8 @@ describe('Fanfiction HTTP contracts', () => {
     vi.clearAllMocks();
   });
   it('requires library administration at both permission and library role boundaries', () => {
+    expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionReplacementController)).toBe(Permission.ManageLibraries);
+    expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionReplacementController)).toBe('owner');
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionSourceBatchController)).toBe(Permission.ManageLibraries);
     expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionSourceBatchController)).toBe('owner');
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionDiscoveryController)).toBe(Permission.ManageLibraries);
@@ -67,6 +81,49 @@ describe('Fanfiction HTTP contracts', () => {
     expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionController)).toBe('owner');
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionSourceController)).toBe(Permission.ManageLibraries);
     expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionSourceController)).toBe('owner');
+  });
+  it('validates multipart replacement and exact reduction approval contracts', async () => {
+    const job = { id: uuid, kind: 'replacement', state: 'queued' };
+    replacements.upload.mockImplementation(async (_library, _source, _dto, _name, stream) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      expect(Buffer.concat(chunks).toString()).toBe('epub fixture');
+      return job;
+    });
+    const boundary = 'bookorbit-test-boundary';
+    const payload = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="story.epub"\r\nContent-Type: application/epub+zip\r\n\r\nepub fixture\r\n--${boundary}--\r\n`;
+    const url = `${base}/sources/${uuid}/replacement?idempotencyKey=${uuid}&expectedRevisionId=${uuid}`;
+    const uploaded = await app.inject({ method: 'POST', url, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
+    expect(uploaded.statusCode).toBe(202);
+    expect(uploaded.json()).toEqual(job);
+    expect(replacements.upload).toHaveBeenCalledWith(
+      5,
+      uuid,
+      expect.objectContaining({ idempotencyKey: uuid, expectedRevisionId: uuid }),
+      'story.epub',
+      expect.anything(),
+      undefined,
+    );
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `${url}&force=true`,
+          headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+          payload,
+        })
+      ).statusCode,
+    ).toBe(400);
+    jobs.approveReplacement.mockResolvedValue(job);
+    const approval = { sha256: 'a'.repeat(64), expectedRevisionId: uuid };
+    const approved = await app.inject({ method: 'POST', url: `${base}/jobs/${uuid}/approve-replacement`, payload: approval });
+    expect(approved.statusCode).toBe(202);
+    expect(approved.json()).toEqual(job);
+    expect(jobs.approveReplacement).toHaveBeenCalledWith(5, uuid, approval.sha256, uuid, undefined);
+    for (const invalid of [{ ...approval, force: true }, { ...approval, sha256: 'invalid' }, { sha256: approval.sha256 }])
+      expect((await app.inject({ method: 'POST', url: `${base}/jobs/${uuid}/approve-replacement`, payload: invalid })).statusCode).toBe(400);
+    jobs.list.mockResolvedValue({ items: [job], nextCursor: null });
+    expect((await app.inject({ method: 'GET', url: `${base}/jobs?kind=replacement&limit=1` })).json()).toEqual({ items: [job], nextCursor: null });
   });
   it('validates discovery and saved selection requests with durable 202 responses', async () => {
     const job = { id: uuid, kind: 'discovery', state: 'queued' };

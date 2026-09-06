@@ -15,7 +15,7 @@ export interface EpubRevisionManifest {
 }
 
 export type RevisionPublicationState = "prepared" | "filesystem_published" | "database_committed" | "cleanup_complete" | "failed";
-export type RevisionPublicationReason = "fanficfare" | "rollback" | "file_write";
+export type RevisionPublicationReason = "fanficfare" | "rollback" | "file_write" | "replacement";
 
 export interface ReadingAnchor {
   schemaVersion?: 1;
@@ -81,7 +81,7 @@ export interface ResolvedReadingAnchor {
 }
 
 export type BookRevisionChangeKind = "baseline" | "unknown" | "content" | "cover" | "metadata" | "container";
-export type BookRevisionReason = "baseline" | "external_change" | "file_write" | "fanficfare" | "rollback";
+export type BookRevisionReason = "baseline" | "external_change" | "file_write" | "fanficfare" | "rollback" | "replacement";
 
 export interface BookFileRevisionSummary {
   revision: string;

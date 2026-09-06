@@ -11,6 +11,7 @@ import { FanfictionUpdateService } from './fanfiction-update.service';
 import { FanfictionRollbackService } from './fanfiction-rollback.service';
 import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
 import { FanfictionAdoptionService } from './fanfiction-adoption.service';
+import { FanfictionReplacementService } from './fanfiction-replacement.service';
 import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
 
 type ClaimedJob = NonNullable<Awaited<ReturnType<FanfictionJobService['claim']>>>;
@@ -34,6 +35,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
     private readonly discovery: FanfictionDiscoveryService,
     private readonly adoption: FanfictionAdoptionService,
     private readonly sourceBatches: FanfictionSourceBatchService,
+    private readonly replacements: FanfictionReplacementService,
   ) {}
 
   @Interval(2000)
@@ -99,23 +101,25 @@ export class FanfictionWorkerService implements OnModuleDestroy {
         return current;
       };
       const { document, saveCookies } =
-        job.profileId && !['rollback', 'discovery', 'adopt', 'source_batch'].includes(job.kind)
+        job.profileId && !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind)
           ? await this.profiles.session(job.libraryId, job.profileId, user, authorizeCookies)
           : { document: { configuration: '', cookies: [] }, saveCookies: undefined };
       const result: FanfictionJob['result'] =
-        job.kind === 'source_batch'
-          ? await this.sourceBatches.run(job, user, () => this.authorized(job), controller.signal)
-          : job.kind === 'discovery'
-            ? await this.discovery.run(job, () => this.authorized(job), controller.signal)
-            : job.kind === 'adopt'
-              ? await this.adoption.run(job, user, () => this.authorized(job), controller.signal)
-              : job.kind === 'rollback'
-                ? await this.rollbacks.run(job, () => this.authorized(job), controller.signal)
-                : job.kind === 'import'
-                  ? await this.imports.run(job, user, document, authorizeCookies, controller.signal, saveCookies)
-                  : job.kind === 'update' || job.kind === 'refresh'
-                    ? await this.updates.run(job, document, () => this.authorized(job), controller.signal, saveCookies)
-                    : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
+        job.kind === 'replacement'
+          ? await this.replacements.run(job, () => this.authorized(job), controller.signal)
+          : job.kind === 'source_batch'
+            ? await this.sourceBatches.run(job, user, () => this.authorized(job), controller.signal)
+            : job.kind === 'discovery'
+              ? await this.discovery.run(job, () => this.authorized(job), controller.signal)
+              : job.kind === 'adopt'
+                ? await this.adoption.run(job, user, () => this.authorized(job), controller.signal)
+                : job.kind === 'rollback'
+                  ? await this.rollbacks.run(job, () => this.authorized(job), controller.signal)
+                  : job.kind === 'import'
+                    ? await this.imports.run(job, user, document, authorizeCookies, controller.signal, saveCookies)
+                    : job.kind === 'update' || job.kind === 'refresh'
+                      ? await this.updates.run(job, document, () => this.authorized(job), controller.signal, saveCookies)
+                      : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
       await this.authorized(job);
       const continuation = result?.discovery?.finished === false || result?.selection?.finished === false;
       const needsReview = (result?.selection?.failed ?? 0) > 0;
@@ -139,7 +143,19 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const blocked = error instanceof ForbiddenException || ['configuration_blocked', 'authentication_required'].includes(code);
       await this.jobs.finish(
         job,
-        blocked ? 'configuration_blocked' : code === 'review_required' ? 'review_required' : job.attempts < 3 ? 'queued' : 'failed',
+        blocked
+          ? 'configuration_blocked'
+          : [
+                'review_required',
+                'replacement_identity_mismatch',
+                'replacement_chapter_reduction',
+                'replacement_revision_changed',
+                'replacement_upload_missing',
+              ].includes(code)
+            ? 'review_required'
+            : job.attempts < 3
+              ? 'queued'
+              : 'failed',
         null,
         blocked && error instanceof ForbiddenException ? 'access_revoked' : code,
       );

@@ -65,6 +65,31 @@ export const bookDockFiles = pgTable(
 export type BookDockFileRow = typeof bookDockFiles.$inferSelect;
 export type NewBookDockFileRow = typeof bookDockFiles.$inferInsert;
 
+export const bookDockManagedUploads = pgTable(
+  'book_dock_managed_uploads',
+  {
+    id: uuid('id').primaryKey(),
+    dockFileId: integer('dock_file_id').references(() => bookDockFiles.id, { onDelete: 'set null' }),
+    libraryId: integer('library_id').references(() => libraries.id, { onDelete: 'set null' }),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    ownerKey: uuid('owner_key'),
+    state: varchar('state', { length: 20 }).$type<'uploading' | 'ready' | 'claimed'>().notNull().default('uploading'),
+    sha256: varchar('sha256', { length: 64 }),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('book_dock_managed_uploads_expiry_idx').on(t.expiresAt, t.id),
+    index('book_dock_managed_uploads_user_idx').on(t.userId),
+    index('book_dock_managed_uploads_library_idx').on(t.libraryId),
+    index('book_dock_managed_uploads_dock_idx').on(t.dockFileId),
+    check('book_dock_managed_uploads_state_chk', sql`${t.state} in ('uploading', 'ready', 'claimed')`),
+    check('book_dock_managed_uploads_size_chk', sql`${t.sizeBytes} >= 0 and ${t.sizeBytes} <= 134217728`),
+    check('book_dock_managed_uploads_hash_chk', sql`${t.sha256} is null or ${t.sha256} ~ '^[a-f0-9]{64}$'`),
+  ],
+);
+
 /**
  * The files a dock unit is made of, in playback or format order. Holds **every** file including
  * the primary, so the primary's path appears here and on the anchor row too. That duplication is

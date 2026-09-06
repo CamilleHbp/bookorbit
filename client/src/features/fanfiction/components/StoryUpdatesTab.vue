@@ -16,6 +16,12 @@ const {
   sourceId,
   source,
   canUpdate,
+  canReplace,
+  canApproveReplacement,
+  replacementFile,
+  chooseReplacement,
+  uploadReplacement,
+  approveReplacement,
   sourceCursor,
   profiles,
   profileCursor,
@@ -142,11 +148,33 @@ onMounted(() => {
           <RouterLink :to="{ name: 'settings-fanfiction' }" class="text-primary text-sm underline">{{ t('fanfiction.settingsTitle') }}</RouterLink>
         </div>
       </form>
+      <form v-if="canReplace" class="border-border space-y-3 rounded-xl border p-4" @submit.prevent="uploadReplacement">
+        <h2 class="font-semibold">{{ t('fanfiction.replacementTitle') }}</h2>
+        <p class="text-muted-foreground text-sm">{{ t('fanfiction.replacementHelp') }}</p>
+        <label class="block space-y-2 text-sm">
+          {{ t('fanfiction.replacementFile') }}
+          <input type="file" accept=".epub,application/epub+zip" :disabled="updating" class="block w-full" @change="chooseReplacement" />
+        </label>
+        <p v-if="replacementFile" class="text-sm break-words">{{ replacementFile.name }}</p>
+        <Button type="submit" :disabled="updating || !replacementFile">{{ t('fanfiction.replacementUpload') }}</Button>
+      </form>
       <div v-if="job" role="status" class="border-border rounded-xl border p-4 text-sm">
         {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }}
         <p v-if="job.errorCode" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
+        <div v-if="job.result?.replacement" class="my-3 space-y-2">
+          <p>{{ job.result.replacement.title }}</p>
+          <p>
+            {{
+              t('fanfiction.replacementChapters', {
+                previous: job.result.replacement.previousChapterCount,
+                next: job.result.replacement.chapterCount,
+              })
+            }}
+          </p>
+          <Button v-if="canApproveReplacement" :disabled="updating" @click="approveReplacement">{{ t('fanfiction.replacementApprove') }}</Button>
+        </div>
         <Button
-          v-if="['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)"
+          v-if="!canApproveReplacement && ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)"
           variant="outline"
           :disabled="updating"
           @click="retryJob"
@@ -166,6 +194,7 @@ onMounted(() => {
             <p>
               {{ t(`book.detail.files.revisions.${revision.changeKind}`)
               }}<span v-if="revision.reason === 'rollback'"> · {{ t('fanfiction.kinds.rollback') }}</span
+              ><span v-if="revision.reason === 'replacement'"> · {{ t('fanfiction.kinds.replacement') }}</span
               ><span v-if="revision.revision === currentRevisionId"> · {{ t('fanfiction.currentRevision') }}</span>
             </p>
             <p class="text-muted-foreground">{{ dateLabel(revision.createdAt) }}</p>

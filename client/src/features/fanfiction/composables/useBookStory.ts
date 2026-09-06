@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, ref, toValue, watch, type InjectionKey, type MaybeRefOrGetter, type Ref } from 'vue'
+import { computed, onScopeDispose, ref, shallowRef, toValue, watch, type InjectionKey, type MaybeRefOrGetter, type Ref } from 'vue'
 import type {
   BookFileRevisionPage,
   BookFileRevisionSummary,
@@ -51,6 +51,16 @@ export function useBookStory(
   const currentRevisionId = ref<string | null>(null)
   const job = ref<FanfictionJob | null>(null)
   const busy = ref(false)
+  const replacementFile = shallowRef<File | null>(null)
+  const replacementKeys = new WeakMap<File, Map<string, string>>()
+  const canReplace = computed(() => allowed.value && !!source.value?.bookFileId && source.value.state !== 'unlinked' && !!currentRevisionId.value)
+  const canApproveReplacement = computed(
+    () =>
+      job.value?.kind === 'replacement' &&
+      job.value.state === 'review_required' &&
+      job.value.errorCode === 'replacement_chapter_reduction' &&
+      job.value.result?.replacement?.identityMatches === true,
+  )
   const base = computed(() => `/api/v1/libraries/${toValue(libraryId)}/fanfiction`)
   let generation = 0
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -66,11 +76,15 @@ export function useBookStory(
     const id = generation
     const controller = new AbortController()
     inFlight.add(controller)
-    const timeout = setTimeout(() => controller.abort(), 20_000)
+    const timeout = setTimeout(() => controller.abort(), body instanceof FormData ? 180_000 : 20_000)
     try {
       const response = await api(url, {
         signal: controller.signal,
-        ...(body === undefined ? {} : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+        ...(body === undefined
+          ? {}
+          : body instanceof FormData
+            ? { method, body }
+            : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
       })
       const result = await response.json().catch(() => ({}))
       if ([401, 403].includes(response.status) && valid(id)) {
@@ -139,6 +153,11 @@ export function useBookStory(
     const page = await request<FanfictionJobPage>(`${base.value}/jobs?sourceId=${current.id}&activeOnly=true&limit=1`)
     if (!valid(id) || source.value?.id !== current.id || job.value) return
     job.value = page.items[0] ?? null
+    if (job.value) return
+    const recent = await request<FanfictionJobPage>(`${base.value}/jobs?sourceId=${current.id}&kind=replacement&limit=1`)
+    if (!valid(id) || source.value?.id !== current.id || job.value) return
+    const candidate = recent.items[0]
+    if (candidate && ['review_required', 'failed', 'cancelled', 'configuration_blocked'].includes(candidate.state)) job.value = candidate
   }
   async function selectSource() {
     profileId.value = source.value?.profileId ?? ''
@@ -147,11 +166,63 @@ export function useBookStory(
     revisionCursor.value = null
     currentRevisionId.value = null
     job.value = null
+    replacementFile.value = null
     clearTimeout(timer)
     await perform(async (id) => {
       await Promise.all([loadHistory(id), recoverJob(id)])
     })
     poll(generation)
+  }
+  function chooseReplacement(event: Event) {
+    const input = event.target as HTMLInputElement
+    const file = input.files?.[0] ?? null
+    input.value = ''
+    replacementFile.value = null
+    error.value = ''
+    if (file && (!file.name.toLowerCase().endsWith('.epub') || file.size === 0 || file.size > 128 * 1024 * 1024)) {
+      error.value = 'Choose a non-empty EPUB no larger than 128 MiB.'
+      return
+    }
+    replacementFile.value = file
+  }
+  async function uploadReplacement() {
+    if (busy.value || !canReplace.value || !replacementFile.value) return
+    await perform(async (id) => {
+      const current = source.value!
+      const file = replacementFile.value!
+      const expectedRevisionId = currentRevisionId.value!
+      const identity = `${current.id}:${expectedRevisionId}`
+      const keys = replacementKeys.get(file) ?? new Map<string, string>()
+      replacementKeys.set(file, keys)
+      const idempotencyKey = keys.get(identity) ?? crypto.randomUUID()
+      keys.set(identity, idempotencyKey)
+      const body = new FormData()
+      body.append('file', file, file.name)
+      const query = new URLSearchParams({ idempotencyKey, expectedRevisionId })
+      const result = await request<FanfictionJob>(`${base.value}/sources/${current.id}/replacement?${query}`, body)
+      if (valid(id) && source.value?.id === current.id) {
+        if (replacementFile.value === file) replacementFile.value = null
+        await acceptJob(id, result)
+        poll(id)
+      }
+    })
+  }
+  async function approveReplacement() {
+    if (busy.value || !canApproveReplacement.value) return
+    await perform(async (id) => {
+      const currentJob = job.value!
+      const review = currentJob.result!.replacement!
+      const result = await request<FanfictionJob>(`${base.value}/jobs/${currentJob.id}/approve-replacement`, {
+        sha256: review.sha256,
+        expectedRevisionId: review.expectedRevisionId,
+      })
+      if (valid(id) && job.value?.id === currentJob.id) {
+        failures = 0
+        pollingBlocked = false
+        await acceptJob(id, result)
+        poll(id)
+      }
+    })
   }
   async function updateSettings() {
     await perform(async (id) => {
@@ -291,6 +362,7 @@ export function useBookStory(
       profiles.value = []
       profileCursor.value = null
       job.value = null
+      replacementFile.value = null
       error.value = ''
       loading.value = true
       if (!toValue(permitted) || toValue(libraryId) === undefined) {
@@ -338,6 +410,12 @@ export function useBookStory(
     sourceId,
     source,
     canUpdate,
+    canReplace,
+    canApproveReplacement,
+    replacementFile,
+    chooseReplacement,
+    uploadReplacement,
+    approveReplacement,
     profiles,
     profileCursor,
     profileId,

@@ -813,6 +813,27 @@
       "when": 1788727910053,
       "tag": "0115_source_batch_cursor_index",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1788731663512,
+      "tag": "0116_managed_epub_replacement",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1788732945303,
+      "tag": "0117_uploaded_replacement_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1788733240748,
+      "tag": "0118_replacement_hash_alias",
+      "breakpoints": true
     }
   ]
 }

@@ -10201,7 +10201,11 @@
       "source_conflict": "This story or EPUB already has a different managed source. Review its story settings.",
       "discovery_review_required": "Some candidates need attention. Retry revisits only failures from this selection.",
       "source_batch_review_required": "Some stories need attention. Review the failed items, then retry them.",
-      "source_batch_item_failed": "This action could not be applied. Check the story status and settings before retrying."
+      "source_batch_item_failed": "This action could not be applied. Check the story status and settings before retrying.",
+      "replacement_identity_mismatch": "The uploaded EPUB does not identify this story. Upload the correct story with its source URL in the EPUB metadata.",
+      "replacement_chapter_reduction": "This upload has fewer chapters. Review the counts before approving replacement.",
+      "replacement_revision_changed": "The installed story changed after this upload was requested. Upload again against the current revision.",
+      "replacement_upload_missing": "This upload is no longer available. Upload the EPUB again."
     },
     "title": "Fanfiction",
     "description": "Import stories and manage their source updates.",
@@ -10247,7 +10251,8 @@
       "discovery": "Discover sources",
       "rollback": "Rollback",
       "adopt": "Link existing stories",
-      "source_batch": "Bulk story actions"
+      "source_batch": "Bulk story actions",
+      "replacement": "Uploaded replacement"
     },
     "discovery": {
       "title": "Existing books",
@@ -10305,7 +10310,13 @@
       "refreshHelp": "Refresh downloads existing chapters again.",
       "scheduleHelp": "Changing the schedule preserves paused and review states.",
       "review": "View bulk progress"
-    }
+    },
+    "replacementTitle": "Replace from an EPUB",
+    "replacementHelp": "Upload an EPUB for this story when its website requires browser access. Book details and reading history are preserved. Source updates pause after replacement. Uploads awaiting review expire after seven days. Maximum size: 128 MiB.",
+    "replacementFile": "EPUB file",
+    "replacementUpload": "Upload replacement",
+    "replacementChapters": "Chapters: {previous} currently, {next} in this upload",
+    "replacementApprove": "Replace with fewer chapters"
   },
   "koreaderCopies": {
     "title": "Device copies",

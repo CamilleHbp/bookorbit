@@ -28,6 +28,8 @@ import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
 import { FanfictionAdoptionService } from './fanfiction-adoption.service';
 import { FanfictionDiscoveryController } from './fanfiction-discovery.controller';
 import { NotificationModule } from '../notification/notification.module';
+import { FanfictionReplacementService } from './fanfiction-replacement.service';
+import { FanfictionReplacementController } from './fanfiction-replacement.controller';
 import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
 import { FanfictionSourceBatchController } from './fanfiction-source-batch.controller';
 
@@ -61,6 +63,7 @@ import { FanfictionSourceBatchController } from './fanfiction-source-batch.contr
     FanfictionDiscoveryService,
     FanfictionAdoptionService,
     FanfictionSourceBatchService,
+    FanfictionReplacementService,
   ],
   controllers: [
     FanfictionController,
@@ -68,6 +71,7 @@ import { FanfictionSourceBatchController } from './fanfiction-source-batch.contr
     FanfictionSourceController,
     FanfictionDiscoveryController,
     FanfictionSourceBatchController,
+    FanfictionReplacementController,
   ],
 })
 export class FanfictionModule {}

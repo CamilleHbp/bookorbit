@@ -10,20 +10,20 @@ import { FanfictionUpdateService } from './fanfiction-update.service';
 import { FanfictionRollbackService } from './fanfiction-rollback.service';
 import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
 import { FanfictionAdoptionService } from './fanfiction-adoption.service';
+import { FanfictionReplacementService } from './fanfiction-replacement.service';
 import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
 import { UserService } from '../user/user.service';
 
 describe('Fanfiction queued execution', () => {
-  it.each(['rollback', 'discovery', 'adopt', 'source_batch'] as const)(
+  it.each(['rollback', 'replacement', 'discovery', 'adopt', 'source_batch'] as const)(
     'runs %s without decrypting a profile or contacting FanFicFare',
     async (kind) => {
       const job = { id: 'job', kind, libraryId: 5, userId: 7, tokenVersion: 1, profileId: 'broken-profile', attempts: 1 };
-      const result =
-        kind === 'rollback'
-          ? { revisionId: 'new-rollback-revision' }
-          : kind === 'discovery'
-            ? { discovery: { finished: false } }
-            : { selection: { processed: 3, failed: 1, finished: true } };
+      const result = ['rollback', 'replacement'].includes(kind)
+        ? { revisionId: 'new-rollback-revision' }
+        : kind === 'discovery'
+          ? { discovery: { finished: false } }
+          : { selection: { processed: 3, failed: 1, finished: true } };
       const jobs = {
         claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null),
         finish: vi.fn().mockResolvedValue(true),
@@ -47,6 +47,7 @@ describe('Fanfiction queued execution', () => {
           { provide: FanfictionDiscoveryService, useValue: rollback },
           { provide: FanfictionAdoptionService, useValue: rollback },
           { provide: FanfictionSourceBatchService, useValue: rollback },
+          { provide: FanfictionReplacementService, useValue: rollback },
         ],
       }).compile();
       const worker = module.get(FanfictionWorkerService);

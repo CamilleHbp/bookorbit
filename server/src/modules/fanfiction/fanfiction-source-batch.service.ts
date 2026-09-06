@@ -199,7 +199,13 @@ export class FanfictionSourceBatchService {
     const [previous] = await tx
       .select({ id: jobs.id })
       .from(jobs)
-      .where(and(eq(jobs.libraryId, job.libraryId), eq(jobs.sourceId, source.id), inArray(jobs.kind, ['import', 'update', 'refresh', 'rollback'])))
+      .where(
+        and(
+          eq(jobs.libraryId, job.libraryId),
+          eq(jobs.sourceId, source.id),
+          inArray(jobs.kind, ['import', 'update', 'refresh', 'rollback', 'replacement']),
+        ),
+      )
       .orderBy(desc(jobs.createdAt), desc(jobs.id))
       .limit(1);
     if (previous) await this.jobs.retry(job.libraryId, previous.id, user, tx);

@@ -121,6 +121,7 @@ export class FanfictionRecoveryService {
     if (source && !job.result?.revisionId) {
       if (source.version === job.sourceVersion && source.state !== 'unlinked') {
         const preview = job.result?.preview;
+        const replacement = job.kind === 'replacement' ? job.result?.replacement : undefined;
         await tx
           .update(sources)
           .set({
@@ -129,6 +130,9 @@ export class FanfictionRecoveryService {
             lastUpdatedAt: sql`now()`,
             updatedAt: sql`now()`,
             version: sql`${sources.version} + 1`,
+            ...(replacement?.identityMatches
+              ? { title: replacement.title, authors: replacement.authors, chapterCount: replacement.chapterCount }
+              : {}),
             ...(preview && job.kind !== 'rollback'
               ? { title: preview.title, authors: preview.authors, chapterCount: preview.chapterCount, storyStatus: preview.status }
               : {}),

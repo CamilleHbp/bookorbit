@@ -33,12 +33,13 @@ export class FanfictionJobService {
 
   async updateStory(
     source: typeof schema.fanfictionSources.$inferSelect,
-    kind: 'update' | 'refresh' | 'rollback',
+    kind: 'update' | 'refresh' | 'rollback' | 'replacement',
     idempotencyKey: string,
     user: RequestUser,
     scheduled = false,
     rollback?: { revisionId: string; expectedRevisionId: string },
     transaction?: DatabaseTransaction,
+    replacement?: { uploadId: string; sha256: string; expectedRevisionId: string },
   ): Promise<FanfictionJob> {
     await this.access.administer(user, source.libraryId);
     const operation = async (tx: DatabaseTransaction) => {
@@ -56,6 +57,8 @@ export class FanfictionJobService {
         if (
           existing.sourceId !== source.id ||
           existing.kind !== kind ||
+          (kind === 'replacement' &&
+            (existing.replacementSha256 !== replacement?.sha256 || existing.expectedRevisionId !== replacement?.expectedRevisionId)) ||
           (kind === 'rollback' &&
             (existing.rollbackRevisionId !== rollback?.revisionId || existing.expectedRevisionId !== rollback?.expectedRevisionId))
         )
@@ -66,8 +69,10 @@ export class FanfictionJobService {
         !current ||
         current.version !== source.version ||
         !current.bookFileId ||
-        (kind !== 'rollback' && current.attentionCode === 'destination_profile_required') ||
-        !(kind === 'rollback' ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']).includes(current.state) ||
+        (!['rollback', 'replacement'].includes(kind) && current.attentionCode === 'destination_profile_required') ||
+        !(
+          ['rollback', 'replacement'].includes(kind) ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']
+        ).includes(current.state) ||
         (scheduled && current.state !== 'active')
       )
         throw new ConflictException('Story source changed or requires attention before updating');
@@ -88,6 +93,9 @@ export class FanfictionJobService {
           sourceVersion: current.version,
           profileId: current.profileId,
           ...(rollback ? { rollbackRevisionId: rollback.revisionId, expectedRevisionId: rollback.expectedRevisionId } : {}),
+          ...(replacement
+            ? { replacementUploadId: replacement.uploadId, replacementSha256: replacement.sha256, expectedRevisionId: replacement.expectedRevisionId }
+            : {}),
           kind,
           scheduled,
           url: current.canonicalUrl,
@@ -99,6 +107,36 @@ export class FanfictionJobService {
       return this.view(row);
     };
     return transaction ? operation(transaction) : this.db.transaction(operation);
+  }
+
+  async recordReplacementReview(job: typeof jobs.$inferSelect, replacement: NonNullable<FanfictionJob['result']>['replacement']) {
+    await this.db.transaction(async (tx) => {
+      await this.assertOwnership(job, tx);
+      await tx.update(jobs).set({ result: { replacement } }).where(eq(jobs.id, job.id));
+    });
+  }
+
+  async approveReplacement(libraryId: number, id: string, sha256: string, expectedRevisionId: string, user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    return this.db.transaction(async (tx) => {
+      const [job] = await tx
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.id, id), eq(jobs.libraryId, libraryId)))
+        .for('update');
+      if (
+        !job ||
+        job.kind !== 'replacement' ||
+        job.state !== 'review_required' ||
+        job.errorCode !== 'replacement_chapter_reduction' ||
+        job.replacementSha256 !== sha256 ||
+        job.expectedRevisionId !== expectedRevisionId ||
+        !job.result?.replacement?.identityMatches
+      )
+        throw new ConflictException('The replacement review changed; reload it before approving');
+      await tx.update(jobs).set({ replacementReductionApproved: true }).where(eq(jobs.id, id));
+      return this.retry(libraryId, id, user, tx);
+    });
   }
 
   async enqueueDue(): Promise<number> {
@@ -370,7 +408,7 @@ export class FanfictionJobService {
         .from(jobs)
         .where(
           and(
-            inArray(jobs.kind, ['preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch']),
+            inArray(jobs.kind, ['preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch', 'replacement']),
             eq(jobs.cancellationRequested, false),
             lt(jobs.attempts, 3),
             active.length

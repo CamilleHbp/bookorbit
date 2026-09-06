@@ -68,7 +68,7 @@ export interface FanfictionProfileView extends FanfictionProfileSummary {
   cookies: FanfictionCookie[];
 }
 
-export type FanfictionJobKind = "preview" | "discovery" | "adopt" | "import" | "update" | "refresh" | "rollback" | "source_batch";
+export type FanfictionJobKind = "preview" | "discovery" | "adopt" | "import" | "update" | "refresh" | "rollback" | "source_batch" | "replacement";
 export type FanfictionJobState =
   "queued" | "running" | "succeeded" | "no_change" | "review_required" | "configuration_blocked" | "failed" | "cancelled";
 
@@ -82,6 +82,7 @@ export interface FanfictionJob {
   cancellationRequested: boolean;
   result: {
     preview?: FanfictionPreview;
+    replacement?: FanfictionReplacementReview;
     urls?: string[];
     sourceId?: string;
     bookId?: number;
@@ -239,4 +240,14 @@ export interface FanfictionActivity {
 export interface FanfictionActivityPage {
   items: FanfictionActivity[];
   nextCursor: string | null;
+}
+
+export interface FanfictionReplacementReview {
+  sha256: string;
+  expectedRevisionId: string;
+  title: string;
+  authors: string[];
+  previousChapterCount: number;
+  chapterCount: number;
+  identityMatches: boolean;
 }

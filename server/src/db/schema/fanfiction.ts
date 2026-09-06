@@ -106,6 +106,9 @@ export const fanfictionJobs = pgTable(
     sourceVersion: integer('source_version'),
     expectedRevisionId: uuid('expected_revision_id'),
     rollbackRevisionId: uuid('rollback_revision_id'),
+    replacementUploadId: uuid('replacement_upload_id'),
+    replacementSha256: varchar('replacement_sha256', { length: 64 }),
+    replacementReductionApproved: boolean('replacement_reduction_approved').notNull().default(false),
     scheduled: boolean('scheduled').notNull().default(false),
     kind: varchar('kind', { length: 20 }).$type<FanfictionJobKind>().notNull(),
     discovery: jsonb('discovery').$type<FanfictionDiscoveryProgress>(),
@@ -141,7 +144,10 @@ export const fanfictionJobs = pgTable(
       .where(sql`${t.sourceId} is not null and ${t.state} in ('queued', 'running')`),
     index('fanfiction_jobs_source_idx').on(t.sourceId),
     check('fanfiction_jobs_attempts_chk', sql`${t.attempts} >= 0 and ${t.fence} >= 0`),
-    check('fanfiction_jobs_kind_chk', sql`${t.kind} in ('preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch')`),
+    check(
+      'fanfiction_jobs_kind_chk',
+      sql`${t.kind} in ('preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch', 'replacement')`,
+    ),
     uniqueIndex('fanfiction_jobs_discovery_active_idx')
       .on(t.libraryId)
       .where(sql`${t.kind} = 'discovery' and ${t.state} in ('queued', 'running')`),

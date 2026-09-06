@@ -39,6 +39,72 @@ describe('book story administration', () => {
       return response({ items: [{ revision: 'previous', canRollback: true }], currentRevisionId: 'current', nextCursor: null })
     return response({ items: [], nextCursor: null })
   }
+  it('uploads multipart bytes with stable request identity after an uncertain response', async () => {
+    mockApi.mockImplementation((url) => Promise.resolve(pages(String(url))))
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    const file = new File(['epub bytes'], 'story.epub', { type: 'application/epub+zip' })
+    model.chooseReplacement({ target: { files: [file], value: 'story.epub' } } as unknown as Event)
+    mockApi.mockRejectedValueOnce(new Error('Connection interrupted'))
+    await model.uploadReplacement()
+    const first = mockApi.mock.calls.at(-1)!
+    expect(model.replacementFile.value).toBe(file)
+    mockApi.mockResolvedValueOnce(response({ id: 'upload-job', kind: 'replacement', state: 'queued' }))
+    await model.uploadReplacement()
+    const second = mockApi.mock.calls.at(-1)!
+    expect(second[0]).toBe(first[0])
+    const url = new URL(String(second[0]), 'https://books.test')
+    expect(url.pathname).toBe('/api/v1/libraries/5/fanfiction/sources/story/replacement')
+    expect(url.searchParams.get('expectedRevisionId')).toBe('current')
+    expect(url.searchParams.get('idempotencyKey')).toBeTruthy()
+    expect(second[1]?.headers).toBeUndefined()
+    expect(second[1]?.body).toBeInstanceOf(FormData)
+    expect((second[1]!.body as FormData).get('file')).toBeInstanceOf(File)
+    expect(model.replacementFile.value).toBeNull()
+    expect(model.job.value?.id).toBe('upload-job')
+  })
+  it('recovers a reduction review and approves only its exact uploaded bytes and base revision', async () => {
+    const review = { sha256: 'a'.repeat(64), expectedRevisionId: 'base-revision', identityMatches: true, previousChapterCount: 4, chapterCount: 3 }
+    mockApi.mockImplementation((url) =>
+      Promise.resolve(
+        String(url).includes('kind=replacement')
+          ? response({
+              items: [
+                {
+                  id: 'review-job',
+                  kind: 'replacement',
+                  state: 'review_required',
+                  errorCode: 'replacement_chapter_reduction',
+                  result: { replacement: review },
+                },
+              ],
+              nextCursor: null,
+            })
+          : pages(String(url)),
+      ),
+    )
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    expect(model.canApproveReplacement.value).toBe(true)
+    mockApi.mockResolvedValueOnce(response({ id: 'review-job', kind: 'replacement', state: 'queued' }))
+    await model.approveReplacement()
+    const call = mockApi.mock.calls.at(-1)!
+    expect(call[0]).toBe('/api/v1/libraries/5/fanfiction/jobs/review-job/approve-replacement')
+    expect(JSON.parse(call[1]?.body as string)).toEqual({ sha256: review.sha256, expectedRevisionId: review.expectedRevisionId })
+  })
+  it('rejects invalid uploads and clears a selected file when switching books', async () => {
+    mockApi.mockImplementation((url) => Promise.resolve(pages(String(url))))
+    const book = ref(7)
+    const model = scope.run(() => useBookStory(book, 5, true))!
+    await flush()
+    model.chooseReplacement({ target: { files: [new File(['bad'], 'story.zip')], value: '' } } as unknown as Event)
+    expect(model.replacementFile.value).toBeNull()
+    expect(model.error.value).toContain('EPUB')
+    model.chooseReplacement({ target: { files: [new File(['bytes'], 'story.epub')], value: '' } } as unknown as Event)
+    book.value = 8
+    await flush()
+    expect(model.replacementFile.value).toBeNull()
+  })
   it('requires both the feature permission and successful library administration access', async () => {
     const permitted = ref(false)
     const model = scope.run(() => useBookStory(7, 5, permitted))!
