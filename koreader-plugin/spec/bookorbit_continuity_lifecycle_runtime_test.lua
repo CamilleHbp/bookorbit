@@ -6,7 +6,7 @@ local logger = require("logger")
 logger:setLevel(logger.levels.warn)
 G_defaults = require("luadefaults"):open(work_dir .. "/defaults.lua")
 G_reader_settings = require("luasettings"):open(work_dir .. "/settings.lua")
-G_reader_settings:saveSetting("document_metadata_folder", "dir")
+G_reader_settings:saveSetting("document_metadata_folder", arg[4] or "dir")
 G_reader_settings:saveSetting("device_id", "offline-runtime-device")
 G_reader_settings:saveSetting("bookorbit", { settings_version = 1, auto_sync = false })
 einkfb = require("ffi/framebuffer")
@@ -48,24 +48,41 @@ end
 local function close(ui)
     ui:onClose()
 end
-replace("original")
-local ui = open()
-local toc = ui.document:getToc()
-ui:handleEvent(Event:new("GotoPage", math.floor((toc[9].page + toc[10].page) / 2)))
-local original = assert(Continuity.capture(ui.bookorbit))
-original.bookId, original.bookFileId = 2, 9
-assert(original.event, "deliberate navigation must produce an event")
-assert(original.chapterTitle == "Chapter 9")
+local ui, original, annotation_anchor, old_sidecar
+if arg[5] ~= "restore" then
+    replace("original")
+    ui = open()
+    local toc = ui.document:getToc()
+    ui:handleEvent(Event:new("GotoPage", math.floor((toc[9].page + toc[10].page) / 2)))
+    original = assert(Continuity.capture(ui.bookorbit))
+    original.bookId, original.bookFileId = 2, 9
+    assert(original.event, "deliberate navigation must produce an event")
+    assert(original.chapterTitle == "Chapter 9")
+    local start_xp, end_xp = ui.document:getXPointer(), ui.document:getXPointer()
+    for _ = 1, 80 do end_xp = assert(ui.document:getNextVisibleChar(end_xp)) end
+    ui.annotation.annotations = { { datetime = "2026-09-05 12:00:00", page = start_xp, pos0 = start_xp, pos1 = end_xp,
+        drawer = "lighten", text = ui.document:getTextFromXPointers(start_xp, end_xp, false), note = "Keep my note" } }
+    annotation_anchor = assert(require("bookorbit_native_anchor").captureAnnotation(ui, ui.annotation.annotations[1], original.revision))
+    close(ui)
+    if arg[5] == "capture" then
+        assert(require("bookorbit_anchor_store").load(path).record.anchor.event.id == original.event.id)
+        print("KOReader durable anchor captured before process exit")
+        return
+    end
+else
+    local backup = assert(require("bookorbit_anchor_store").load(path))
+    original, old_sidecar = backup.record.anchor, assert(backup.sidecarPath)
+    local settings = require("docsettings").openSettingsFile(old_sidecar)
+    annotation_anchor = assert(settings:readSetting("bookorbit_revision_annotations_v1").anchors[1])
+end
 local original_id = original.event.id
-local start_xp, end_xp = ui.document:getXPointer(), ui.document:getXPointer()
-for _ = 1, 80 do end_xp = assert(ui.document:getNextVisibleChar(end_xp)) end
-ui.annotation.annotations = { { datetime = "2026-09-05 12:00:00", page = start_xp, pos0 = start_xp, pos1 = end_xp,
-    drawer = "lighten", text = ui.document:getTextFromXPointers(start_xp, end_xp, false), note = "Keep my note" } }
-local annotation_anchor = assert(require("bookorbit_native_anchor").captureAnnotation(ui, ui.annotation.annotations[1], original.revision))
-close(ui)
 replace("regenerated")
 ui = open()
 local state = ui.bookorbit.reading_continuity
+if old_sidecar and arg[4] == "hash" then
+    assert(require("bookorbit_anchor_store").load(path).sidecarPath ~= old_sidecar,
+        "cold restart must restore from the old hash sidecar into the new hash association")
+end
 assert(state.record.anchor.event.id == original_id, "restoration must preserve the reading event")
 assert(state.record.acknowledgement.quality == "relocated", "offline replacement must relocate the passage")
 assert(state.record.acknowledgement.revision == "sha256:" .. state.sha256)
@@ -92,14 +109,20 @@ local remote = { bookId = 2, bookFileId = 9, resetGeneration = 0, anchor = origi
 function ui.bookorbit:newClient()
     return { request = function(_, method, request_path, body)
         exchange_calls[#exchange_calls + 1] = { method, request_path, body }
+        if request_path == "/koreader/plugin/copies" then
+            return { nextSequence = body.sequence + 1, copies = { { copyId = body.copies[1].copyId,
+                status = "accepted", id = "accepted-copy", policy = "notify", effectivePolicyVersion = "1:1" } } }
+        end
         return remote
     end }
 end
 local handled, exchange_error = require("bookorbit_reading_exchange").run(ui.bookorbit)
 assert(handled and not exchange_error, tostring(exchange_error))
-assert(#exchange_calls == 3, "reconnect must exchange the original event and separate acknowledgement")
+assert(#exchange_calls == 4, "reconnect must exchange the original event, separate acknowledgement and installed copy")
 assert(exchange_calls[2][3].anchor.event.id == original_id)
 assert(exchange_calls[3][3].acknowledgement.eventId == original_id)
+assert(exchange_calls[4][3].copies[1].sha256 == state.sha256, "copy inventory must identify the installed bytes")
+assert(exchange_calls[4][3].copies[1].revisionId == nil, "canonical progress cannot label different installed bytes")
 assert(state.record.anchor.revision == original.revision, "reconciliation must retain the canonical source revision")
 assert(not state.changed and ui.statistics.mem_read_pages == 0)
 remote = { bookId = 2, bookFileId = 9, resetGeneration = 1 }

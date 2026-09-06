@@ -68,8 +68,8 @@ end
 -- flush writes pending page stats to statistics.sqlite3, which run() reads
 -- later; the DB outlives the document.
 function BookOrbitBookSync.capture(plugin)
-    if not ReadingContinuity.canSync(plugin) then return nil end
     ReadingContinuity.capture(plugin)
+    if not ReadingContinuity.canSync(plugin) then return nil end
     local ui = plugin.ui
     if not ui or not ui.document then return nil end
 

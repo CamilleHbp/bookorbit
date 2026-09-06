@@ -5,6 +5,7 @@ function Exchange.run(plugin)
     local state = plugin.reading_continuity
     if not state or not state.ready or state.restoring then return false end
     Continuity.capture(plugin)
+    if state.dirty or state.persistence_pending then return true, "anchor_persistence" end
     local record = state.record
     if not record or not record.anchor.bookFileId then return false end
     local client = plugin:newClient()

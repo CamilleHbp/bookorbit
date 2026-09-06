@@ -1,6 +1,7 @@
 local Native = require("bookorbit_native_anchor")
 local Identity = require("bookorbit_file_identity")
 local Annotations = require("bookorbit_annotation_continuity")
+local AnchorStore = require("bookorbit_anchor_store")
 local UIManager = require("ui/uimanager")
 local logger = require("logger")
 local Continuity = {}
@@ -9,14 +10,41 @@ local KEY = "bookorbit_revision_anchor_v1"
 local function save(plugin)
     local state = plugin.reading_continuity
     if not state or not state.record or not plugin.ui.doc_settings then return false end
-    plugin.ui.doc_settings:saveSetting(KEY, state.record)
-    return plugin.ui.doc_settings:flush() ~= nil
+    local sequence = state.record.persistenceSequence or 0
+    if type(sequence) ~= "number" or sequence < 0 or sequence >= 9007199254740991 or sequence % 1 ~= 0 then
+        state.persistence_pending = true
+        return false
+    end
+    state.record.persistenceSequence = sequence + 1
+    local ok, result = pcall(function()
+        plugin.ui.doc_settings:saveSetting(KEY, state.record)
+        return plugin.ui.doc_settings:flush()
+    end)
+    local sidecar_path = type(result) == "string" and plugin.ui.doc_settings.sidecar_filename
+        and result .. "/" .. plugin.ui.doc_settings.sidecar_filename or nil
+    local stored_ok, stored = pcall(AnchorStore.save, state.record, sidecar_path)
+    state.persistence_pending = not ok or result == nil or result == false or not stored_ok or not stored
+    return not state.persistence_pending
 end
 
 function Continuity.begin(plugin)
     local ui = plugin.ui
     if not ui or not ui.document or not ui.document.getXPointer then return end
     local record = ui.doc_settings:readSetting(KEY)
+    local loaded, backup = pcall(AnchorStore.load, ui.document.file)
+    if loaded and backup and (type(record) ~= "table" or type(record.persistenceSequence) ~= "number"
+        or backup.record.persistenceSequence > record.persistenceSequence) then
+        record = backup.record
+        if backup.sidecarPath and not ui.doc_settings:readSetting("bookorbit_revision_annotations_v1") then
+            local opened, old = pcall(require("docsettings").openSettingsFile, backup.sidecarPath)
+            if opened and old then
+                for _, key in ipairs({ "bookorbit_revision_annotations_v1", "annotations", "annotations_rolling" }) do
+                    local value = old:readSetting(key)
+                    if value ~= nil then ui.doc_settings:saveSetting(key, value) end
+                end
+            end
+        end
+    end
     if type(record) ~= "table" or type(record.anchor) ~= "table" then
         record = nil
         local percent = ui.doc_settings:readSetting("percent_finished") or ui.doc_settings:readSetting("last_percent")
@@ -155,13 +183,18 @@ function Continuity.capture(plugin)
             save(plugin)
         end
     end
-    if state.record and not state.dirty then return state.record.anchor end
+    if state.record and not state.dirty then
+        if state.persistence_pending and not save(plugin) then return end
+        return state.record.anchor
+    end
     local previous = state.record and state.record.anchor and state.record.anchor.event
     local event
     if state.dirty then
-        local sequence = (G_reader_settings:readSetting("bookorbit_reading_device_sequence") or 0) + 1
-        G_reader_settings:saveSetting("bookorbit_reading_device_sequence", sequence)
-        G_reader_settings:flush()
+        local legacy = G_reader_settings:readSetting("bookorbit_reading_device_sequence") or 0
+        if type(legacy) ~= "number" or legacy < 0 or legacy % 1 ~= 0 then return end
+        local minimum = math.max(legacy, previous and previous.deviceSequence or 0) + 1
+        local sequence = require("bookorbit_state_manager").reserveReadingSequence(minimum)
+        if not sequence then return end
         event = {
             id = require("random").uuid(true):lower(), deviceId = plugin.device_id or "koreader",
             deviceSequence = sequence,
@@ -174,6 +207,7 @@ function Continuity.capture(plugin)
     record.sha256, record.signature = state.sha256, state.signature
     record.copyId = state.record and state.record.path == plugin.ui.document.file and state.record.copyId or require("random").uuid(true):lower()
     record.inventory = state.record and state.record.path == plugin.ui.document.file and state.record.inventory or nil
+    record.persistenceSequence = state.record and state.record.persistenceSequence or 0
     record.path, record.awaitingReconciliation = plugin.ui.document.file, state.changed
     if state.record then
         record.anchor.bookId = state.record.anchor.bookId
@@ -188,7 +222,10 @@ function Continuity.capture(plugin)
         end
     end
     state.record, state.dirty = record, false
-    if not save(plugin) then logger.warn("BookOrbit: reading anchor could not be persisted") end
+    if not save(plugin) then
+        logger.warn("BookOrbit: reading anchor could not be persisted")
+        return
+    end
     return record.anchor
 end
 
@@ -244,7 +281,7 @@ end
 
 function Continuity.canSync(plugin)
     local state = plugin.reading_continuity
-    return not state or state.ready == true and not state.restoring and not state.changed and not state.annotations_pending
+    return not state or state.ready == true and not state.restoring and not state.changed and not state.annotations_pending and not state.persistence_pending
 end
 
 function Continuity.isRestoring(plugin)
