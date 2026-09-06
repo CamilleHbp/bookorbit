@@ -88,7 +88,6 @@ describe('book story administration', () => {
     let needsProfile = true
     mockApi.mockImplementation((url, init) => {
       if (init?.method === 'PATCH') {
-        expect(JSON.parse(init.body as string)).toEqual({ version: 2, profileId: null, intervalMinutes: 1440 })
         needsProfile = false
       }
       return Promise.resolve(
@@ -105,5 +104,7 @@ describe('book story administration', () => {
     expect(model.canUpdate.value).toBe(false)
     await model.updateSettings()
     expect(model.canUpdate.value).toBe(true)
+    const patch = mockApi.mock.calls.find(([, init]) => init?.method === 'PATCH')!
+    expect(JSON.parse(patch[1]!.body as string)).toEqual({ version: 2, profileId: null, intervalMinutes: 1440 })
   })
 })
