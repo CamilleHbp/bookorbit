@@ -95,6 +95,36 @@ describe.skipIf(!configPath)('canonical reading events with PostgreSQL', () => {
   }
   const record = (value: ReadingAnchor, userId = userIds[0]) => service.record(userId, fileId, libraryId, value);
 
+  it('preserves an offline event when its logical file moves to another library', async () => {
+    await db
+      .update(schema.bookFiles)
+      .set({ sha256: 'a'.repeat(64) })
+      .where(eq(schema.bookFiles.id, fileId));
+    const original = anchor();
+    const [destination] = await db
+      .insert(schema.libraries)
+      .values({ name: `moved-events-${randomUUID()}` })
+      .returning();
+    try {
+      const path = `/moved-revision-events-test/${randomUUID()}`;
+      const [folder] = await db.insert(schema.libraryFolders).values({ libraryId: destination.id, path }).returning();
+      await db
+        .update(schema.books)
+        .set({ libraryId: destination.id, libraryFolderId: folder.id, folderPath: path })
+        .where(eq(schema.books.id, bookId));
+      await db
+        .update(schema.bookFiles)
+        .set({ libraryFolderId: folder.id, absolutePath: `${path}/story.epub` })
+        .where(eq(schema.bookFiles.id, fileId));
+      await expect(record(original)).rejects.toThrow('not found');
+      expect(await service.record(userIds[0], fileId, destination.id, original)).toMatchObject({ outcome: 'accepted', anchor: original });
+      expect(await service.record(userIds[0], fileId, destination.id, original)).toMatchObject({ outcome: 'duplicate', anchor: original });
+      expect((await service.state(userIds[1], fileId, destination.id)).anchor).toBeNull();
+    } finally {
+      await db.delete(schema.libraries).where(eq(schema.libraries.id, destination.id));
+    }
+  });
+
   it('projects genuine events once and keeps their occurrence time', async () => {
     await db
       .update(schema.bookFiles)

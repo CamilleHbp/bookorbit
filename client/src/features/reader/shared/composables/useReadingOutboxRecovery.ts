@@ -1,6 +1,5 @@
 import { onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
-import { api } from '@/lib/api'
-import type { ReadingEventReceipt } from '@bookorbit/types'
+import { readReadingEventReceipt, sendStoredReadingEvent } from './reading-event-transport'
 import { readingEventOutbox } from './reading-event-outbox'
 import { readingEventLockName } from './reading-event-lock'
 
@@ -55,12 +54,7 @@ export function useReadingOutboxRecovery(userId: MaybeRefOrGetter<number | null>
           if (blockedFiles.has(event.fileId)) continue
           const available = await navigator.locks.request(readingEventLockName(owner, event.fileId), { ifAvailable: true }, (lock) => lock !== null)
           if (!available || !valid()) continue
-          const response = await api(`/api/v1/libraries/${event.libraryId}/files/${event.fileId}/reading-events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...event.request, expectedUserId: owner }),
-            signal: abort.signal,
-          })
+          const response = await sendStoredReadingEvent(event, abort.signal)
           if (!valid()) return
           if (!response.ok) {
             if ([400, 401, 403, 404, 409, 422].includes(response.status)) {
@@ -70,13 +64,7 @@ export function useReadingOutboxRecovery(userId: MaybeRefOrGetter<number | null>
             }
             throw new Error('Reading synchronization will resume when the connection is available.')
           }
-          const receipt = (await response.json()) as ReadingEventReceipt
-          if (
-            !['accepted', 'duplicate', 'superseded', 'reset_required'].includes(receipt.outcome) ||
-            !Number.isSafeInteger(receipt.resetGeneration) ||
-            receipt.resetGeneration < 0
-          )
-            throw new Error('Reading synchronization returned an invalid receipt')
+          await readReadingEventReceipt(response)
           await navigator.locks.request(readingEventLockName(owner, event.fileId), { ifAvailable: true }, async (lock) => {
             if (lock && valid()) await readingEventOutbox.remove(owner, event.request.anchor.event!.id)
           })

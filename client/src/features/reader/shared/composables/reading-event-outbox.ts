@@ -148,6 +148,28 @@ export class ReadingEventOutbox {
     })
   }
 
+  async relocate(userId: number, eventId: string, expectedLibraryId: number, libraryId: number) {
+    if (!Number.isSafeInteger(libraryId) || libraryId < 1) throw new Error('Invalid reading library identity')
+    return this.transaction<boolean>('readwrite', (store, result) => {
+      const request = store.get(`${userId}:${eventId}`)
+      request.onsuccess = () => {
+        const row = request.result as PendingReadingEvent | undefined
+        if (!row) return result(false)
+        if (row.libraryId === libraryId) return result(true)
+        if (row.libraryId !== expectedLibraryId) return result(false)
+        store.put({ ...row, libraryId })
+        result(true)
+      }
+    })
+  }
+
+  async contains(userId: number, eventId: string) {
+    return this.transaction<boolean>('readonly', (store, result) => {
+      const request = store.count(`${userId}:${eventId}`)
+      request.onsuccess = () => result(request.result > 0)
+    })
+  }
+
   async pendingForUser(userId: number, excludedFiles: ReadonlySet<number>, limit = 20) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('Invalid reading event batch size')
     return this.transaction<PendingReadingEvent[]>('readonly', (store, result) => {

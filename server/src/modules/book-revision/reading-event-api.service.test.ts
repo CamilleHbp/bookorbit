@@ -1,4 +1,7 @@
 import { ForbiddenException, ValidationPipe, BadRequestException } from '@nestjs/common';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { GlobalExceptionFilter } from '../../common/filters/http-exception.filter';
+import { ReadingEventController } from './reading-event.controller';
 import { Test } from '@nestjs/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RequestUser } from '../../common/types/request-user';
@@ -34,6 +37,7 @@ const acknowledgement = {
 let service: ReadingEventApiService;
 beforeEach(async () => {
   vi.resetAllMocks();
+  libraries.verifyFileAccess.mockResolvedValue({ libraryId: 5 });
   const module = await Test.createTestingModule({
     providers: [ReadingEventApiService, { provide: BookService, useValue: libraries }, { provide: CanonicalReadingService, useValue: reading }],
   }).compile();
@@ -41,6 +45,54 @@ beforeEach(async () => {
 });
 
 describe('reading event API boundaries', () => {
+  it('preserves moved-library guidance through the real HTTP filter and rechecks destination access', async () => {
+    const module = await Test.createTestingModule({
+      controllers: [ReadingEventController],
+      providers: [{ provide: ReadingEventApiService, useValue: service }],
+    }).compile();
+    const app = module.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+    app.useGlobalFilters(new GlobalExceptionFilter());
+    app.useGlobalGuards({
+      canActivate(context) {
+        context.switchToHttp().getRequest().user = user;
+        return true;
+      },
+    });
+    await app.init();
+    await app.getHttpAdapter().getInstance().ready();
+    try {
+      libraries.verifyFileAccess.mockResolvedValue({ libraryId: 6 });
+      const payload = { anchor, expectedUserId: user.id };
+      const moved = await app.inject({ method: 'POST', url: '/api/v1/libraries/5/files/9/reading-events', payload });
+      expect(moved.statusCode).toBe(409);
+      expect(moved.json()).toMatchObject({ errorCode: 'reading_library_changed', errorMeta: { libraryId: 6 } });
+      expect(reading.record).not.toHaveBeenCalled();
+      reading.record.mockResolvedValue({ outcome: 'accepted', resetGeneration: 2, anchor });
+      const accepted = await app.inject({ method: 'POST', url: '/api/v1/libraries/6/files/9/reading-events', payload });
+      expect(accepted.statusCode).toBe(200);
+      expect(accepted.json()).toMatchObject({ outcome: 'accepted', anchor });
+      libraries.verifyFileAccess.mockRejectedValue(new ForbiddenException());
+      const revoked = await app.inject({ method: 'POST', url: '/api/v1/libraries/5/files/9/reading-events', payload });
+      expect(revoked.statusCode).toBe(403);
+      expect(revoked.json()).not.toHaveProperty('errorMeta');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('reports a moved file only after verifying access to its current library', async () => {
+    libraries.verifyFileAccess.mockResolvedValue({ libraryId: 6 });
+    await expect(service.record(5, 9, { anchor, expectedUserId: 7 }, user)).rejects.toMatchObject({
+      response: { errorCode: 'reading_library_changed', errorMeta: { libraryId: 6 } },
+    });
+    expect(reading.record).not.toHaveBeenCalled();
+    await service.record(6, 9, { anchor, expectedUserId: 7 }, user);
+    expect(reading.record).toHaveBeenCalledWith(7, 9, 6, anchor);
+    libraries.verifyFileAccess.mockRejectedValue(new ForbiddenException());
+    await expect(service.record(5, 9, { anchor, expectedUserId: 7 }, user)).rejects.toBeInstanceOf(ForbiddenException);
+  });
   it('rejects queued events after an account switch, including superuser sessions', async () => {
     await expect(service.record(5, 9, { anchor, expectedUserId: 8 }, user)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.record(5, 9, { anchor, expectedUserId: 8 }, { ...user, isSuperuser: true })).rejects.toBeInstanceOf(ForbiddenException);

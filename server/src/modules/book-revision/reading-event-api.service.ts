@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import type { ReadingEventLibraryChange } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { BookService } from '../book/book.service';
 import { CanonicalReadingService } from './canonical-reading.service';
@@ -19,7 +20,12 @@ export class ReadingEventApiService {
   async record(libraryId: number, fileId: number, dto: RecordReadingEventDto, user: RequestUser) {
     if (dto.expectedUserId !== undefined && dto.expectedUserId !== user.id)
       throw new ForbiddenException('The queued reading event belongs to another account');
-    await this.books.verifyFileAccess(fileId, user);
+    const file = await this.books.verifyFileAccess(fileId, user);
+    if (file.libraryId !== libraryId)
+      throw new ConflictException({
+        errorCode: 'reading_library_changed',
+        errorMeta: { libraryId: file.libraryId },
+      } satisfies ReadingEventLibraryChange);
     return this.reading.record(user.id, fileId, libraryId, dto.anchor);
   }
 

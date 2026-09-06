@@ -42,6 +42,11 @@ export interface RecordReadingEventRequest {
   expectedUserId?: number;
 }
 
+export interface ReadingEventLibraryChange {
+  errorCode: "reading_library_changed";
+  errorMeta: { libraryId: number };
+}
+
 export interface ReadingEventIdentity {
   id: string;
   deviceId: string;

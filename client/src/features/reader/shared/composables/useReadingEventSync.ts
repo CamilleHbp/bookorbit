@@ -1,6 +1,6 @@
 import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import type { ReadingAnchor, ReadingEventReceipt } from '@bookorbit/types'
-import { api } from '@/lib/api'
+import { readReadingEventReceipt, sendStoredReadingEvent, sendUnstoredReadingEvent } from './reading-event-transport'
 import { readingEventOutbox } from './reading-event-outbox'
 import { holdReadingEventLock } from './reading-event-lock'
 
@@ -48,21 +48,10 @@ export function useReadingEventSync(fileId: number, userId: MaybeRefOrGetter<num
     if (disposed || toValue(userId) !== owner || !navigator.onLine) return
     const current = generation
     try {
-      const response = await api(`/api/v1/libraries/${libraryId}/files/${fileId}/reading-events`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ anchor, expectedUserId: owner }),
-        signal: AbortSignal.timeout(15_000),
-      })
+      const response = await sendUnstoredReadingEvent(owner, libraryId, fileId, anchor, AbortSignal.timeout(15_000))
       if (disposed || generation !== current || toValue(userId) !== owner) return
       if (!response.ok) throw new Error('Reading synchronization could not finish')
-      const receipt = (await response.json()) as ReadingEventReceipt
-      if (
-        !['accepted', 'duplicate', 'superseded', 'reset_required'].includes(receipt.outcome) ||
-        !Number.isSafeInteger(receipt.resetGeneration) ||
-        receipt.resetGeneration < 0
-      )
-        throw new Error('Reading synchronization returned an invalid receipt')
+      const receipt = await readReadingEventReceipt(response)
       receive(receipt)
     } catch (failure) {
       if (!disposed && generation === current && toValue(userId) === owner)
@@ -91,24 +80,13 @@ export function useReadingEventSync(fileId: number, userId: MaybeRefOrGetter<num
         const events = await readingEventOutbox.pending(owner, fileId)
         for (const event of events) {
           if (!valid()) return
-          const response = await api(`/api/v1/libraries/${event.libraryId}/files/${fileId}/reading-events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(event.request),
-            signal: abort.signal,
-          })
+          const response = await sendStoredReadingEvent(event, abort.signal)
           if (!valid()) return
           if (!response.ok) {
             blocked = [400, 401, 403, 404, 409, 422].includes(response.status)
             throw new Error('Reading position is saved on this device. Synchronization could not finish.')
           }
-          const receipt = (await response.json()) as ReadingEventReceipt
-          if (
-            !['accepted', 'duplicate', 'superseded', 'reset_required'].includes(receipt.outcome) ||
-            !Number.isSafeInteger(receipt.resetGeneration) ||
-            receipt.resetGeneration < 0
-          )
-            throw new Error('Reading synchronization returned an invalid receipt')
+          const receipt = await readReadingEventReceipt(response)
           await readingEventOutbox.remove(owner, event.request.anchor.event!.id)
           if (!valid()) return
           receive(receipt)
