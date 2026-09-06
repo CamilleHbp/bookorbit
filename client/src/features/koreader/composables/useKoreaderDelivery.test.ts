@@ -44,6 +44,7 @@ describe('device delivery controls', () => {
   afterEach(() => {
     scope.stop()
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
   async function flush() {
     for (let i = 0; i < 12; i++) await Promise.resolve()
@@ -62,6 +63,7 @@ describe('device delivery controls', () => {
     expect(mockApi.mock.calls.at(-1)?.[0]).toContain('cursor=older')
   })
   it('reuses the exact request identity after an uncertain response and binds delivery to the expected revision', async () => {
+    mockApi.mockResolvedValueOnce(response({ items: [], nextCursor: null }))
     const model = scope.run(() => useKoreaderDelivery(copy))!
     await flush()
     mockApi.mockRejectedValueOnce(new Error('Connection lost'))
@@ -100,6 +102,7 @@ describe('device delivery controls', () => {
     expect(model.jobs.value[0]?.restorationState).toBe('verification_pending')
     expect(model.canCancel(installed)).toBe(false)
     expect(model.canRetry(installed)).toBe(false)
+    expect(model.canRequest.value).toBe(false)
   })
   it('blocks unauthorized or unsupported file delivery', async () => {
     permissions.download = false
@@ -139,5 +142,99 @@ describe('device delivery controls', () => {
     const count = mockApi.mock.calls.length
     await vi.advanceTimersByTimeAsync(10_000)
     expect(mockApi).toHaveBeenCalledTimes(count)
+  })
+
+  it.each([
+    { ...job, installationState: 'installed', restorationState: 'verified' },
+    { ...job, installationState: 'installed', restorationState: 'approximate' },
+    { ...job, cancelledAt: '2026-09-06T12:00:00Z' },
+    { ...job, failureCode: 'download_failed' },
+  ])('stops polling terminal delivery states', async (terminal) => {
+    mockApi.mockResolvedValue(response({ items: [terminal], nextCursor: null }))
+    scope.run(() => useKoreaderDelivery(copy))
+    await flush()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(mockApi).toHaveBeenCalledTimes(1)
+  })
+
+  it('polls pending first-open verification less frequently than installation', async () => {
+    mockApi.mockResolvedValue(response({ items: [{ ...job, installationState: 'installed' }], nextCursor: null }))
+    scope.run(() => useKoreaderDelivery(copy))
+    await flush()
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(mockApi).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(mockApi).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes stopped delivery status when the server revision changes', async () => {
+    mockApi.mockResolvedValue(response({ items: [{ ...job, installationState: 'installed', restorationState: 'verified' }], nextCursor: null }))
+    const selected = ref(copy)
+    const model = scope.run(() => useKoreaderDelivery(selected))!
+    await flush()
+    expect(model.canRequest.value).toBe(false)
+    mockApi.mockResolvedValue(response({ items: [], nextCursor: null }))
+    selected.value = { ...copy, currentRevisionId: 'next-revision' }
+    await flush()
+    expect(mockApi).toHaveBeenCalledTimes(2)
+    expect(model.canRequest.value).toBe(true)
+  })
+
+  it('backs off repeated connection failures and resumes after explicit refresh', async () => {
+    mockApi.mockRejectedValue(new Error('Offline'))
+    const model = scope.run(() => useKoreaderDelivery(copy))!
+    await flush()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(mockApi).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(9999)
+    expect(mockApi).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(mockApi).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(200_000)
+    expect(mockApi).toHaveBeenCalledTimes(5)
+    expect(model.error.value).toBe('Offline')
+    mockApi.mockResolvedValue(response({ items: [job], nextCursor: null }))
+    await model.refresh()
+    expect(model.error.value).toBe('')
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(mockApi).toHaveBeenCalledTimes(7)
+  })
+
+  it('does not repeatedly request an inventory after access is revoked', async () => {
+    mockApi.mockResolvedValue(response({ message: 'Access revoked' }, 403))
+    const model = scope.run(() => useKoreaderDelivery(copy))!
+    await flush()
+    await vi.advanceTimersByTimeAsync(120_000)
+    window.dispatchEvent(new Event('online'))
+    await flush()
+    expect(mockApi).toHaveBeenCalledTimes(1)
+    expect(model.error.value).toBe('Access revoked')
+  })
+
+  it('pauses hidden and offline pages, then refreshes on return without retaining disposed listeners', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    scope.run(() => useKoreaderDelivery(copy))
+    await flush()
+    hidden.mockReturnValue(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(mockApi).toHaveBeenCalledTimes(1)
+    hidden.mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(mockApi).toHaveBeenCalledTimes(2)
+    online.mockReturnValue(false)
+    window.dispatchEvent(new Event('offline'))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(mockApi).toHaveBeenCalledTimes(2)
+    online.mockReturnValue(true)
+    window.dispatchEvent(new Event('online'))
+    await flush()
+    expect(mockApi).toHaveBeenCalledTimes(3)
+    scope.stop()
+    window.dispatchEvent(new Event('online'))
+    await flush()
+    expect(mockApi).toHaveBeenCalledTimes(3)
   })
 })
