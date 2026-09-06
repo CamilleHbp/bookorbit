@@ -198,6 +198,13 @@ if arg[6] == "install" or delivery or arg[6] == "crash_install" then
     end
 else
     replace("regenerated")
+    if arg[6] == "external_registration" then
+        assert(require("bookorbit_state_manager").linkFiles({
+            { digest = assert(require("util").partialMD5(path)), bookFileId = 9, bookId = 2, file = path },
+        }))
+        assert(require("bookorbit_anchor_store").load(path).record.anchor.event.id == original_id,
+            "external file registration must preserve the original reading event")
+    end
 end
 ui = open()
 local state = ui.bookorbit.reading_continuity
