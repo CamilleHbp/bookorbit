@@ -9,7 +9,14 @@ import { KoreaderCopyService } from './koreader-copy.service';
 
 describe('KOReader copy inventory HTTP contracts', () => {
   let app: NestFastifyApplication;
-  const service = { report: vi.fn(), list: vi.fn(), listDevices: vi.fn(), updateCopyPolicy: vi.fn(), updateDevicePolicy: vi.fn() };
+  const service = {
+    report: vi.fn(),
+    list: vi.fn(),
+    listDevices: vi.fn(),
+    updateCopyPolicy: vi.fn(),
+    updateDevicePolicy: vi.fn(),
+    acknowledgePolicies: vi.fn(),
+  };
   const user = { id: 7 };
   const id = 'adef91c7-ef94-4dba-bcaa-889a07538ec7';
   const input = {
@@ -51,6 +58,7 @@ describe('KOReader copy inventory HTTP contracts', () => {
     service.listDevices.mockResolvedValue({ items: [], nextCursor: null });
     service.updateCopyPolicy.mockResolvedValue({ policy: null, version: 2, effectivePolicyVersion: '1:2' });
     service.updateDevicePolicy.mockResolvedValue({ policy: 'notify', version: 2 });
+    service.acknowledgePolicies.mockResolvedValue({ accepted: [id] });
   });
   afterAll(async () => {
     await app?.close();
@@ -61,6 +69,29 @@ describe('KOReader copy inventory HTTP contracts', () => {
     expect(result.statusCode).toBe(200);
     expect(result.json().copies[0]).toMatchObject({ copyId: id, id, policy: 'notify', revisionId: null });
     expect(service.report).toHaveBeenCalledWith(input, user);
+  });
+  it('requires an explicit device for bounded plugin inventory polling', async () => {
+    const url = '/api/v1/koreader/plugin/copies';
+    expect((await app.inject({ method: 'GET', url })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: `${url}?deviceId=reader&limit=100` })).statusCode).toBe(200);
+    expect(service.list).toHaveBeenCalledExactlyOnceWith({ deviceId: 'reader', limit: 100 }, user);
+  });
+  it('validates durable policy acknowledgements separately from installed file reports', async () => {
+    const url = '/api/v1/koreader/plugin/copies/policies/acknowledgements';
+    const payload = { deviceId: 'reader', copies: [{ id, effectivePolicyVersion: '2:3' }] };
+    const result = await app.inject({ method: 'POST', url, payload });
+    expect(result.statusCode).toBe(200);
+    expect(result.json()).toEqual({ accepted: [id] });
+    expect(service.acknowledgePolicies).toHaveBeenCalledExactlyOnceWith(payload, user);
+    for (const invalid of [
+      { ...payload, userId: 99 },
+      { ...payload, copies: [] },
+      { ...payload, copies: [null] },
+      { ...payload, copies: [payload.copies[0], payload.copies[0]] },
+      { ...payload, copies: [{ id, effectivePolicyVersion: '0:3' }] },
+      { ...payload, copies: [{ id, effectivePolicyVersion: '2:3', policy: 'automatic' }] },
+    ])
+      expect((await app.inject({ method: 'POST', url, payload: invalid })).statusCode).toBe(400);
   });
   it.each([
     { ...input, userId: 99 },

@@ -3,7 +3,14 @@ import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { Permission, type KoreaderCopyInventoryResult, type KoreaderInstalledCopyPage, type KoreaderDeliveryDevicePage } from '@bookorbit/types';
+import {
+  Permission,
+  type KoreaderCopyInventoryResult,
+  type KoreaderInstalledCopyPage,
+  type KoreaderDeliveryDevicePage,
+  type KoreaderCopyPolicyAcknowledgements,
+  type KoreaderCopyPolicyAcknowledgementResult,
+} from '@bookorbit/types';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import type { RequestUser } from '../../common/types/request-user';
@@ -38,6 +45,54 @@ export class KoreaderCopyService {
       (download && !this.permissions.userHas(user, Permission.LibraryDownload))
     )
       throw new ForbiddenException('KOReader synchronization and applicable download permission are required');
+  }
+
+  async acknowledgePolicies(dto: KoreaderCopyPolicyAcknowledgements, user: RequestUser): Promise<KoreaderCopyPolicyAcknowledgementResult> {
+    this.requireAccess(user);
+    return this.db.transaction(async (tx) => {
+      const [device] = await tx
+        .select()
+        .from(devices)
+        .where(and(eq(devices.userId, user.id), eq(devices.deviceId, dto.deviceId)))
+        .for('update');
+      if (!device || device.deliveryCapabilityVersion < 1 || device.positionCapabilityVersion < 1)
+        throw new ConflictException('A compatible plugin update is required');
+      const owned = await tx
+        .select()
+        .from(copies)
+        .where(
+          and(
+            eq(copies.userId, user.id),
+            eq(copies.deviceId, dto.deviceId),
+            inArray(
+              copies.id,
+              dto.copies.map((copy) => copy.id),
+            ),
+          ),
+        )
+        .for('update');
+      const accessible = new Set(
+        (await this.books.findAccessibleFiles([...new Set(owned.map((copy) => copy.bookFileId))], user)).map((file) => file.id),
+      );
+      const versions = new Map(dto.copies.map((copy) => [copy.id, copy.effectivePolicyVersion]));
+      const accepted = owned.filter(
+        (copy) => accessible.has(copy.bookFileId) && versions.get(copy.id) === `${device.policyVersion}:${copy.policyVersion}`,
+      );
+      if (accepted.length)
+        await tx
+          .update(copies)
+          .set({
+            policyAcknowledgement: sql`${device.policyVersion}::text || ':' || ${copies.policyVersion}::text`,
+            deliveryCheckAfter: sql`now()`,
+          })
+          .where(
+            inArray(
+              copies.id,
+              accepted.map((copy) => copy.id),
+            ),
+          );
+      return { accepted: accepted.map((copy) => copy.id) };
+    });
   }
 
   async report(dto: KoreaderCopyInventoryDto, user: RequestUser): Promise<KoreaderCopyInventoryResult> {

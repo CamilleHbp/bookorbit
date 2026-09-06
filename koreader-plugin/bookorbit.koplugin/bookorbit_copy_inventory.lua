@@ -58,6 +58,9 @@ function Inventory.run(plugin)
     end
     local client = plugin:newClient()
     local capabilities = require("bookorbit_revision_capabilities")
+    if capabilities.delivery >= 1 and capabilities.position >= 1 and previous and previous.sha256 == state.sha256 then
+        copy.policyAcknowledgement = previous.policyVersion
+    end
     local result, err = client:request("POST", "/koreader/plugin/copies", {
         protocolVersion = 1, deviceId = plugin.device_id, sequence = sequence,
         pluginVersion = client.plugin_version or "unknown",

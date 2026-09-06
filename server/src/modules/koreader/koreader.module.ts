@@ -1,5 +1,6 @@
 import { KoreaderCopyService } from './koreader-copy.service';
 import { KoreaderDeliveryService } from './koreader-delivery.service';
+import { KoreaderDeliverySchedulerService } from './koreader-delivery-scheduler.service';
 import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
 import { KoreaderDeliveryAccessService } from './koreader-delivery-access.service';
 import { KoreaderDeliveryController, KoreaderPluginDeliveryController } from './koreader-delivery.controller';
@@ -74,6 +75,7 @@ import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cle
     KoreaderReadingController,
   ],
   providers: [
+    KoreaderDeliverySchedulerService,
     KoreaderDeliveryService,
     KoreaderDeliveryExecutionService,
     KoreaderDeliveryAccessService,

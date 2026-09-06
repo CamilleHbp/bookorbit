@@ -47,6 +47,8 @@ function Delivery.run(plugin)
     local client = plugin:newClient()
     local account = Runner.account(client)
     local options = Delivery.options(plugin, client)
+    local policy_ok, policy_error = require("bookorbit_copy_policies").run(client)
+    if not policy_ok and policy_error then plugin:recordSyncError("delivery", "policy_sync_pending") end
     local current, is_open = options.is_current, options.is_open
     local pending = State.list(account)
     local cursor = plugin.delivery_recovery_cursor or 0

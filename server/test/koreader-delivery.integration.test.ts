@@ -23,6 +23,7 @@ import { RevisionDownloadService } from '../src/modules/book-revision/revision-d
 import { KoreaderCopyService } from '../src/modules/koreader/koreader-copy.service';
 import { KoreaderRepository } from '../src/modules/koreader/koreader.repository';
 import { KoreaderDeliveryService } from '../src/modules/koreader/koreader-delivery.service';
+import { KoreaderDeliverySchedulerService } from '../src/modules/koreader/koreader-delivery-scheduler.service';
 import { KoreaderDeliveryExecutionService } from '../src/modules/koreader/koreader-delivery-execution.service';
 import { KoreaderDeliveryAccessService } from '../src/modules/koreader/koreader-delivery-access.service';
 import { UserService } from '../src/modules/user/user.service';
@@ -67,6 +68,7 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
     module = await Test.createTestingModule({
       providers: [
         KoreaderDeliveryService,
+        KoreaderDeliverySchedulerService,
         KoreaderDeliveryExecutionService,
         KoreaderDeliveryAccessService,
         KoreaderCopyService,
@@ -187,6 +189,88 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
     const job = await request();
     return execution.claim(job.id, { deviceId: 'reader', claimId: randomUUID() }, users[0]);
   }
+  async function enableAutomatic() {
+    await inventory.updateDevicePolicy('reader', { policy: 'automatic', version: 1 }, users[0]);
+    return inventory.acknowledgePolicies({ deviceId: 'reader', copies: [{ id: copyId, effectivePolicyVersion: '2:1' }] }, users[0]);
+  }
+  it('requires current policy acknowledgement before scheduling and preserves cancellation suppression', async () => {
+    const scheduler = module.get(KoreaderDeliverySchedulerService);
+    expect((await scheduler.runBatch()).checked).toBe(0);
+    await inventory.updateDevicePolicy('reader', { policy: 'automatic', version: 1 }, users[0]);
+    expect((await scheduler.runBatch()).checked).toBe(0);
+    expect(await inventory.acknowledgePolicies({ deviceId: 'reader', copies: [{ id: copyId, effectivePolicyVersion: '1:1' }] }, users[0])).toEqual({
+      accepted: [],
+    });
+    expect(await inventory.acknowledgePolicies({ deviceId: 'reader', copies: [{ id: copyId, effectivePolicyVersion: '2:1' }] }, users[0])).toEqual({
+      accepted: [copyId],
+    });
+    const results = await Promise.all([scheduler.runBatch(), scheduler.runBatch()]);
+    expect(results.reduce((sum, result) => sum + result.requested, 0)).toBe(1);
+    const [job] = await db.select().from(schema.koreaderDeliveryJobs).where(eq(schema.koreaderDeliveryJobs.installedCopyId, copyId));
+    expect(job.mode).toBe('automatic');
+    await deliveries.cancel(job.id, job.version, users[0]);
+    await db
+      .update(schema.koreaderInstalledCopies)
+      .set({ deliveryCheckAfter: new Date(0) })
+      .where(eq(schema.koreaderInstalledCopies.id, copyId));
+    expect((await scheduler.runBatch()).requested).toBe(0);
+    const [cancelled] = await db.select().from(schema.koreaderDeliveryJobs).where(eq(schema.koreaderDeliveryJobs.id, job.id));
+    expect(cancelled.cancelledAt).not.toBeNull();
+    expect(cancelled.attempt).toBe(1);
+  });
+  it('keeps policy acknowledgements scoped to the owner, device, library and supported plugin', async () => {
+    await enableAutomatic();
+    await expect(
+      inventory.acknowledgePolicies({ deviceId: 'reader', copies: [{ id: copyId, effectivePolicyVersion: '2:1' }] }, users[1]),
+    ).rejects.toThrow('plugin');
+    await expect(
+      inventory.acknowledgePolicies({ deviceId: 'other-device', copies: [{ id: copyId, effectivePolicyVersion: '2:1' }] }, users[0]),
+    ).rejects.toThrow('plugin');
+    await db.delete(schema.userLibraryAccess).where(eq(schema.userLibraryAccess.userId, users[0].id));
+    expect(await inventory.acknowledgePolicies({ deviceId: 'reader', copies: [{ id: copyId, effectivePolicyVersion: '2:1' }] }, users[0])).toEqual({
+      accepted: [],
+    });
+    expect((await module.get(KoreaderDeliverySchedulerService).runBatch()).requested).toBe(0);
+  });
+  it('rechecks synchronization and download access while scheduling automatic delivery', async () => {
+    await enableAutomatic();
+    users[0].permissions = [Permission.KoreaderSync];
+    expect((await module.get(KoreaderDeliverySchedulerService).runBatch()).requested).toBe(0);
+    users[0].permissions = [Permission.KoreaderSync, Permission.LibraryDownload];
+    await db
+      .update(schema.koreaderInstalledCopies)
+      .set({ deliveryCheckAfter: new Date(0) })
+      .where(eq(schema.koreaderInstalledCopies.id, copyId));
+    await db.update(schema.koreaderUsers).set({ syncEnabled: false }).where(eq(schema.koreaderUsers.userId, users[0].id));
+    expect((await module.get(KoreaderDeliverySchedulerService).runBatch()).requested).toBe(0);
+  });
+  it('advances bounded scheduling batches beyond unchanged copies', async () => {
+    await enableAutomatic();
+    const [original] = await db.select().from(schema.koreaderInstalledCopies).where(eq(schema.koreaderInstalledCopies.id, copyId));
+    await db.insert(schema.koreaderInstalledCopies).values(
+      Array.from({ length: 101 }, (_, index) => {
+        const pathname = `/books/unchanged-${index}.epub`;
+        return {
+          ...original,
+          id: randomUUID(),
+          copyId: randomUUID(),
+          pathname,
+          pathnameHash: createHash('sha256').update(pathname).digest('hex'),
+          sha256,
+          sizeBytes: content.length,
+          revisionId: revision.id,
+          deliveryCheckAfter: new Date(0),
+        };
+      }),
+    );
+    const scheduler = module.get(KoreaderDeliverySchedulerService);
+    const first = await scheduler.runBatch();
+    const second = await scheduler.runBatch();
+    expect(first.checked).toBe(100);
+    expect(second.checked).toBe(2);
+    expect(first.requested + second.requested).toBe(1);
+    expect((await scheduler.runBatch()).checked).toBe(0);
+  });
   it('returns revision targets only within current library and download access', async () => {
     expect((await deliveries.targets([file.id], users[0])).items).toEqual([
       { bookFileId: file.id, bookId: file.bookId, revisionId: revision.id, sha256, sizeBytes: content.length },

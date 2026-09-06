@@ -52,6 +52,7 @@ export const koreaderInstalledCopies = pgTable(
     policy: varchar('policy', { length: 20 }).$type<KoreaderDeliveryPolicy>(),
     policyVersion: integer('policy_version').notNull().default(1),
     policyAcknowledgement: varchar('policy_acknowledgement', { length: 50 }),
+    deliveryCheckAfter: timestamp('delivery_check_after', { withTimezone: true }).notNull().defaultNow(),
     lastContactAt: timestamp('last_contact_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -67,6 +68,7 @@ export const koreaderInstalledCopies = pgTable(
     index('koreader_copies_user_file_idx').on(t.userId, t.bookFileId, t.id),
     index('koreader_copies_file_idx').on(t.bookFileId),
     index('koreader_copies_revision_idx').on(t.revisionId),
+    index('koreader_copies_delivery_check_idx').on(t.deliveryCheckAfter, t.id),
     check('koreader_copies_policy_chk', sql`${t.policy} is null or ${t.policy} in ('notify', 'automatic', 'ignore')`),
     check(
       'koreader_copies_values_chk',

@@ -30,6 +30,15 @@ export interface KoreaderCopyInventoryRequest {
   copies: KoreaderInstalledCopyReport[];
 }
 
+export interface KoreaderCopyPolicyAcknowledgements {
+  deviceId: string;
+  copies: { id: string; effectivePolicyVersion: string }[];
+}
+
+export interface KoreaderCopyPolicyAcknowledgementResult {
+  accepted: string[];
+}
+
 export interface KoreaderInstalledCopy {
   id: string;
   copyId: string;

@@ -13,6 +13,8 @@ import {
   ListKoreaderDeliveryDevicesDto,
   UpdateKoreaderCopyPolicyDto,
   UpdateKoreaderDevicePolicyDto,
+  ListKoreaderPluginCopiesDto,
+  KoreaderCopyPolicyAcknowledgementsDto,
 } from './dto/koreader-copy.dto';
 
 @Controller('koreader/copies')
@@ -43,9 +45,21 @@ export class KoreaderCopiesController {
 
 @Public()
 @UseGuards(KoreaderAuthGuard)
+@RequirePermission(Permission.KoreaderSync)
 @Controller('koreader/plugin/copies')
 export class KoreaderPluginCopiesController {
   constructor(private readonly copies: KoreaderCopyService) {}
+
+  @Get()
+  list(@CurrentUser() user: RequestUser, @Query() query: ListKoreaderPluginCopiesDto) {
+    return this.copies.list(query, user);
+  }
+
+  @Post('policies/acknowledgements')
+  @HttpCode(200)
+  acknowledgePolicies(@CurrentUser() user: RequestUser, @Body() dto: KoreaderCopyPolicyAcknowledgementsDto) {
+    return this.copies.acknowledgePolicies(dto, user);
+  }
 
   @Post()
   @HttpCode(200)

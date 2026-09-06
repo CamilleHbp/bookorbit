@@ -23,6 +23,7 @@ import type {
   KoreaderDeliveryPolicy,
   KoreaderCopyPolicyUpdate,
   KoreaderDevicePolicyUpdate,
+  KoreaderCopyPolicyAcknowledgements,
 } from '@bookorbit/types';
 
 export class KoreaderInstalledCopyReportDto implements KoreaderInstalledCopyReport {
@@ -52,11 +53,34 @@ export class KoreaderCopyInventoryDto implements KoreaderCopyInventoryRequest {
   copies!: KoreaderInstalledCopyReportDto[];
 }
 
-export class ListKoreaderCopiesDto {
+class KoreaderCopyPaginationDto {
   @IsOptional() @IsUUID() cursor?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 50;
-  @IsOptional() @IsString() @MinLength(1) @MaxLength(100) deviceId?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) bookFileId?: number;
+}
+
+export class ListKoreaderCopiesDto extends KoreaderCopyPaginationDto {
+  @IsOptional() @IsString() @MinLength(1) @MaxLength(100) deviceId?: string;
+}
+
+export class ListKoreaderPluginCopiesDto extends KoreaderCopyPaginationDto {
+  @IsString() @MinLength(1) @MaxLength(100) deviceId!: string;
+}
+
+export class KoreaderCopyPolicyAcknowledgementDto {
+  @IsUUID() id!: string;
+  @Matches(/^[1-9][0-9]{0,9}:[1-9][0-9]{0,9}$/) effectivePolicyVersion!: string;
+}
+
+export class KoreaderCopyPolicyAcknowledgementsDto implements KoreaderCopyPolicyAcknowledgements {
+  @IsString() @MinLength(1) @MaxLength(100) deviceId!: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ArrayUnique((copy: KoreaderCopyPolicyAcknowledgementDto | null) => copy?.id)
+  @ValidateNested({ each: true })
+  @Type(() => KoreaderCopyPolicyAcknowledgementDto)
+  copies!: KoreaderCopyPolicyAcknowledgementDto[];
 }
 
 export class UpdateKoreaderCopyPolicyDto implements KoreaderCopyPolicyUpdate {
