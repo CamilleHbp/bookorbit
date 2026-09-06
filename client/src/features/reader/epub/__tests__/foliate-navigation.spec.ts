@@ -148,9 +148,8 @@ describe('Foliate navigation', () => {
     const old = paginator.goTo({ index: 0 })
     await Promise.resolve()
     await expect(paginator.goTo({ index: 1 })).rejects.toThrow('Failed to load section 1')
-    const rejected = expect(old).rejects.toMatchObject({ name: 'AbortError' })
     finish('old-chapter.xhtml')
-    await rejected
+    await expect(old).rejects.toMatchObject({ name: 'AbortError' })
     paginator.destroy()
   })
 
@@ -168,14 +167,13 @@ describe('Foliate navigation', () => {
     const pending = paginator.goTo({ index: 0 })
     await Promise.resolve()
     paginator.destroy()
-    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     finish('closed-chapter.xhtml')
-    await rejected
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   it('bounds unreadable-section fallback independently of the book size', async () => {
     const view = new View()
-    const goTo = vi.fn().mockRejectedValue(new Error('Unreadable section'))
+    const goTo = vi.fn<() => Promise<void>>().mockRejectedValue(new Error('Unreadable section'))
     view.book = { sections: Array.from({ length: 10_000 }, () => ({})), resolveHref: () => ({ index: 5000 }) }
     view.renderer = { goTo, getContents: () => [] }
     await view.goTo('chapter.xhtml')
@@ -184,7 +182,7 @@ describe('Foliate navigation', () => {
 
   it('does not navigate to another section after cancellation', async () => {
     const view = new View()
-    const goTo = vi.fn().mockRejectedValue(new DOMException('Cancelled', 'AbortError'))
+    const goTo = vi.fn<() => Promise<void>>().mockRejectedValue(new DOMException('Cancelled', 'AbortError'))
     view.book = { sections: [{}, {}, {}], resolveHref: () => ({ index: 1 }) }
     view.renderer = { goTo, getContents: () => [] }
     await view.goTo('chapter.xhtml')

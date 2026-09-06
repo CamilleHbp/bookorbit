@@ -37,7 +37,7 @@ function frame() {
 describe('chapter frame navigation', () => {
   it('ignores the initial blank frame and renders the requested document once', async () => {
     const target = frame()
-    const render = vi.fn()
+    const render = vi.fn<(doc: Document) => void>()
     const pending = loadFrameDocument(target.element, 'chapter.xhtml', render)
     target.load('about:blank')
     expect(render).not.toHaveBeenCalled()
@@ -52,20 +52,17 @@ describe('chapter frame navigation', () => {
     const pending = loadFrameDocument(target.element, 'chapter.xhtml', () => {
       throw new Error('Invalid chapter styles')
     })
-    const rejected = expect(pending).rejects.toThrow('Invalid chapter styles')
     target.load('chapter.xhtml')
-    await rejected
+    await expect(pending).rejects.toThrow('Invalid chapter styles')
     expect(target.element.src).toBe('about:blank')
   })
 
   it('times out without allowing a late document to render', async () => {
     vi.useFakeTimers()
     const target = frame()
-    const render = vi.fn()
+    const render = vi.fn<(doc: Document) => void>()
     const pending = loadFrameDocument(target.element, 'chapter.xhtml', render, { timeoutMs: 50 })
-    const rejected = expect(pending).rejects.toThrow('timed out')
-    await vi.advanceTimersByTimeAsync(50)
-    await rejected
+    await Promise.all([expect(pending).rejects.toThrow('timed out'), vi.advanceTimersByTimeAsync(50)])
     target.load('chapter.xhtml')
     expect(render).not.toHaveBeenCalled()
     expect(target.element.src).toBe('about:blank')
@@ -73,21 +70,19 @@ describe('chapter frame navigation', () => {
 
   it('cancels superseded loads without applying their late position', async () => {
     const target = frame()
-    const render = vi.fn()
+    const render = vi.fn<(doc: Document) => void>()
     const controller = new AbortController()
     const pending = loadFrameDocument(target.element, 'chapter.xhtml', render, { signal: controller.signal })
-    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     controller.abort()
-    await rejected
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     target.load('chapter.xhtml')
     expect(render).not.toHaveBeenCalled()
   })
 
   it('rejects frame errors without waiting for the timeout', async () => {
     const target = frame()
-    const pending = loadFrameDocument(target.element, 'chapter.xhtml', vi.fn())
-    const rejected = expect(pending).rejects.toThrow('could not be loaded')
+    const pending = loadFrameDocument(target.element, 'chapter.xhtml', vi.fn<(doc: Document) => void>())
     target.element.dispatchEvent(new Event('error'))
-    await rejected
+    await expect(pending).rejects.toThrow('could not be loaded')
   })
 })
