@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import type { RequestUser } from '../../common/types/request-user';
 import { BookService } from '../book/book.service';
 import { CanonicalReadingService } from './canonical-reading.service';
@@ -17,6 +17,8 @@ export class ReadingEventApiService {
   }
 
   async record(libraryId: number, fileId: number, dto: RecordReadingEventDto, user: RequestUser) {
+    if (dto.expectedUserId !== undefined && dto.expectedUserId !== user.id)
+      throw new ForbiddenException('The queued reading event belongs to another account');
     await this.books.verifyFileAccess(fileId, user);
     return this.reading.record(user.id, fileId, libraryId, dto.anchor);
   }

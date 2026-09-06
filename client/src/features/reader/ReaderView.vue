@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { useFoliate, type RelocateDetail } from './epub/composables/useFoliate'
 import type { SelectionDetail } from './epub/composables/useFoliateSelection'
+import { useAuth } from '@/features/auth/composables/useAuth'
 import { useReaderProgress } from './shared/composables/useReaderProgress'
 import { useReadingSession } from './shared/composables/useReadingSession'
 import { useReaderPageTitle } from './shared/composables/useReaderPageTitle'
@@ -45,6 +46,7 @@ import { resolveReaderResumeTarget } from '@/lib/reading-checkpoint'
 const PdfV4ReaderView = defineAsyncComponent(() => import('./pdf-v4/PdfV4ReaderView.vue'))
 
 const { t } = useI18n()
+const { user } = useAuth()
 const route = useRoute()
 const router = useRouter()
 const bookId = Number(route.params.bookId)
@@ -116,8 +118,21 @@ const { onActivity, elapsedMinutes } = useReadingSession(
 
 const progress = useReaderProgress(bookId, fileId, elapsedMinutes, 0, {
   trackingEnabled,
+  userId: computed(() => user.value?.id ?? null),
 })
-const { cfi, chapterTitle, sectionIndex, totalSections, fraction, locationTotal, footerMode, cycleFooterMode, updateHeadsFeet } = progress
+const {
+  synchronizationError,
+  retrySynchronization,
+  cfi,
+  chapterTitle,
+  sectionIndex,
+  totalSections,
+  fraction,
+  locationTotal,
+  footerMode,
+  cycleFooterMode,
+  updateHeadsFeet,
+} = progress
 
 const visibility = useVisibility()
 const { headerVisible, footerVisible, handleMiddleTap, setVisibilityLock } = visibility
@@ -677,6 +692,15 @@ watch(
       </div>
 
       <div ref="containerRef" class="absolute inset-0" />
+    </div>
+
+    <div
+      v-if="synchronizationError"
+      role="alert"
+      class="absolute bottom-16 inset-x-4 z-30 mx-auto max-w-xl rounded-lg border border-border bg-card p-3 text-sm text-card-foreground"
+    >
+      <p>{{ synchronizationError }}</p>
+      <button type="button" class="mt-2 text-primary underline" @click="retrySynchronization">{{ t('common.retry') }}</button>
     </div>
 
     <ReaderFooter

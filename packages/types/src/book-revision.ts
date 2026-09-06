@@ -37,6 +37,11 @@ export interface ReadingAnchor {
   suffix?: string;
 }
 
+export interface RecordReadingEventRequest {
+  anchor: ReadingAnchor;
+  expectedUserId?: number;
+}
+
 export interface ReadingEventIdentity {
   id: string;
   deviceId: string;

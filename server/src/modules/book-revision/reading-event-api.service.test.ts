@@ -41,6 +41,14 @@ beforeEach(async () => {
 });
 
 describe('reading event API boundaries', () => {
+  it('rejects queued events after an account switch, including superuser sessions', async () => {
+    await expect(service.record(5, 9, { anchor, expectedUserId: 8 }, user)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.record(5, 9, { anchor, expectedUserId: 8 }, { ...user, isSuperuser: true })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(reading.record).not.toHaveBeenCalled();
+    expect(libraries.verifyFileAccess).not.toHaveBeenCalled();
+    await service.record(5, 9, { anchor, expectedUserId: user.id }, user);
+    expect(reading.record).toHaveBeenCalledWith(user.id, 9, 5, anchor);
+  });
   it('denies revoked access before any user data is read or changed', async () => {
     libraries.verifyFileAccess.mockRejectedValue(new ForbiddenException());
     await expect(service.state(5, 9, user)).rejects.toBeInstanceOf(ForbiddenException);
@@ -64,11 +72,19 @@ describe('reading event API boundaries', () => {
 
   const pipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true });
   it('accepts the versioned request bodies through the actual validation pipe', async () => {
+    await expect(pipe.transform({ anchor, expectedUserId: user.id }, { type: 'body', metatype: RecordReadingEventDto })).resolves.toEqual({
+      anchor,
+      expectedUserId: user.id,
+    });
     await expect(pipe.transform({ anchor }, { type: 'body', metatype: RecordReadingEventDto })).resolves.toEqual({ anchor });
     await expect(pipe.transform(acknowledgement, { type: 'body', metatype: AcknowledgeReadingPositionDto })).resolves.toEqual(acknowledgement);
   });
 
   it.each([
+    { anchor, expectedUserId: null },
+    { anchor, expectedUserId: '7' },
+    { anchor, expectedUserId: 0 },
+    { anchor, expectedUserId: 2147483648 },
     { anchor, userId: 4 },
     { anchor: { ...anchor, event: { ...anchor.event, deviceSequence: Number.MAX_SAFE_INTEGER + 1 } } },
     { anchor: { ...anchor, event: { ...anchor.event, occurredAt: '2026-09-05T13:00:00' } } },

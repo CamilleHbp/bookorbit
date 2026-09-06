@@ -1,9 +1,15 @@
 import { Type } from 'class-transformer';
-import { IsDefined, IsIn, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
-import type { PositionResolutionQuality, RevisionPositionAcknowledgement } from '@bookorbit/types';
+import { IsDefined, IsIn, IsInt, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
+import type { PositionResolutionQuality, RecordReadingEventRequest, RevisionPositionAcknowledgement } from '@bookorbit/types';
 import { NativeLocatorDto, ReadingAnchorDto } from './reading-anchor.dto';
 
-export class RecordReadingEventDto {
+export class RecordReadingEventDto implements RecordReadingEventRequest {
+  @ValidateIf((_object: unknown, value: unknown) => value !== undefined)
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  expectedUserId?: number;
+
   @IsDefined()
   @ValidateNested()
   @Type(() => ReadingAnchorDto)
