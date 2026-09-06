@@ -15,6 +15,7 @@ export function useBookStory(
   bookId: MaybeRefOrGetter<number>,
   libraryId: MaybeRefOrGetter<number | undefined>,
   permitted: MaybeRefOrGetter<boolean>,
+  onBookUpdated?: (bookId: number) => void | Promise<void>,
 ) {
   const allowed = ref(false)
   const loading = ref(false)
@@ -147,10 +148,18 @@ export function useBookStory(
       )
       requests.delete(key)
       if (valid(id)) {
-        job.value = result
+        await acceptJob(id, result)
         poll(id)
       }
     })
+  }
+  async function acceptJob(id: number, result: FanfictionJob) {
+    if (!valid(id)) return
+    job.value = result
+    if (['queued', 'running'].includes(result.state)) return
+    const updatedBookId = toValue(bookId)
+    await refresh()
+    if (valid(id) && ['succeeded', 'no_change'].includes(result.state)) await onBookUpdated?.(updatedBookId)
   }
   function poll(id: number) {
     clearTimeout(timer)
@@ -160,8 +169,7 @@ export function useBookStory(
         try {
           const result = await request<FanfictionJob>(`${base.value}/jobs/${job.value!.id}`)
           if (!valid(id)) return
-          job.value = result
-          if (!['queued', 'running'].includes(result.state)) await refresh()
+          await acceptJob(id, result)
         } catch (failure) {
           if (valid(id)) error.value = failure instanceof Error ? failure.message : 'Request failed'
         } finally {
@@ -177,7 +185,7 @@ export function useBookStory(
       if (!job.value) return
       const result = await request<FanfictionJob>(`${base.value}/jobs/${job.value.id}/retry`, {})
       if (valid(id)) {
-        job.value = result
+        await acceptJob(id, result)
         poll(id)
       }
     })

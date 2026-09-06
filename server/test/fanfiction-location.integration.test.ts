@@ -1,3 +1,4 @@
+import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
@@ -12,6 +13,7 @@ import { DB } from '../src/db';
 import * as schema from '../src/db/schema';
 import type { RequestUser } from '../src/common/types/request-user';
 import { FanfictionLocationService } from '../src/modules/fanfiction/fanfiction-location.service';
+import { ManagedMetadataService } from '../src/modules/metadata/managed-metadata.service';
 import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
@@ -57,7 +59,9 @@ describe.skipIf(!configPath)('managed story relocation', () => {
       providers: [
         FanfictionLocationService,
         FanfictionSourceService,
+        { provide: RevisionCatalogService, useValue: {} },
         ManagedTagService,
+        { provide: ManagedMetadataService, useValue: {} },
         FanfictionJobService,
         RevisionCoordinationService,
         FileRenameRepository,

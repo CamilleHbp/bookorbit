@@ -1,3 +1,4 @@
+import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
@@ -19,6 +20,7 @@ import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-ac
 import { FanficfareRuntimeService } from '../src/modules/fanfiction/fanficfare-runtime.service';
 import { FanfictionVaultService } from '../src/modules/fanfiction/fanfiction-vault.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
+import { ManagedMetadataService } from '../src/modules/metadata/managed-metadata.service';
 import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { LibraryService } from '../src/modules/library/library.service';
@@ -51,7 +53,9 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('encrypted F
         FanfictionVaultService,
         FanfictionJobService,
         FanfictionSourceService,
+        { provide: RevisionCatalogService, useValue: {} },
         ManagedTagService,
+        { provide: ManagedMetadataService, useValue: {} },
         UploadValidatorService,
         { provide: DB, useValue: db },
         { provide: FanfictionAccessService, useValue: access },

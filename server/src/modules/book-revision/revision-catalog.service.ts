@@ -15,6 +15,19 @@ export class RevisionCatalogService {
     private readonly coordination: RevisionCoordinationService,
   ) {}
 
+  async lockCurrent(tx: DatabaseTransaction, bookFileId: number, libraryId: number, revisionId: string) {
+    await this.coordination.lockFile(tx, bookFileId);
+    const [file] = await tx
+      .select({ bookId: schema.bookFiles.bookId, revisionId: schema.bookFiles.currentRevisionId })
+      .from(schema.bookFiles)
+      .innerJoin(schema.books, eq(schema.books.id, schema.bookFiles.bookId))
+      .where(and(eq(schema.bookFiles.id, bookFileId), eq(schema.books.libraryId, libraryId)))
+      .for('update', { of: schema.bookFiles });
+    if (!file || file.revisionId !== revisionId)
+      throw new ConflictException({ message: 'The installed revision changed before metadata could be committed', errorCode: 'review_required' });
+    return file;
+  }
+
   async identifyFiles(files: { bookFileId: number; sha256: string; sizeBytes: number; revisionId?: string | null }[]): Promise<(string | null)[]> {
     if (files.length > 100) throw new BadRequestException('Revision identity batches are limited to 100');
     if (!files.length) return [];

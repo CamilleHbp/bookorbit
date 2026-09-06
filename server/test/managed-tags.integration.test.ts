@@ -1,3 +1,7 @@
+import { ManagedMetadataService } from '../src/modules/metadata/managed-metadata.service';
+import { BookMetadataLockRepository } from '../src/modules/book-metadata-lock/book-metadata-lock.repository';
+import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
+import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
@@ -20,7 +24,7 @@ import { ComicMetadataRepository } from '../src/modules/metadata/comic-metadata.
 import { BookMetadataLockService } from '../src/modules/book-metadata-lock/book-metadata-lock.service';
 
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
-describe.skipIf(!configPath)('managed tag ownership with PostgreSQL', () => {
+describe.skipIf(!configPath)('managed story metadata with PostgreSQL', () => {
   let pool: Pool;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let module: TestingModule;
@@ -46,10 +50,15 @@ describe.skipIf(!configPath)('managed tag ownership with PostgreSQL', () => {
     module = await Test.createTestingModule({
       providers: [
         ManagedTagService,
+        ManagedMetadataService,
+        BookMetadataLockService,
+        BookMetadataLockRepository,
+        RevisionCatalogService,
+        RevisionCoordinationService,
         MetadataService,
         { provide: DB, useValue: db },
         { provide: ConfigService, useValue: { get: () => '/unused-managed-tags-test' } },
-        ...[MetadataExtractionService, MetadataScoreService, NarratorService, ComicMetadataRepository, BookMetadataLockService].map((provide) => ({
+        ...[MetadataExtractionService, MetadataScoreService, NarratorService, ComicMetadataRepository].map((provide) => ({
           provide,
           useValue: {},
         })),
@@ -81,6 +90,80 @@ describe.skipIf(!configPath)('managed tag ownership with PostgreSQL', () => {
   afterAll(async () => {
     await module?.close();
     await pool?.end();
+  });
+
+  it('refreshes unlocked metadata without changing custom covers or unrelated fields', async () => {
+    const managed = module.get(ManagedMetadataService);
+    await db
+      .update(schema.bookMetadata)
+      .set({ title: 'Locked title', description: 'Old description', coverSource: 'custom', publisher: 'Manual publisher', lockedFields: ['title'] })
+      .where(eq(schema.bookMetadata.bookId, bookId));
+    await metadata.replaceTags(bookId, ['Manual tag']);
+    const preview = { title: 'Source title', description: 'Updated description', authors: ['Story writer'], tags: ['Source tag'] };
+    expect(await db.transaction((tx) => managed.apply(tx, bookId, source(), preview))).toBe(true);
+    const [saved] = await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, bookId));
+    expect(saved).toMatchObject({ title: 'Locked title', description: 'Updated description', coverSource: 'custom', publisher: 'Manual publisher' });
+    const writers = await db
+      .select({ name: schema.authors.name })
+      .from(schema.bookAuthors)
+      .innerJoin(schema.authors, eq(schema.authors.id, schema.bookAuthors.authorId))
+      .where(eq(schema.bookAuthors.bookId, bookId));
+    expect(writers).toEqual([{ name: 'Story writer' }]);
+    expect(await links()).toEqual([
+      { name: 'Manual tag', managedOnly: false },
+      { name: 'Source tag', managedOnly: true },
+    ]);
+    const [before] = await db.select({ updatedAt: schema.books.updatedAt }).from(schema.books).where(eq(schema.books.id, bookId));
+    expect(await db.transaction((tx) => managed.apply(tx, bookId, source(), preview))).toBe(false);
+    const [after] = await db.select({ updatedAt: schema.books.updatedAt }).from(schema.books).where(eq(schema.books.id, bookId));
+    expect(after.updatedAt).toEqual(before.updatedAt);
+  });
+
+  it('uses transaction-local automated field locks and rejects another library', async () => {
+    const managed = module.get(ManagedMetadataService);
+    await metadata.replaceAuthors(bookId, [{ name: 'Manual writer', sortName: null }], { emitEvent: false });
+    const preview = { title: 'Source title', description: 'Source description', authors: ['Other writer'], tags: ['Source tag'] };
+    await db.transaction(async (tx) => {
+      await module.get(BookMetadataLockRepository).replaceLockedFields(bookId, ['title', 'description', 'authors', 'tags'], tx);
+      expect(await managed.apply(tx, bookId, source(), preview)).toBe(false);
+    });
+    expect(await links()).toEqual([]);
+    const writers = await db
+      .select({ name: schema.authors.name })
+      .from(schema.bookAuthors)
+      .innerJoin(schema.authors, eq(schema.authors.id, schema.bookAuthors.authorId))
+      .where(eq(schema.bookAuthors.bookId, bookId));
+    expect(writers).toEqual([{ name: 'Manual writer' }]);
+    await expect(db.transaction((tx) => managed.apply(tx, bookId, { ...source(), libraryId: libraryId + 9999 }, preview))).rejects.toThrow(
+      'this library',
+    );
+  });
+
+  it('fences metadata completion against the installed revision and library', async () => {
+    const catalog = module.get(RevisionCatalogService);
+    const managed = module.get(ManagedMetadataService);
+    const [book] = await db.select().from(schema.books).where(eq(schema.books.id, bookId));
+    const [file] = await db
+      .insert(schema.bookFiles)
+      .values({ bookId, libraryFolderId: book.libraryFolderId, absolutePath: `/validation/${randomUUID()}.epub`, format: 'epub', ino: 1 })
+      .returning();
+    const [revision] = await db
+      .insert(schema.bookFileRevisions)
+      .values({ bookFileId: file.id, sha256: 'a'.repeat(64), fileHash: 'b'.repeat(32), sizeBytes: 100, reason: 'baseline', changeKind: 'baseline' })
+      .returning();
+    await db.update(schema.bookFiles).set({ currentRevisionId: revision.id }).where(eq(schema.bookFiles.id, file.id));
+    const preview = { title: 'Stale title', description: '', authors: [], tags: [] };
+    await expect(
+      db.transaction(async (tx) => {
+        await catalog.lockCurrent(tx, file.id, libraryId, randomUUID());
+        await managed.apply(tx, bookId, source(), preview);
+      }),
+    ).rejects.toThrow('installed revision changed');
+    expect((await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, bookId)))[0].title).toBe('Managed story');
+    await expect(db.transaction((tx) => catalog.lockCurrent(tx, file.id, libraryId + 9999, revision.id))).rejects.toThrow(
+      'installed revision changed',
+    );
+    expect(await db.transaction((tx) => catalog.lockCurrent(tx, file.id, libraryId, revision.id))).toEqual({ bookId, revisionId: revision.id });
   });
 
   it('removes obsolete source tags while preserving manual tags and other source claims', async () => {

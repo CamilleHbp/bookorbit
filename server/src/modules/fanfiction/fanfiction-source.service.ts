@@ -16,6 +16,8 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { ImportFanfictionDto, ListFanfictionSourcesDto, UpdateFanfictionSourceDto, RollbackFanfictionSourceDto } from './dto/fanfiction-source.dto';
+import { ManagedMetadataService } from '../metadata/managed-metadata.service';
+import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 import { ManagedTagService } from '../metadata/managed-tag.service';
 import { recordFanfictionActivity } from './fanfiction-activity';
 
@@ -33,6 +35,8 @@ export class FanfictionSourceService {
     private readonly settings: AppSettingsService,
     private readonly validator: UploadValidatorService,
     private readonly managedTags: ManagedTagService,
+    private readonly managedMetadata: ManagedMetadataService,
+    private readonly catalog: RevisionCatalogService,
   ) {}
 
   async create(libraryId: number, dto: ImportFanfictionDto, user: RequestUser) {
@@ -101,9 +105,12 @@ export class FanfictionSourceService {
 
   async completeUpdate(job: Job, result: NonNullable<import('@bookorbit/types').FanfictionJob['result']>, preview?: FanfictionPreview) {
     return this.db.transaction(async (tx) => {
+      if (!result.bookFileId || !result.revisionId) throw new BadRequestException('A completed update requires its installed revision');
+      const file = await this.catalog.lockCurrent(tx, result.bookFileId, job.libraryId, result.revisionId);
       const source = await this.assertUpdatable(job, tx);
+      if (source.bookFileId !== result.bookFileId || source.bookId !== file.bookId) throw new ConflictException('The managed book identity changed');
       if (preview && source.bookId)
-        await this.managedTags.sync(tx, source.bookId, { key: `fanfiction:${source.id}`, libraryId: job.libraryId }, preview.tags);
+        await this.managedMetadata.apply(tx, source.bookId, { key: `fanfiction:${source.id}`, libraryId: job.libraryId }, preview);
       await tx
         .update(sources)
         .set({

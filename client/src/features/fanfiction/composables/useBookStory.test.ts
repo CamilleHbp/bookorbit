@@ -84,6 +84,45 @@ describe('book story administration', () => {
       JSON.stringify({ version: 2, state: 'unlinked' }),
     )
   })
+  it.each(['succeeded', 'no_change'])('refreshes book metadata when a story job ends with %s', async (state) => {
+    const updated = vi.fn<(bookId: number) => void>()
+    mockApi.mockImplementation((url, init) => {
+      if (init?.method === 'POST') return Promise.resolve(response({ id: 'update-job', kind: 'update', state: 'queued' }))
+      if (String(url).includes('/jobs/')) return Promise.resolve(response({ id: 'update-job', kind: 'update', state }))
+      return Promise.resolve(pages(String(url)))
+    })
+    const model = scope.run(() => useBookStory(7, 5, true, updated))!
+    await flush()
+    await model.checkNow()
+    expect(updated).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(updated).toHaveBeenCalledExactlyOnceWith(7)
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(updated).toHaveBeenCalledTimes(1)
+  })
+  it('does not refresh another book after navigating during job completion', async () => {
+    const updated = vi.fn<(bookId: number) => void>()
+    const currentBook = ref(7)
+    let finish: (value: Response) => void = () => undefined
+    mockApi.mockImplementation((url, init) => {
+      if (init?.method === 'POST') return Promise.resolve(response({ id: 'update-job', kind: 'update', state: 'queued' }))
+      if (String(url).includes('/jobs/'))
+        return new Promise((resolve) => {
+          finish = resolve
+        })
+      return Promise.resolve(pages(String(url)))
+    })
+    const model = scope.run(() => useBookStory(currentBook, 5, true, updated))!
+    await flush()
+    await model.checkNow()
+    await vi.advanceTimersByTimeAsync(3000)
+    currentBook.value = 8
+    await flush()
+    finish(response({ id: 'update-job', kind: 'update', state: 'succeeded' }))
+    await flush()
+    expect(updated).not.toHaveBeenCalled()
+    expect(model.job.value).toBeNull()
+  })
   it('requires a saved destination profile before exposing update controls after a library move', async () => {
     let needsProfile = true
     mockApi.mockImplementation((url, init) => {

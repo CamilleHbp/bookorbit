@@ -51,6 +51,7 @@ const story = useBookStory(
   bookId,
   () => detail.value?.libraryId,
   () => hasPermission(Permission.ManageLibraries),
+  fetch,
 )
 provide(BOOK_STORY_ADMIN_KEY, story.allowed)
 const pageTitle = computed(() => {

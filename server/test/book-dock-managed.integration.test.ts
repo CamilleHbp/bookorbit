@@ -27,6 +27,7 @@ import { UploadValidatorService } from '../src/modules/upload/upload-validator.s
 import { BookRevisionService } from '../src/modules/book-revision/book-revision.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import { FanfictionImportService } from '../src/modules/fanfiction/fanfiction-import.service';
+import { ManagedMetadataService } from '../src/modules/metadata/managed-metadata.service';
 import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
@@ -109,6 +110,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
         FanfictionImportService,
         FanfictionSourceService,
         ManagedTagService,
+        { provide: ManagedMetadataService, useValue: {} },
         FanfictionJobService,
         { provide: FanfictionAccessService, useValue: { administer: async () => {} } },
         { provide: FanfictionProfileService, useValue: { document: () => Promise.resolve({ document: { configuration: '', cookies: [] } }) } },

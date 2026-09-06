@@ -1,3 +1,12 @@
+import { BookMetadataLockRepository } from '../src/modules/book-metadata-lock/book-metadata-lock.repository';
+import { ConfigService } from '@nestjs/config';
+import { BookMetadataLockService } from '../src/modules/book-metadata-lock/book-metadata-lock.service';
+import { ComicMetadataRepository } from '../src/modules/metadata/comic-metadata.repository';
+import { NarratorService } from '../src/modules/narrator/narrator.service';
+import { MetadataScoreService } from '../src/modules/metadata-score/metadata-score.service';
+import { MetadataExtractionService } from '../src/modules/metadata/metadata-extraction.service';
+import { MetadataService } from '../src/modules/metadata/metadata.service';
+import { ManagedMetadataService } from '../src/modules/metadata/managed-metadata.service';
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -128,6 +137,12 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         RevisionRetentionService,
         FanfictionSourceService,
         ManagedTagService,
+        ManagedMetadataService,
+        BookMetadataLockService,
+        BookMetadataLockRepository,
+        MetadataService,
+        { provide: ConfigService, useValue: { get: () => '/unused-managed-metadata-test' } },
+        ...[MetadataExtractionService, MetadataScoreService, NarratorService, ComicMetadataRepository].map((provide) => ({ provide, useValue: {} })),
         FanfictionJobService,
         FanfictionActivityService,
         NotificationService,
@@ -227,6 +242,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     const result = await run(job);
     expect(result).toMatchObject({ bookFileId: fileId, sourceId: source.id, noChange: false });
     expect(await readFile(target)).toEqual(await readFile(output));
+    expect((await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, source.bookId!)))[0].title).toBe(preview.title);
     const history = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
     expect(history).toHaveLength(2);
     expect(await readFile(history.find((r) => r.storagePath)!.storagePath!)).toEqual(original);

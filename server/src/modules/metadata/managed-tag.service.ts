@@ -12,48 +12,60 @@ export interface ManagedTagSource {
 export class ManagedTagService {
   private readonly logger = new Logger(ManagedTagService.name);
 
-  async sync(tx: DatabaseTransaction, bookId: number, source: ManagedTagSource, input: string[]): Promise<void> {
+  async sync(tx: DatabaseTransaction, bookId: number, source: ManagedTagSource, input: string[]): Promise<boolean> {
     if (!Array.isArray(input) || input.length > 1000 || input.some((name) => typeof name !== 'string' || name.length > 500))
       throw new BadRequestException('Managed tags exceed the supported limits');
     const startedAt = Date.now();
     this.logger.log(`[metadata.managed_tags] [start] bookId=${bookId} libraryId=${source.libraryId} - updating source tags`);
     try {
       const metadata = await this.context(tx, bookId, source);
+      let changed = false;
       if (!metadata.lockedFields?.includes('tags')) {
-        const names = [...new Set(input.map((name) => name.trim().slice(0, 200)).filter(Boolean))];
+        const names = [...new Set(input.map((name) => name.trim().slice(0, 200)).filter(Boolean))].sort();
         const scope = and(eq(bookTagSources.bookId, bookId), eq(bookTagSources.sourceKey, source.key));
-        await tx.delete(bookTagSources).where(scope);
-        if (names.length) {
-          await tx
-            .insert(tags)
-            .values(names.map((name) => ({ name })))
-            .onConflictDoNothing();
-          const matched = await tx.select({ id: tags.id }).from(tags).where(inArray(tags.name, names)).limit(1000);
-          await tx
-            .insert(bookTags)
-            .values(matched.map(({ id }) => ({ bookId, tagId: id, managedOnly: true })))
-            .onConflictDoNothing();
-          await tx
-            .insert(bookTagSources)
-            .values(matched.map(({ id }) => ({ bookId, tagId: id, sourceKey: source.key })))
-            .onConflictDoNothing();
-        }
-        await tx.delete(bookTags).where(
-          and(
-            eq(bookTags.bookId, bookId),
-            eq(bookTags.managedOnly, true),
-            notExists(
-              tx
-                .select({ id: bookTagSources.tagId })
-                .from(bookTagSources)
-                .where(and(eq(bookTagSources.bookId, bookTags.bookId), eq(bookTagSources.tagId, bookTags.tagId))),
+        const previous = await tx
+          .select({ name: tags.name })
+          .from(bookTagSources)
+          .innerJoin(tags, eq(tags.id, bookTagSources.tagId))
+          .where(scope)
+          .limit(1001);
+        const previousNames = previous.map((row) => row.name).sort();
+        changed = names.length !== previousNames.length || names.some((name, index) => name !== previousNames[index]);
+        if (changed) {
+          await tx.delete(bookTagSources).where(scope);
+          if (names.length) {
+            await tx
+              .insert(tags)
+              .values(names.map((name) => ({ name })))
+              .onConflictDoNothing();
+            const matched = await tx.select({ id: tags.id }).from(tags).where(inArray(tags.name, names)).limit(1000);
+            await tx
+              .insert(bookTags)
+              .values(matched.map(({ id }) => ({ bookId, tagId: id, managedOnly: true })))
+              .onConflictDoNothing();
+            await tx
+              .insert(bookTagSources)
+              .values(matched.map(({ id }) => ({ bookId, tagId: id, sourceKey: source.key })))
+              .onConflictDoNothing();
+          }
+          await tx.delete(bookTags).where(
+            and(
+              eq(bookTags.bookId, bookId),
+              eq(bookTags.managedOnly, true),
+              notExists(
+                tx
+                  .select({ id: bookTagSources.tagId })
+                  .from(bookTagSources)
+                  .where(and(eq(bookTagSources.bookId, bookTags.bookId), eq(bookTagSources.tagId, bookTags.tagId))),
+              ),
             ),
-          ),
-        );
+          );
+        }
       }
       this.logger.log(
-        `[metadata.managed_tags] [end] bookId=${bookId} libraryId=${source.libraryId} durationMs=${Date.now() - startedAt} locked=${metadata.lockedFields?.includes('tags') ?? false} - source tags processed`,
+        `[metadata.managed_tags] [end] bookId=${bookId} libraryId=${source.libraryId} durationMs=${Date.now() - startedAt} changed=${changed} locked=${metadata.lockedFields?.includes('tags') ?? false} - source tags processed`,
       );
+      return changed;
     } catch (error) {
       this.logger.warn(
         `[metadata.managed_tags] [fail] bookId=${bookId} libraryId=${source.libraryId} durationMs=${Date.now() - startedAt} errorClass=ManagedTagError error="source tag update rejected" - source tags could not be updated`,
