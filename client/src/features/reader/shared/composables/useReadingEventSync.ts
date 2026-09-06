@@ -2,6 +2,7 @@ import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } 
 import type { ReadingAnchor, ReadingEventReceipt } from '@bookorbit/types'
 import { api } from '@/lib/api'
 import { readingEventOutbox } from './reading-event-outbox'
+import { holdReadingEventLock } from './reading-event-lock'
 
 export function useReadingEventSync(fileId: number, userId: MaybeRefOrGetter<number | null>, receive: (receipt: ReadingEventReceipt) => void) {
   const storageError = ref('')
@@ -16,6 +17,7 @@ export function useReadingEventSync(fileId: number, userId: MaybeRefOrGetter<num
   let activeOwner: number | null = null
   let failures = 0
   let blocked = false
+  let readerLock = toValue(userId) ? holdReadingEventLock(toValue(userId)!, fileId) : null
 
   function schedule() {
     clearTimeout(timer)
@@ -84,6 +86,8 @@ export function useReadingEventSync(fileId: number, userId: MaybeRefOrGetter<num
     const timeout = setTimeout(() => abort.abort(), 15_000)
     active = (async () => {
       try {
+        await readerLock?.ready
+        if (!valid()) return
         const events = await readingEventOutbox.pending(owner, fileId)
         for (const event of events) {
           if (!valid()) return
@@ -143,6 +147,8 @@ export function useReadingEventSync(fileId: number, userId: MaybeRefOrGetter<num
     () => toValue(userId),
     () => {
       generation++
+      readerLock?.release()
+      readerLock = toValue(userId) ? holdReadingEventLock(toValue(userId)!, fileId) : null
       controller?.abort()
       clearTimeout(timer)
       failures = 0
@@ -156,6 +162,7 @@ export function useReadingEventSync(fileId: number, userId: MaybeRefOrGetter<num
   onScopeDispose(() => {
     disposed = true
     generation++
+    readerLock?.release()
     controller?.abort()
     clearTimeout(timer)
     window.removeEventListener('online', reconnect)

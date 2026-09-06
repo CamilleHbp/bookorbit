@@ -66,4 +66,36 @@ describe('durable reading event storage', () => {
     await expect(outbox.put(7, 5, 9, { ...anchor(), quote: 'x'.repeat(33 * 1024) })).rejects.toThrow('storage limit')
     expect(await outbox.pending(7, 9)).toEqual([])
   })
+
+  it('upgrades an existing queue without changing event identities or its local sequence', async () => {
+    const reading = anchor()
+    const saved = {
+      id: `7:${reading.event!.id}`,
+      userId: 7,
+      libraryId: 5,
+      fileId: 9,
+      queuedAt: 1,
+      ordinal: 41,
+      request: { anchor: reading, expectedUserId: 7 },
+    }
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open(name, 1)
+      request.onupgradeneeded = () => {
+        const events = request.result.createObjectStore('events', { keyPath: 'id' })
+        events.createIndex('user', 'userId')
+        events.createIndex('file', ['userId', 'fileId', 'ordinal'])
+        events.add(saved)
+        request.result.createObjectStore('metadata').put(41, 'sequence')
+      }
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => {
+        request.result.close()
+        resolve()
+      }
+    })
+    expect(await outbox.pendingForUser(7, new Set())).toEqual([saved])
+    const next = await outbox.put(7, 5, 9, anchor(2))
+    expect(next.ordinal).toBe(42)
+    expect(await outbox.pendingForUser(7, new Set())).toEqual([next, saved])
+  })
 })

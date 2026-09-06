@@ -17,12 +17,15 @@ export class ReadingEventOutbox {
 
   private open() {
     this.database ??= new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open(this.name, 1)
+      const request = indexedDB.open(this.name, 2)
       request.onupgradeneeded = () => {
-        const store = request.result.createObjectStore('events', { keyPath: 'id' })
-        store.createIndex('user', 'userId')
-        store.createIndex('file', ['userId', 'fileId', 'ordinal'])
-        request.result.createObjectStore('metadata')
+        const store = request.result.objectStoreNames.contains('events')
+          ? request.transaction!.objectStore('events')
+          : request.result.createObjectStore('events', { keyPath: 'id' })
+        if (!store.indexNames.contains('user')) store.createIndex('user', 'userId')
+        if (!store.indexNames.contains('file')) store.createIndex('file', ['userId', 'fileId', 'ordinal'])
+        if (!store.indexNames.contains('userOrder')) store.createIndex('userOrder', ['userId', 'ordinal'])
+        if (!request.result.objectStoreNames.contains('metadata')) request.result.createObjectStore('metadata')
       }
       request.onerror = () => reject(request.error ?? new Error('Reading storage is unavailable'))
       request.onblocked = () => reject(new Error('Close other BookOrbit tabs to open reading storage'))
@@ -49,7 +52,10 @@ export class ReadingEventOutbox {
       const transaction = database.transaction(['events', 'metadata'], mode, { durability: 'strict' })
       let result: T
       let failure: Error | undefined
-      transaction.oncomplete = () => resolve(result)
+      transaction.oncomplete = () => {
+        resolve(result)
+        if (mode === 'readwrite') window.dispatchEvent(new Event('bookorbit-reading-events-changed'))
+      }
       transaction.onabort = () => reject(failure ?? transaction.error ?? new Error('Reading storage could not be saved'))
       transaction.onerror = () => {
         failure ??= transaction.error ?? new Error('Reading storage could not be saved')
@@ -139,6 +145,23 @@ export class ReadingEventOutbox {
     await this.transaction<void>('readwrite', (store, result) => {
       store.delete(`${userId}:${eventId}`)
       result(undefined)
+    })
+  }
+
+  async pendingForUser(userId: number, excludedFiles: ReadonlySet<number>, limit = 20) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('Invalid reading event batch size')
+    return this.transaction<PendingReadingEvent[]>('readonly', (store, result) => {
+      const range = IDBKeyRange.bound([userId, 0], [userId, Number.MAX_SAFE_INTEGER])
+      const request = store.index('userOrder').openCursor(range, 'prev')
+      const rows: PendingReadingEvent[] = []
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) return result(rows)
+        const row = cursor.value as PendingReadingEvent
+        if (!excludedFiles.has(row.fileId)) rows.push(row)
+        if (rows.length === limit) result(rows)
+        else cursor.continue()
+      }
     })
   }
 
