@@ -49,6 +49,7 @@ export const revisionPublications = pgTable(
     libraryId: integer('library_id')
       .notNull()
       .references(() => libraries.id, { onDelete: 'cascade' }),
+    expectedBookId: integer('expected_book_id'),
     expectedRevisionId: uuid('expected_revision_id').notNull(),
     nextRevisionId: uuid('next_revision_id').notNull(),
     targetPath: varchar('target_path', { length: 4096 }).notNull(),
@@ -82,7 +83,7 @@ export const revisionPublications = pgTable(
       'revision_publications_state_chk',
       sql`${t.state} in ('prepared', 'filesystem_published', 'database_committed', 'cleanup_complete', 'failed')`,
     ),
-    check('revision_publications_reason_chk', sql`${t.reason} in ('fanficfare', 'rollback')`),
+    check('revision_publications_reason_chk', sql`${t.reason} in ('fanficfare', 'rollback', 'file_write')`),
     check('revision_publications_size_chk', sql`${t.nextSizeBytes} >= 0`),
   ],
 );

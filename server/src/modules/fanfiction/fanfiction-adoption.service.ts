@@ -196,7 +196,7 @@ export class FanfictionAdoptionService {
     const unique = new Map(choices.map((url) => [url.canonicalUrl, url]));
     const choice = selection.canonicalUrl ? unique.get(selection.canonicalUrl) : unique.size === 1 ? [...unique.values()][0] : undefined;
     if (!choice) throw new ConflictException({ errorCode: 'source_ambiguous', message: 'Choose one verified source URL before linking this book' });
-    const file = await this.catalog.discoveryFile(candidate.bookFileId, job.libraryId);
+    const file = await this.catalog.fileLocation(candidate.bookFileId, job.libraryId);
     if (file.bookId !== candidate.bookId) throw new ConflictException('Candidate book assignment changed');
     const inspection = await this.files.inspect(file.absolutePath);
     if (inspection.status !== 'stable')
@@ -211,7 +211,7 @@ export class FanfictionAdoptionService {
       const [current] = await tx.select().from(candidates).where(eq(candidates.id, candidate.id)).for('update');
       if (!current || current.version !== candidate.version || current.state !== candidate.state)
         throw new ConflictException('Candidate changed before linking');
-      await this.catalog.lockDiscoveryFile(tx, job.libraryId, file);
+      await this.catalog.lockFileLocation(tx, job.libraryId, file);
       await this.files.verifyUnchanged(file.absolutePath, inspected);
       const canonicalKey = createHash('sha256').update(choice.canonicalUrl).digest('hex');
       const [assigned] = await tx

@@ -15,7 +15,7 @@ export interface EpubRevisionManifest {
 }
 
 export type RevisionPublicationState = "prepared" | "filesystem_published" | "database_committed" | "cleanup_complete" | "failed";
-export type RevisionPublicationReason = "fanficfare" | "rollback";
+export type RevisionPublicationReason = "fanficfare" | "rollback" | "file_write";
 
 export interface ReadingAnchor {
   schemaVersion?: 1;

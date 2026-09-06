@@ -20,7 +20,7 @@ export class RevisionCatalogService {
     return row.id;
   }
 
-  async discoveryFile(id: number, libraryId: number) {
+  async fileLocation(id: number, libraryId: number) {
     const [file] = await this.db
       .select({
         id: schema.bookFiles.id,
@@ -33,7 +33,7 @@ export class RevisionCatalogService {
       .innerJoin(schema.books, eq(schema.books.id, schema.bookFiles.bookId))
       .where(and(eq(schema.bookFiles.id, id), eq(schema.books.libraryId, libraryId)))
       .limit(1);
-    if (!file) throw new NotFoundException('Discovery file is no longer in this library');
+    if (!file) throw new NotFoundException('Book file is no longer in this library');
     return file;
   }
 
@@ -59,7 +59,7 @@ export class RevisionCatalogService {
       .limit(100);
   }
 
-  async lockDiscoveryFile(
+  async lockFileLocation(
     tx: DatabaseTransaction,
     libraryId: number,
     expected: { id: number; bookId: number; absolutePath: string; libraryFolderId: number },
@@ -78,7 +78,7 @@ export class RevisionCatalogService {
         ),
       )
       .for('update', { of: schema.bookFiles });
-    if (!file) throw new ConflictException('Book file changed library or location during discovery');
+    if (!file) throw new ConflictException('Book file changed library or location');
   }
 
   async list(bookFileId: number, libraryId: number, limit = 50, cursor?: string): Promise<BookFileRevisionPage> {

@@ -1,5 +1,7 @@
+import { KoboFileStateModule } from '../kobo/kobo-file-state.module';
 import { ConfigModule } from '@nestjs/config';
 import { storageConfig } from '../../config/config';
+import { RevisionMetadataService } from './revision-metadata.service';
 import { RevisionDownloadService } from './revision-download.service';
 import { CanonicalReadingService } from './canonical-reading.service';
 import { Module } from '@nestjs/common';
@@ -15,9 +17,10 @@ import { RevisionInterruptionService } from './revision-interruption.service';
 import { RevisionRetentionService } from './revision-retention.service';
 
 @Module({
-  imports: [FileLockModule, ConfigModule.forFeature(storageConfig), BookProgressModule, RevisionFileModule],
+  imports: [KoboFileStateModule, FileLockModule, ConfigModule.forFeature(storageConfig), BookProgressModule, RevisionFileModule],
   providers: [
     BookRevisionService,
+    RevisionMetadataService,
     RevisionPublicationService,
     RevisionInterruptionService,
     RevisionRetentionService,
@@ -27,6 +30,7 @@ import { RevisionRetentionService } from './revision-retention.service';
   ],
   exports: [
     BookRevisionService,
+    RevisionMetadataService,
     RevisionFileModule,
     RevisionPublicationService,
     RevisionInterruptionService,

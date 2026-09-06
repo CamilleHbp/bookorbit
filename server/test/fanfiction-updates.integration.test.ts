@@ -20,6 +20,7 @@ import { FileLockService } from '../src/common/file-lock.service';
 import type { RequestUser } from '../src/common/types/request-user';
 import { BookRevisionService } from '../src/modules/book-revision/book-revision.service';
 import { EpubManifestService } from '../src/modules/book-revision/epub-manifest.service';
+import { KoboFileStateService } from '../src/modules/kobo/kobo-file-state.service';
 import { RevisionPublicationService } from '../src/modules/book-revision/revision-publication.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import { RevisionDownloadService } from '../src/modules/book-revision/revision-download.service';
@@ -131,6 +132,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         BookRevisionService,
         EpubManifestService,
         RevisionPublicationService,
+        KoboFileStateService,
         RevisionCatalogService,
         RevisionDownloadService,
         FileLockService,

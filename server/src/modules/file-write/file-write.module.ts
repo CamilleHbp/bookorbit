@@ -1,5 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 
+import { KoboFileStateModule } from '../kobo/kobo-file-state.module';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
 import { SelfWriteRegistryModule } from '../../common/self-write-registry.module';
 import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { NotificationModule } from '../notification/notification.module';
@@ -21,7 +23,14 @@ import { PdfFormatWriter } from './formats/pdf/pdf-format-writer';
 import { FORMAT_WRITERS } from './interfaces/format-writer.interface';
 
 @Module({
-  imports: [forwardRef(() => NotificationModule), AppSettingsModule, SelfWriteRegistryModule, FileLockModule],
+  imports: [
+    KoboFileStateModule,
+    BookRevisionModule,
+    forwardRef(() => NotificationModule),
+    AppSettingsModule,
+    SelfWriteRegistryModule,
+    FileLockModule,
+  ],
   providers: [
     FileWriteService,
     FileWriteRepository,

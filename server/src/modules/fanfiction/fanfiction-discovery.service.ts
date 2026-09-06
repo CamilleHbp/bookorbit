@@ -169,7 +169,7 @@ export class FanfictionDiscoveryService {
         await this.jobs.assertOwnership(job, tx);
         await authorize();
         if (candidate && inspected) {
-          await this.catalog.lockDiscoveryFile(tx, job.libraryId, file);
+          await this.catalog.lockFileLocation(tx, job.libraryId, file);
           await this.files.verifyUnchanged(file.absolutePath, inspected);
           const inserted = await tx.insert(candidates).values(candidate).onConflictDoNothing().returning({ id: candidates.id });
           if (inserted.length) progress.candidates++;

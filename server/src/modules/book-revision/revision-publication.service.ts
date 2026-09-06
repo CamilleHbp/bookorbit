@@ -19,6 +19,7 @@ import {
 } from './revision-publication.files';
 import { inspectStableFile, sameFileSignature } from './file-inspection';
 import type { RevisionPublicationAuthority } from './revision-publication-authority';
+import { KoboFileStateService } from '../kobo/kobo-file-state.service';
 import { RevisionRetentionService } from './revision-retention.service';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -35,6 +36,7 @@ export class RevisionPublicationService {
     private readonly manifests: EpubManifestService,
     private readonly locks: FileLockService,
     private readonly retention: RevisionRetentionService,
+    private readonly koboFiles: KoboFileStateService,
   ) {}
 
   async prepare(
@@ -45,6 +47,7 @@ export class RevisionPublicationService {
     reason: RevisionPublicationReason,
     authority?: RevisionPublicationAuthority,
     expectedInputSha256?: string,
+    expectedTarget?: { bookId: number; absolutePath: string },
   ) {
     if (this.activePreparations >= 2) throw new ServiceUnavailableException('Revision preparation is busy; retry later');
     this.activePreparations++;
@@ -68,7 +71,16 @@ export class RevisionPublicationService {
           return { publicationId: existing.id, state: existing.state };
         }
       }
-      const result = await this.prepareInternal(bookFileId, libraryId, expectedRevisionId, inputPath, reason, authority, expectedInputSha256);
+      const result = await this.prepareInternal(
+        bookFileId,
+        libraryId,
+        expectedRevisionId,
+        inputPath,
+        reason,
+        authority,
+        expectedInputSha256,
+        expectedTarget,
+      );
       this.logger.log(
         `[book.revision_prepare] [end] bookFileId=${bookFileId} libraryId=${libraryId} durationMs=${Date.now() - startedAt} publicationId=${result.publicationId} - revision preparation completed`,
       );
@@ -91,8 +103,11 @@ export class RevisionPublicationService {
     reason: RevisionPublicationReason,
     authority?: RevisionPublicationAuthority,
     expectedInputSha256?: string,
+    expectedTarget?: { bookId: number; absolutePath: string },
   ) {
     const file = await this.scopedFile(this.db, bookFileId, libraryId);
+    if (expectedTarget && (file.bookId !== expectedTarget.bookId || file.absolutePath !== expectedTarget.absolutePath))
+      throw new ConflictException('Book assignment changed before metadata publication');
     if (!file.sha256 || file.currentRevisionId !== expectedRevisionId)
       throw new ConflictException('Refresh the current revision before replacing this file');
     if (file.format !== 'epub' && file.format !== 'kepub') throw new ConflictException('Revision replacement requires an EPUB');
@@ -109,7 +124,12 @@ export class RevisionPublicationService {
       await this.db.transaction(async (tx) => {
         await authority?.authorize(tx);
         const locked = await this.scopedFile(tx, bookFileId, libraryId, true);
-        if (locked.currentRevisionId !== expectedRevisionId || locked.absolutePath !== file.absolutePath || locked.sha256 !== file.sha256) {
+        if (
+          locked.bookId !== file.bookId ||
+          locked.currentRevisionId !== expectedRevisionId ||
+          locked.absolutePath !== file.absolutePath ||
+          locked.sha256 !== file.sha256
+        ) {
           throw new ConflictException('Book file changed while preparing its replacement');
         }
         const [active] = await tx
@@ -122,6 +142,15 @@ export class RevisionPublicationService {
             ),
           )
           .limit(1);
+        if (reason === 'file_write') {
+          const [previous] = await tx
+            .select({ contentHash: schema.bookFileRevisions.contentHash })
+            .from(schema.bookFileRevisions)
+            .where(and(eq(schema.bookFileRevisions.id, expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, bookFileId)))
+            .limit(1);
+          if (!previous?.contentHash || previous.contentHash !== manifest.contentHash)
+            throw new ConflictException('Metadata writing changed chapter content; publication requires review');
+        }
         if (active) throw new ConflictException('A replacement for this file is already pending');
         await authority?.authorize(tx);
         await tx.insert(schema.revisionPublications).values({
@@ -129,6 +158,7 @@ export class RevisionPublicationService {
           bookFileId,
           libraryId,
           expectedRevisionId,
+          expectedBookId: file.bookId,
           nextRevisionId: randomUUID(),
           targetPath: file.absolutePath,
           stagedPath: staged.stagedPath,
@@ -215,6 +245,18 @@ export class RevisionPublicationService {
     );
   }
 
+  // Metadata writers already hold the book operation lock while building their payload.
+  async resumeWithinBookOperation(bookId: number, id: string, libraryId: number) {
+    const [journal] = await this.db
+      .select()
+      .from(schema.revisionPublications)
+      .where(and(eq(schema.revisionPublications.id, id), eq(schema.revisionPublications.libraryId, libraryId)))
+      .limit(1);
+    if (!journal || journal.reason !== 'file_write' || journal.expectedBookId !== bookId)
+      throw new ConflictException('Metadata publication does not belong to this book operation');
+    return this.locks.withLock(journal.targetPath, () => this.resumeLocked(id, libraryId));
+  }
+
   private async resumeLocked(
     id: string,
     libraryId: number,
@@ -238,7 +280,11 @@ export class RevisionPublicationService {
         const [journal] = await tx.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, id)).for('update');
         if (journal.state === 'failed') throw new ConflictException('Revision publication is cancelled or requires review');
         if (journal.state === 'cleanup_complete' || journal.state === 'database_committed') return;
-        if (file.absolutePath !== journal.targetPath || file.currentRevisionId !== journal.expectedRevisionId) {
+        if (
+          (journal.expectedBookId !== null && file.bookId !== journal.expectedBookId) ||
+          file.absolutePath !== journal.targetPath ||
+          file.currentRevisionId !== journal.expectedRevisionId
+        ) {
           throw new ConflictException('Book file changed before publication');
         }
         const actual = await inspectStableFile(journal.targetPath);
@@ -341,6 +387,7 @@ export class RevisionPublicationService {
       if (journal.state === 'database_committed' || journal.state === 'cleanup_complete') return;
       if (
         journal.state !== 'filesystem_published' ||
+        (journal.expectedBookId !== null && file.bookId !== journal.expectedBookId) ||
         file.currentRevisionId !== journal.expectedRevisionId ||
         file.absolutePath !== journal.targetPath
       ) {
@@ -403,16 +450,20 @@ export class RevisionPublicationService {
       metadataHash: manifest.metadataHash,
       coverHash: manifest.coverHash,
     });
-    const [old] = await tx.select({ fileHash: schema.bookFiles.fileHash }).from(schema.bookFiles).where(eq(schema.bookFiles.id, journal.bookFileId));
+    const [old] = await tx
+      .select({ fileHash: schema.bookFiles.fileHash, bookId: schema.bookFiles.bookId })
+      .from(schema.bookFiles)
+      .where(eq(schema.bookFiles.id, journal.bookFileId));
     if (old.fileHash && old.fileHash !== installed.fileHash)
       await tx
         .insert(schema.bookFileHashHistory)
         .values({ bookFileId: journal.bookFileId, fileHash: old.fileHash, reason: journal.reason })
         .onConflictDoNothing();
-    await tx
-      .update(schema.bookFileRevisions)
-      .set({ storagePath: journal.backupPath })
-      .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)));
+    if (journal.reason !== 'file_write')
+      await tx
+        .update(schema.bookFileRevisions)
+        .set({ storagePath: journal.backupPath })
+        .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)));
     await tx
       .update(schema.bookFiles)
       .set({
@@ -425,6 +476,8 @@ export class RevisionPublicationService {
         updatedAt: new Date(),
       })
       .where(eq(schema.bookFiles.id, journal.bookFileId));
+    if (journal.reason === 'file_write')
+      await this.koboFiles.preserveMetadataOnlyCopy(tx, old.bookId, journal.bookFileId, old.fileHash, installed.fileHash);
     await tx
       .update(schema.revisionPublications)
       .set({ state: 'database_committed', updatedAt: new Date() })
@@ -444,7 +497,7 @@ export class RevisionPublicationService {
         .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)))
         .limit(1);
       if (!previous) throw new ConflictException('Previous revision is missing during cleanup');
-      if (previous.storagePath !== null) {
+      if (journal.reason !== 'file_write' && previous.storagePath !== null) {
         const retainedPath = await this.retention.retain(journal.bookFileId, journal.expectedRevisionId, journal.backupPath, journal.previousSha256);
         await tx
           .update(schema.bookFileRevisions)
@@ -452,7 +505,7 @@ export class RevisionPublicationService {
           .where(and(eq(schema.bookFileRevisions.id, journal.expectedRevisionId), eq(schema.bookFileRevisions.bookFileId, journal.bookFileId)));
       }
       await removeCancelledPublication(journal.targetPath, journal.id);
-      await this.pruneRetainedFiles(journal, tx);
+      if (journal.reason !== 'file_write') await this.pruneRetainedFiles(journal, tx);
       await tx
         .update(schema.revisionPublications)
         .set({ state: 'cleanup_complete', updatedAt: new Date() })

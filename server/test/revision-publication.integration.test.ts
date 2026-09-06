@@ -1,4 +1,9 @@
 import { storageConfig } from '../src/config/config';
+import { BookRevisionService } from '../src/modules/book-revision/book-revision.service';
+import { RevisionMetadataService } from '../src/modules/book-revision/revision-metadata.service';
+import { RevisionFileService } from '../src/modules/book-revision/revision-file.service';
+import { EpubFormatWriter } from '../src/modules/file-write/formats/epub/epub-format-writer';
+import { createBookWriteFieldMask } from '../src/modules/file-write/file-write.constants';
 import { RevisionDownloadService } from '../src/modules/book-revision/revision-download.service';
 import { Test } from '@nestjs/testing';
 import { ZipArchive } from 'archiver';
@@ -17,6 +22,7 @@ import { FileLockService } from '../src/common/file-lock.service';
 import * as schema from '../src/db/schema';
 import { EpubManifestService } from '../src/modules/book-revision/epub-manifest.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
+import { KoboFileStateService } from '../src/modules/kobo/kobo-file-state.service';
 import { RevisionPublicationService } from '../src/modules/book-revision/revision-publication.service';
 import { requireInspectedFile } from '../src/modules/book-revision/revision-publication.files';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
@@ -33,6 +39,10 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
   let pool: Pool;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let service: RevisionPublicationService;
+  let metadata: RevisionMetadataService;
+  let locks: FileLockService;
+  let writer: EpubFormatWriter;
+  let koboFiles: KoboFileStateService;
   let manifests: EpubManifestService;
   let catalog: RevisionCatalogService;
   let downloads: RevisionDownloadService;
@@ -58,6 +68,11 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const module = await Test.createTestingModule({
       providers: [
         RevisionPublicationService,
+        BookRevisionService,
+        RevisionMetadataService,
+        RevisionFileService,
+        EpubFormatWriter,
+        KoboFileStateService,
         RevisionRetentionService,
         EpubManifestService,
         RevisionCatalogService,
@@ -73,6 +88,10 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
       ],
     }).compile();
     service = module.get(RevisionPublicationService);
+    metadata = module.get(RevisionMetadataService);
+    locks = module.get(FileLockService);
+    writer = module.get(EpubFormatWriter);
+    koboFiles = module.get(KoboFileStateService);
     manifests = module.get(EpubManifestService);
     catalog = module.get(RevisionCatalogService);
     downloads = module.get(RevisionDownloadService);
@@ -101,7 +120,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
       archive.append('application/epub+zip', { name: 'mimetype', store: true });
       archive.append('<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>', { name: 'META-INF/container.xml' });
       archive.append(
-        '<package><metadata><title>Story</title></metadata><manifest><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>',
+        '<package version="3.0" xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata><dc:title>Story</dc:title></metadata><manifest><item id="c" href="c.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>',
         { name: 'book.opf' },
       );
       archive.append(`<html><body><p>${text}</p></body></html>`, { name: 'c.xhtml' });
@@ -170,6 +189,59 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const [row] = await db.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, id));
     return row;
   }
+
+  it('journals actual EPUB metadata writes without losing the story rollback copy or Kobo annotations', async () => {
+    const story = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    const installed = await service.resume(story.publicationId, libraryId);
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    await db.update(schema.books).set({ primaryFileId: fileId }).where(eq(schema.books.id, file.bookId));
+    const [device] = await db.insert(schema.koboDevices).values({ userId: ownerUserId, name: 'Metadata device', token: randomUUID() }).returning();
+    const [snapshot] = await db.insert(schema.koboLibrarySnapshots).values({ userId: ownerUserId, deviceId: device.id }).returning();
+    await db
+      .insert(schema.koboSnapshotBooks)
+      .values({ snapshotId: snapshot.id, bookId: file.bookId, fileHash: file.fileHash, deliveryHash: file.fileHash, synced: true });
+    const previousBytes = await readFile(target);
+    const result = await locks.withLock(`book:${file.bookId}`, () =>
+      metadata.rewriteWithinBookOperation(file.bookId, { id: fileId, libraryId, absolutePath: target }, async (path) => {
+        expect(path).not.toBe(target);
+        const written = await writer.write(path, { title: 'Updated metadata title' }, { fieldMask: createBookWriteFieldMask(), dryRun: false });
+        expect(await readFile(target)).toEqual(previousBytes);
+        return written;
+      }),
+    );
+    expect(result.status).toBe('success');
+    const [current] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    expect(current.currentRevisionId).not.toBe(installed.revisionId);
+    const history = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
+    expect(history.find((row) => row.id === current.currentRevisionId)).toMatchObject({ reason: 'file_write', changeKind: 'metadata' });
+    expect(history.filter((row) => row.storagePath).map((row) => row.id)).toEqual([originalId]);
+    const [copy] = await db.select().from(schema.koboSnapshotBooks).where(eq(schema.koboSnapshotBooks.snapshotId, snapshot.id));
+    expect(copy).toMatchObject({ fileHash: current.fileHash, deliveryHash: file.fileHash, synced: true, pendingDelete: false });
+  }, 30_000);
+  it('refuses a metadata publication that changes chapter content or book assignment', async () => {
+    await expect(service.prepare(fileId, libraryId, originalId, input, 'file_write')).rejects.toThrow('changed chapter content');
+    expect((await requireInspectedFile(target)).sha256).toBe(originalSha);
+    await expect(
+      service.prepare(fileId, libraryId, originalId, input, 'file_write', undefined, undefined, { bookId: -1, absolutePath: target }),
+    ).rejects.toThrow('assignment changed');
+    expect(await db.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.bookFileId, fileId))).toHaveLength(0);
+  });
+  it('recovers metadata publication when Kobo snapshot persistence interrupts the revision transaction', async () => {
+    await copyFile(target, input);
+    await writer.write(input, { title: 'Recovered metadata title' }, { fieldMask: createBookWriteFieldMask(), dryRun: false });
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'file_write');
+    const save = vi.spyOn(koboFiles, 'preserveMetadataOnlyCopy').mockRejectedValueOnce(new Error('Simulated database interruption'));
+    await expect(service.resume(prepared.publicationId, libraryId)).rejects.toThrow('Simulated database interruption');
+    expect((await journal(prepared.publicationId)).state).toBe('filesystem_published');
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    expect(file.currentRevisionId).toBe(originalId);
+    save.mockRestore();
+    const recovered = await service.resume(prepared.publicationId, libraryId);
+    expect(recovered.state).toBe('cleanup_complete');
+    const history = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId));
+    expect(history).toHaveLength(2);
+    expect(history.filter((row) => row.storagePath)).toHaveLength(0);
+  });
 
   async function owner() {
     const [job] = await db
@@ -413,6 +485,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const otherModule = await Test.createTestingModule({
       providers: [
         RevisionPublicationService,
+        KoboFileStateService,
         RevisionRetentionService,
         FileLockService,
         { provide: storageConfig.KEY, useValue: storage },

@@ -729,6 +729,13 @@
       "when": 1788678168533,
       "tag": "0103_discovery_job_recovery",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1788678903943,
+      "tag": "0104_metadata_revision_publication",
+      "breakpoints": true
     }
   ]
 }
