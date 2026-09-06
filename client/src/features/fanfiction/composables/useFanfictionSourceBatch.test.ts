@@ -21,7 +21,7 @@ describe('durable bulk story controls', () => {
   const sources = ref([{ id: 'one' }, { id: 'two' }] as FanfictionSource[])
   const search = ref('Story')
   const filter = ref('paused')
-  const completed = vi.fn()
+  const completed = vi.fn<() => void>()
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
