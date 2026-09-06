@@ -271,6 +271,45 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
     expect(first.requested + second.requested).toBe(1);
     expect((await scheduler.runBatch()).checked).toBe(0);
   });
+  it('paginates twenty thousand installed copies while scheduling only acknowledged automatic copies', async () => {
+    await enableAutomatic();
+    const [original] = await db.select().from(schema.koreaderInstalledCopies).where(eq(schema.koreaderInstalledCopies.id, copyId));
+    for (let batch = 0; batch < 40; batch++) {
+      await db.insert(schema.koreaderInstalledCopies).values(
+        Array.from({ length: 500 }, (_, offset) => {
+          const index = batch * 500 + offset;
+          const pathname = `/books/large-inventory-${index}.epub`;
+          return {
+            ...original,
+            id: randomUUID(),
+            copyId: randomUUID(),
+            pathname,
+            pathnameHash: createHash('sha256').update(pathname).digest('hex'),
+            sha256,
+            sizeBytes: content.length,
+            revisionId: revision.id,
+            policy: index < 100 ? null : index % 2 ? ('notify' as const) : ('ignore' as const),
+            deliveryCheckAfter: new Date(0),
+          };
+        }),
+      );
+    }
+    const first = await inventory.list({ deviceId: 'reader', bookFileId: file.id, limit: 50 }, users[0]);
+    expect(first.items).toHaveLength(50);
+    expect(first.nextCursor).toBeTruthy();
+    const second = await inventory.list({ deviceId: 'reader', bookFileId: file.id, limit: 50, cursor: first.nextCursor! }, users[0]);
+    expect(second.items).toHaveLength(50);
+    expect(new Set([...first.items, ...second.items].map((copy) => copy.id)).size).toBe(100);
+    expect(new Set([...first.items, ...second.items].map((copy) => copy.pathname)).size).toBe(100);
+    expect((await inventory.list({ limit: 50 }, users[1])).items).toHaveLength(0);
+    await expect(inventory.list({ limit: 50, cursor: first.nextCursor! }, users[1])).rejects.toThrow('does not belong');
+    const scheduler = module.get(KoreaderDeliverySchedulerService);
+    const scheduled = [await scheduler.runBatch(), await scheduler.runBatch()];
+    expect(scheduled.map((batch) => batch.checked)).toEqual([100, 1]);
+    expect(scheduled.reduce((sum, batch) => sum + batch.requested, 0)).toBe(1);
+    expect((await scheduler.runBatch()).checked).toBe(0);
+  }, 120_000);
+
   it('returns revision targets only within current library and download access', async () => {
     expect((await deliveries.targets([file.id], users[0])).items).toEqual([
       { bookFileId: file.id, bookId: file.bookId, revisionId: revision.id, sha256, sizeBytes: content.length },
