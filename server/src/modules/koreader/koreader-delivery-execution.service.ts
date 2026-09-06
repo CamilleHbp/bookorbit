@@ -102,19 +102,26 @@ export class KoreaderDeliveryExecutionService {
   private async recordBlockedFailure(id: string, userId: number, error: unknown, fence?: number) {
     const failureCode = error instanceof DeliveryBlockedException ? error.failureCode : error instanceof ForbiddenException ? 'access_revoked' : null;
     if (!failureCode) return;
-    await this.db
-      .update(jobs)
-      .set({ failureCode, version: sql`${jobs.version} + 1`, updatedAt: sql`now()` })
-      .where(
-        and(
-          eq(jobs.id, id),
-          eq(jobs.userId, userId),
-          fence === undefined ? undefined : eq(jobs.fence, fence),
-          isNull(jobs.failureCode),
-          isNull(jobs.cancelledAt),
-          ne(jobs.installationState, 'installed'),
-        ),
+    const startedAt = Date.now();
+    try {
+      await this.db
+        .update(jobs)
+        .set({ failureCode, version: sql`${jobs.version} + 1`, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(jobs.id, id),
+            eq(jobs.userId, userId),
+            fence === undefined ? undefined : eq(jobs.fence, fence),
+            isNull(jobs.failureCode),
+            isNull(jobs.cancelledAt),
+            ne(jobs.installationState, 'installed'),
+          ),
+        );
+    } catch {
+      this.logger.warn(
+        `[koreader.delivery_failure_record] [fail] jobId=${id} userId=${userId} durationMs=${Date.now() - startedAt} errorClass=PersistenceError error="delivery failure state could not be saved" - original delivery rejection is preserved`,
       );
+    }
   }
 
   claim(id: string, dto: ClaimKoreaderDeliveryDto, user: RequestUser) {
