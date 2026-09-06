@@ -10173,6 +10173,7 @@
     "preview": "Preview story",
     "activity": "Activity",
     "chapterCount": "{count} chapters",
+    "wordCount": "{count} words",
     "states": {
       "queued": "Queued",
       "running": "Running",

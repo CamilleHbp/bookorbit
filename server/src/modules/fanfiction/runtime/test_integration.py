@@ -12,6 +12,30 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_uses_raw_chapter_and_word_counts_instead_of_formatted_metadata(self):
+        from fanficfare.adapters.adapter_test1 import TestSiteAdapter
+        original = TestSiteAdapter.getStoryMetadataOnly
+
+        def metadata(adapter, *args, **kwargs):
+            story = original(adapter, *args, **kwargs)
+            story.setMetadata('numChapters', 1000)
+            story.setMetadata('numWords', 123456)
+            self.assertEqual(story.getMetadata('numChapters'), '1,000')
+            return story
+
+        with patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'), patch.object(TestSiteAdapter, 'getStoryMetadataOnly', metadata):
+            preview = run({'operation': 'preview', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\n'})
+        self.assertEqual(preview['chapterCount'], 1000)
+        self.assertEqual(preview['wordCount'], 123456)
+
+    def test_unknown_or_unbounded_word_counts_are_not_estimated(self):
+        from fanficfare_wrapper import metadata_count
+        from unittest.mock import Mock
+        for value in [None, '', 'unknown', '1.2k', -1, 1.5, True, 2147483648, '9' * 40]:
+            with self.subTest(value=value):
+                self.assertIsNone(metadata_count(Mock(getMetadataRaw=Mock(return_value=value)), 'numWords', 2147483647))
+        self.assertEqual(metadata_count(Mock(getMetadataRaw=Mock(return_value='0')), 'numWords', 2147483647), 0)
+
     def test_returned_login_cookies_are_separate_from_the_public_preview(self):
         from fanficfare.adapters.adapter_test1 import TestSiteAdapter
         from safe_transport import SafeTransport
@@ -94,10 +118,14 @@ class ConfigurationTest(unittest.TestCase):
 
                 def chapter(adapter, url):
                     refreshed.append(url)
+                    adapter.story.setMetadata('numWords', 234567)
+                    adapter.story.setMetadata('title', 'Refreshed story title')
                     return original_chapter(adapter, url) + '<p>Refreshed passage.</p>'
 
                 with patch.object(TestSiteAdapter, 'getChapterText', chapter):
-                    run({**request, 'operation': 'refresh'})
+                    refreshed_result = run({**request, 'operation': 'refresh'})
+                self.assertEqual(refreshed_result['preview']['wordCount'], 234567)
+                self.assertEqual(refreshed_result['preview']['title'], 'Refreshed story title')
                 self.assertGreater(len(refreshed), 0)
                 with ZipFile('output.epub') as archive:
                     self.assertTrue(any(b'Refreshed passage.' in archive.read(name) for name in archive.namelist() if name.endswith('.xhtml')))

@@ -61,6 +61,32 @@ def limits():
         resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
 
 
+def metadata_count(story, key, maximum):
+    value = story.getMetadataRaw(key)
+    if isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    if len(text) > 32 or not text.isascii() or not text.isdecimal():
+        return None
+    number = int(text)
+    return number if 0 <= number <= maximum else None
+
+
+def story_preview(adapter, story):
+    canonical = story.getMetadata('storyUrl').replace('http://', 'https://', 1)
+    validate_url(canonical)
+    chapter_count = metadata_count(story, 'numChapters', 10_000)
+    if not chapter_count:
+        raise PolicyError('Chapter count limit exceeded')
+    return {
+        'canonicalUrl': canonical,
+        'site': adapter.getConfigSection(), 'title': story.getMetadata('title'),
+        'authors': story.getList('author'), 'description': story.getMetadata('description') or '',
+        'chapterCount': chapter_count, 'wordCount': metadata_count(story, 'numWords', 2_147_483_647),
+        'status': story.getMetadata('status') or '', 'tags': story.getSubjectTags(),
+    }
+
+
 def run(request, save_cookies=None):
     actual = importlib.metadata.version('FanFicFare')
     if actual != VERSION:
@@ -90,18 +116,9 @@ def run(request, save_cookies=None):
     configuration = make_configuration(url, ini, transport)
     adapter = adapters.getAdapter(configuration, url)
     story = adapter.getStoryMetadataOnly(get_cover=False)
-    canonical = story.getMetadata('storyUrl')
-    validate_url(canonical.replace('http://', 'https://', 1))
-    chapter_count = int(story.getMetadata('numChapters') or 0)
-    if not 0 < chapter_count <= 10_000:
-        raise PolicyError('Chapter count limit exceeded')
-    preview = {
-        'canonicalUrl': canonical.replace('http://', 'https://', 1),
-        'site': adapter.getConfigSection(), 'title': story.getMetadata('title'),
-        'authors': story.getList('author'), 'description': story.getMetadata('description'),
-        'chapterCount': chapter_count, 'status': story.getMetadata('status'),
-        'tags': story.getSubjectTags(),
-    }
+    preview = story_preview(adapter, story)
+    canonical = preview['canonicalUrl']
+    chapter_count = preview['chapterCount']
     if operation == 'preview':
         return finish(preview)
     if operation not in ('download', 'update', 'refresh'):
@@ -123,7 +140,7 @@ def run(request, save_cookies=None):
         output.flush()
         os.fsync(output.fileno())
     validate_epub('output.epub')
-    return finish({'preview': preview, 'output': 'output.epub'})
+    return finish({'preview': story_preview(adapter, adapter.story), 'output': 'output.epub'})
 
 
 def execute_request(request):

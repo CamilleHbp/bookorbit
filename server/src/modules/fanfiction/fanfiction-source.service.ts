@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createHash, randomUUID } from 'node:crypto';
@@ -20,12 +20,14 @@ import { ManagedMetadataService } from '../metadata/managed-metadata.service';
 import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 import { ManagedTagService } from '../metadata/managed-tag.service';
 import { recordFanfictionActivity } from './fanfiction-activity';
+import { validateFanfictionPreview } from './fanfiction-preview';
 
 const sources = schema.fanfictionSources;
 type Job = typeof schema.fanfictionJobs.$inferSelect;
 
 @Injectable()
 export class FanfictionSourceService {
+  private readonly logger = new Logger(FanfictionSourceService.name);
   constructor(
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly access: FanfictionAccessService,
@@ -104,6 +106,7 @@ export class FanfictionSourceService {
   }
 
   async completeUpdate(job: Job, result: NonNullable<import('@bookorbit/types').FanfictionJob['result']>, preview?: FanfictionPreview) {
+    if (preview) preview = validateFanfictionPreview(preview);
     return this.db.transaction(async (tx) => {
       if (!result.bookFileId || !result.revisionId) throw new BadRequestException('A completed update requires its installed revision');
       const file = await this.catalog.lockCurrent(tx, result.bookFileId, job.libraryId, result.revisionId);
@@ -114,7 +117,15 @@ export class FanfictionSourceService {
       await tx
         .update(sources)
         .set({
-          ...(preview ? { title: preview.title, authors: preview.authors, chapterCount: preview.chapterCount, storyStatus: preview.status } : {}),
+          ...(preview
+            ? {
+                title: preview.title,
+                authors: preview.authors,
+                chapterCount: preview.chapterCount,
+                wordCount: preview.wordCount ?? null,
+                storyStatus: preview.status,
+              }
+            : {}),
           attentionCode: null,
           lastCheckedAt: sql`now()`,
           ...(!result.noChange ? { lastUpdatedAt: sql`now()` } : {}),
@@ -239,20 +250,8 @@ export class FanfictionSourceService {
 
   async reserve(job: Job, preview: FanfictionPreview, user: RequestUser) {
     if (!job.input || job.kind !== 'import') throw new BadRequestException('Missing managed import settings');
+    preview = validateFanfictionPreview(preview);
     const canonicalUrl = this.canonicalUrl(preview.canonicalUrl);
-    if (
-      typeof preview.title !== 'string' ||
-      !preview.title ||
-      preview.title.length > 500 ||
-      !Array.isArray(preview.authors) ||
-      preview.authors.length > 100 ||
-      preview.authors.some((author) => typeof author !== 'string' || author.length > 500) ||
-      !Number.isInteger(preview.chapterCount) ||
-      preview.chapterCount < 1 ||
-      preview.chapterCount > 10_000
-    ) {
-      throw new BadRequestException('Invalid story preview');
-    }
     const canonicalKey = createHash('sha256').update(canonicalUrl).digest('hex');
     const { library } = await this.libraries.importDestination(job.libraryId, job.input.folderId);
     const pattern =
@@ -285,6 +284,7 @@ export class FanfictionSourceService {
           title: preview.title,
           authors: preview.authors,
           chapterCount: preview.chapterCount,
+          wordCount: preview.wordCount ?? null,
           storyStatus: String(preview.status ?? '').slice(0, 100),
           intervalMinutes: job.input!.intervalMinutes === undefined ? 1440 : job.input!.intervalMinutes,
           importOperationId: randomUUID(),
@@ -310,6 +310,43 @@ export class FanfictionSourceService {
       .where(and(eq(sources.id, sourceId), eq(sources.libraryId, job.libraryId)))
       .for('update');
     if (!source || source.state !== 'pending') throw new ConflictException('Story import was paused or unlinked');
+    return source;
+  }
+
+  async recordImportMetadata(job: Job, sourceId: string, value: FanfictionPreview, user: RequestUser) {
+    const preview = validateFanfictionPreview(value);
+    await this.access.administer(user, job.libraryId);
+    const startedAt = Date.now();
+    this.logger.log(
+      `[fanfiction.import_metadata] [start] libraryId=${job.libraryId} sourceId=${sourceId} jobId=${job.id} - retaining downloaded story metadata`,
+    );
+    try {
+      await this.db.transaction(async (tx) => {
+        const source = await this.assertImportable(job, sourceId, tx);
+        if (this.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl || preview.chapterCount < source.chapterCount)
+          throw new BadRequestException({ message: 'The story identity or chapter count changed before import', errorCode: 'review_required' });
+        await tx
+          .update(sources)
+          .set({
+            title: preview.title,
+            authors: preview.authors,
+            chapterCount: preview.chapterCount,
+            wordCount: preview.wordCount ?? null,
+            storyStatus: preview.status,
+            updatedAt: sql`now()`,
+            version: sql`${sources.version} + 1`,
+          })
+          .where(and(eq(sources.id, sourceId), eq(sources.libraryId, job.libraryId)));
+      });
+      this.logger.log(
+        `[fanfiction.import_metadata] [end] libraryId=${job.libraryId} sourceId=${sourceId} jobId=${job.id} durationMs=${Date.now() - startedAt} - downloaded metadata retained`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `[fanfiction.import_metadata] [fail] libraryId=${job.libraryId} sourceId=${sourceId} jobId=${job.id} durationMs=${Date.now() - startedAt} errorClass=ImportMetadataError error="downloaded metadata rejected" - metadata could not be retained`,
+      );
+      throw error;
+    }
   }
 
   async resume(job: Job, user: RequestUser) {

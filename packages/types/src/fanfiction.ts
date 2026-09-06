@@ -12,6 +12,7 @@ export interface FanfictionPreview {
   authors: string[];
   description: string;
   chapterCount: number;
+  wordCount?: number | null;
   status: string;
   tags: string[];
 }

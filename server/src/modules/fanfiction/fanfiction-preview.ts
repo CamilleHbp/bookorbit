@@ -24,6 +24,8 @@ export function validateFanfictionPreview(value: unknown): FanfictionPreview {
   }
   if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')) throw invalid();
   if (!Number.isInteger(row.chapterCount) || Number(row.chapterCount) < 1 || Number(row.chapterCount) > 10_000) throw invalid();
+  if (row.wordCount != null && (!Number.isInteger(row.wordCount) || Number(row.wordCount) < 0 || Number(row.wordCount) > 2_147_483_647))
+    throw invalid();
   return {
     canonicalUrl,
     site: string('site', 255, false),
@@ -31,6 +33,7 @@ export function validateFanfictionPreview(value: unknown): FanfictionPreview {
     authors: strings('authors', 100, 500),
     description: string('description', 256 * 1024),
     chapterCount: Number(row.chapterCount),
+    wordCount: row.wordCount == null ? null : Number(row.wordCount),
     status: string('status', 100),
     tags: strings('tags', 1000, 500),
   };

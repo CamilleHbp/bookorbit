@@ -80,6 +80,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     title: 'Story',
     authors: ['Writer'],
     chapterCount: 2,
+    wordCount: 123456,
     description: '',
     status: 'In-Progress',
     tags: ['Source tag'],
@@ -278,7 +279,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     const result = await run(retry);
     expect(result?.revisionId).toBeTruthy();
     expect(runtime.update).toHaveBeenCalledTimes(1);
-    expect((await sources.get(libraryId, source.id, user)).chapterCount).toBe(2);
+    expect(await sources.get(libraryId, source.id, user)).toMatchObject({ chapterCount: 2, wordCount: 123456 });
     expect(await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId))).toHaveLength(2);
   }, 30_000);
   it('keeps original bytes and revision when regenerated output has no semantic changes', async () => {

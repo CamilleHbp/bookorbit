@@ -310,6 +310,9 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
   }, 60_000);
 
   it('resumes an imported EPUB after metadata failure without contacting the source again', async () => {
+    runtime.download.mockImplementationOnce(async (url, _document, consume) =>
+      consume(sourcePath, { ...previewFor(url), title: 'Final downloaded title', wordCount: 123456, status: 'Completed' }),
+    );
     await sources.create(libraryId, { url: 'https://example.org/story/2002', folderId, idempotencyKey: randomUUID() }, requestUser);
     const first = (await jobs.claim())!;
     metadata.extractAndSave.mockRejectedValueOnce(new ConflictException('Metadata interrupted'));
@@ -323,6 +326,11 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     const retry = (await jobs.claim())!;
     const result = await imports.run(retry, requestUser, { configuration: '', cookies: [] }, authorize, new AbortController().signal);
     expect(result?.bookId).toBeGreaterThan(0);
+    expect(await sources.get(libraryId, result!.sourceId!, requestUser)).toMatchObject({
+      title: 'Final downloaded title',
+      wordCount: 123456,
+      storyStatus: 'Completed',
+    });
     expect(runtime.preview).toHaveBeenCalledTimes(1);
     expect(runtime.download).toHaveBeenCalledTimes(1);
     expect(await jobs.finish(retry, 'succeeded', result)).toBe(true);

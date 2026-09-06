@@ -70,9 +70,8 @@ export class FanfictionImportService {
       source.canonicalUrl,
       effective.document,
       async (path, downloaded) => {
-        if (this.sources.canonicalUrl(downloaded.canonicalUrl) !== source.canonicalUrl || downloaded.chapterCount < source.chapterCount) {
-          throw new BadRequestException({ message: 'The story identity or chapter count changed before import', errorCode: 'review_required' });
-        }
+        await authorize();
+        await this.sources.recordImportMetadata(job, source.id, downloaded, user);
         return install(path);
       },
       signal,

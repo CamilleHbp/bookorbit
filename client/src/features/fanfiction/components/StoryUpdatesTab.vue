@@ -81,6 +81,7 @@ onMounted(refresh)
         <p>
           {{ source.storyStatus }} · {{ t('fanfiction.chapterCount', { count: source.chapterCount }) }} ·
           {{ t(`fanfiction.sourceStates.${source.state}`) }}
+          <span v-if="source.wordCount !== null"> · {{ t('fanfiction.wordCount', { count: source.wordCount }) }}</span>
         </p>
         <p v-if="source.attentionCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
         <dl class="text-muted-foreground grid gap-2 text-sm sm:grid-cols-2">

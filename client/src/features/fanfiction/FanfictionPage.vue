@@ -122,6 +122,7 @@ onMounted(() => {
             <h2 v-else class="font-medium">{{ source.title }}</h2>
             <p class="text-muted-foreground text-sm">
               {{ source.authors.join(', ') }} · {{ source.site }} · {{ t('fanfiction.chapterCount', { count: source.chapterCount }) }}
+              <span v-if="source.wordCount !== null"> · {{ t('fanfiction.wordCount', { count: source.wordCount }) }}</span>
             </p>
             <p class="text-sm">{{ t(`fanfiction.sourceStates.${source.state}`) }} · {{ source.storyStatus }}</p>
             <p v-if="source.attentionCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
@@ -208,6 +209,7 @@ onMounted(() => {
           <p v-if="candidate.preview" class="text-muted-foreground text-sm">
             {{ candidate.preview.authors.join(', ') }} · {{ t('fanfiction.chapterCount', { count: candidate.preview.chapterCount }) }} ·
             {{ candidate.preview.status }}
+            <span v-if="candidate.preview.wordCount != null"> · {{ t('fanfiction.wordCount', { count: candidate.preview.wordCount }) }}</span>
           </p>
           <p v-if="candidate.job" class="text-sm">
             {{ t(`fanfiction.states.${candidate.job.state}`)
