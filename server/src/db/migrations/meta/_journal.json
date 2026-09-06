@@ -785,6 +785,13 @@
       "when": 1788712841450,
       "tag": "0111_koreader_delivery_scheduling",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1788717290569,
+      "tag": "0112_fanfiction_cookie_renewal",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeFanfictionCookies, redactFanfictionCookies } from './fanfiction-cookies';
+import { mergeFanfictionCookies, redactFanfictionCookies, mergeRenewedCookies, validateRuntimeCookies } from './fanfiction-cookies';
 
 const cookie = { name: 'session', value: 'private-cookie-value', domain: '.archiveofourown.org', path: '/', secure: true };
 describe('profile cookie edits', () => {
@@ -24,5 +24,34 @@ describe('profile cookie edits', () => {
     expect(() => mergeFanfictionCookies([], [cookie, { ...cookie, domain: cookie.domain.toUpperCase() }])).toThrow('unique');
     expect(mergeFanfictionCookies([], [cookie, { ...cookie, path: '/works' }])).toHaveLength(2);
     expect(() => mergeFanfictionCookies([], [{ ...cookie, value: '********' }])).toThrow('Enter a value');
+  });
+});
+
+describe('renewed cookie merging', () => {
+  it('combines renewals from separate sites without overwriting a newer value', () => {
+    const other = { ...cookie, domain: 'other.example', value: 'other-old' };
+    const current = [{ ...cookie, value: 'newer' }, other];
+    const incoming = [
+      { ...cookie, value: 'stale-renewal' },
+      { ...other, value: 'other-new' },
+    ];
+    expect(mergeRenewedCookies([cookie, other], current, incoming)).toEqual([current[0], incoming[1]]);
+  });
+  it('retains concurrent additions and applies deletions only to unchanged cookies', () => {
+    const additional = { ...cookie, name: 'new-session' };
+    expect(mergeRenewedCookies([cookie], [cookie, additional], [])).toEqual([additional]);
+    expect(mergeRenewedCookies([cookie], [{ ...cookie, value: 'newer' }], [])).toEqual([{ ...cookie, value: 'newer' }]);
+    expect(mergeRenewedCookies([], [], [{ ...cookie, value: '********' }])).toEqual([{ ...cookie, value: '********' }]);
+  });
+  it.each([
+    null,
+    {},
+    [null],
+    [cookie, cookie],
+    [{ ...cookie, value: 'injected\r\nheader' }],
+    [{ ...cookie, extra: 'secret' }],
+    Array(201).fill(cookie),
+  ])('rejects invalid runtime jars', (value) => {
+    expect(() => validateRuntimeCookies(value)).toThrow('runtime cookie');
   });
 });

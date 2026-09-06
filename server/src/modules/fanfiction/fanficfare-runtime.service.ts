@@ -12,6 +12,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { validateFanfictionPreview } from './fanfiction-preview';
+import { validateRuntimeCookies, type FanfictionCookieSink } from './fanfiction-cookies';
 
 type RuntimeRequest = {
   operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
@@ -23,7 +24,7 @@ type RuntimeRequest = {
   edits?: { section?: string; username?: string; password?: string; isAdult?: boolean };
   redact?: boolean;
 };
-type RuntimeResponse = { ok: true; result: unknown } | { ok: false; code: string; errorClass: string };
+type RuntimeResponse = { ok: true; result: unknown; cookies?: unknown } | { ok: false; code: string; errorClass: string };
 
 @Injectable()
 export class FanficfareRuntimeService {
@@ -95,8 +96,13 @@ export class FanficfareRuntimeService {
     return result.configuration;
   }
 
-  async preview(url: string, document: FanfictionProfileDocument, signal?: AbortSignal): Promise<FanfictionPreview> {
-    return validateFanfictionPreview(await this.temporary({ operation: 'preview', url, ...document }, signal));
+  async preview(
+    url: string,
+    document: FanfictionProfileDocument,
+    signal?: AbortSignal,
+    saveCookies?: FanfictionCookieSink,
+  ): Promise<FanfictionPreview> {
+    return validateFanfictionPreview(await this.temporary({ operation: 'preview', url, ...document }, signal, saveCookies));
   }
 
   async download<T>(
@@ -104,9 +110,10 @@ export class FanficfareRuntimeService {
     document: FanfictionProfileDocument,
     consume: (path: string, preview: FanfictionPreview) => Promise<T>,
     signal?: AbortSignal,
+    saveCookies?: FanfictionCookieSink,
   ): Promise<T> {
     return this.workspace(async (directory) => {
-      const result = (await this.execute({ operation: 'download', url, ...document }, directory, signal)) as {
+      const result = (await this.execute({ operation: 'download', url, ...document }, directory, signal, saveCookies)) as {
         output?: string;
         preview?: FanfictionPreview;
       };
@@ -122,10 +129,11 @@ export class FanficfareRuntimeService {
     prepare: (inputPath: string) => Promise<void>,
     consume: (path: string, preview: FanfictionPreview) => Promise<T>,
     signal?: AbortSignal,
+    saveCookies?: FanfictionCookieSink,
   ): Promise<T> {
     return this.workspace(async (directory) => {
       await prepare(join(directory, 'input.epub'));
-      const result = (await this.execute({ operation, url, ...document }, directory, signal)) as {
+      const result = (await this.execute({ operation, url, ...document }, directory, signal, saveCookies)) as {
         output?: string;
         reviewRequired?: string;
         preview?: FanfictionPreview;
@@ -137,14 +145,14 @@ export class FanficfareRuntimeService {
     });
   }
 
-  async execute(request: RuntimeRequest, workspace: string, signal?: AbortSignal): Promise<unknown> {
+  async execute(request: RuntimeRequest, workspace: string, signal?: AbortSignal, saveCookies?: FanfictionCookieSink): Promise<unknown> {
     if (this.active >= this.config.maxWorkers) throw new ServiceUnavailableException('FanFicFare runtime is busy');
     if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
     const input = JSON.stringify(request);
     if (Buffer.byteLength(input) > 512 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
     this.active++;
     try {
-      return await new Promise((resolve, reject) => {
+      const response = await new Promise<Extract<RuntimeResponse, { ok: true }>>((resolve, reject) => {
         const child = spawn(this.config.python, ['-I', join(__dirname, 'runtime', 'fanficfare_wrapper.py')], {
           cwd: workspace,
           env: { HOME: workspace, TMPDIR: workspace, LANG: 'C.UTF-8', PYTHONDONTWRITEBYTECODE: '1' },
@@ -183,20 +191,25 @@ export class FanficfareRuntimeService {
             const response = JSON.parse(Buffer.concat(chunks).toString('utf8')) as RuntimeResponse;
             if (response.ok !== true)
               return reject(new BadRequestException({ message: 'FanFicFare could not complete the operation', errorCode: response.code }));
-            resolve(response.result);
+            resolve(response);
           } catch {
             reject(new ServiceUnavailableException('Invalid FanFicFare runtime response'));
           }
         });
         child.stdin.end(input);
       });
+      if (saveCookies) {
+        if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
+        await saveCookies(validateRuntimeCookies(response.cookies));
+      }
+      return response.result;
     } finally {
       this.active--;
     }
   }
 
-  private async temporary(request: RuntimeRequest, signal?: AbortSignal): Promise<unknown> {
-    return this.workspace((directory) => this.execute(request, directory, signal));
+  private async temporary(request: RuntimeRequest, signal?: AbortSignal, saveCookies?: FanfictionCookieSink): Promise<unknown> {
+    return this.workspace((directory) => this.execute(request, directory, signal, saveCookies));
   }
 
   private async workspace<T>(operation: (directory: string) => Promise<T>): Promise<T> {

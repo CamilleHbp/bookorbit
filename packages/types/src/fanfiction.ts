@@ -36,6 +36,7 @@ export interface FanfictionCookie {
   domain: string;
   path: string;
   secure: boolean;
+  hostOnly?: boolean;
   expires?: number;
 }
 

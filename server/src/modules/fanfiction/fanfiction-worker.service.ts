@@ -91,10 +91,15 @@ export class FanfictionWorkerService implements OnModuleDestroy {
     );
     try {
       const user = await this.authorized(job);
-      const document =
+      const authorizeCookies = async () => {
+        const current = await this.authorized(job);
+        if (controller.signal.aborted || !(await this.jobs.renew(job))) throw new ForbiddenException('Queued operation lease was lost');
+        return current;
+      };
+      const { document, saveCookies } =
         job.profileId && !['rollback', 'discovery', 'adopt'].includes(job.kind)
-          ? (await this.profiles.document(job.libraryId, job.profileId, user)).document
-          : { configuration: '', cookies: [] };
+          ? await this.profiles.session(job.libraryId, job.profileId, user, authorizeCookies)
+          : { document: { configuration: '', cookies: [] }, saveCookies: undefined };
       const result: FanfictionJob['result'] =
         job.kind === 'discovery'
           ? await this.discovery.run(job, () => this.authorized(job), controller.signal)
@@ -103,10 +108,10 @@ export class FanfictionWorkerService implements OnModuleDestroy {
             : job.kind === 'rollback'
               ? await this.rollbacks.run(job, () => this.authorized(job), controller.signal)
               : job.kind === 'import'
-                ? await this.imports.run(job, user, document, () => this.authorized(job), controller.signal)
+                ? await this.imports.run(job, user, document, authorizeCookies, controller.signal, saveCookies)
                 : job.kind === 'update' || job.kind === 'refresh'
-                  ? await this.updates.run(job, document, () => this.authorized(job), controller.signal)
-                  : { preview: await this.runtime.preview(job.url, document, controller.signal) };
+                  ? await this.updates.run(job, document, () => this.authorized(job), controller.signal, saveCookies)
+                  : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
       await this.authorized(job);
       const continuation = result?.discovery?.finished === false || result?.selection?.finished === false;
       const needsReview = (result?.selection?.failed ?? 0) > 0;

@@ -146,6 +146,42 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('encrypted F
     await expect(service.get(libraryId, created.id, user)).rejects.toBeInstanceOf(ForbiddenException);
   }, 30_000);
 
+  it('merges concurrent login renewal into encrypted storage without losing unrelated cookies', async () => {
+    const firstCookie = { name: 'session', value: 'first-old', domain: 'example.org', path: '/', secure: true, hostOnly: true };
+    const secondCookie = { ...firstCookie, domain: 'other.example', value: 'second-old' };
+    const created = await service.create(libraryId, { name: 'Concurrent sessions', cookies: [firstCookie, secondCookie] }, user);
+    const authorize = vi.fn(async () => {});
+    const first = await service.session(libraryId, created.id, user, authorize);
+    const second = await service.session(libraryId, created.id, user, authorize);
+    const firstRenewed = { ...firstCookie, value: 'first-renewed' };
+    const secondRenewed = { ...secondCookie, value: 'second-renewed' };
+    await Promise.all([first.saveCookies([firstRenewed, secondCookie]), second.saveCookies([firstCookie, secondRenewed])]);
+    const saved = await service.document(libraryId, created.id, user);
+    expect(saved.document.cookies).toEqual([firstRenewed, secondRenewed]);
+    expect(saved.row.version).toBe(3);
+    expect(saved.row.credentialGeneration).toBe(1);
+    expect(JSON.stringify(saved.row.document)).not.toContain('renewed');
+    expect(authorize).toHaveBeenCalledTimes(2);
+    await first.saveCookies([]);
+    expect((await service.document(libraryId, created.id, user)).document.cookies).toEqual([secondRenewed]);
+  });
+
+  it('does not resurrect cleared or replaced credentials and rechecks access before saving cookies', async () => {
+    const cookie = { name: 'session', value: 'old', domain: 'example.org', path: '/', secure: true };
+    const created = await service.create(libraryId, { name: 'Revoked session', cookies: [cookie] }, user);
+    const session = await service.session(libraryId, created.id, user, async () => {});
+    await service.update(libraryId, created.id, { name: created.name, version: created.version, cookies: [] }, user);
+    await expect(session.saveCookies([{ ...cookie, value: 'renewed' }])).rejects.toThrow('credentials changed');
+    const current = await service.document(libraryId, created.id, user);
+    expect(current.document.cookies).toEqual([]);
+    const denied = await service.session(libraryId, created.id, user, () => Promise.reject(new ForbiddenException('Lease was revoked')));
+    await expect(denied.saveCookies([cookie])).rejects.toThrow('revoked');
+    const accessLost = await service.session(libraryId, created.id, user, async () => {});
+    access.administer.mockRejectedValueOnce(new ForbiddenException('Library access revoked'));
+    await expect(accessLost.saveCookies([cookie])).rejects.toThrow('access revoked');
+    expect((await service.document(libraryId, created.id, user)).row.version).toBe(current.row.version);
+  });
+
   it('deduplicates preview requests and enforces global and site concurrency in database claims', async () => {
     const request = { url: 'https://example.org/story/1', idempotencyKey: randomUUID() };
     const first = await jobs.preview(libraryId, request, user);

@@ -9,6 +9,8 @@ import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionSourceService } from './fanfiction-source.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 
+import type { FanfictionCookieSink } from './fanfiction-cookies';
+
 type Job = typeof schema.fanfictionJobs.$inferSelect;
 
 @Injectable()
@@ -28,9 +30,10 @@ export class FanfictionImportService {
     document: FanfictionProfileDocument,
     authorize: () => Promise<unknown>,
     signal: AbortSignal,
+    saveCookies?: FanfictionCookieSink,
   ): Promise<FanfictionJob['result']> {
     const resumed = await this.sources.resume(job, user);
-    const { source, owned } = resumed ?? (await this.sources.reserve(job, await this.runtime.preview(job.url, document, signal), user));
+    const { source, owned } = resumed ?? (await this.sources.reserve(job, await this.runtime.preview(job.url, document, signal, saveCookies), user));
     if (!owned)
       return { sourceId: source.id, ...(source.bookId && source.bookFileId ? { bookId: source.bookId, bookFileId: source.bookFileId } : {}) };
     const input = {
@@ -58,13 +61,13 @@ export class FanfictionImportService {
     if (await this.dock.isPrepared(input, authorizeImport)) return install('');
     const effective =
       source.profileId === job.profileId
-        ? document
+        ? { document, saveCookies }
         : source.profileId
-          ? (await this.profiles.document(job.libraryId, source.profileId, user)).document
-          : { configuration: '', cookies: [] };
+          ? await this.profiles.session(job.libraryId, source.profileId, user, authorize)
+          : { document: { configuration: '', cookies: [] }, saveCookies: undefined };
     return this.runtime.download(
       source.canonicalUrl,
-      effective,
+      effective.document,
       async (path, downloaded) => {
         if (this.sources.canonicalUrl(downloaded.canonicalUrl) !== source.canonicalUrl || downloaded.chapterCount < source.chapterCount) {
           throw new BadRequestException({ message: 'The story identity or chapter count changed before import', errorCode: 'review_required' });
@@ -72,6 +75,7 @@ export class FanfictionImportService {
         return install(path);
       },
       signal,
+      effective.saveCookies,
     );
   }
 }

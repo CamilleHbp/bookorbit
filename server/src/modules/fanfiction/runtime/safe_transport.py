@@ -2,6 +2,7 @@ import contextvars
 import http.client
 import http.cookiejar
 import ipaddress
+import re
 import socket
 import ssl
 import sys
@@ -89,7 +90,8 @@ class SafeTransport:
         self.remaining_decoded_bytes = max_bytes
         self.remaining_requests = max_requests
         self.deadline = time.monotonic() + timeout
-        self.cookies = http.cookiejar.CookieJar()
+        self.cookies = http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(
+            strict_ns_domain=http.cookiejar.DefaultCookiePolicy.DomainStrictNonDomain))
         self.context = ssl.create_default_context()
 
     def load_cookies(self, cookies):
@@ -99,18 +101,33 @@ class SafeTransport:
             if not isinstance(item, dict):
                 raise PolicyError('Invalid profile cookie')
             name, value, domain, path = (item.get(key) for key in ('name', 'value', 'domain', 'path'))
-            if not all(isinstance(part, str) for part in (name, value, domain, path)) or not name or len(name) > 256 or len(value) > 4096 or len(path) > 4096 or not path.startswith('/') or any(c in name + value + path for c in '\r\n\x00'):
+            if not all(isinstance(part, str) for part in (name, value, domain, path)) or not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]{1,256}", name) or len(value) > 4096 or not re.fullmatch(r'[\x20-\x7e]*', value) or len(domain) > 255 or len(path) > 4096 or not path.startswith('/') or re.search(r'[\x00-\x1f\x7f]', path):
                 raise PolicyError('Invalid profile cookie')
             validate_url('https://' + domain.lstrip('.'))
             expires = item.get('expires')
-            if expires is not None and (not isinstance(expires, int) or expires < 0):
+            if expires is not None and (type(expires) is not int or not 0 <= expires <= 9007199254740991):
                 raise PolicyError('Invalid cookie expiry')
+            if 'hostOnly' in item and not isinstance(item['hostOnly'], bool):
+                raise PolicyError('Invalid cookie domain scope')
             self.cookies.set_cookie(http.cookiejar.Cookie(
                 version=0, name=name, value=value, port=None, port_specified=False,
-                domain=domain, domain_specified=True, domain_initial_dot=domain.startswith('.'),
+                domain=domain, domain_specified=not item.get('hostOnly', not domain.startswith('.')), domain_initial_dot=domain.startswith('.'),
                 path=path, path_specified=True, secure=True, expires=expires,
                 discard=expires is None, comment=None, comment_url=None, rest={}, rfc2109=False,
             ))
+
+    def export_cookies(self):
+        self.cookies.clear_expired_cookies()
+        result = []
+        for cookie in self.cookies:
+            item = {'name': cookie.name, 'value': cookie.value, 'domain': cookie.domain,
+                    'path': cookie.path, 'secure': True, 'hostOnly': not cookie.domain_specified}
+            if cookie.expires is not None:
+                item['expires'] = cookie.expires
+            result.append(item)
+        # Reuse the input bounds before returning data to encrypted profile storage.
+        SafeTransport().load_cookies(result)
+        return result
 
     def request(self, method, url, parameters=None, headers=None):
         if method not in ('GET', 'POST'):

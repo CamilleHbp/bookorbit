@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import zlib
 import socket
 import unittest
+import urllib.request
 from unittest.mock import patch
 
 from safe_transport import PolicyError, SafeTransport, public_addresses, validate_url
@@ -122,6 +123,39 @@ class HttpResponseTest(unittest.TestCase):
     def test_authentication_status_reaches_the_pinned_adapter(self):
         for status in [401, 403]:
             self.assertEqual(self.request(FakeResponse(gzip.compress(b'Denied'), 'gzip', status=status))[:2], (status, b'Denied'))
+
+    def test_renews_and_deletes_cookies_without_widening_host_scope(self):
+        transport = SafeTransport()
+        self.request(FakeResponse(b'', headers={'Set-Cookie': 'session=renewed; Path=/; Secure'}), transport)
+        saved = transport.export_cookies()
+        self.assertEqual(saved, [{'name': 'session', 'value': 'renewed', 'domain': 'example.org', 'path': '/', 'secure': True, 'hostOnly': True}])
+        restored = SafeTransport()
+        restored.load_cookies(saved)
+        for host, expected in [('example.org', 'session=renewed'), ('sub.example.org', None), ('unrelated.org', None)]:
+            request = urllib.request.Request('https://' + host + '/')
+            restored.cookies.add_cookie_header(request)
+            self.assertEqual(request.get_header('Cookie'), expected)
+        self.request(FakeResponse(b'', headers={'Set-Cookie': 'session=; Path=/; Max-Age=0'}), restored)
+        self.assertEqual(restored.export_cookies(), [])
+
+    def test_domain_cookie_scope_survives_export_and_unrelated_cookies_are_rejected(self):
+        transport = SafeTransport()
+        self.request(FakeResponse(b'', headers={'Set-Cookie': 'session=renewed; Domain=example.org; Path=/'}), transport)
+        self.request(FakeResponse(b'', headers={'Set-Cookie': 'other=secret; Domain=unrelated.org; Path=/'}), transport)
+        saved = transport.export_cookies()
+        self.assertEqual(len(saved), 1)
+        self.assertFalse(saved[0]['hostOnly'])
+        restored = SafeTransport()
+        restored.load_cookies(saved)
+        request = urllib.request.Request('https://sub.example.org/')
+        restored.cookies.add_cookie_header(request)
+        self.assertEqual(request.get_header('Cookie'), 'session=renewed')
+
+    def test_response_cookies_cannot_exceed_persistent_value_limits(self):
+        transport = SafeTransport()
+        self.request(FakeResponse(b'', headers={'Set-Cookie': 'session=' + 'x' * 4097 + '; Path=/'}), transport)
+        with self.assertRaises(PolicyError):
+            transport.export_cookies()
 
 
 if __name__ == '__main__':

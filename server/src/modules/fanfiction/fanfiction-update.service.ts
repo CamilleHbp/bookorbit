@@ -12,6 +12,8 @@ import type { RevisionPublicationAuthority } from '../book-revision/revision-pub
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionSourceService } from './fanfiction-source.service';
 
+import type { FanfictionCookieSink } from './fanfiction-cookies';
+
 type Job = typeof schema.fanfictionJobs.$inferSelect;
 
 @Injectable()
@@ -26,7 +28,13 @@ export class FanfictionUpdateService {
     private readonly manifests: EpubManifestService,
   ) {}
 
-  async run(job: Job, document: FanfictionProfileDocument, authorize: () => Promise<unknown>, signal: AbortSignal): Promise<FanfictionJob['result']> {
+  async run(
+    job: Job,
+    document: FanfictionProfileDocument,
+    authorize: () => Promise<unknown>,
+    signal: AbortSignal,
+    saveCookies?: FanfictionCookieSink,
+  ): Promise<FanfictionJob['result']> {
     if (job.result?.revisionId) return job.result;
     const source = await this.sources.updateContext(job);
     const fileId = source.bookFileId!;
@@ -83,6 +91,7 @@ export class FanfictionUpdateService {
         return finish(installed.revisionId, false, preview);
       },
       signal,
+      saveCookies,
     );
   }
 }

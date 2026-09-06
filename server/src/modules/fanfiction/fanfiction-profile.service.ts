@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +10,13 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionVaultService } from './fanfiction-vault.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { CreateFanfictionProfileDto, ListFanfictionProfilesDto, UpdateFanfictionProfileDto } from './dto/fanfiction-profile.dto';
-import { mergeFanfictionCookies, redactFanfictionCookies } from './fanfiction-cookies';
+import {
+  mergeFanfictionCookies,
+  mergeRenewedCookies,
+  redactFanfictionCookies,
+  validateRuntimeCookies,
+  type FanfictionCookieSink,
+} from './fanfiction-cookies';
 
 const profiles = schema.fanfictionProfiles;
 const summaryFields = {
@@ -23,6 +29,7 @@ const summaryFields = {
 
 @Injectable()
 export class FanfictionProfileService {
+  private readonly logger = new Logger(FanfictionProfileService.name);
   constructor(
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly access: FanfictionAccessService,
@@ -77,7 +84,7 @@ export class FanfictionProfileService {
     await this.access.administer(user, libraryId);
     const [row] = await this.db
       .update(profiles)
-      .set({ name: dto.name, document, version: dto.version + 1, updatedAt: new Date() })
+      .set({ name: dto.name, document, version: dto.version + 1, credentialGeneration: old.row.credentialGeneration + 1, updatedAt: new Date() })
       .where(and(eq(profiles.id, id), eq(profiles.libraryId, libraryId), eq(profiles.version, dto.version)))
       .returning(summaryFields);
     if (!row) throw new ConflictException('Profile changed; reload before saving');
@@ -94,6 +101,50 @@ export class FanfictionProfileService {
     if (!row) throw new NotFoundException('Fanfiction profile not found in this library');
     const document = JSON.parse(await this.vault.decrypt(libraryId, id, row.document)) as FanfictionProfileDocument;
     return { row, document };
+  }
+
+  async session(libraryId: number, id: string, user: RequestUser, authorize: () => Promise<unknown>) {
+    const snapshot = await this.document(libraryId, id, user);
+    const document = structuredClone(snapshot.document);
+    const saveCookies: FanfictionCookieSink = async (incoming) => {
+      const cookies = validateRuntimeCookies(incoming);
+      const startedAt = Date.now();
+      this.logger.log(`[fanfiction.cookies] [start] profileId=${id} libraryId=${libraryId} userId=${user.id} - retaining renewed login cookies`);
+      try {
+        const merged = await this.db.transaction(async (tx) => {
+          const [row] = await tx
+            .select()
+            .from(profiles)
+            .where(and(eq(profiles.id, id), eq(profiles.libraryId, libraryId)))
+            .for('update');
+          if (!row) throw new NotFoundException('Fanfiction profile not found in this library');
+          await authorize();
+          await this.access.administer(user, libraryId);
+          if (row.credentialGeneration !== snapshot.row.credentialGeneration)
+            throw new ConflictException({ message: 'Profile credentials changed during the operation', errorCode: 'configuration_blocked' });
+          const current = JSON.parse(await this.vault.decrypt(libraryId, id, row.document)) as FanfictionProfileDocument;
+          const merged = mergeRenewedCookies(document.cookies, current.cookies, cookies);
+          if (JSON.stringify(merged) !== JSON.stringify(current.cookies)) {
+            const encrypted = await this.vault.encrypt(libraryId, id, this.serialize({ ...current, cookies: merged }), false);
+            await tx
+              .update(profiles)
+              .set({ document: encrypted, version: row.version + 1, updatedAt: new Date() })
+              .where(eq(profiles.id, id));
+          }
+          return merged;
+        });
+        document.cookies = merged;
+        this.logger.log(
+          `[fanfiction.cookies] [end] profileId=${id} libraryId=${libraryId} durationMs=${Date.now() - startedAt} - login cookies retained`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `[fanfiction.cookies] [fail] profileId=${id} libraryId=${libraryId} durationMs=${Date.now() - startedAt} errorClass=CookiePersistenceError error="encrypted session write rejected" - login cookies could not be retained`,
+        );
+        throw error;
+      }
+    };
+    return { document, saveCookies };
   }
 
   private serialize(document: FanfictionProfileDocument) {

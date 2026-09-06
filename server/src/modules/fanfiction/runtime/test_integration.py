@@ -7,11 +7,21 @@ from zipfile import ZipFile
 
 from controlled_config import merge_configuration, validate_ini
 from epub_policy import validate_epub
-from fanficfare_wrapper import run
+from fanficfare_wrapper import run, execute_request
 from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_returned_login_cookies_are_separate_from_the_public_preview(self):
+        from fanficfare.adapters.adapter_test1 import TestSiteAdapter
+        from safe_transport import SafeTransport
+        cookie = {'name': 'session', 'value': 'renewed-secret', 'domain': 'test1.com', 'path': '/', 'secure': True, 'hostOnly': True}
+        with patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'), patch.object(SafeTransport, 'export_cookies', return_value=[cookie]):
+            response = execute_request({'operation': 'preview', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\n'})
+        self.assertEqual(response['cookies'], [cookie])
+        self.assertNotIn('cookies', response['result'])
+        self.assertNotIn('renewed-secret', str(response['result']))
+
     def test_http_authentication_failures_are_configuration_blocked_instead_of_retried(self):
         from fanficfare.exceptions import HTTPErrorFFF
         from fanficfare_wrapper import failure_code

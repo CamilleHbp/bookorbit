@@ -61,7 +61,7 @@ def limits():
         resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
 
 
-def run(request):
+def run(request, save_cookies=None):
     actual = importlib.metadata.version('FanFicFare')
     if actual != VERSION:
         raise PolicyError('Pinned FanFicFare runtime version does not match')
@@ -83,6 +83,10 @@ def run(request):
     validate_url(url)
     transport = SafeTransport()
     transport.load_cookies(request.get('cookies', []))
+    def finish(result):
+        if save_cookies is not None:
+            save_cookies(transport.export_cookies())
+        return result
     configuration = make_configuration(url, ini, transport)
     adapter = adapters.getAdapter(configuration, url)
     story = adapter.getStoryMetadataOnly(get_cover=False)
@@ -99,7 +103,7 @@ def run(request):
         'tags': story.getSubjectTags(),
     }
     if operation == 'preview':
-        return preview
+        return finish(preview)
     if operation not in ('download', 'update', 'refresh'):
         raise PolicyError('Unsupported integration operation')
     if operation in ('update', 'refresh'):
@@ -108,9 +112,9 @@ def run(request):
         old = get_update_data('input.epub')
         previous_url, previous_count = old[:2]
         if adapters.getNormalStoryURL(previous_url) != adapters.getNormalStoryURL(canonical):
-            return {'reviewRequired': 'identity_mismatch', 'preview': preview}
+            return finish({'reviewRequired': 'identity_mismatch', 'preview': preview})
         if previous_count > chapter_count:
-            return {'reviewRequired': 'chapter_reduction', 'preview': preview}
+            return finish({'reviewRequired': 'chapter_reduction', 'preview': preview})
         if operation == 'update':
             (adapter.oldchapters, adapter.oldimgs, adapter.oldcover, adapter.calibrebookmark,
              adapter.logfile, adapter.oldchaptersmap, adapter.oldchaptersdata) = old[2:9]
@@ -119,7 +123,13 @@ def run(request):
         output.flush()
         os.fsync(output.fileno())
     validate_epub('output.epub')
-    return {'preview': preview, 'output': 'output.epub'}
+    return finish({'preview': preview, 'output': 'output.epub'})
+
+
+def execute_request(request):
+    cookies = []
+    result = run(request, cookies.extend)
+    return {'ok': True, 'result': result, 'cookies': cookies}
 
 
 def failure_code(error):
@@ -140,7 +150,7 @@ def main():
         request = json.loads(raw)
         if not isinstance(request, dict):
             raise PolicyError('Invalid integration request')
-        result = {'ok': True, 'result': run(request)}
+        result = execute_request(request)
     except Exception as error:
         name = type(error).__name__
         code = failure_code(error)

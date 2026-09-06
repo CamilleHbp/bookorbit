@@ -28,6 +28,7 @@ export const fanfictionProfiles = pgTable(
     name: varchar('name', { length: 120 }).notNull(),
     document: jsonb('document').$type<EncryptedFanfictionDocument>().notNull(),
     version: integer('version').notNull().default(1),
+    credentialGeneration: integer('credential_generation').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

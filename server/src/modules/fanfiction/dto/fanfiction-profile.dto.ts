@@ -21,8 +21,9 @@ export class FanfictionCookieDto {
   @IsString() @MinLength(1) @MaxLength(256) @Matches(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/) name!: string;
   @IsString() @MaxLength(4096) @Matches(/^[\x20-\x7e]*$/) value!: string;
   @IsString() @MinLength(1) @MaxLength(255) @Matches(/^\.?[a-zA-Z0-9.-]+$/) domain!: string;
-  @IsString() @MaxLength(4096) @Matches(/^\/[^\r\n]*$/) path!: string;
+  @IsString() @MaxLength(4096) @Matches(/^\/[^\p{Cc}]*$/u) path!: string;
   @IsBoolean() secure!: boolean;
+  @IsOptional() @IsBoolean() hostOnly?: boolean;
   @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) expires?: number;
 }
 
