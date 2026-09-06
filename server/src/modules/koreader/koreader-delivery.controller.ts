@@ -60,6 +60,10 @@ export class KoreaderPluginDeliveryController {
   list(@Query() dto: ListKoreaderDeliveriesDto, @CurrentUser() user: RequestUser) {
     return this.deliveries.list(dto, user);
   }
+  @Get(':id')
+  get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+    return this.deliveries.get(id, user);
+  }
   @Post(':id/claim')
   @HttpCode(200)
   claim(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ClaimKoreaderDeliveryDto, @CurrentUser() user: RequestUser) {

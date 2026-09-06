@@ -1,5 +1,36 @@
 local Inventory = {}
 
+function Inventory.installed(client, job, identity)
+    local store = require("bookorbit_anchor_store")
+    local backup, err = store.load(job.pathname)
+    if not backup or backup.record.copyId ~= job.copyId or backup.record.anchor.bookFileId ~= job.bookFileId then
+        return nil, err or "copy_changed"
+    end
+    local sequence = require("bookorbit_state_manager").reserveInventorySequence()
+    if not sequence then return nil, "inventory_persistence" end
+    local capabilities = require("bookorbit_revision_capabilities")
+    local response
+    response, err = client:request("POST", "/koreader/plugin/copies", {
+        protocolVersion = 1, deviceId = client.device_id, sequence = sequence, pluginVersion = client.plugin_version or "unknown",
+        deliveryCapabilityVersion = capabilities.delivery, positionCapabilityVersion = capabilities.position,
+        copies = { { copyId = job.copyId, bookFileId = job.bookFileId, pathname = job.pathname,
+            sha256 = identity.sha256, sizeBytes = identity.sizeBytes, revisionId = job.revisionId } },
+    })
+    if not response then return nil, err end
+    local accepted = type(response.copies) == "table" and #response.copies == 1 and response.copies[1]
+    if not accepted or accepted.copyId ~= job.copyId or accepted.id ~= job.installedCopyId
+        or (accepted.status ~= "accepted" and accepted.status ~= "unchanged") or accepted.revisionId ~= job.revisionId then
+        if type(response.nextSequence) == "number" then require("bookorbit_state_manager").reserveInventorySequence(response.nextSequence) end
+        return nil, "inventory_not_accepted"
+    end
+    local latest = store.load(job.pathname)
+    if not latest or latest.record.persistenceSequence ~= backup.record.persistenceSequence then return nil, "reading_changed" end
+    backup.record.inventory = { id = accepted.id, sha256 = identity.sha256, revisionId = accepted.revisionId,
+        policy = accepted.policy, policyVersion = accepted.effectivePolicyVersion, reportedAt = os.time() }
+    backup.record.persistenceSequence = backup.record.persistenceSequence + 1
+    return store.save(backup.record, backup.sidecarPath)
+end
+
 local function same_file(expected, current)
     return expected and current and expected.mode == "file" and current.mode == "file"
         and expected.dev == current.dev and expected.ino == current.ino and expected.size == current.size
@@ -26,10 +57,11 @@ function Inventory.run(plugin)
         copy.revisionId = record.inventory.revisionId
     end
     local client = plugin:newClient()
+    local capabilities = require("bookorbit_revision_capabilities")
     local result, err = client:request("POST", "/koreader/plugin/copies", {
         protocolVersion = 1, deviceId = plugin.device_id, sequence = sequence,
         pluginVersion = client.plugin_version or "unknown",
-        deliveryCapabilityVersion = 0, positionCapabilityVersion = 0, copies = { copy },
+        deliveryCapabilityVersion = capabilities.delivery, positionCapabilityVersion = capabilities.position, copies = { copy },
     })
     if not result or type(result.copies) ~= "table" or #result.copies ~= 1 then return false, err end
     if type(result.nextSequence) == "number" and result.nextSequence > sequence + 1 then

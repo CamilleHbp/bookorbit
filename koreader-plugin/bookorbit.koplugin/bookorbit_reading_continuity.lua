@@ -30,17 +30,21 @@ end
 function Continuity.begin(plugin)
     local ui = plugin.ui
     if not ui or not ui.document or not ui.document.getXPointer then return end
+    if G_reader_settings and G_reader_settings:readSetting("document_metadata_folder") == "hash" then
+        require("bookorbit_install_sidecars").reassociate(ui)
+    end
     local record = ui.doc_settings:readSetting(KEY)
     local loaded, backup = pcall(AnchorStore.load, ui.document.file)
     if loaded and backup and (type(record) ~= "table" or type(record.persistenceSequence) ~= "number"
         or backup.record.persistenceSequence > record.persistenceSequence) then
         record = backup.record
-        if backup.sidecarPath and not ui.doc_settings:readSetting("bookorbit_revision_annotations_v1") then
+        if backup.sidecarPath then
             local opened, old = pcall(require("docsettings").openSettingsFile, backup.sidecarPath)
-            if opened and old then
+            local old_record = opened and old and old:readSetting(KEY)
+            if type(old_record) == "table" and old_record.path == ui.document.file and old_record.copyId == backup.record.copyId then
                 for _, key in ipairs({ "bookorbit_revision_annotations_v1", "annotations", "annotations_rolling" }) do
                     local value = old:readSetting(key)
-                    if value ~= nil then ui.doc_settings:saveSetting(key, value) end
+                    if value ~= nil then ui.doc_settings:saveSetting(key, value) else ui.doc_settings:delSetting(key) end
                 end
             end
         end
@@ -54,7 +58,9 @@ function Continuity.begin(plugin)
         end
     end
     plugin.reading_continuity = { record = type(record) == "table" and type(record.anchor) == "table" and record or nil, restoring = true }
-    plugin.reading_continuity.annotations = Annotations.begin(ui, record)
+    local journal_ok, journal, journal_error = pcall(function() return require("bookorbit_install_journal").load(ui.document.file) end)
+    local installation_pending = not journal_ok or journal_error ~= nil or journal and journal.phase ~= "state_committed"
+    plugin.reading_continuity.annotations = Annotations.begin(ui, record, { defer_flush = installation_pending })
     ui.doc_settings:delSetting("partial_md5_checksum")
     if record then
         local root = require("datastorage"):getDataDir() .. "/cache/cr3cache/"
@@ -106,6 +112,21 @@ function Continuity.ready(plugin, on_done)
             return
         end
         state.sha256, state.signature = result.sha256, result.signature
+        local recovered_ok, recovered, recovery_error = pcall(function()
+            return require("bookorbit_install_journal").recover(path, { verified_identity = result })
+        end)
+        if not recovered_ok or recovery_error then
+            state.failure, state.restoring = "installation_recovery", false
+            logger.warn("BookOrbit: installation recovery must finish before reading synchronization")
+            resumeStatistics(plugin, state)
+            on_done()
+            return
+        end
+        if recovered and recovered.phase == "state_committed" then
+            require("bookorbit_install_sidecars").reassociate(plugin.ui)
+            if plugin.ui.annotation then plugin.ui.annotation.annotations = plugin.ui.doc_settings:readSetting("annotations") or {} end
+            state.annotations = Annotations.begin(plugin.ui, state.record)
+        end
         local revision = "sha256:" .. state.sha256
         local record = state.record
         if record then

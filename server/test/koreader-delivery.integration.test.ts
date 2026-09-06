@@ -203,6 +203,16 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
     expect(downloading.installationState).toBe('downloading');
     expect((await execution.progress(lease.job.id, progress(lease), users[0])).version).toBe(downloading.version);
     const permit = await execution.authorizePublication(lease.job.id, identity(lease), users[0]);
+    expect(permit.validForMs).toBeGreaterThan(0);
+    expect(permit.validForMs).toBeLessThanOrEqual(30_000);
+    await db
+      .update(schema.koreaderDeliveryJobs)
+      .set({ publicationExpiresAt: new Date(Date.now() + 5_000) })
+      .where(eq(schema.koreaderDeliveryJobs.id, lease.job.id));
+    const reusedPermit = await execution.authorizePublication(lease.job.id, identity(lease), users[0]);
+    expect(reusedPermit.token).toBe(permit.token);
+    expect(reusedPermit.validForMs).toBeGreaterThan(0);
+    expect(reusedPermit.validForMs).toBeLessThanOrEqual(5_000);
     await expect(
       execution.progress(lease.job.id, progress(lease, { sequence: 2, state: 'installed', publicationToken: permit.token }), users[0]),
     ).rejects.toThrow('authorized revision');
@@ -301,6 +311,11 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
         for await (const chunk of blocked.stream) void chunk;
       })(),
     ).rejects.toThrow('permission');
+    const [persisted] = await db
+      .select({ failureCode: schema.koreaderDeliveryJobs.failureCode })
+      .from(schema.koreaderDeliveryJobs)
+      .where(eq(schema.koreaderDeliveryJobs.id, lease.job.id));
+    expect(persisted.failureCode).toBe('access_revoked');
   });
   it('requires acknowledged opt-in before automatic delivery and refuses unrecognized installed bytes', async () => {
     const dto = { idempotencyKey: randomUUID(), expectedRevisionId: revision.id };

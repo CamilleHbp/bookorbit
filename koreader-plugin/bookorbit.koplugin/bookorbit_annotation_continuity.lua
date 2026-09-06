@@ -20,7 +20,7 @@ function Annotations.capture(ui, sha256)
     ui.doc_settings:saveSetting(KEY, state)
 end
 
-function Annotations.begin(ui, revision_record)
+function Annotations.begin(ui, revision_record, options)
     if not revision_record then return end
     local state = ui.doc_settings:readSetting(KEY) or {}
     if type(state) ~= "table" then state = {} end
@@ -32,7 +32,7 @@ function Annotations.begin(ui, revision_record)
     ui.doc_settings:saveSetting(KEY, state)
     ui.doc_settings:saveSetting("annotations", {})
     ui.doc_settings:delSetting("annotations_rolling")
-    ui.doc_settings:flush()
+    if not options or not options.defer_flush then ui.doc_settings:flush() end
     return state
 end
 

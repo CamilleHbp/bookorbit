@@ -166,6 +166,7 @@ export interface KoreaderDeliveryProgress extends KoreaderDeliveryLeaseIdentity 
 export interface KoreaderPublicationPermit {
   token: string;
   expiresAt: string;
+  validForMs: number;
   revisionId: string;
   sha256: string;
   sizeBytes: number;

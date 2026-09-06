@@ -195,6 +195,7 @@ function BookOrbit:init()
     self:onStart()
     UIManager:scheduleIn(5, function()
         self:requestLifecycleOutboxDrain("startup")
+        require("bookorbit_delivery").request(self, "startup")
         self:requestUpdateCheck(false, "startup")
     end)
 end
@@ -456,6 +457,7 @@ function BookOrbit:requestLifecycleOutboxDrain(source, interactive)
                         done()
                         if complete and not err then
                             self:requestLifecycleOutboxDrain("recovery")
+                            require("bookorbit_delivery").request(self, "uploads_complete")
                         end
                     end
 
@@ -1206,6 +1208,7 @@ function BookOrbit:_onCloseDocument()
     if not snap then return end
     if not self:enqueueLifecycleSnapshot(snap, "close") then return end
     self:requestLifecycleOutboxDrain("close")
+    require("bookorbit_delivery").request(self, "close")
 end
 
 function BookOrbit:_onPageUpdate(page)
@@ -1255,6 +1258,7 @@ function BookOrbit:_onNetworkConnected()
     UIManager:scheduleIn(0.5, function()
         if self:shouldSkipAutoSyncOffline("network_connected") then return end
         self:requestLifecycleOutboxDrain("network_connected")
+        require("bookorbit_delivery").request(self, "network_connected")
         self:requestProgressPull(false, false, "network_connected")
         self:requestUpdateCheck(false, "network_connected")
     end)

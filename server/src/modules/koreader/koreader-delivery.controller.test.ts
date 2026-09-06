@@ -93,6 +93,8 @@ describe('KOReader delivery HTTP contract', () => {
     expect(list.statusCode).toBe(200);
     expect(list.json()).toEqual({ items: [], nextCursor: null });
     expect(service.list).toHaveBeenCalledWith({ limit: 25, deviceId: 'reader', activeOnly: 'true', installedCopyId: id }, user);
+    expect((await app.inject({ method: 'GET', url: `/api/v1/koreader/plugin/deliveries/${id}` })).statusCode).toBe(200);
+    expect(service.get).toHaveBeenCalledWith(id, user);
     for (const [action, payload, method] of [
       ['claim', { deviceId: 'reader', claimId: id }, 'claim'],
       ['progress', progress, 'progress'],

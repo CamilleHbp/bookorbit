@@ -276,6 +276,10 @@ end
 local stepMatch, stepStats, stepAnnotations, stepAnnotationsLegacy, stepBookmarks, stepState, stepProgress
 
 stepMatch = function(ctx)
+    local expected = ctx.snap.expected_book_file_id
+    local existing = ctx.state:getBook(ctx.snap.digest)
+    if expected and existing and existing.fileId ~= expected then return finish(ctx, "unmatched") end
+    if expected and not existing then ctx.acknowledged.match = false end
     if ctx.acknowledged.match then
         return step(ctx, stepStats)
     end
@@ -311,6 +315,7 @@ stepMatch = function(ctx)
 
     for _, match in ipairs(body.matches or {}) do
         if match.hash == ctx.snap.digest then
+            if expected and match.bookFileId ~= expected then return finish(ctx, "unmatched") end
             ctx.state:setMatched(match.hash, match.bookFileId, match.bookId, ctx.snap.file)
             if not acknowledge(ctx, "match") then return end
             return step(ctx, stepStats)

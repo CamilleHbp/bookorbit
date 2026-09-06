@@ -76,27 +76,30 @@ export class KoreaderDeliveryExecutionService {
       );
       return result;
     } catch (error) {
-      const failureCode =
-        error instanceof DeliveryBlockedException ? error.failureCode : error instanceof ForbiddenException ? 'access_revoked' : null;
-      if (failureCode)
-        await this.db
-          .update(jobs)
-          .set({ failureCode, version: sql`${jobs.version} + 1`, updatedAt: sql`now()` })
-          .where(
-            and(
-              eq(jobs.id, id),
-              eq(jobs.userId, user.id),
-              fence === undefined ? undefined : eq(jobs.fence, fence),
-              isNull(jobs.failureCode),
-              isNull(jobs.cancelledAt),
-              ne(jobs.installationState, 'installed'),
-            ),
-          );
+      await this.recordBlockedFailure(id, user.id, error, fence);
       this.logger.warn(
         `[koreader.delivery_${phase}] [fail] jobId=${id} userId=${user.id} durationMs=${Date.now() - started} errorClass=${error instanceof Error ? error.name : 'Unknown'} error="${sanitizeLogValue(error instanceof Error ? error.message : 'Delivery failed')}" - device delivery operation failed`,
       );
       throw error;
     }
+  }
+
+  private async recordBlockedFailure(id: string, userId: number, error: unknown, fence?: number) {
+    const failureCode = error instanceof DeliveryBlockedException ? error.failureCode : error instanceof ForbiddenException ? 'access_revoked' : null;
+    if (!failureCode) return;
+    await this.db
+      .update(jobs)
+      .set({ failureCode, version: sql`${jobs.version} + 1`, updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(jobs.id, id),
+          eq(jobs.userId, userId),
+          fence === undefined ? undefined : eq(jobs.fence, fence),
+          isNull(jobs.failureCode),
+          isNull(jobs.cancelledAt),
+          ne(jobs.installationState, 'installed'),
+        ),
+      );
   }
 
   claim(id: string, dto: ClaimKoreaderDeliveryDto, user: RequestUser) {
@@ -242,6 +245,7 @@ export class KoreaderDeliveryExecutionService {
         return {
           token: job.publicationToken,
           expiresAt: job.publicationExpiresAt.toISOString(),
+          validForMs: Math.max(0, job.publicationExpiresAt.getTime() - Date.now()),
           revisionId: job.revisionId,
           sha256: job.sha256,
           sizeBytes: job.sizeBytes,
@@ -259,6 +263,7 @@ export class KoreaderDeliveryExecutionService {
       return {
         token: authorized.publicationToken!,
         expiresAt: authorized.publicationExpiresAt!.toISOString(),
+        validForMs: Math.max(0, authorized.publicationExpiresAt!.getTime() - Date.now()),
         revisionId: authorized.revisionId,
         sha256: authorized.sha256,
         sizeBytes: authorized.sizeBytes,
@@ -272,10 +277,15 @@ export class KoreaderDeliveryExecutionService {
     this.requireLease(context.job, dto);
     if (context.job.installationState !== 'downloading') throw new ConflictException('Reading uploads must finish before downloading');
     return this.downloads.download(context.copy.bookFileId, context.job.libraryId, context.job.revisionId, async () => {
-      if (cancelled()) throw new ServiceUnavailableException('Device download was cancelled');
-      const current = await this.context(id, dto.deviceId, user);
-      this.requireTarget(current);
-      this.requireLease(current.job, dto);
+      try {
+        if (cancelled()) throw new ServiceUnavailableException('Device download was cancelled');
+        const current = await this.context(id, dto.deviceId, user);
+        this.requireTarget(current);
+        this.requireLease(current.job, dto);
+      } catch (error) {
+        await this.recordBlockedFailure(id, user.id, error, dto.fence);
+        throw error;
+      }
     });
   }
 
