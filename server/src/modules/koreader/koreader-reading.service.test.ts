@@ -5,11 +5,13 @@ import type { RequestUser } from '../../common/types/request-user';
 import { BookService } from '../book/book.service';
 import { CanonicalReadingService } from '../book-revision/canonical-reading.service';
 import { KoreaderReadingService } from './koreader-reading.service';
+import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
 import { RecordReadingEventDto, AcknowledgeReadingPositionDto } from '../book-revision/dto/reading-event.dto';
 
 const user = { id: 7, isSuperuser: false } as RequestUser;
 const libraries = { verifyFileAccess: vi.fn() };
 const reading = { state: vi.fn(), record: vi.fn(), acknowledge: vi.fn() };
+const deliveries = { acknowledgeRestoration: vi.fn() };
 const uuid = '95f66679-bff3-4f7e-a8c6-1d4cf246700a';
 const anchor = {
   schemaVersion: 1 as const,
@@ -36,7 +38,12 @@ beforeEach(async () => {
   vi.resetAllMocks();
   libraries.verifyFileAccess.mockResolvedValue({ bookId: 2, libraryId: 5, currentRevisionId: uuid, sha256: null });
   const module = await Test.createTestingModule({
-    providers: [KoreaderReadingService, { provide: BookService, useValue: libraries }, { provide: CanonicalReadingService, useValue: reading }],
+    providers: [
+      KoreaderReadingService,
+      { provide: BookService, useValue: libraries },
+      { provide: CanonicalReadingService, useValue: reading },
+      { provide: KoreaderDeliveryExecutionService, useValue: deliveries },
+    ],
   }).compile();
   service = module.get(KoreaderReadingService);
 });
@@ -60,10 +67,16 @@ describe('KOReader reading event boundaries', () => {
     await expect(service.acknowledge(9, acknowledgement, user)).resolves.toEqual(state);
     expect(reading.record).toHaveBeenCalledWith(7, 9, 5, anchor);
     expect(reading.acknowledge).toHaveBeenCalledWith(7, 9, 5, 'reader', uuid, acknowledgement.acknowledgement);
+    expect(deliveries.acknowledgeRestoration).toHaveBeenCalledWith(7, 9, 'reader', uuid, acknowledgement.acknowledgement);
     expect(libraries.verifyFileAccess).toHaveBeenCalledWith(9, user);
   });
 
   const pipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true });
+  it('does not verify delivery restoration when the canonical acknowledgement is rejected', async () => {
+    reading.acknowledge.mockRejectedValue(new ForbiddenException());
+    await expect(service.acknowledge(9, acknowledgement, user)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(deliveries.acknowledgeRestoration).not.toHaveBeenCalled();
+  });
   it('accepts the versioned request bodies through the actual validation pipe', async () => {
     await expect(pipe.transform({ anchor }, { type: 'body', metatype: RecordReadingEventDto })).resolves.toEqual({ anchor });
     await expect(pipe.transform(acknowledgement, { type: 'body', metatype: AcknowledgeReadingPositionDto })).resolves.toEqual(acknowledgement);

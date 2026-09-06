@@ -11,6 +11,12 @@ import { KoreaderChapterService } from './koreader-chapter.service';
 import { KoreaderController } from './koreader.controller';
 import { KoreaderHashLinkService } from './koreader-hash-link.service';
 import { KoreaderModule } from './koreader.module';
+import { KoreaderDeliveryController, KoreaderPluginDeliveryController } from './koreader-delivery.controller';
+import { KoreaderCopiesController, KoreaderPluginCopiesController } from './koreader-copy.controller';
+import { KoreaderCopyService } from './koreader-copy.service';
+import { KoreaderDeliveryService } from './koreader-delivery.service';
+import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
+import { KoreaderDeliveryAccessService } from './koreader-delivery-access.service';
 import { KoreaderReadingController } from './koreader-reading.controller';
 import { KoreaderReadingService } from './koreader-reading.service';
 import { KoreaderPackageService } from './koreader-package.service';
@@ -26,12 +32,20 @@ import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cle
 describe('KoreaderModule', () => {
   it('registers expected controllers, providers, and exports', () => {
     expect(Reflect.getMetadata('controllers', KoreaderModule)).toEqual([
+      KoreaderDeliveryController,
+      KoreaderPluginDeliveryController,
+      KoreaderCopiesController,
+      KoreaderPluginCopiesController,
       KoreaderController,
       KoreaderPluginController,
       KoreaderCatalogController,
       KoreaderReadingController,
     ]);
     expect(Reflect.getMetadata('providers', KoreaderModule)).toEqual([
+      KoreaderDeliveryService,
+      KoreaderDeliveryExecutionService,
+      KoreaderDeliveryAccessService,
+      KoreaderCopyService,
       KoreaderService,
       KoreaderReadingService,
       KoreaderHashLinkService,

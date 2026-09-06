@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { ref } from 'vue'
+import type { KoreaderInstalledCopy } from '@bookorbit/types'
+import KoreaderDeliveryPanel from './KoreaderDeliveryPanel.vue'
 import { Button } from '@/components/ui/button'
 import { formatDate as formatLocaleDate } from '@/i18n/formatters'
 import { useKoreaderCopies } from '../composables/useKoreaderCopies'
 
 const props = defineProps<{ bookFileId?: number }>()
 const { t } = useI18n()
+const expandedCopy = ref('')
+function selectCopy(copy: KoreaderInstalledCopy) {
+  expandedCopy.value = expandedCopy.value === copy.id ? '' : copy.id
+}
 const formatDate = (iso: string) => formatLocaleDate(new Date(iso))
 const {
   permitted,
@@ -133,6 +140,8 @@ const {
           t('koreaderCopies.save')
         }}</Button>
       </div>
+      <Button variant="outline" :aria-expanded="expandedCopy === copy.id" @click="selectCopy(copy)">{{ t('koreaderDelivery.manage') }}</Button>
+      <KoreaderDeliveryPanel v-if="expandedCopy === copy.id" :copy="copy" />
     </article>
     <Button v-if="copyCursor" variant="outline" :disabled="busy" @click="nextCopies">{{ t('koreaderCopies.nextCopies') }}</Button>
   </section>

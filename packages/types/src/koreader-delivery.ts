@@ -84,3 +84,89 @@ export interface KoreaderDeliveryDevicePage {
   items: KoreaderDeliveryDevice[];
   nextCursor: string | null;
 }
+
+export type KoreaderInstallationState = "requested" | "waiting_for_uploads" | "waiting_for_close" | "downloading" | "installed";
+export type KoreaderRestorationState = "verification_pending" | "verified" | "approximate" | "failed";
+export type KoreaderDeliveryFailure =
+  | "access_revoked"
+  | "revision_changed"
+  | "copy_changed"
+  | "upload_failed"
+  | "download_failed"
+  | "verification_failed"
+  | "publication_failed"
+  | "configuration_blocked";
+
+export interface KoreaderDeliveryJob {
+  id: string;
+  installedCopyId: string;
+  copyId: string;
+  deviceId: string;
+  bookFileId: number;
+  libraryId: number;
+  revisionId: string;
+  sha256: string;
+  sizeBytes: number;
+  expectedLocalSha256: string;
+  expectedLocalSizeBytes: number;
+  pathname: string;
+  mode: "manual" | "automatic";
+  installationState: KoreaderInstallationState;
+  restorationState: KoreaderRestorationState;
+  failureCode: KoreaderDeliveryFailure | null;
+  restorationFailureCode: string | null;
+  cancelledAt: string | null;
+  version: number;
+  attempt: number;
+  installedAt: string | null;
+  restoredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KoreaderDeliveryJobPage {
+  items: KoreaderDeliveryJob[];
+  nextCursor: string | null;
+}
+
+export interface RequestKoreaderDelivery {
+  idempotencyKey: string;
+  expectedRevisionId: string;
+}
+
+export interface KoreaderDeliveryLease {
+  job: KoreaderDeliveryJob;
+  token: string;
+  fence: number;
+  expiresAt: string;
+}
+
+export interface ClaimKoreaderDelivery {
+  deviceId: string;
+  claimId: string;
+}
+
+export interface KoreaderDeliveryLeaseIdentity {
+  deviceId: string;
+  token: string;
+  fence: number;
+}
+
+export interface KoreaderDeliveryProgress extends KoreaderDeliveryLeaseIdentity {
+  sequence: number;
+  state: Exclude<KoreaderInstallationState, "requested">;
+  localSha256: string;
+  localSizeBytes: number;
+  pathname: string;
+  readingUploadsComplete: boolean;
+  publicationToken?: string;
+  failureCode?: KoreaderDeliveryFailure;
+}
+
+export interface KoreaderPublicationPermit {
+  token: string;
+  expiresAt: string;
+  revisionId: string;
+  sha256: string;
+  sizeBytes: number;
+}

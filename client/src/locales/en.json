@@ -10300,5 +10300,38 @@
     "inherit": "Use device default",
     "nextCopies": "Next copies",
     "file": "EPUB file"
+  },
+  "koreaderDelivery": {
+    "title": "File delivery",
+    "manage": "Manage updates",
+    "request": "Install current server version",
+    "empty": "No deliveries have been requested for this copy.",
+    "installation": "File installation",
+    "restoration": "Reading position",
+    "requested": "Requested",
+    "waiting_for_uploads": "Waiting for reading data uploads",
+    "waiting_for_close": "Waiting for the book to close",
+    "downloading": "Downloading",
+    "installed": "Installed",
+    "verification_pending": "Awaiting verification on opening",
+    "verified": "Verified",
+    "approximate": "Restored approximately",
+    "failed": "Restoration failed",
+    "afterInstallation": "Checked after installation",
+    "cancelled": "Cancellation requested. Retry explicitly to allow another attempt for this version.",
+    "restorationFailed": "The reading position could not be verified.",
+    "retry": "Retry this version",
+    "cancel": "Cancel delivery",
+    "older": "Older deliveries",
+    "failures": {
+      "access_revoked": "Access or download permission was revoked.",
+      "revision_changed": "The server version changed. Request its current version.",
+      "copy_changed": "The installed copy changed. Refresh before retrying.",
+      "upload_failed": "Reading data could not finish uploading.",
+      "download_failed": "The file download failed.",
+      "verification_failed": "The downloaded file could not be verified.",
+      "publication_failed": "The file could not be safely installed.",
+      "configuration_blocked": "Device settings or plugin support need attention."
+    }
   }
 }

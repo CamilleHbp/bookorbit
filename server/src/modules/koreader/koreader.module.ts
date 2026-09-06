@@ -1,4 +1,8 @@
 import { KoreaderCopyService } from './koreader-copy.service';
+import { KoreaderDeliveryService } from './koreader-delivery.service';
+import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
+import { KoreaderDeliveryAccessService } from './koreader-delivery-access.service';
+import { KoreaderDeliveryController, KoreaderPluginDeliveryController } from './koreader-delivery.controller';
 import { KoreaderCopiesController, KoreaderPluginCopiesController } from './koreader-copy.controller';
 import { Module } from '@nestjs/common';
 import { BookRevisionModule } from '../book-revision/book-revision.module';
@@ -60,6 +64,8 @@ import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cle
     RecommendationModule,
   ],
   controllers: [
+    KoreaderDeliveryController,
+    KoreaderPluginDeliveryController,
     KoreaderCopiesController,
     KoreaderPluginCopiesController,
     KoreaderController,
@@ -68,6 +74,9 @@ import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cle
     KoreaderReadingController,
   ],
   providers: [
+    KoreaderDeliveryService,
+    KoreaderDeliveryExecutionService,
+    KoreaderDeliveryAccessService,
     KoreaderCopyService,
     KoreaderService,
     KoreaderReadingService,

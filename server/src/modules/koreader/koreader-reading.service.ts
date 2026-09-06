@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
 import type { DeviceCanonicalReadingState } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { BookService } from '../book/book.service';
@@ -10,6 +11,7 @@ export class KoreaderReadingService {
   constructor(
     private readonly books: BookService,
     private readonly reading: CanonicalReadingService,
+    private readonly deliveries: KoreaderDeliveryExecutionService,
   ) {}
 
   async state(fileId: number, user: RequestUser): Promise<DeviceCanonicalReadingState> {
@@ -25,6 +27,8 @@ export class KoreaderReadingService {
 
   async acknowledge(fileId: number, dto: AcknowledgeReadingPositionDto, user: RequestUser) {
     const file = await this.books.verifyFileAccess(fileId, user);
-    return this.reading.acknowledge(user.id, fileId, file.libraryId, dto.deviceId, dto.copyId, dto.acknowledgement);
+    const state = await this.reading.acknowledge(user.id, fileId, file.libraryId, dto.deviceId, dto.copyId, dto.acknowledgement);
+    await this.deliveries.acknowledgeRestoration(user.id, fileId, dto.deviceId, dto.copyId, dto.acknowledgement);
+    return state;
   }
 }

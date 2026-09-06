@@ -8,6 +8,7 @@ import { CanonicalReadingService } from '../book-revision/canonical-reading.serv
 import { KoreaderAuthGuard } from './koreader-auth.guard';
 import { KoreaderReadingController } from './koreader-reading.controller';
 import { KoreaderReadingService } from './koreader-reading.service';
+import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
 
 describe('KOReader reading HTTP contract', () => {
   let app: NestFastifyApplication;
@@ -32,7 +33,12 @@ describe('KOReader reading HTTP contract', () => {
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [KoreaderReadingController],
-      providers: [KoreaderReadingService, { provide: BookService, useValue: books }, { provide: CanonicalReadingService, useValue: reading }],
+      providers: [
+        KoreaderReadingService,
+        { provide: BookService, useValue: books },
+        { provide: CanonicalReadingService, useValue: reading },
+        { provide: KoreaderDeliveryExecutionService, useValue: { acknowledgeRestoration: vi.fn() } },
+      ],
     })
       .overrideGuard(KoreaderAuthGuard)
       .useValue({
