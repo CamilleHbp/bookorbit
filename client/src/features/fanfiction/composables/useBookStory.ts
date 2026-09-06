@@ -3,6 +3,7 @@ import type {
   BookFileRevisionPage,
   BookFileRevisionSummary,
   FanfictionJob,
+  FanfictionJobPage,
   FanfictionProfilePage,
   FanfictionSource,
   FanfictionSourcePage,
@@ -11,6 +12,15 @@ import { api } from '@/lib/api'
 
 export const BOOK_STORY_ADMIN_KEY: InjectionKey<Ref<boolean>> = Symbol('book-story-administration')
 
+class StoryRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+  }
+}
+
 export function useBookStory(
   bookId: MaybeRefOrGetter<number>,
   libraryId: MaybeRefOrGetter<number | undefined>,
@@ -18,6 +28,8 @@ export function useBookStory(
   onBookUpdated?: (bookId: number) => void | Promise<void>,
 ) {
   const allowed = ref(false)
+  const denied = ref(false)
+  const visible = computed(() => toValue(permitted) && toValue(libraryId) !== undefined && !denied.value)
   const loading = ref(false)
   const error = ref('')
   const sources = ref<FanfictionSource[]>([])
@@ -43,18 +55,34 @@ export function useBookStory(
   let generation = 0
   let timer: ReturnType<typeof setTimeout> | undefined
   let disposed = false
+  let failures = 0
+  let pollingBlocked = false
+  let polling: { generation: number; jobId: string } | null = null
+  const inFlight = new Set<AbortController>()
   const requests = new Map<string, string>()
   const valid = (id: number) => id === generation && !disposed
 
   async function request<T>(url: string, body?: unknown, method = 'POST'): Promise<T> {
-    const response = await api(
-      url,
-      body === undefined ? undefined : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
-    )
-    const result = await response.json().catch(() => ({}))
-    if (response.status === 403) allowed.value = false
-    if (!response.ok) throw new Error(typeof result.message === 'string' ? result.message : `HTTP ${response.status}`)
-    return result as T
+    const id = generation
+    const controller = new AbortController()
+    inFlight.add(controller)
+    const timeout = setTimeout(() => controller.abort(), 20_000)
+    try {
+      const response = await api(url, {
+        signal: controller.signal,
+        ...(body === undefined ? {} : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if ([401, 403].includes(response.status) && valid(id)) {
+        allowed.value = false
+        denied.value = true
+      }
+      if (!response.ok) throw new StoryRequestError(typeof result.message === 'string' ? result.message : `HTTP ${response.status}`, response.status)
+      return result as T
+    } finally {
+      clearTimeout(timeout)
+      inFlight.delete(controller)
+    }
   }
   async function perform(operation: (id: number) => Promise<void>) {
     const id = generation
@@ -71,6 +99,7 @@ export function useBookStory(
   async function loadSources(id: number, cursor?: string) {
     const page = await request<FanfictionSourcePage>(`${base.value}/sources?bookId=${toValue(bookId)}&limit=50${cursor ? `&cursor=${cursor}` : ''}`)
     if (!valid(id)) return
+    allowed.value = true
     sources.value = page.items
     sourceCursor.value = page.nextCursor
     if (!page.items.some((row) => row.id === sourceId.value)) sourceId.value = page.items[0]?.id ?? ''
@@ -95,10 +124,21 @@ export function useBookStory(
     profileCursor.value = page.nextCursor
   }
   async function refresh() {
+    if (!visible.value) return
+    failures = 0
+    pollingBlocked = false
     await perform(async (id) => {
       await loadSources(id)
-      if (valid(id)) await Promise.all([loadHistory(id), loadProfiles(id)])
+      if (valid(id)) await Promise.all([loadHistory(id), loadProfiles(id), recoverJob(id)])
     })
+    poll(generation)
+  }
+  async function recoverJob(id: number) {
+    const current = source.value
+    if (!current || job.value) return
+    const page = await request<FanfictionJobPage>(`${base.value}/jobs?sourceId=${current.id}&activeOnly=true&limit=1`)
+    if (!valid(id) || source.value?.id !== current.id || job.value) return
+    job.value = page.items[0] ?? null
   }
   async function selectSource() {
     profileId.value = source.value?.profileId ?? ''
@@ -106,7 +146,12 @@ export function useBookStory(
     revisions.value = []
     revisionCursor.value = null
     currentRevisionId.value = null
-    await perform((id) => loadHistory(id))
+    job.value = null
+    clearTimeout(timer)
+    await perform(async (id) => {
+      await Promise.all([loadHistory(id), recoverJob(id)])
+    })
+    poll(generation)
   }
   async function updateSettings() {
     await perform(async (id) => {
@@ -147,7 +192,7 @@ export function useBookStory(
         kind === 'rollback' ? { idempotencyKey, revisionId, expectedRevisionId } : { idempotencyKey, kind },
       )
       requests.delete(key)
-      if (valid(id)) {
+      if (valid(id) && source.value?.id === current.id) {
         await acceptJob(id, result)
         poll(id)
       }
@@ -162,29 +207,56 @@ export function useBookStory(
     if (valid(id) && ['succeeded', 'no_change'].includes(result.state)) await onBookUpdated?.(updatedBookId)
   }
   function poll(id: number) {
+    if (!valid(id)) return
     clearTimeout(timer)
-    if (!valid(id) || !job.value || !['queued', 'running'].includes(job.value.state)) return
-    timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const result = await request<FanfictionJob>(`${base.value}/jobs/${job.value!.id}`)
-          if (!valid(id)) return
-          await acceptJob(id, result)
-        } catch (failure) {
-          if (valid(id)) error.value = failure instanceof Error ? failure.message : 'Request failed'
-        } finally {
-          poll(id)
-        }
-      })()
-    }, 3000)
+    if (
+      !allowed.value ||
+      pollingBlocked ||
+      failures >= 5 ||
+      document.hidden ||
+      !navigator.onLine ||
+      !job.value ||
+      (polling?.generation === id && polling.jobId === job.value.id) ||
+      !['queued', 'running'].includes(job.value.state)
+    )
+      return
+    const jobId = job.value.id
+    timer = setTimeout(
+      () => {
+        const active = { generation: id, jobId }
+        polling = active
+        void (async () => {
+          try {
+            const result = await request<FanfictionJob>(`${base.value}/jobs/${jobId}`)
+            if (!valid(id) || job.value?.id !== jobId) return
+            failures = 0
+            error.value = ''
+            await acceptJob(id, result)
+          } catch (failure) {
+            if (valid(id) && job.value?.id === jobId) {
+              error.value = failure instanceof Error ? failure.message : 'Request failed'
+              failures++
+              pollingBlocked = failure instanceof StoryRequestError && [400, 401, 403, 404].includes(failure.status)
+            }
+          } finally {
+            if (polling === active) polling = null
+            if (job.value?.id === jobId) poll(id)
+          }
+        })()
+      },
+      failures ? Math.min(60_000, 3000 * 2 ** failures) : 3000,
+    )
   }
   const checkNow = () => enqueue('update')
   const refreshChapters = () => enqueue('refresh')
   async function retryJob() {
     await perform(async (id) => {
       if (!job.value) return
-      const result = await request<FanfictionJob>(`${base.value}/jobs/${job.value.id}/retry`, {})
-      if (valid(id)) {
+      const jobId = job.value.id
+      const result = await request<FanfictionJob>(`${base.value}/jobs/${jobId}/retry`, {})
+      if (valid(id) && job.value?.id === jobId) {
+        failures = 0
+        pollingBlocked = false
         await acceptJob(id, result)
         poll(id)
       }
@@ -203,10 +275,21 @@ export function useBookStory(
     async () => {
       const id = ++generation
       clearTimeout(timer)
+      for (const controller of inFlight) controller.abort()
       allowed.value = false
+      denied.value = false
+      busy.value = false
+      failures = 0
+      pollingBlocked = false
+      requests.clear()
       sources.value = []
+      sourceCursor.value = null
       sourceId.value = ''
       revisions.value = []
+      revisionCursor.value = null
+      currentRevisionId.value = null
+      profiles.value = []
+      profileCursor.value = null
       job.value = null
       error.value = ''
       loading.value = true
@@ -216,22 +299,38 @@ export function useBookStory(
       }
       try {
         await loadSources(id)
-        if (valid(id)) allowed.value = true
-      } catch {
-        /* An inaccessible administration panel stays hidden. */
+        if (valid(id)) await Promise.all([loadHistory(id), loadProfiles(id), recoverJob(id)])
+        poll(id)
+      } catch (failure) {
+        if (valid(id)) error.value = failure instanceof Error ? failure.message : 'Request failed'
       } finally {
         if (valid(id)) loading.value = false
       }
     },
     { immediate: true },
   )
+  function resumePolling() {
+    clearTimeout(timer)
+    if (document.hidden || !navigator.onLine || pollingBlocked || !visible.value) return
+    failures = 0
+    if (allowed.value) poll(generation)
+    else if (!loading.value && !busy.value) void refresh()
+  }
+  document.addEventListener('visibilitychange', resumePolling)
+  window.addEventListener('online', resumePolling)
+  window.addEventListener('offline', resumePolling)
   onScopeDispose(() => {
     disposed = true
     generation++
     clearTimeout(timer)
+    for (const controller of inFlight) controller.abort()
+    document.removeEventListener('visibilitychange', resumePolling)
+    window.removeEventListener('online', resumePolling)
+    window.removeEventListener('offline', resumePolling)
   })
   return {
     allowed,
+    visible,
     loading,
     error,
     sources,

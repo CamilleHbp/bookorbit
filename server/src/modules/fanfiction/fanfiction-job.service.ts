@@ -215,6 +215,7 @@ export class FanfictionJobService {
         and(
           eq(jobs.libraryId, libraryId),
           dto.kind ? eq(jobs.kind, dto.kind) : undefined,
+          dto.sourceId ? eq(jobs.sourceId, dto.sourceId) : undefined,
           dto.activeOnly ? inArray(jobs.state, ['queued', 'running']) : undefined,
           before
             ? sql`(${jobs.createdAt}, ${jobs.id}) < (select ${jobs.createdAt}, ${jobs.id} from ${jobs} where ${jobs.id} = ${before.id} and ${jobs.libraryId} = ${libraryId})`

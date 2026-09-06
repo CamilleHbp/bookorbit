@@ -240,6 +240,8 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       .returning();
     await db.insert(schema.bookTags).values({ bookId: source.bookId!, tagId: manual.id });
     const job = await claim();
+    expect((await jobs.list(libraryId, { sourceId: source.id, activeOnly: 'true', limit: 1 }, user)).items.map((item) => item.id)).toEqual([job.id]);
+    expect((await jobs.list(libraryId, { sourceId: randomUUID(), activeOnly: 'true', limit: 1 }, user)).items).toEqual([]);
     const result = await run(job);
     expect(result).toMatchObject({ bookFileId: fileId, sourceId: source.id, noChange: false });
     expect(await readFile(target)).toEqual(await readFile(output));

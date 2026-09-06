@@ -53,7 +53,7 @@ const story = useBookStory(
   () => hasPermission(Permission.ManageLibraries),
   fetch,
 )
-provide(BOOK_STORY_ADMIN_KEY, story.allowed)
+provide(BOOK_STORY_ADMIN_KEY, story.visible)
 const pageTitle = computed(() => {
   const title = detail.value?.title?.trim()
   const base = title || (Number.isFinite(bookId.value) ? t('views.bookDetail.titleWithId', { id: bookId.value }) : t('views.bookDetail.title'))
@@ -161,7 +161,7 @@ function onCoverChanged(source: 'extracted' | 'custom' | null) {
           <FilesTab v-else-if="tab === 'files'" :book="detail" @refetch="fetch(detail.id)" />
           <ReadingLogTab v-else-if="tab === 'reading-log'" :book="detail" @saved="onMetadataSaved" />
           <HighlightsTab v-else-if="tab === 'highlights'" :book="detail" />
-          <StoryUpdatesTab v-else-if="tab === 'story-updates' && story.allowed.value" :state="story" />
+          <StoryUpdatesTab v-else-if="tab === 'story-updates' && story.visible.value" :state="story" />
         </KeepAlive>
       </div>
 

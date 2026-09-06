@@ -27,9 +27,10 @@ describe('book story administration', () => {
   afterEach(() => {
     scope.stop()
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
   const flush = async () => {
-    for (let i = 0; i < 8; i++) await Promise.resolve()
+    for (let i = 0; i < 16; i++) await Promise.resolve()
     await nextTick()
   }
   function pages(url: string) {
@@ -49,6 +50,115 @@ describe('book story administration', () => {
     await flush()
     expect(model.allowed.value).toBe(false)
     expect(mockApi.mock.calls[0]?.[0]).toBe('/api/v1/libraries/5/fanfiction/sources?bookId=7&limit=50')
+  })
+  it('keeps a retryable panel after a failed initial load while administration controls remain unavailable', async () => {
+    mockApi.mockRejectedValueOnce(new Error('Connection interrupted'))
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    expect(model.visible.value).toBe(true)
+    expect(model.allowed.value).toBe(false)
+    expect(model.error.value).toBe('Connection interrupted')
+    mockApi.mockImplementation((url) => Promise.resolve(pages(String(url))))
+    await model.refresh()
+    expect(model.allowed.value).toBe(true)
+    expect(model.error.value).toBe('')
+  })
+  it('aborts previous book requests and ignores their late access-denied responses', async () => {
+    let finish: (value: Response) => void = () => undefined
+    mockApi.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const currentBook = ref(7)
+    const model = scope.run(() => useBookStory(currentBook, 5, true))!
+    const signal = mockApi.mock.calls[0]![1]!.signal!
+    mockApi.mockImplementation((url) => Promise.resolve(pages(String(url))))
+    currentBook.value = 8
+    await flush()
+    expect(signal.aborted).toBe(true)
+    expect(model.allowed.value).toBe(true)
+    finish(response({}, 403))
+    await flush()
+    expect(model.allowed.value).toBe(true)
+    expect(model.visible.value).toBe(true)
+  })
+  it('recovers the active source job after a page reload without queuing another operation', async () => {
+    mockApi.mockImplementation((url) =>
+      Promise.resolve(
+        String(url).includes('/jobs?')
+          ? response({ items: [{ id: 'existing-job', kind: 'update', state: 'running' }], nextCursor: null })
+          : String(url).includes('/jobs/')
+            ? response({ id: 'existing-job', kind: 'update', state: 'running' })
+            : pages(String(url)),
+      ),
+    )
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    expect(model.job.value?.id).toBe('existing-job')
+    expect(mockApi.mock.calls.some(([url]) => url === '/api/v1/libraries/5/fanfiction/jobs?sourceId=story&activeOnly=true&limit=1')).toBe(true)
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(mockApi.mock.calls.some(([url]) => String(url).endsWith('/jobs/existing-job'))).toBe(true)
+    expect(mockApi.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  })
+  it('bounds repeated status failures and allows an explicit refresh to resume polling', async () => {
+    let statusRequests = 0
+    mockApi.mockImplementation((url) => {
+      if (String(url).includes('/jobs?'))
+        return Promise.resolve(response({ items: [{ id: 'existing-job', kind: 'update', state: 'running' }], nextCursor: null }))
+      if (String(url).includes('/jobs/')) {
+        statusRequests++
+        return Promise.reject(new Error('Connection interrupted'))
+      }
+      return Promise.resolve(pages(String(url)))
+    })
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(statusRequests).toBe(5)
+    expect(model.error.value).toBe('Connection interrupted')
+    await vi.advanceTimersByTimeAsync(300_000)
+    expect(statusRequests).toBe(5)
+    await model.refresh()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(statusRequests).toBe(6)
+  })
+  it('pauses hidden and offline status checks without overlapping an in-flight request', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    let finish: (value: Response) => void = () => undefined
+    let statusRequests = 0
+    mockApi.mockImplementation((url) => {
+      if (String(url).includes('/jobs?'))
+        return Promise.resolve(response({ items: [{ id: 'existing-job', kind: 'update', state: 'running' }], nextCursor: null }))
+      if (String(url).includes('/jobs/')) {
+        statusRequests++
+        return new Promise((resolve) => {
+          finish = resolve
+        })
+      }
+      return Promise.resolve(pages(String(url)))
+    })
+    scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    await vi.advanceTimersByTimeAsync(3000)
+    hidden.mockReturnValue(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    hidden.mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(statusRequests).toBe(1)
+    finish(response({ id: 'existing-job', kind: 'update', state: 'running' }))
+    await flush()
+    online.mockReturnValue(false)
+    window.dispatchEvent(new Event('offline'))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(statusRequests).toBe(1)
+    online.mockReturnValue(true)
+    window.dispatchEvent(new Event('online'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(statusRequests).toBe(2)
   })
   it('sends exact rollback identities and reuses them after an uncertain response', async () => {
     mockApi.mockImplementation((url) => Promise.resolve(pages(String(url))))

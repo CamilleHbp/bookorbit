@@ -9,6 +9,7 @@ const props = defineProps<{ state: ReturnType<typeof useBookStory> }>()
 const { t } = useI18n()
 const {
   allowed,
+  visible,
   loading,
   error,
   sources,
@@ -49,22 +50,24 @@ const updating = computed(() => busy.value || (job.value !== null && ['queued', 
 function dateLabel(value: string | null) {
   return value ? new Date(value).toLocaleString() : t('fanfiction.never')
 }
-onMounted(refresh)
+onMounted(() => {
+  if (!loading.value) void refresh()
+})
 </script>
 
 <template>
-  <section v-if="allowed" class="mx-auto max-w-4xl space-y-5">
+  <section v-if="visible" class="mx-auto max-w-4xl space-y-5">
     <header class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-xl font-semibold">{{ t('fanfiction.storyUpdates') }}</h1>
-      <Button variant="outline" :disabled="busy" @click="refresh">{{ t('fanfiction.refresh') }}</Button>
+      <Button variant="outline" :disabled="busy || loading" @click="refresh">{{ t('fanfiction.refresh') }}</Button>
     </header>
     <p v-if="error" role="alert" class="text-destructive text-sm">{{ error }}</p>
     <p v-if="loading" role="status" class="text-muted-foreground">{{ t('common.loading') }}</p>
-    <div v-if="!sources.length" class="space-y-3">
+    <div v-if="allowed && !loading && !sources.length" class="space-y-3">
       <p class="text-muted-foreground">{{ t('fanfiction.noManagedSource') }}</p>
       <RouterLink :to="{ name: 'fanfiction' }" class="text-primary underline">{{ t('fanfiction.title') }}</RouterLink>
     </div>
-    <template v-if="source">
+    <template v-if="allowed && source">
       <select
         v-if="sources.length > 1"
         v-model="sourceId"
