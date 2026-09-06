@@ -3,6 +3,7 @@ local Storage = require("bookorbit_install_storage")
 local Journal = require("bookorbit_install_journal")
 local State = require("bookorbit_delivery_state")
 local AnchorStore = require("bookorbit_anchor_store")
+local Failure = require("bookorbit_delivery_failure")
 local function uuid(value)
     return type(value) == "string" and #value == 36 and value:match("^[a-f0-9%-]+$")
 end
@@ -103,10 +104,19 @@ local function execute(client, job, options)
     if operation and operation.cancelRequested and operation.attempt == job.attempt then
         return nil, "cancelled"
     end
-    local backup = AnchorStore.load(job.pathname)
+    local failure_pending = operation and operation.attempt == job.attempt and operation.failureReport
+    if failure_pending then
+        local due, due_error = Failure.due(operation, (options.clock or os.time)())
+        if due_error then return nil, due_error end
+        if not due then return nil, "failure_report_pending" end
+        local deferred
+        deferred, err = Failure.defer(operation, failure_pending.failureCode, (options.clock or os.time)())
+        if not deferred then return nil, err end
+    end
+    local backup = not failure_pending and AnchorStore.load(job.pathname)
     local record = backup and backup.record
-    if not record or record.copyId ~= job.copyId or record.anchor.bookFileId ~= job.bookFileId
-        or not record.inventory or record.inventory.id ~= job.installedCopyId then return nil, "copy_not_registered" end
+    if not failure_pending and (not record or record.copyId ~= job.copyId or record.anchor.bookFileId ~= job.bookFileId
+        or not record.inventory or record.inventory.id ~= job.installedCopyId) then return nil, "copy_not_registered" end
     if not operation or operation.attempt ~= job.attempt then
         operation = { version = 1, id = job.id, pathname = job.pathname, deviceId = client.device_id, account = account,
             attempt = job.attempt, claimId = require("random").uuid(true):lower(), sequence = 0 }
@@ -126,6 +136,10 @@ local function execute(client, job, options)
     local saved
     saved, err = State.save(operation)
     if not saved then return nil, err end
+    if failure_pending then
+        local reported = Failure.post(client, operation)
+        return nil, reported and "delivery_failure_reported" or "failure_report_pending"
+    end
     local uploaded
     local identity = Storage.identity(job.pathname, options.yield_step)
     if not Storage.matches(identity, { sha256 = job.expectedLocalSha256, sizeBytes = job.expectedLocalSizeBytes }) then return nil, "copy_changed" end
@@ -210,12 +224,13 @@ function Runner.run(client, job, options)
     if result or err == "waiting_for_uploads" or err == "waiting_for_close" then return result, err end
     if err == "cancelled" then Runner.cancel(client, job); return nil, err end
     local operation = State.load(job.id)
+    if operation and operation.failureReport then return nil, err end
     if operation and operation.account == Runner.account(client) and operation.lease and not Journal.load(job.pathname) and err ~= "delivery_inactive" then
         local code = err == "copy_changed" and "copy_changed" or err == "verification_failed" and "verification_failed"
             or operation.phase == "download" and "download_failed" or operation.phase == "publication" and "publication_failed" or "upload_failed"
-        local body = lease_body(operation)
-        body.failureCode = code
-        client:request("POST", "/koreader/plugin/deliveries/" .. job.id .. "/failure", body)
+        local saved, save_error = Failure.defer(operation, code, (options and options.clock or os.time)())
+        if not saved then return nil, save_error end
+        Failure.post(client, operation)
     end
     return nil, err
 end
