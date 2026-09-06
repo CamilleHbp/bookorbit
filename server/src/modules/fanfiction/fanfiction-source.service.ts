@@ -42,7 +42,10 @@ export class FanfictionSourceService {
 
   async check(libraryId: number, id: string, kind: 'update' | 'refresh', idempotencyKey: string, user: RequestUser) {
     await this.access.administer(user, libraryId);
-    return this.jobs.updateStory(await this.find(libraryId, id), kind, idempotencyKey, user);
+    const source = await this.find(libraryId, id);
+    if (source.attentionCode === 'destination_profile_required')
+      throw new ConflictException('Choose a destination library profile before checking this story');
+    return this.jobs.updateStory(source, kind, idempotencyKey, user);
   }
 
   async rollback(libraryId: number, id: string, dto: RollbackFanfictionSourceDto, user: RequestUser) {
@@ -65,6 +68,7 @@ export class FanfictionSourceService {
     if (
       !source ||
       !source.bookFileId ||
+      (job.kind !== 'rollback' && source.attentionCode === 'destination_profile_required') ||
       source.version !== job.sourceVersion ||
       source.profileId !== job.profileId ||
       !(job.kind === 'rollback' ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']).includes(source.state) ||
@@ -133,7 +137,7 @@ export class FanfictionSourceService {
         .set({
           state: 'paused',
           nextCheckAt: null,
-          attentionCode: null,
+          attentionCode: source.attentionCode === 'destination_profile_required' ? source.attentionCode : null,
           lastUpdatedAt: sql`now()`,
           updatedAt: sql`now()`,
           version: sql`${sources.version} + 1`,
@@ -194,6 +198,9 @@ export class FanfictionSourceService {
     if (dto.profileId) await this.profiles.document(libraryId, dto.profileId, user);
     const previous = await this.find(libraryId, id);
     const state = dto.state ?? previous.state;
+    const needsProfile = previous.attentionCode === 'destination_profile_required';
+    if (needsProfile && state === 'active' && dto.profileId === undefined)
+      throw new ConflictException('Choose a destination library profile before resuming updates');
     if (state === 'active' && (!previous.bookFileId || previous.state === 'unlinked'))
       throw new ConflictException('This source must finish importing or be linked again before updates can resume');
     const interval = dto.intervalMinutes === undefined ? previous.intervalMinutes : dto.intervalMinutes;
@@ -202,6 +209,7 @@ export class FanfictionSourceService {
       .update(sources)
       .set({
         state,
+        ...(needsProfile && dto.profileId !== undefined ? { attentionCode: null } : {}),
         ...(dto.profileId !== undefined ? { profileId: dto.profileId } : {}),
         intervalMinutes: interval,
         nextCheckAt: state === 'active' && interval !== null ? sql`now() + (${interval} * interval '1 minute')` : null,

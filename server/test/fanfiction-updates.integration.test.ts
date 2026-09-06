@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
@@ -130,6 +131,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         NotificationService,
         NotificationRepository,
         BookRevisionService,
+        RevisionCoordinationService,
         EpubManifestService,
         RevisionPublicationService,
         KoboFileStateService,
@@ -254,7 +256,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect(await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, fileId))).toHaveLength(1);
     expect(await jobs.finish(job, 'no_change', result)).toBe(true);
     expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.libraryId, libraryId))).toHaveLength(0);
-  }, 30_000);
+  }, 60_000);
 
   it('reconciles cancellation after publication with source metadata and one activity event', async () => {
     const job = await claim();

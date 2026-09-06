@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from './revision-coordination.service';
 import { ConflictException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -16,6 +17,7 @@ export class BookRevisionService {
   constructor(
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly manifests: EpubManifestService,
+    private readonly coordination: RevisionCoordinationService,
   ) {}
 
   async observeFile(id: number, changes: Partial<typeof schema.bookFiles.$inferInsert>) {
@@ -41,6 +43,7 @@ export class BookRevisionService {
           ? await this.manifests.inspect(path)
           : null;
       const result = await this.db.transaction(async (tx) => {
+        await this.coordination.lockFile(tx, id);
         const [current] = await tx
           .select()
           .from(schema.bookFiles)

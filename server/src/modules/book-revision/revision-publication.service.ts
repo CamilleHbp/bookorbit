@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from './revision-coordination.service';
 import { ConflictException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
@@ -37,6 +38,7 @@ export class RevisionPublicationService {
     private readonly locks: FileLockService,
     private readonly retention: RevisionRetentionService,
     private readonly koboFiles: KoboFileStateService,
+    private readonly coordination: RevisionCoordinationService,
   ) {}
 
   async prepare(
@@ -122,6 +124,7 @@ export class RevisionPublicationService {
       await requireInspectedFile(staged.stagedPath, staged.fresh.sha256);
       attemptedCommit = true;
       await this.db.transaction(async (tx) => {
+        await this.coordination.lockFile(tx, bookFileId);
         await authority?.authorize(tx);
         const locked = await this.scopedFile(tx, bookFileId, libraryId, true);
         if (
@@ -223,6 +226,7 @@ export class RevisionPublicationService {
     transaction: Transaction,
     authority?: RevisionPublicationAuthority,
   ) {
+    await this.coordination.lockFile(transaction, journal.bookFileId);
     if (journal.ownerKey && journal.ownerKey !== authority?.ownerKey) throw new ConflictException('This publication requires its owning operation');
     await authority?.authorize(transaction);
   }

@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
@@ -64,6 +65,7 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
         FanfictionAdoptionService,
         FanfictionJobService,
         BookRevisionService,
+        RevisionCoordinationService,
         EpubManifestService,
         RevisionCatalogService,
         RevisionFileService,

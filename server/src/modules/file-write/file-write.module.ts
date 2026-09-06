@@ -1,3 +1,4 @@
+import { FanfictionLocationModule } from '../fanfiction/fanfiction-location.module';
 import { Module, forwardRef } from '@nestjs/common';
 
 import { KoboFileStateModule } from '../kobo/kobo-file-state.module';
@@ -24,6 +25,7 @@ import { FORMAT_WRITERS } from './interfaces/format-writer.interface';
 
 @Module({
   imports: [
+    FanfictionLocationModule,
     KoboFileStateModule,
     BookRevisionModule,
     forwardRef(() => NotificationModule),

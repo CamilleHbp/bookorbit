@@ -65,6 +65,7 @@ export class FanfictionJobService {
         !current ||
         current.version !== source.version ||
         !current.bookFileId ||
+        (kind !== 'rollback' && current.attentionCode === 'destination_profile_required') ||
         !(kind === 'rollback' ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']).includes(current.state) ||
         (scheduled && current.state !== 'active')
       )
@@ -284,7 +285,10 @@ export class FanfictionJobService {
         if (!job.result?.revisionId)
           await tx
             .update(schema.fanfictionSources)
-            .set({ state: source.bookFileId ? 'paused' : 'pending', attentionCode: null })
+            .set({
+              state: source.bookFileId ? 'paused' : 'pending',
+              attentionCode: source.attentionCode === 'destination_profile_required' ? source.attentionCode : null,
+            })
             .where(eq(schema.fanfictionSources.id, source.id));
       }
       await this.access.administer(user, libraryId);
@@ -471,7 +475,7 @@ export class FanfictionJobService {
         .update(schema.fanfictionSources)
         .set({
           ...(job.state === 'configuration_blocked' || job.state === 'review_required' ? { state: job.state } : {}),
-          attentionCode: job.errorCode ?? job.state,
+          attentionCode: sql`case when ${schema.fanfictionSources.attentionCode} = 'destination_profile_required' then ${schema.fanfictionSources.attentionCode} else ${job.errorCode ?? job.state} end`,
           nextCheckAt: null,
           updatedAt: sql`now()`,
         })

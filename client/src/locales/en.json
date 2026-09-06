@@ -10185,6 +10185,7 @@
     },
     "errors": {
       "configuration_blocked": "The configuration or source requires attention.",
+      "destination_profile_required": "This story moved to another library. Save a destination profile, or choose No profile, in Story updates before resuming updates.",
       "authentication_required": "The source requires authentication.",
       "access_revoked": "Library administration access was revoked.",
       "source_failed": "The source could not be read.",

@@ -72,6 +72,7 @@ describe('FileRenameService narrator-specific editions', () => {
       notificationService as never,
       config,
       new SelfWriteRegistry(),
+      { withRelocation: vi.fn(async (_ids: number[], run: () => Promise<unknown>) => run()) } as never,
     );
 
     const simonResult = await service.performRename(1, 7);

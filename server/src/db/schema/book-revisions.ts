@@ -78,6 +78,7 @@ export const revisionPublications = pgTable(
       .on(t.bookFileId)
       .where(sql`${t.state} in ('prepared', 'filesystem_published')`),
     index('revision_publications_recovery_idx').on(t.state, t.createdAt, t.id),
+    index('revision_publications_file_idx').on(t.bookFileId),
     index('revision_publications_library_file_idx').on(t.libraryId, t.bookFileId, t.createdAt),
     check(
       'revision_publications_state_chk',

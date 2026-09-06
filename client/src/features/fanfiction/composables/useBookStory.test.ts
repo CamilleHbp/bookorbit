@@ -84,4 +84,26 @@ describe('book story administration', () => {
       JSON.stringify({ version: 2, state: 'unlinked' }),
     )
   })
+  it('requires a saved destination profile before exposing update controls after a library move', async () => {
+    let needsProfile = true
+    mockApi.mockImplementation((url, init) => {
+      if (init?.method === 'PATCH') {
+        expect(JSON.parse(init.body as string)).toEqual({ version: 2, profileId: null, intervalMinutes: 1440 })
+        needsProfile = false
+      }
+      return Promise.resolve(
+        String(url).includes('/sources?')
+          ? response({
+              items: [{ ...source, state: 'paused', attentionCode: needsProfile ? 'destination_profile_required' : null }],
+              nextCursor: null,
+            })
+          : pages(String(url)),
+      )
+    })
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    expect(model.canUpdate.value).toBe(false)
+    await model.updateSettings()
+    expect(model.canUpdate.value).toBe(true)
+  })
 })

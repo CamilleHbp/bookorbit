@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from '../book-revision/revision-coordination.service';
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { access, mkdir, readdir, rename as fsRename, rmdir } from 'fs/promises';
@@ -38,6 +39,7 @@ export class FileRenameService implements OnModuleDestroy {
     private readonly notificationService: NotificationService,
     private readonly config: ConfigService,
     private readonly selfWriteRegistry: SelfWriteRegistry,
+    private readonly coordination: RevisionCoordinationService,
   ) {
     this.debounceMs = resolvePositiveInteger(this.config.get('fileWrite.debounceMs'), DEFAULT_RENAME_DEBOUNCE_MS);
   }
@@ -83,7 +85,13 @@ export class FileRenameService implements OnModuleDestroy {
   }
 
   async performRename(bookId: number, userId: number, force = false, suppressNotification = false): Promise<FileRenameResult> {
-    return this.lockService.withLock(bookOperationLockKey(bookId), () => this.performRenameLocked(bookId, userId, force, suppressNotification));
+    return this.lockService.withLock(bookOperationLockKey(bookId), async () => {
+      const files = await this.renameRepo.findAllBookFiles(bookId);
+      return this.coordination.withRelocation(
+        files.map((file) => file.id),
+        () => this.performRenameLocked(bookId, userId, force, suppressNotification),
+      );
+    });
   }
 
   private async performRenameLocked(bookId: number, userId: number, force = false, suppressNotification = false): Promise<FileRenameResult> {

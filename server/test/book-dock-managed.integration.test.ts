@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
@@ -102,6 +103,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
         UploadProcessorService,
         UploadValidatorService,
         BookRevisionService,
+        RevisionCoordinationService,
         RevisionCatalogService,
         FanfictionImportService,
         FanfictionSourceService,

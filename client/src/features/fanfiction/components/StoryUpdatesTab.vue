@@ -14,6 +14,7 @@ const {
   sources,
   sourceId,
   source,
+  canUpdate,
   sourceCursor,
   profiles,
   profileCursor,
@@ -45,7 +46,6 @@ const manual = computed({
 })
 const profileMissing = computed(() => profileId.value && !profiles.value.some((profile) => profile.id === profileId.value))
 const updating = computed(() => busy.value || (job.value !== null && ['queued', 'running'].includes(job.value.state)))
-const canUpdate = computed(() => source.value && ['active', 'paused'].includes(source.value.state))
 function dateLabel(value: string | null) {
   return value ? new Date(value).toLocaleString() : t('fanfiction.never')
 }

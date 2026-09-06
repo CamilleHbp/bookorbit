@@ -25,6 +25,12 @@ export function useBookStory(
   const source = computed(() => sources.value.find((row) => row.id === sourceId.value) ?? null)
   const profiles = ref<FanfictionProfilePage['items']>([])
   const profileCursor = ref<string | null>(null)
+  const canUpdate = computed(
+    () =>
+      source.value !== null &&
+      source.value?.attentionCode !== 'destination_profile_required' &&
+      ['active', 'paused'].includes(source.value?.state ?? ''),
+  )
   const profileId = ref('')
   const interval = ref('1440')
   const revisions = ref<BookFileRevisionSummary[]>([])
@@ -224,6 +230,7 @@ export function useBookStory(
     sourceCursor,
     sourceId,
     source,
+    canUpdate,
     profiles,
     profileCursor,
     profileId,

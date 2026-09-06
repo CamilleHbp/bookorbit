@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from './revision-coordination.service';
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, gt, inArray, isNotNull, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -15,6 +16,7 @@ export class RevisionInterruptionService {
   constructor(
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly publications: RevisionPublicationService,
+    private readonly coordination: RevisionCoordinationService,
   ) {}
 
   async pending(cursor?: string) {
@@ -45,6 +47,7 @@ export class RevisionInterruptionService {
     if (paths.stagedPath !== expected.stagedPath || paths.backupPath !== expected.backupPath)
       throw new ConflictException('Invalid publication recovery paths');
     const published = await this.db.transaction(async (tx) => {
+      await this.coordination.lockFile(tx, expected.bookFileId);
       await authority.authorize(tx);
       const [file] = await tx
         .select({ absolutePath: schema.bookFiles.absolutePath })

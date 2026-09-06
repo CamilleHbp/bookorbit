@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import { storageConfig } from '../src/config/config';
 import { BookRevisionService } from '../src/modules/book-revision/book-revision.service';
 import { RevisionMetadataService } from '../src/modules/book-revision/revision-metadata.service';
@@ -69,6 +70,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
       providers: [
         RevisionPublicationService,
         BookRevisionService,
+        RevisionCoordinationService,
         RevisionMetadataService,
         RevisionFileService,
         EpubFormatWriter,
@@ -485,6 +487,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const otherModule = await Test.createTestingModule({
       providers: [
         RevisionPublicationService,
+        RevisionCoordinationService,
         KoboFileStateService,
         RevisionRetentionService,
         FileLockService,

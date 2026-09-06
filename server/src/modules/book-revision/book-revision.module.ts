@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from './revision-coordination.service';
 import { KoboFileStateModule } from '../kobo/kobo-file-state.module';
 import { ConfigModule } from '@nestjs/config';
 import { storageConfig } from '../../config/config';
@@ -20,6 +21,7 @@ import { RevisionRetentionService } from './revision-retention.service';
   imports: [KoboFileStateModule, FileLockModule, ConfigModule.forFeature(storageConfig), BookProgressModule, RevisionFileModule],
   providers: [
     BookRevisionService,
+    RevisionCoordinationService,
     RevisionMetadataService,
     RevisionPublicationService,
     RevisionInterruptionService,
@@ -30,6 +32,7 @@ import { RevisionRetentionService } from './revision-retention.service';
   ],
   exports: [
     BookRevisionService,
+    RevisionCoordinationService,
     RevisionMetadataService,
     RevisionFileModule,
     RevisionPublicationService,

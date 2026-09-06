@@ -124,6 +124,7 @@ onMounted(() => {
               {{ source.authors.join(', ') }} · {{ source.site }} · {{ t('fanfiction.chapterCount', { count: source.chapterCount }) }}
             </p>
             <p class="text-sm">{{ t(`fanfiction.sourceStates.${source.state}`) }} · {{ source.storyStatus }}</p>
+            <p v-if="source.attentionCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
             <dl class="text-muted-foreground grid gap-x-4 text-xs sm:grid-cols-2">
               <div>
                 <dt class="inline">{{ t('fanfiction.lastChecked') }}:</dt>
@@ -135,7 +136,10 @@ onMounted(() => {
               </div>
             </dl>
           </div>
-          <div v-if="source.bookFileId && ['active', 'paused'].includes(source.state)" class="flex flex-wrap items-start gap-2">
+          <div
+            v-if="source.bookFileId && source.attentionCode !== 'destination_profile_required' && ['active', 'paused'].includes(source.state)"
+            class="flex flex-wrap items-start gap-2"
+          >
             <Button variant="outline" :disabled="busy" @click="checkNow(source)">{{ t('fanfiction.checkNow') }}</Button>
             <Button variant="outline" :disabled="busy" @click="refreshChapters(source)">{{ t('fanfiction.refreshChapters') }}</Button>
             <Button

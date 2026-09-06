@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from './revision-coordination.service';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -9,7 +10,10 @@ import { resolveReadingAnchor } from './reading-anchor';
 
 @Injectable()
 export class RevisionCatalogService {
-  constructor(@Inject(DB) private readonly db: NodePgDatabase<typeof schema>) {}
+  constructor(
+    @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
+    private readonly coordination: RevisionCoordinationService,
+  ) {}
 
   async discoveryCutoff(libraryId: number): Promise<number> {
     const [row] = await this.db
@@ -64,6 +68,7 @@ export class RevisionCatalogService {
     libraryId: number,
     expected: { id: number; bookId: number; absolutePath: string; libraryFolderId: number },
   ) {
+    await this.coordination.lockFile(tx, expected.id);
     const [file] = await tx
       .select({ id: schema.bookFiles.id })
       .from(schema.bookFiles)

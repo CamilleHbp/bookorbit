@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from './revision-coordination.service';
 import { Test } from '@nestjs/testing';
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -58,7 +59,12 @@ async function setup(locked = current) {
   };
   const db = { select: vi.fn(() => query([current])), transaction: vi.fn((fn: (value: typeof tx) => unknown) => fn(tx)) };
   const module = await Test.createTestingModule({
-    providers: [BookRevisionService, { provide: DB, useValue: db }, { provide: EpubManifestService, useValue: { inspect: vi.fn() } }],
+    providers: [
+      { provide: RevisionCoordinationService, useValue: { lockFile: vi.fn() } },
+      BookRevisionService,
+      { provide: DB, useValue: db },
+      { provide: EpubManifestService, useValue: { inspect: vi.fn() } },
+    ],
   }).compile();
   return { service: module.get(BookRevisionService), db, tx, values, set };
 }
