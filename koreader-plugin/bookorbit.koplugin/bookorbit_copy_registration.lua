@@ -58,7 +58,8 @@ function Registration.register(client, path, target, options)
     local previous = record.inventory
     record.inventory = { id = accepted.id, sha256 = identity.sha256, revisionId = type(accepted.revisionId) == "string" and accepted.revisionId or nil,
         policy = accepted.policy, policyVersion = accepted.effectivePolicyVersion, reportedAt = os.time(),
-        deliveryId = previous and previous.sha256 == identity.sha256 and previous.deliveryId or nil }
+        deliveryId = previous and previous.sha256 == identity.sha256 and previous.deliveryId or nil,
+        readingCapture = previous and previous.sha256 == identity.sha256 and previous.readingCapture or nil }
     record.persistenceSequence = record.persistenceSequence + 1
     saved, err = Store.save(record, backup.sidecarPath)
     if not saved then return nil, err end

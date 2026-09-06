@@ -76,12 +76,14 @@ else
     annotation_anchor = assert(settings:readSetting("bookorbit_revision_annotations_v1").anchors[1])
 end
 local original_id = original.event.id
-if arg[6] == "install" or arg[6] == "delivery" or arg[6] == "crash_install" then
+local delivered_revision = "4d181dcb-1b1b-42e6-91bc-9c2d1392b2e0"
+local delivery = arg[6] == "delivery" or arg[6] == "delivery_twice"
+if arg[6] == "install" or delivery or arg[6] == "crash_install" then
     local Storage = require("bookorbit_install_storage")
     local Journal = require("bookorbit_install_journal")
     local staged = work_dir .. "/delivery.epub"
     assert(Storage.copy(fixture_dir .. "/regenerated.epub", staged))
-    if arg[6] == "delivery" then
+    if delivery then
         local store = require("bookorbit_anchor_store")
         local saved = assert(store.load(path))
         saved.record.inventory = { id = "71476178-0822-47bb-854d-a410c2d26522" }
@@ -96,6 +98,10 @@ if arg[6] == "install" or arg[6] == "delivery" or arg[6] == "crash_install" then
         local api = { server_url = "https://isolated-validation.invalid", username = "fixture", device_id = job.deviceId }
         local receipt, reports, uploads, downloads = nil, 0, 0, 0
         function api:request(method, route, body)
+            if route:match("/reading%-events$") then
+                if method == "POST" then assert(body.anchor.event.id == original_id) end
+                return { bookId = 2, bookFileId = 9, resetGeneration = 0, anchor = original }
+            end
             assert(method == "POST")
             if route == "/koreader/plugin/copies" then
                 assert(body.copies[1].sha256 == target.sha256 and body.copies[1].revisionId == job.revisionId)
@@ -133,11 +139,21 @@ if arg[6] == "install" or arg[6] == "delivery" or arg[6] == "crash_install" then
             return { temp_path = options.temp_path }
         end
         local Runner = require("bookorbit_delivery_runner")
-        local delivered, delivery_error = Runner.run(api, job, {
+        local function install(use_real_uploads)
+          receipt, reports, uploads, downloads = nil, 0, 0, 0
+          local delivered, delivery_error = Runner.run(api, job, {
             is_open = function() return false end, is_current = function() return true end,
-            upload_reading = function()
+            upload_reading = function(_, operation)
                 uploads = uploads + 1
                 assert(store.load(path).record.anchor.event.id == original_id)
+                if use_real_uploads then
+                    local closed = { getLifecycleOutbox = function() return {
+                        listMetadata = function() return {} end,
+                        enqueue = function() error("unopened sidecars must not replay uploaded annotations") end,
+                    } end }
+                    return require("bookorbit_delivery_reading").upload(closed, api, job, operation)
+                end
+                operation.readingCapture = assert(require("bookorbit_delivery_reading").captureKey(path))
                 return true
             end,
         })
@@ -146,6 +162,21 @@ if arg[6] == "install" or arg[6] == "delivery" or arg[6] == "crash_install" then
         assert(Runner.recover(api, job.id, path).installationState == "installed")
         assert(reports == 2 and downloads == 1 and uploads == 1, "receipt retry must not repeat installation or reading activity")
         assert(not Journal.load(path))
+        end
+        install(false)
+        if arg[6] == "delivery_twice" then
+            local before = assert(store.load(path))
+            assert(before.record.inventory.readingCapture and before.record.sha256 ~= before.record.inventory.sha256)
+            assert(Storage.copy(fixture_dir .. "/appended.epub", staged))
+            expected, target = Storage.identity(path), Storage.identity(staged)
+            job.id = "cdbd8aa0-9330-4588-bc33-cc82070cc3b6"
+            delivered_revision = "54a6c180-11eb-48af-8439-5a1154c2be91"
+            job.revisionId = delivered_revision
+            job.expectedLocalSha256, job.expectedLocalSizeBytes = expected.sha256, expected.sizeBytes
+            job.sha256, job.sizeBytes = target.sha256, target.sizeBytes
+            install(true)
+            assert(store.load(path).record.anchor.event.id == original_id)
+        end
     else
         local sidecars = assert(require("bookorbit_install_sidecars").plan(path, staged))
         assert(Journal.prepare({ path = path, staged = staged, expected = Storage.identity(path), target = Storage.identity(staged),
@@ -215,10 +246,10 @@ assert(handled and not exchange_error, tostring(exchange_error))
 assert(#exchange_calls == 4, "reconnect must exchange the original event and separate acknowledgements")
 assert(exchange_calls[2][3].anchor.event.id == original_id)
 assert(exchange_calls[3][3].acknowledgement.eventId == original_id)
-if arg[6] == "delivery" then
+if delivery then
     assert(exchange_calls[4][2]:match("/restoration$") and exchange_calls[4][3].quality == "verified" and exchange_calls[4][3].eventId == nil,
         "installation restoration is acknowledged independently of canonical events")
-    assert(state.record.inventory.sha256 == state.sha256 and state.record.inventory.revisionId == "4d181dcb-1b1b-42e6-91bc-9c2d1392b2e0",
+    assert(state.record.inventory.sha256 == state.sha256 and state.record.inventory.revisionId == delivered_revision,
         "installation reports the installed revision independently of the older canonical anchor")
 else
     assert(exchange_calls[4][3].copies[1].sha256 == state.sha256, "copy inventory must identify the installed bytes")

@@ -74,7 +74,7 @@ function Runner.recover(client, id, path, options)
     if not result then return nil, err end
     if result.id ~= id or result.installationState ~= "installed" then return nil, "invalid_delivery_response" end
     local inventoried
-    inventoried, err = require("bookorbit_copy_inventory").installed(client, result, record.target)
+    inventoried, err = require("bookorbit_copy_inventory").installed(client, result, record.target, receipt.readingCapture)
     if not inventoried then return nil, err end
     local cleaned
     cleaned, err = Journal.acknowledge(path)
@@ -127,6 +127,8 @@ local function execute(client, job, options)
     saved, err = State.save(operation)
     if not saved then return nil, err end
     local uploaded
+    local identity = Storage.identity(job.pathname, options.yield_step)
+    if not Storage.matches(identity, { sha256 = job.expectedLocalSha256, sizeBytes = job.expectedLocalSizeBytes }) then return nil, "copy_changed" end
     uploaded, err = options.upload_reading(job, operation)
     if not uploaded then
         if claimed.job.installationState == "waiting_for_uploads" then report(client, operation, job, "waiting_for_uploads", false) end
@@ -139,7 +141,7 @@ local function execute(client, job, options)
         return nil, err or (waiting and "waiting_for_close" or "waiting_for_uploads")
     end
     if not options.is_current() then return nil, "cancelled" end
-    local identity = Storage.identity(job.pathname, options.yield_step)
+    identity = Storage.identity(job.pathname, options.yield_step)
     if not Storage.matches(identity, { sha256 = job.expectedLocalSha256, sizeBytes = job.expectedLocalSizeBytes }) then return nil, "copy_changed" end
     local reported
     reported, err = report(client, operation, job, "downloading", true)
@@ -166,7 +168,7 @@ local function execute(client, job, options)
     prepared, err = Journal.prepare({ path = job.pathname, staged = staged,
         expected = { sha256 = job.expectedLocalSha256, sizeBytes = job.expectedLocalSizeBytes },
         target = { sha256 = job.sha256, sizeBytes = job.sizeBytes }, sidecars = sidecars, yield_step = options.yield_step,
-        receipt = { jobId = job.id, account = account } })
+        receipt = { jobId = job.id, account = account, readingCapture = operation.readingCapture } })
     os.remove(staged)
     if not prepared then return nil, err end
     local deadline = 0
@@ -176,6 +178,7 @@ local function execute(client, job, options)
         yield_step = options.yield_step,
         authorize = function(journal)
             if options.is_open(job.pathname) or not options.is_current() then return nil, "cancelled" end
+            if not require("bookorbit_delivery_reading").verify(job.pathname, operation.readingCapture) then return nil, "waiting_for_uploads" end
             local started = clock()
             local permit, permit_error = client:request("POST", endpoint .. "/publication", lease_body(operation))
             if not permit then return nil, permit_error end
@@ -193,6 +196,8 @@ local function execute(client, job, options)
         is_current = function()
             if clock() >= deadline then return false, "publication_permission_expired" end
             if options.is_open(job.pathname) then return false, "waiting_for_close" end
+            if not require("bookorbit_delivery_reading").verify(job.pathname, operation.readingCapture) then return false, "waiting_for_uploads" end
+            if clock() >= deadline then return false, "publication_permission_expired" end
             return options.is_current()
         end,
     })

@@ -42,6 +42,7 @@ function Journal.load(path)
         or type(record.sidecars) ~= "table" or #record.sidecars > MAX_SIDECARS then return nil, "invalid_journal" end
     for _, entry in ipairs(record.sidecars) do
         if type(entry) ~= "table" or not Storage.safePath(entry.destination)
+            or (entry.source ~= nil and not Storage.safePath(entry.source))
             or not identity_valid(entry.identity) or entry.identity.sizeBytes > MAX_SIDECAR_BYTES then return nil, "invalid_journal" end
     end
     return record
@@ -104,7 +105,8 @@ function Journal.prepare(options)
         copied, err = Storage.copy(entry.source, directory .. "/sidecar-" .. index, MAX_SIDECAR_BYTES)
         if not copied then return nil, err end
         if not Storage.matches(Storage.identity(directory .. "/sidecar-" .. index, options.yield_step), identity) then return nil, "sidecar_changed" end
-        record.sidecars[index] = { destination = entry.destination, identity = { sha256 = identity.sha256, sizeBytes = identity.sizeBytes } }
+        record.sidecars[index] = { source = entry.source, destination = entry.destination,
+            identity = { sha256 = identity.sha256, sizeBytes = identity.sizeBytes } }
     end
     record.phase = "prepared"
     saved, err = persist(record)
@@ -162,6 +164,11 @@ function Journal.publish(path, options)
     -- LFS timestamps can miss a same-second in-place edit while permission is requested.
     current = Storage.identity(path, options.yield_step)
     if not Storage.matches(current, record.expected) then return nil, "copy_changed" end
+    for _, entry in ipairs(record.sidecars) do
+        if not entry.source or not Storage.matches(Storage.identity(entry.source, options.yield_step), entry.identity) then
+            return nil, "sidecar_changed"
+        end
+    end
     if not Storage.safePath(path) or not Storage.same(current.signature, lfs.attributes(path)) then return nil, "copy_changed" end
     if options.is_current then
         local current, reason = options.is_current()

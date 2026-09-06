@@ -3,6 +3,22 @@ local AnchorStore = require("bookorbit_anchor_store")
 local Storage = require("bookorbit_install_storage")
 local State = require("bookorbit_delivery_state")
 
+function Reading.captureKey(path)
+    local settings = require("bookorbit_install_sidecars").open(path)
+    local source = settings.source_candidate
+    if not source then return "no-sidecar", settings end
+    local identity = Storage.identity(source)
+    if not identity or identity.sizeBytes > 16 * 1024 * 1024 then return nil, "sidecar_changed" end
+    return identity.sha256, settings
+end
+
+function Reading.verify(path, capture_key)
+    if type(capture_key) ~= "string" then return nil, "waiting_for_uploads" end
+    local current = Reading.captureKey(path)
+    if current ~= capture_key then return nil, "waiting_for_uploads" end
+    return true
+end
+
 local function pending(plugin, digest)
     for _, entry in ipairs(plugin:getLifecycleOutbox():listMetadata()) do
         if entry.digest == digest then
@@ -31,12 +47,23 @@ function Reading.upload(plugin, client, job, operation)
     local digest = require("util").partialMD5(job.pathname)
     if not digest then return nil, "copy_missing" end
     if pending(plugin, digest) then return nil, "waiting_for_uploads" end
-    local sidecar = require("docsettings"):findSidecarFile(job.pathname)
-    local identity = sidecar and Storage.identity(sidecar)
-    if sidecar and not identity then return nil, "sidecar_changed" end
-    local capture_key = identity and identity.sha256 or "no-sidecar"
+    local capture_key, settings = Reading.captureKey(job.pathname)
+    if not capture_key then return nil, settings end
+    if record.sha256 ~= job.expectedLocalSha256 then
+        local inventory = record.inventory
+        if not inventory or inventory.sha256 ~= job.expectedLocalSha256 or inventory.readingCapture ~= capture_key then
+            return nil, "waiting_for_uploads"
+        end
+        -- Unopened managed copies retain old native annotations that were already uploaded.
+        if operation.readingCapture ~= capture_key then
+            operation.readingCapture = capture_key
+            if not State.save(operation) then return nil, "outbox_persistence" end
+        end
+    end
     if operation.readingCapture ~= capture_key then
-        local data = require("bookorbit_sidecar").extract(job.pathname) or {}
+        if settings.source_candidate then settings = require("docsettings").openSettingsFile(settings.source_candidate) end
+        local data = require("bookorbit_sidecar").extract(job.pathname, settings) or {}
+        if not Reading.verify(job.pathname, capture_key) then return nil, "waiting_for_uploads" end
         local metadata = require("bookorbit_stats_reader").primeIdentity(digest) or {}
         local snapshot = { digest = digest, file = job.pathname, expected_book_file_id = job.bookFileId,
             title = metadata.title, authors = metadata.authors, last_open = metadata.last_open or os.time(),

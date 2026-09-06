@@ -1,6 +1,21 @@
 local Sidecars = {}
 local Storage = require("bookorbit_install_storage")
 
+function Sidecars.open(path)
+    local DocSettings = require("docsettings")
+    local current = DocSettings:extend{}
+    local hash_directory
+    function current:getSidecarDir(doc_path, location)
+        local selected = location or G_reader_settings:readSetting("document_metadata_folder", "doc")
+        if doc_path == path and selected == "hash" then
+            hash_directory = hash_directory or Sidecars.hashDirectory(path)
+            if hash_directory then return hash_directory end
+        end
+        return DocSettings.getSidecarDir(self, doc_path, location)
+    end
+    return current:open(path)
+end
+
 function Sidecars.hashDirectory(path)
     local hash = require("util").partialMD5(path)
     if type(hash) ~= "string" or #hash ~= 32 or not hash:match("^[a-fA-F0-9]+$") then return nil end
@@ -12,7 +27,7 @@ end
 function Sidecars.plan(path, staged)
     if not Storage.safePath(path) or not Storage.safePath(staged) then return nil, "unsafe_path" end
     local DocSettings = require("docsettings")
-    local settings = DocSettings:open(path)
+    local settings = Sidecars.open(path)
     local destination
     if G_reader_settings:readSetting("document_metadata_folder", "doc") == "hash" then
         destination = Sidecars.hashDirectory(staged)

@@ -98,6 +98,16 @@ result, err = Journal.prepare(conflict)
 assert(not result and err == "sidecar_conflict")
 assert(Journal.recover(conflict.path).phase == "aborted")
 
+local sidecar_changed = fixture("sidecar-changed-after-upload")
+assert(Journal.prepare(sidecar_changed))
+result, err = Journal.publish(sidecar_changed.path, { authorize = function()
+    assert(Storage.write(sidecar_changed.sidecars[1].source, 'return { bookmark="new annotation" }'))
+    return true
+end })
+assert(not result and err == "sidecar_changed")
+assert(Storage.matches(Storage.identity(sidecar_changed.path), sidecar_changed.expected))
+assert(Journal.recover(sidecar_changed.path).phase == "aborted")
+
 local symlink = fixture("symlink")
 local link = Storage.parent(symlink.path) .. "/linked.epub"
 assert(lfs.link(symlink.path, link, true))

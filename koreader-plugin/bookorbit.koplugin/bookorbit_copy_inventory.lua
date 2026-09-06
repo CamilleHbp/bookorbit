@@ -1,6 +1,6 @@
 local Inventory = {}
 
-function Inventory.installed(client, job, identity)
+function Inventory.installed(client, job, identity, reading_capture)
     local store = require("bookorbit_anchor_store")
     local backup, err = store.load(job.pathname)
     if not backup or backup.record.copyId ~= job.copyId or backup.record.anchor.bookFileId ~= job.bookFileId then
@@ -26,7 +26,8 @@ function Inventory.installed(client, job, identity)
     local latest = store.load(job.pathname)
     if not latest or latest.record.persistenceSequence ~= backup.record.persistenceSequence then return nil, "reading_changed" end
     backup.record.inventory = { id = accepted.id, sha256 = identity.sha256, revisionId = accepted.revisionId,
-        policy = accepted.policy, policyVersion = accepted.effectivePolicyVersion, reportedAt = os.time(), deliveryId = job.id }
+        policy = accepted.policy, policyVersion = accepted.effectivePolicyVersion, reportedAt = os.time(), deliveryId = job.id,
+        readingCapture = reading_capture }
     backup.record.persistenceSequence = backup.record.persistenceSequence + 1
     return store.save(backup.record, backup.sidecarPath)
 end

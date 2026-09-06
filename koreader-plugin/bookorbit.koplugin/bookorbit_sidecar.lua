@@ -341,10 +341,10 @@ function BookOrbitSidecar.applyServerStateSidecar(file, state)
     return touched
 end
 
-function BookOrbitSidecar.extract(file)
-    if not DocSettings:hasSidecarFile(file) then return nil end
+function BookOrbitSidecar.extract(file, doc_settings)
+    if not doc_settings and not DocSettings:hasSidecarFile(file) then return nil end
 
-    local doc_settings = DocSettings:open(file)
+    doc_settings = doc_settings or DocSettings:open(file)
     local summary = BookOrbitSidecar.normalizeSummary(doc_settings:readSetting("summary"))
     local raw_annotations = doc_settings:readSetting("annotations")
     local annotations, max_datetime, signature = BookOrbitSidecar.normalizeAnnotations(raw_annotations)
