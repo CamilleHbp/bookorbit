@@ -200,6 +200,9 @@ local remote = { bookId = 2, bookFileId = 9, resetGeneration = 0, anchor = origi
 function ui.bookorbit:newClient()
     return { request = function(_, method, request_path, body)
         exchange_calls[#exchange_calls + 1] = { method, request_path, body }
+        if request_path:match("/restoration$") then
+            return { id = state.record.inventory.deliveryId, copyId = body.copyId, sha256 = body.sha256, restorationState = body.quality }
+        end
         if request_path == "/koreader/plugin/copies" then
             return { nextSequence = body.sequence + 1, copies = { { copyId = body.copies[1].copyId,
                 status = "accepted", id = "accepted-copy", policy = "notify", effectivePolicyVersion = "1:1" } } }
@@ -209,10 +212,12 @@ function ui.bookorbit:newClient()
 end
 local handled, exchange_error = require("bookorbit_reading_exchange").run(ui.bookorbit)
 assert(handled and not exchange_error, tostring(exchange_error))
-assert(#exchange_calls == (arg[6] == "delivery" and 3 or 4), "reconnect must exchange the original event and separate acknowledgement")
+assert(#exchange_calls == 4, "reconnect must exchange the original event and separate acknowledgements")
 assert(exchange_calls[2][3].anchor.event.id == original_id)
 assert(exchange_calls[3][3].acknowledgement.eventId == original_id)
 if arg[6] == "delivery" then
+    assert(exchange_calls[4][2]:match("/restoration$") and exchange_calls[4][3].quality == "verified" and exchange_calls[4][3].eventId == nil,
+        "installation restoration is acknowledged independently of canonical events")
     assert(state.record.inventory.sha256 == state.sha256 and state.record.inventory.revisionId == "4d181dcb-1b1b-42e6-91bc-9c2d1392b2e0",
         "installation reports the installed revision independently of the older canonical anchor")
 else

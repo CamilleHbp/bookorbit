@@ -360,6 +360,8 @@ export class KoreaderCatalogService {
         sizeBytes: file.sizeBytes,
         contentVersion: file.contentVersion.toISOString(),
         fileHash: file.fileHash,
+        revisionId: file.revisionId ?? null,
+        sha256: file.sha256 ?? null,
         downloadUrl: `${CATALOG_BASE}/files/${file.id}/download`,
         devicePath:
           resolveUploadPath(

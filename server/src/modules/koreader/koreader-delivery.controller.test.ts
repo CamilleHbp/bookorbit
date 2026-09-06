@@ -15,8 +15,8 @@ describe('KOReader delivery HTTP contract', () => {
   let app: NestFastifyApplication;
   const id = 'adef91c7-ef94-4dba-bcaa-889a07538ec7';
   const user = { id: 7 };
-  const service = { request: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), retry: vi.fn() };
-  const execution = { claim: vi.fn(), progress: vi.fn(), authorizePublication: vi.fn(), download: vi.fn() };
+  const service = { request: vi.fn(), list: vi.fn(), get: vi.fn(), cancel: vi.fn(), retry: vi.fn(), targets: vi.fn() };
+  const execution = { claim: vi.fn(), progress: vi.fn(), authorizePublication: vi.fn(), download: vi.fn(), restoration: vi.fn(), fail: vi.fn() };
   const lease = { deviceId: 'reader', token: id, fence: 1 };
   const progress = {
     ...lease,
@@ -56,6 +56,7 @@ describe('KOReader delivery HTTP contract', () => {
     for (const method of Object.values(service))
       method.mockResolvedValue({ id, installationState: 'requested', restorationState: 'verification_pending' });
     service.list.mockResolvedValue({ items: [], nextCursor: null });
+    service.targets.mockResolvedValue({ items: [] });
     for (const method of Object.values(execution)) method.mockResolvedValue({ id });
   });
   afterAll(async () => {
@@ -107,6 +108,7 @@ describe('KOReader delivery HTTP contract', () => {
   it.each([
     { ...progress, userId: 8 },
     { ...progress, fence: 0 },
+    { ...progress, fence: 2147483648 },
     { ...progress, readingUploadsComplete: 'true' },
     { ...progress, localSha256: 'partial-md5' },
     { ...progress, state: 'verified' },
@@ -122,6 +124,59 @@ describe('KOReader delivery HTTP contract', () => {
     expect((await app.inject({ method: 'GET', url: '/api/v1/koreader/deliveries?userId=99' })).statusCode).toBe(400);
     expect(
       (await app.inject({ method: 'POST', url: `/api/v1/koreader/deliveries/copies/${id}`, payload: { expectedRevisionId: id } })).statusCode,
+    ).toBe(400);
+  });
+  it('validates bounded targets and separate first-open restoration reports', async () => {
+    expect(
+      (await app.inject({ method: 'POST', url: '/api/v1/koreader/plugin/deliveries/targets', payload: { bookFileIds: [1, 2] } })).statusCode,
+    ).toBe(200);
+    expect(service.targets).toHaveBeenCalledWith([1, 2], user);
+    for (const bookFileIds of [[], [1, 1], [0], ['1'], Array.from({ length: 101 }, (_, index) => index + 1)]) {
+      expect((await app.inject({ method: 'POST', url: '/api/v1/koreader/plugin/deliveries/targets', payload: { bookFileIds } })).statusCode).toBe(
+        400,
+      );
+    }
+    const payload = { deviceId: 'reader', copyId: id, sha256: 'a'.repeat(64), quality: 'verified', nativePosition: '/body/p[2]' };
+    expect((await app.inject({ method: 'POST', url: `/api/v1/koreader/plugin/deliveries/${id}/restoration`, payload })).statusCode).toBe(200);
+    expect(execution.restoration).toHaveBeenCalledWith(id, payload, user);
+    expect(
+      (await app.inject({ method: 'POST', url: `/api/v1/koreader/plugin/deliveries/${id}/restoration`, payload: { ...payload, eventId: id } }))
+        .statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/v1/koreader/plugin/deliveries/copies/${id}`,
+          payload: { idempotencyKey: id, expectedRevisionId: id },
+        })
+      ).statusCode,
+    ).toBe(202);
+  });
+  it('accepts explicit cancellation and device failures without allowing privileged failure claims', async () => {
+    for (const action of ['cancel', 'retry']) {
+      expect(
+        (await app.inject({ method: 'POST', url: `/api/v1/koreader/plugin/deliveries/${id}/${action}`, payload: { version: 3 } })).statusCode,
+      ).toBe(202);
+    }
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/v1/koreader/plugin/deliveries/${id}/failure`,
+          payload: { ...lease, failureCode: 'download_failed' },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(execution.fail).toHaveBeenCalledWith(id, { ...lease, failureCode: 'download_failed' }, user);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/v1/koreader/plugin/deliveries/${id}/failure`,
+          payload: { ...lease, failureCode: 'access_revoked' },
+        })
+      ).statusCode,
     ).toBe(400);
   });
   it('streams verified bytes with explicit revision and SHA-256 headers', async () => {

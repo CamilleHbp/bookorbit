@@ -100,6 +100,7 @@ export const koreaderDeliveryJobs = pgTable(
     restorationState: varchar('restoration_state', { length: 30 }).$type<KoreaderRestorationState>().notNull().default('verification_pending'),
     failureCode: varchar('failure_code', { length: 40 }).$type<KoreaderDeliveryFailure>(),
     restorationFailureCode: varchar('restoration_failure_code', { length: 80 }),
+    restorationNativePosition: varchar('restoration_native_position', { length: 4096 }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     version: integer('version').notNull().default(1),
     attempt: integer('attempt').notNull().default(1),

@@ -2,7 +2,7 @@ import { ConflictException, Inject, Injectable, Logger, NotFoundException } from
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { and, desc, eq, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { KoreaderDeliveryJobPage, RequestKoreaderDelivery } from '@bookorbit/types';
+import type { KoreaderDeliveryJobPage, KoreaderDeliveryTargets, RequestKoreaderDelivery } from '@bookorbit/types';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import type { RequestUser } from '../../common/types/request-user';
@@ -26,6 +26,17 @@ export class KoreaderDeliveryService {
 
   request(copyId: string, dto: RequestKoreaderDelivery, user: RequestUser, mode: 'manual' | 'automatic' = 'manual') {
     return this.perform('request', copyId, user, () => this.requestOwned(copyId, dto, user, mode));
+  }
+  async targets(fileIds: number[], user: RequestUser): Promise<KoreaderDeliveryTargets> {
+    const fresh = await this.access.user(user);
+    const files = await this.books.findAccessibleFiles(fileIds, fresh);
+    return {
+      items: files.flatMap((file) =>
+        ['epub', 'kepub'].includes(file.format) && file.currentRevisionId && file.sha256 && file.sizeBytes !== null
+          ? [{ bookFileId: file.id, bookId: file.bookId, revisionId: file.currentRevisionId, sha256: file.sha256, sizeBytes: file.sizeBytes }]
+          : [],
+      ),
+    };
   }
   cancel(id: string, version: number, user: RequestUser) {
     return this.perform('cancel', id, user, () => this.cancelOwned(id, version, user));

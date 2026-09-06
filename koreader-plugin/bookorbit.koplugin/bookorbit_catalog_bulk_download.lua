@@ -1118,16 +1118,17 @@ function CatalogBulkDownload.install(Catalog)
             return
         end
 
-        local ok = self:bulkDownloadFile(ctx, detail, file, local_path, book_id)
+        local ok, outcome = self:bulkDownloadFile(ctx, detail, file, local_path, book_id)
         if not ok then
             self:bulkRecordFailure(ctx, book)
             self:bulkShowStatus(ctx, _("Download failed"), detail, true)
             return
         end
-        ctx.counts.downloaded = ctx.counts.downloaded + 1
+        if outcome == "queued" then ctx.counts.queued = (ctx.counts.queued or 0) + 1
+        else ctx.counts.downloaded = ctx.counts.downloaded + 1 end
         ctx.destination_paths[pathKey(local_path)] = { book_id = book_id, file_id = file.id }
         ctx.completed[tostring(book_id)] = local_path
-        self:bulkShowStatus(ctx, _("Download complete"), detail, true)
+        self:bulkShowStatus(ctx, outcome == "queued" and _("Update queued") or _("Download complete"), detail, true)
     end
 
     function Catalog:bulkChooseFile(detail)
@@ -1186,6 +1187,10 @@ function CatalogBulkDownload.install(Catalog)
             is_current = function()
                 return ctx == self.bulk_ctx and not ctx.cancel_requested
             end,
+            replace = function()
+                return require("bookorbit_delivery_catalog").replace(self, local_path, detail, file,
+                    function() return ctx == self.bulk_ctx and not ctx.cancel_requested end)
+            end,
             perform = function(download_opts)
                 return self.client:downloadCatalogFile(file.id, local_path, download_opts)
             end,
@@ -1193,6 +1198,11 @@ function CatalogBulkDownload.install(Catalog)
         if not ok then
             logger.warn("BookOrbit: bulk file download failed", book_id, file.id, err)
             return false
+        end
+        if result and result.queued then
+            ctx.queued_deliveries = ctx.queued_deliveries or {}
+            if result.delivery then table.insert(ctx.queued_deliveries, result.delivery) end
+            return true, "queued"
         end
 
         local digest = result and result.hash
@@ -1335,6 +1345,11 @@ function CatalogBulkDownload.install(Catalog)
     end
 
     function Catalog:bulkFinishRun(ctx)
+        if ctx.cancelled or ctx.cancel_requested then
+            for _, job in ipairs(ctx.queued_deliveries or {}) do
+                require("bookorbit_delivery_runner").cancel(self.client, job)
+            end
+        end
         local ok, err = pcall(function()
             self:bulkFlushLinks(ctx, true)
         end)
@@ -1367,7 +1382,7 @@ function CatalogBulkDownload.install(Catalog)
 
         local counts = ctx.counts
         local lines = {
-            ctx.cancelled and _("Bulk download stopped.") or _("Bulk download complete."),
+            ctx.cancelled and _("Bulk download stopped.") or (counts.queued or 0) > 0 and _("Bulk requests completed.") or _("Bulk download complete."),
             T(_("Downloaded: %1"), counts.downloaded),
             T(_("Linked: %1"), counts.linked),
             T(_("Skipped on device: %1"), counts.skipped_on_device),
@@ -1376,6 +1391,7 @@ function CatalogBulkDownload.install(Catalog)
             T(_("No supported format: %1"), counts.skipped_unsupported),
             T(_("Failed: %1"), counts.failed),
         }
+        if (counts.queued or 0) > 0 then table.insert(lines, T(_("Updates queued: %1"), counts.queued)) end
         if (counts.skipped_present or 0) > 0 then
             table.insert(lines, T(_("Already downloaded: %1"), counts.skipped_present))
         end

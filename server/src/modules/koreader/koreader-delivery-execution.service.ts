@@ -1,4 +1,13 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createHash, randomUUID } from 'node:crypto';
@@ -10,7 +19,13 @@ import type { RequestUser } from '../../common/types/request-user';
 import { RevisionDownloadService } from '../book-revision/revision-download.service';
 import { KoreaderDeliveryAccessService } from './koreader-delivery-access.service';
 import { deliveryView } from './koreader-delivery-view';
-import type { ClaimKoreaderDeliveryDto, KoreaderDeliveryLeaseDto, KoreaderDeliveryProgressDto } from './dto/koreader-delivery.dto';
+import type {
+  ClaimKoreaderDeliveryDto,
+  KoreaderDeliveryLeaseDto,
+  KoreaderDeliveryProgressDto,
+  KoreaderRestorationReportDto,
+  KoreaderDeliveryFailureDto,
+} from './dto/koreader-delivery.dto';
 
 const jobs = schema.koreaderDeliveryJobs,
   copies = schema.koreaderInstalledCopies;
@@ -113,6 +128,72 @@ export class KoreaderDeliveryExecutionService {
   }
   download(id: string, dto: KoreaderDeliveryLeaseDto, user: RequestUser, cancelled: () => boolean) {
     return this.perform(id, user, 'download', () => this.downloadOwned(id, dto, user, cancelled), dto.fence);
+  }
+
+  restoration(id: string, dto: KoreaderRestorationReportDto, user: RequestUser) {
+    return this.perform(id, user, 'restoration', () => this.restorationOwned(id, dto, user));
+  }
+  fail(id: string, dto: KoreaderDeliveryFailureDto, user: RequestUser) {
+    return this.perform(
+      id,
+      user,
+      'failure',
+      async () => {
+        const context = await this.context(id, dto.deviceId, user);
+        return this.db.transaction(async (tx) => {
+          const [job] = await tx
+            .select()
+            .from(jobs)
+            .where(and(eq(jobs.id, id), eq(jobs.userId, user.id)))
+            .for('update');
+          if (!job) throw new NotFoundException('Delivery unavailable');
+          this.requireLease(job, dto);
+          if (job.failureCode === dto.failureCode) return deliveryView(job, context.copy);
+          this.requireTarget({ ...context, job });
+          const [updated] = await tx
+            .update(jobs)
+            .set({ failureCode: dto.failureCode, version: sql`${jobs.version} + 1`, updatedAt: sql`now()` })
+            .where(eq(jobs.id, id))
+            .returning();
+          return deliveryView(updated, context.copy);
+        });
+      },
+      dto.fence,
+    );
+  }
+
+  private async restorationOwned(id: string, dto: KoreaderRestorationReportDto, user: RequestUser) {
+    const failed = dto.quality === 'failed';
+    if (failed ? !dto.failureCode || dto.nativePosition !== undefined : !dto.nativePosition || dto.failureCode !== undefined)
+      throw new BadRequestException('Provide a verified native position or a restoration failure');
+    const context = await this.context(id, dto.deviceId, user);
+    if (context.copy.copyId !== dto.copyId || context.copy.sha256 !== dto.sha256 || context.job.sha256 !== dto.sha256)
+      throw new ConflictException('Restoration does not match the installed copy');
+    return this.db.transaction(async (tx) => {
+      const [job] = await tx
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.id, id), eq(jobs.userId, user.id)))
+        .for('update');
+      if (!job || job.installationState !== 'installed') throw new ConflictException('The revision has not been installed');
+      if (job.restorationState === 'verified' || (job.restorationState === 'approximate' && dto.quality !== 'verified'))
+        return deliveryView(job, context.copy);
+      const failureCode = dto.failureCode ?? null;
+      if (job.restorationState === dto.quality && job.restorationFailureCode === failureCode) return deliveryView(job, context.copy);
+      const [updated] = await tx
+        .update(jobs)
+        .set({
+          restorationState: dto.quality,
+          restorationFailureCode: failureCode,
+          restorationNativePosition: dto.nativePosition ?? null,
+          restoredAt: failed ? null : sql`now()`,
+          version: sql`${jobs.version} + 1`,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(jobs.id, id))
+        .returning();
+      return deliveryView(updated, context.copy);
+    });
   }
 
   private requireLease(job: typeof jobs.$inferSelect, dto: KoreaderDeliveryLeaseDto, allowExpired = false) {
@@ -317,6 +398,7 @@ export class KoreaderDeliveryExecutionService {
       .set({
         restorationState: acknowledgement.quality === 'approximate' ? 'approximate' : 'verified',
         restorationFailureCode: null,
+        restorationNativePosition: acknowledgement.nativeLocator.value,
         restoredAt: sql`now()`,
         version: sql`${jobs.version} + 1`,
         updatedAt: sql`now()`,

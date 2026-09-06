@@ -218,6 +218,22 @@ assertEqual(unsafe, nil, "an unauthorized destination fails")
 assertEqual(unsafe_err, "unsafe_destination", "an unauthorized destination says why")
 assertEqual(requested, false, "an unauthorized destination never starts a transfer")
 
+require("bookorbit_revision_capabilities").delivery = 1
+files["/downloads/existing.epub"] = { size = 100, modified = now }
+local replaced = 0
+local managed, managed_err, managed_result = Transfer.run{
+    root = "/downloads", destination = "/downloads/existing.epub",
+    replace = function() replaced = replaced + 1; return true, nil, { queued = true } end,
+    perform = function() error("an overwrite must never enter the legacy publication path") end,
+}
+assertEqual(managed, true, "capable plugins route EPUB overwrites through managed delivery")
+assertEqual(managed_err, nil, "managed delivery preserves its error contract")
+assertEqual(managed_result.queued, true, "queued work remains distinct from installed files")
+assertEqual(replaced, 1, "single and bulk transfers share one replacement entry point")
+local bypass, bypass_error = Transfer.run{ root = "/downloads", destination = "/downloads/existing.epub" }
+assertEqual(bypass, nil, "legacy callers cannot bypass managed EPUB replacement")
+assertEqual(bypass_error, "revision_delivery_required", "missing replacement integration fails explicitly")
+
 os.rename = real_rename
 
 print("bookorbit_download_transfer_test.lua: ok")

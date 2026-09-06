@@ -15,6 +15,25 @@ local function lease_body(operation)
     return { deviceId = operation.deviceId, token = operation.lease.token, fence = operation.lease.fence }
 end
 
+function Runner.cancel(client, job)
+    if not uuid(job.id) or not Storage.safePath(job.pathname) then return nil, "invalid_delivery" end
+    local operation, err = State.load(job.id)
+    if err then return nil, err end
+    if operation and operation.account ~= Runner.account(client) then return nil, "delivery_account_mismatch" end
+    operation = operation or { version = 1, id = job.id, pathname = job.pathname, account = Runner.account(client),
+        deviceId = client.device_id, attempt = job.attempt, claimId = require("random").uuid(true):lower(), sequence = 0 }
+    operation.cancelRequested = true
+    local saved
+    saved, err = State.save(operation)
+    if not saved then return nil, err end
+    local current
+    current, err = client:request("GET", "/koreader/plugin/deliveries/" .. job.id)
+    if not current then return nil, err end
+    if current.id ~= job.id then return nil, "invalid_delivery_response" end
+    if current.cancelledAt or current.installationState == "installed" then return current end
+    return client:request("POST", "/koreader/plugin/deliveries/" .. job.id .. "/cancel", { version = current.version })
+end
+
 local function post_report(client, operation)
     if not operation.pendingReport then return true end
     local response, err = client:request("POST", "/koreader/plugin/deliveries/" .. operation.id .. "/progress", operation.pendingReport)
@@ -65,7 +84,7 @@ function Runner.recover(client, id, path, options)
     return result
 end
 
-function Runner.run(client, job, options)
+local function execute(client, job, options)
     options = options or {}
     if not uuid(job.id) or not uuid(job.copyId) or job.deviceId ~= client.device_id or not Storage.safePath(job.pathname)
         or not options.is_open or not options.upload_reading or not options.is_current then return nil, "invalid_delivery" end
@@ -81,6 +100,9 @@ function Runner.run(client, job, options)
         if recovered or err then return recovered, err end
     end
     if job.cancelledAt or job.failureCode or job.installationState == "installed" then return nil, "delivery_inactive" end
+    if operation and operation.cancelRequested and operation.attempt == job.attempt then
+        return nil, "cancelled"
+    end
     local backup = AnchorStore.load(job.pathname)
     local record = backup and backup.record
     if not record or record.copyId ~= job.copyId or record.anchor.bookFileId ~= job.bookFileId
@@ -100,6 +122,7 @@ function Runner.run(client, job, options)
         or claimed.job.id ~= job.id or claimed.job.revisionId ~= job.revisionId then return nil, "invalid_delivery_response" end
     if not operation.lease or operation.lease.fence ~= claimed.fence then operation.sequence, operation.pendingReport = 0, nil end
     operation.lease = { token = claimed.token, fence = claimed.fence }
+    operation.phase = "upload"
     local saved
     saved, err = State.save(operation)
     if not saved then return nil, err end
@@ -121,6 +144,9 @@ function Runner.run(client, job, options)
     local reported
     reported, err = report(client, operation, job, "downloading", true)
     if not reported then return nil, err end
+    operation.phase = "download"
+    saved, err = State.save(operation)
+    if not saved then return nil, err end
     local staged = Storage.parent(job.pathname) .. "/.bookorbit-delivery-" .. job.id .. ".part"
     if not Storage.safePath(staged) then return nil, "unsafe_path" end
     local result
@@ -129,6 +155,9 @@ function Runner.run(client, job, options)
         expected_bytes = job.sizeBytes, max_bytes = job.sizeBytes, expect_content_type = "application/epub+zip",
     })
     if not result then return nil, err end
+    operation.phase = "publication"
+    saved, err = State.save(operation)
+    if not saved then os.remove(staged); return nil, err end
     if options.is_open(job.pathname) or not options.is_current() then os.remove(staged); return nil, "cancelled" end
     local sidecars
     sidecars, err = require("bookorbit_install_sidecars").plan(job.pathname, staged)
@@ -162,11 +191,28 @@ function Runner.run(client, job, options)
             return true
         end,
         is_current = function()
-            return clock() < deadline and not options.is_open(job.pathname) and options.is_current()
+            if clock() >= deadline then return false, "publication_permission_expired" end
+            if options.is_open(job.pathname) then return false, "waiting_for_close" end
+            return options.is_current()
         end,
     })
     if not installed then return nil, err end
     return Runner.recover(client, job.id, job.pathname, options)
+end
+
+function Runner.run(client, job, options)
+    local result, err = execute(client, job, options)
+    if result or err == "waiting_for_uploads" or err == "waiting_for_close" then return result, err end
+    if err == "cancelled" then Runner.cancel(client, job); return nil, err end
+    local operation = State.load(job.id)
+    if operation and operation.account == Runner.account(client) and operation.lease and not Journal.load(job.pathname) and err ~= "delivery_inactive" then
+        local code = err == "copy_changed" and "copy_changed" or err == "verification_failed" and "verification_failed"
+            or operation.phase == "download" and "download_failed" or operation.phase == "publication" and "publication_failed" or "upload_failed"
+        local body = lease_body(operation)
+        body.failureCode = code
+        client:request("POST", "/koreader/plugin/deliveries/" .. job.id .. "/failure", body)
+    end
+    return nil, err
 end
 
 return Runner

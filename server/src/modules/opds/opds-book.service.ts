@@ -109,6 +109,8 @@ export interface OpdsBookEntry {
 
 export interface OpdsManifestFileRow {
   id: number;
+  revisionId?: string | null;
+  sha256?: string | null;
   format: string;
   sizeBytes: number | null;
   fileHash: string | null;
@@ -333,6 +335,8 @@ export class OpdsBookService {
           format: bookFiles.format,
           sizeBytes: bookFiles.sizeBytes,
           fileHash: bookFiles.fileHash,
+          revisionId: bookFiles.currentRevisionId,
+          sha256: bookFiles.sha256,
           absolutePath: bookFiles.absolutePath,
           updatedAt: bookFiles.updatedAt,
         })
@@ -357,6 +361,8 @@ export class OpdsBookService {
         format: row.format ?? 'unknown',
         sizeBytes: row.sizeBytes,
         fileHash: row.fileHash,
+        revisionId: row.revisionId,
+        sha256: row.sha256,
         // Only the basename leaves the server; the stored absolute path never does.
         filename: row.absolutePath.split('/').pop() ?? null,
         contentVersion: row.updatedAt,

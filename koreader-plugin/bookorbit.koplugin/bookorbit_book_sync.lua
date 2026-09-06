@@ -107,6 +107,8 @@ function BookOrbitBookSync.capture(plugin)
     return {
         digest = digest,
         file = file,
+        expected_book_file_id = plugin.reading_continuity and plugin.reading_continuity.record
+            and plugin.reading_continuity.record.anchor.bookFileId or nil,
         title = stats_ambiguous and titleFromFile(file) or (metadata.title or titleFromFile(file)),
         authors = stats_ambiguous and nil or metadata.authors,
         last_open = metadata.last_open or ts,

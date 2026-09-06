@@ -902,6 +902,7 @@ function BookOrbit:onReaderReady()
 end
 
 function BookOrbit:onReaderReadyAfterRestoration()
+    require("bookorbit_delivery").reportRestoration(self)
     if self.settings.auto_sync and self:isLoggedIn() then
         self:requestProgressPull(false, false, "reading_restored")
     end

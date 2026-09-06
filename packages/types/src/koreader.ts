@@ -194,6 +194,8 @@ export interface KoreaderCatalogEntry {
 
 export interface KoreaderCatalogFile {
   id: number;
+  revisionId?: string | null;
+  sha256?: string | null;
   format: string;
   role: string;
   sizeBytes: number | null;
@@ -367,6 +369,8 @@ export interface KoreaderCatalogDashboardSectionResponse {
 // as the digest that keys local match state.
 export interface KoreaderCatalogManifestFile {
   id: number;
+  revisionId?: string | null;
+  sha256?: string | null;
   format: string;
   sizeBytes: number | null;
   contentVersion: string;

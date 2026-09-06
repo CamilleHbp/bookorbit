@@ -163,6 +163,10 @@ export interface KoreaderDeliveryProgress extends KoreaderDeliveryLeaseIdentity 
   failureCode?: KoreaderDeliveryFailure;
 }
 
+export interface KoreaderDeliveryFailureReport extends KoreaderDeliveryLeaseIdentity {
+  failureCode: Exclude<KoreaderDeliveryFailure, "access_revoked" | "revision_changed">;
+}
+
 export interface KoreaderPublicationPermit {
   token: string;
   expiresAt: string;
@@ -170,4 +174,27 @@ export interface KoreaderPublicationPermit {
   revisionId: string;
   sha256: string;
   sizeBytes: number;
+}
+
+export interface KoreaderRestorationReport {
+  deviceId: string;
+  copyId: string;
+  sha256: string;
+  quality: "verified" | "approximate" | "failed";
+  nativePosition?: string;
+  failureCode?: "native_verification" | "identity_unavailable";
+}
+
+export interface KoreaderDeliveryTargetRequest {
+  bookFileIds: number[];
+}
+
+export interface KoreaderDeliveryTargets {
+  items: {
+    bookFileId: number;
+    bookId: number;
+    revisionId: string;
+    sha256: string;
+    sizeBytes: number;
+  }[];
 }

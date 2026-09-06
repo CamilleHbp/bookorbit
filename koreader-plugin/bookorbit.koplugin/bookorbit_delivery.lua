@@ -1,14 +1,20 @@
 local Delivery = {}
 
-function Delivery.run(plugin)
+function Delivery.reportRestoration(plugin)
+    if require("bookorbit_revision_capabilities").position < 1 or not plugin:isLoggedIn()
+        or not require("ui/network/manager"):isConnected() then return false end
+    return plugin:submitSyncJob({ family = "revision_restoration", label = require("gettext")("Reading position"),
+        priority = require("bookorbit_sync_coordinator").PRIORITY.auto, interactive = false,
+        run = function() require("bookorbit_delivery_restoration").report(plugin, plugin:newClient()) end })
+end
+
+function Delivery.options(plugin, client, current_override)
     local Runner = require("bookorbit_delivery_runner")
-    local State = require("bookorbit_delivery_state")
     local UIManager = require("ui/uimanager")
-    local client = plugin:newClient()
     local account = Runner.account(client)
     local function current()
         return plugin:isLoggedIn() and Runner.account(plugin:newClient()) == account
-            and require("ui/network/manager"):isConnected()
+            and (not current_override or current_override())
     end
     local function is_open(path)
         local reader = require("apps/reader/readerui").instance
@@ -29,10 +35,19 @@ function Delivery.run(plugin)
         end
         return current()
     end
-    local options = { is_open = is_open, is_current = current, yield_step = yield_step,
+    return { is_open = is_open, is_current = current, yield_step = yield_step,
         upload_reading = function(job, operation)
             return require("bookorbit_delivery_reading").upload(plugin, client, job, operation)
         end }
+end
+
+function Delivery.run(plugin)
+    local Runner = require("bookorbit_delivery_runner")
+    local State = require("bookorbit_delivery_state")
+    local client = plugin:newClient()
+    local account = Runner.account(client)
+    local options = Delivery.options(plugin, client)
+    local current, is_open = options.is_current, options.is_open
     local pending = State.list(account)
     local cursor = plugin.delivery_recovery_cursor or 0
     for _ = 1, math.min(#pending, 10) do

@@ -163,7 +163,10 @@ function Journal.publish(path, options)
     current = Storage.identity(path, options.yield_step)
     if not Storage.matches(current, record.expected) then return nil, "copy_changed" end
     if not Storage.safePath(path) or not Storage.same(current.signature, lfs.attributes(path)) then return nil, "copy_changed" end
-    if options.is_current and not options.is_current() then return nil, "cancelled" end
+    if options.is_current then
+        local current, reason = options.is_current()
+        if not current then return nil, reason or "cancelled" end
+    end
     if not os.rename(directory .. "/next.epub", path) then return nil, "publication_failed" end
     if not sync.fsyncDirectory(Storage.parent(path)) then return nil, "directory_sync_failed" end
     return finish(record, options)

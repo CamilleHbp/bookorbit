@@ -15,6 +15,9 @@ import {
   ClaimKoreaderDeliveryDto,
   KoreaderDeliveryLeaseDto,
   KoreaderDeliveryProgressDto,
+  KoreaderDeliveryTargetsDto,
+  KoreaderRestorationReportDto,
+  KoreaderDeliveryFailureDto,
 } from './dto/koreader-delivery.dto';
 
 @Controller('koreader/deliveries')
@@ -56,6 +59,16 @@ export class KoreaderPluginDeliveryController {
     private readonly deliveries: KoreaderDeliveryService,
     private readonly execution: KoreaderDeliveryExecutionService,
   ) {}
+  @Post('targets')
+  @HttpCode(200)
+  targets(@Body() dto: KoreaderDeliveryTargetsDto, @CurrentUser() user: RequestUser) {
+    return this.deliveries.targets(dto.bookFileIds, user);
+  }
+  @Post('copies/:id')
+  @HttpCode(202)
+  request(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RequestKoreaderDeliveryDto, @CurrentUser() user: RequestUser) {
+    return this.deliveries.request(id, dto, user);
+  }
   @Get()
   list(@Query() dto: ListKoreaderDeliveriesDto, @CurrentUser() user: RequestUser) {
     return this.deliveries.list(dto, user);
@@ -69,15 +82,35 @@ export class KoreaderPluginDeliveryController {
   claim(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ClaimKoreaderDeliveryDto, @CurrentUser() user: RequestUser) {
     return this.execution.claim(id, dto, user);
   }
+  @Post(':id/cancel')
+  @HttpCode(202)
+  cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ChangeKoreaderDeliveryDto, @CurrentUser() user: RequestUser) {
+    return this.deliveries.cancel(id, dto.version, user);
+  }
+  @Post(':id/retry')
+  @HttpCode(202)
+  retry(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ChangeKoreaderDeliveryDto, @CurrentUser() user: RequestUser) {
+    return this.deliveries.retry(id, dto.version, user);
+  }
   @Post(':id/progress')
   @HttpCode(200)
   progress(@Param('id', ParseUUIDPipe) id: string, @Body() dto: KoreaderDeliveryProgressDto, @CurrentUser() user: RequestUser) {
     return this.execution.progress(id, dto, user);
   }
+  @Post(':id/failure')
+  @HttpCode(200)
+  fail(@Param('id', ParseUUIDPipe) id: string, @Body() dto: KoreaderDeliveryFailureDto, @CurrentUser() user: RequestUser) {
+    return this.execution.fail(id, dto, user);
+  }
   @Post(':id/publication')
   @HttpCode(200)
   publication(@Param('id', ParseUUIDPipe) id: string, @Body() dto: KoreaderDeliveryLeaseDto, @CurrentUser() user: RequestUser) {
     return this.execution.authorizePublication(id, dto, user);
+  }
+  @Post(':id/restoration')
+  @HttpCode(200)
+  restoration(@Param('id', ParseUUIDPipe) id: string, @Body() dto: KoreaderRestorationReportDto, @CurrentUser() user: RequestUser) {
+    return this.execution.restoration(id, dto, user);
   }
   @Post(':id/download')
   async download(

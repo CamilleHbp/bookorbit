@@ -26,7 +26,7 @@ function Inventory.installed(client, job, identity)
     local latest = store.load(job.pathname)
     if not latest or latest.record.persistenceSequence ~= backup.record.persistenceSequence then return nil, "reading_changed" end
     backup.record.inventory = { id = accepted.id, sha256 = identity.sha256, revisionId = accepted.revisionId,
-        policy = accepted.policy, policyVersion = accepted.effectivePolicyVersion, reportedAt = os.time() }
+        policy = accepted.policy, policyVersion = accepted.effectivePolicyVersion, reportedAt = os.time(), deliveryId = job.id }
     backup.record.persistenceSequence = backup.record.persistenceSequence + 1
     return store.save(backup.record, backup.sidecarPath)
 end
@@ -75,6 +75,8 @@ function Inventory.run(plugin)
     return require("bookorbit_reading_continuity").setCopyInventory(plugin, record, {
         id = accepted.id, sha256 = copy.sha256, revisionId = type(accepted.revisionId) == "string" and accepted.revisionId or nil,
         policy = accepted.policy, policyVersion = accepted.effectivePolicyVersion, reportedAt = now,
+        deliveryId = previous and previous.sha256 == copy.sha256 and previous.deliveryId or nil,
+        restorationReported = previous and previous.sha256 == copy.sha256 and previous.restorationReported or nil,
     })
 end
 

@@ -187,6 +187,60 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
     const job = await request();
     return execution.claim(job.id, { deviceId: 'reader', claimId: randomUUID() }, users[0]);
   }
+  it('returns revision targets only within current library and download access', async () => {
+    expect((await deliveries.targets([file.id], users[0])).items).toEqual([
+      { bookFileId: file.id, bookId: file.bookId, revisionId: revision.id, sha256, sizeBytes: content.length },
+    ]);
+    await db.delete(schema.userLibraryAccess).where(eq(schema.userLibraryAccess.userId, users[1].id));
+    expect((await deliveries.targets([file.id], users[1])).items).toEqual([]);
+    users[0].permissions = [Permission.KoreaderSync];
+    await expect(deliveries.targets([file.id], users[0])).rejects.toThrow('permission');
+  });
+  it('records first-open failure and verified native evidence without requiring a reading event', async () => {
+    const lease = await claim();
+    const report = { deviceId: 'reader', copyId: localCopyId, sha256, quality: 'verified' as const, nativePosition: '/body/p[1]' };
+    await expect(execution.restoration(lease.job.id, report, users[0])).rejects.toThrow('installed copy');
+    await execution.progress(lease.job.id, progress(lease), users[0]);
+    const permit = await execution.authorizePublication(lease.job.id, identity(lease), users[0]);
+    await execution.progress(
+      lease.job.id,
+      progress(lease, { sequence: 2, state: 'installed', publicationToken: permit.token, localSha256: sha256, localSizeBytes: content.length }),
+      users[0],
+    );
+    await inventory.report(
+      {
+        protocolVersion: 1,
+        deviceId: 'reader',
+        sequence: 2,
+        pluginVersion: 'validation',
+        deliveryCapabilityVersion: 1,
+        positionCapabilityVersion: 1,
+        copies: [
+          { copyId: localCopyId, bookFileId: file.id, pathname: '/books/story.epub', sha256, revisionId: revision.id, sizeBytes: content.length },
+        ],
+      },
+      users[0],
+    );
+    await expect(execution.restoration(lease.job.id, { ...report, nativePosition: undefined }, users[0])).rejects.toThrow('native position');
+    const failure = { deviceId: 'reader', copyId: localCopyId, sha256, quality: 'failed' as const, failureCode: 'native_verification' as const };
+    expect((await execution.restoration(lease.job.id, failure, users[0])).restorationState).toBe('failed');
+    const verified = await execution.restoration(lease.job.id, report, users[0]);
+    expect(verified.restorationState).toBe('verified');
+    expect((await execution.restoration(lease.job.id, failure, users[0])).version).toBe(verified.version);
+    const [stored] = await db
+      .select({ native: schema.koreaderDeliveryJobs.restorationNativePosition })
+      .from(schema.koreaderDeliveryJobs)
+      .where(eq(schema.koreaderDeliveryJobs.id, lease.job.id));
+    expect(stored.native).toBe('/body/p[1]');
+    expect(
+      await db
+        .select({ id: schema.canonicalReadingEvents.id })
+        .from(schema.canonicalReadingEvents)
+        .where(eq(schema.canonicalReadingEvents.userId, users[0].id))
+        .limit(1),
+    ).toEqual([]);
+    await expect(execution.restoration(lease.job.id, report, users[1])).rejects.toThrow('unavailable');
+  });
   it('reserves one durable request per copy and revision and rejects reused request keys', async () => {
     const dto = { idempotencyKey: randomUUID(), expectedRevisionId: revision.id };
     const results = await Promise.all([deliveries.request(copyId, dto, users[0]), deliveries.request(copyId, dto, users[0]), request()]);
@@ -194,6 +248,19 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
     expect(results[0]).toMatchObject({ installationState: 'requested', restorationState: 'verification_pending', mode: 'manual' });
     await expect(deliveries.request(copyId, { ...dto, expectedRevisionId: randomUUID() }, users[0])).rejects.toThrow('identity was reused');
     await expect(deliveries.get(results[0].id, users[1])).rejects.toThrow('unavailable');
+  });
+  it('persists device failures idempotently and fences failure reports after explicit retry', async () => {
+    const lease = await claim();
+    await execution.progress(lease.job.id, progress(lease), users[0]);
+    const dto = { ...identity(lease), failureCode: 'download_failed' as const };
+    const failed = await execution.fail(lease.job.id, dto, users[0]);
+    expect(failed.failureCode).toBe('download_failed');
+    expect((await execution.fail(lease.job.id, dto, users[0])).version).toBe(failed.version);
+    await expect(execution.claim(lease.job.id, { deviceId: 'reader', claimId: randomUUID() }, users[0])).rejects.toThrow('no longer active');
+    const retried = await deliveries.retry(lease.job.id, failed.version, users[0]);
+    expect(retried.attempt).toBe(2);
+    await expect(execution.fail(lease.job.id, dto, users[0])).rejects.toThrow('lease');
+    expect((await deliveries.get(lease.job.id, users[0])).failureCode).toBeNull();
   });
   it('separates upload, download, installation and verified restoration without creating reading events', async () => {
     const lease = await claim();
