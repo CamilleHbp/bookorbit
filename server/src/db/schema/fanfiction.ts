@@ -1,4 +1,4 @@
-import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
+import { boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, varchar } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type {
   EncryptedFanfictionDocument,
@@ -12,6 +12,7 @@ import type {
   FanfictionDiscoverySelection,
   FanfictionCandidateState,
   FanfictionRecognizedUrl,
+  FanfictionSourceSelection,
 } from '@bookorbit/types';
 import { libraries, libraryFolders } from './libraries';
 import { users } from './auth';
@@ -75,6 +76,7 @@ export const fanfictionSources = pgTable(
       .on(t.bookFileId)
       .where(sql`${t.state} <> 'unlinked'`),
     index('fanfiction_sources_list_idx').on(t.libraryId, t.createdAt, t.id),
+    index('fanfiction_sources_batch_idx').on(t.libraryId, t.id),
     index('fanfiction_sources_schedule_idx').on(t.state, t.nextCheckAt, t.id),
     index('fanfiction_sources_user_idx').on(t.createdBy),
     index('fanfiction_sources_folder_idx').on(t.folderId),
@@ -108,6 +110,7 @@ export const fanfictionJobs = pgTable(
     kind: varchar('kind', { length: 20 }).$type<FanfictionJobKind>().notNull(),
     discovery: jsonb('discovery').$type<FanfictionDiscoveryProgress>(),
     selection: jsonb('selection').$type<FanfictionDiscoverySelection>(),
+    sourceSelection: jsonb('source_selection').$type<FanfictionSourceSelection>(),
     state: varchar('state', { length: 30 }).$type<FanfictionJobState>().notNull().default('queued'),
     url: text('url').notNull(),
     site: varchar('site', { length: 255 }).notNull(),
@@ -138,7 +141,7 @@ export const fanfictionJobs = pgTable(
       .where(sql`${t.sourceId} is not null and ${t.state} in ('queued', 'running')`),
     index('fanfiction_jobs_source_idx').on(t.sourceId),
     check('fanfiction_jobs_attempts_chk', sql`${t.attempts} >= 0 and ${t.fence} >= 0`),
-    check('fanfiction_jobs_kind_chk', sql`${t.kind} in ('preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback')`),
+    check('fanfiction_jobs_kind_chk', sql`${t.kind} in ('preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch')`),
     uniqueIndex('fanfiction_jobs_discovery_active_idx')
       .on(t.libraryId)
       .where(sql`${t.kind} = 'discovery' and ${t.state} in ('queued', 'running')`),
@@ -147,6 +150,20 @@ export const fanfictionJobs = pgTable(
       sql`${t.state} in ('queued', 'running', 'succeeded', 'no_change', 'review_required', 'configuration_blocked', 'failed', 'cancelled')`,
     ),
   ],
+);
+
+export const fanfictionSourceBatchFailures = pgTable(
+  'fanfiction_source_batch_failures',
+  {
+    jobId: uuid('job_id')
+      .notNull()
+      .references(() => fanfictionJobs.id, { onDelete: 'cascade' }),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => fanfictionSources.id, { onDelete: 'cascade' }),
+    errorCode: varchar('error_code', { length: 100 }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.jobId, t.sourceId] }), index('fanfiction_source_batch_failures_source_idx').on(t.sourceId)],
 );
 
 export const fanfictionDiscoveryCandidates = pgTable(
@@ -219,6 +236,6 @@ export const fanfictionActivity = pgTable(
     index('fanfiction_activity_source_idx').on(t.sourceId),
     index('fanfiction_activity_job_idx').on(t.jobId),
     index('fanfiction_activity_book_idx').on(t.bookId),
-    check('fanfiction_activity_kind_chk', sql`${t.kind} in ('imported', 'updated', 'rolled_back', 'attention', 'failed')`),
+    check('fanfiction_activity_kind_chk', sql`${t.kind} in ('imported', 'updated', 'rolled_back', 'attention', 'failed', 'batch_completed')`),
   ],
 );

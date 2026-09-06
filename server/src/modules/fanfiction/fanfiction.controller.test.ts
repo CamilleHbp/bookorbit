@@ -17,6 +17,9 @@ import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
 import { FanfictionAdoptionService } from './fanfiction-adoption.service';
 import { FanfictionActivityService } from './fanfiction-activity.service';
 
+import { FanfictionSourceBatchController } from './fanfiction-source-batch.controller';
+import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
+
 describe('Fanfiction HTTP contracts', () => {
   let app: NestFastifyApplication;
   const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn() };
@@ -24,18 +27,20 @@ describe('Fanfiction HTTP contracts', () => {
   const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), check: vi.fn(), rollback: vi.fn() };
   const discovery = { start: vi.fn(), list: vi.fn() };
   const adoption = { start: vi.fn() };
+  const batches = { start: vi.fn(), listFailures: vi.fn() };
   const activity = { list: vi.fn() };
   const uuid = '97e5bb69-36e8-43a2-9e3b-0fb924d1ca2f';
   const base = '/api/v1/libraries/5/fanfiction';
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [FanfictionController, FanfictionSourceController, FanfictionDiscoveryController],
+      controllers: [FanfictionController, FanfictionSourceController, FanfictionDiscoveryController, FanfictionSourceBatchController],
       providers: [
         { provide: FanfictionProfileService, useValue: profiles },
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionSourceService, useValue: sources },
         { provide: FanfictionDiscoveryService, useValue: discovery },
         { provide: FanfictionAdoptionService, useValue: adoption },
+        { provide: FanfictionSourceBatchService, useValue: batches },
         { provide: FanfictionActivityService, useValue: activity },
         { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
         { provide: FanficfareRuntimeService, useValue: { health: vi.fn(), sites: vi.fn() } },
@@ -54,6 +59,8 @@ describe('Fanfiction HTTP contracts', () => {
     vi.clearAllMocks();
   });
   it('requires library administration at both permission and library role boundaries', () => {
+    expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionSourceBatchController)).toBe(Permission.ManageLibraries);
+    expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionSourceBatchController)).toBe('owner');
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionDiscoveryController)).toBe(Permission.ManageLibraries);
     expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionDiscoveryController)).toBe('owner');
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionController)).toBe(Permission.ManageLibraries);
@@ -96,6 +103,41 @@ describe('Fanfiction HTTP contracts', () => {
     expect(sourceJob.json()).toEqual({ items: [job], nextCursor: null });
     expect(jobs.list).toHaveBeenCalledWith(5, expect.objectContaining({ sourceId: uuid, activeOnly: 'true', limit: 1 }), undefined);
     expect((await app.inject({ method: 'GET', url: `${base}/jobs?sourceId=invalid` })).statusCode).toBe(400);
+  });
+  it('validates bulk action requests, durable recovery and bounded failure pages', async () => {
+    const job = {
+      id: uuid,
+      kind: 'source_batch',
+      state: 'queued',
+      result: { selection: { action: 'schedule', processed: 0, failed: 0, finished: false } },
+    };
+    batches.start.mockResolvedValue(job);
+    const payload = { idempotencyKey: uuid, allMatching: true, state: 'paused', search: 'Story', action: 'schedule', intervalMinutes: null };
+    const result = await app.inject({ method: 'POST', url: `${base}/source-batches`, payload });
+    expect(result.statusCode).toBe(202);
+    expect(result.json()).toEqual(job);
+    expect(batches.start).toHaveBeenCalledWith(5, expect.objectContaining(payload), undefined);
+    for (const invalid of [
+      { ...payload, action: 'delete' },
+      { ...payload, intervalMinutes: 59 },
+      { ...payload, allMatching: 'true' },
+      { ...payload, ids: Array(101).fill(uuid) },
+      { ...payload, cursor: uuid },
+      { ...payload, state: 'unknown' },
+    ])
+      expect((await app.inject({ method: 'POST', url: `${base}/source-batches`, payload: invalid })).statusCode).toBe(400);
+    expect(
+      (await app.inject({ method: 'POST', url: `${base}/source-batches`, payload: { idempotencyKey: uuid, ids: [uuid], action: 'update' } }))
+        .statusCode,
+    ).toBe(202);
+    const page = { items: [{ sourceId: uuid, title: 'Story', errorCode: 'source_batch_item_failed' }], nextCursor: uuid };
+    batches.listFailures.mockResolvedValue(page);
+    expect((await app.inject({ method: 'GET', url: `${base}/source-batches/${uuid}/failures?limit=25&cursor=${uuid}` })).json()).toEqual(page);
+    expect(batches.listFailures).toHaveBeenCalledWith(5, uuid, uuid, 25, undefined);
+    expect((await app.inject({ method: 'GET', url: `${base}/source-batches/${uuid}/failures?limit=101` })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: `${base}/source-batches/${uuid}/failures?cursor=invalid` })).statusCode).toBe(400);
+    jobs.list.mockResolvedValue({ items: [job], nextCursor: null });
+    expect((await app.inject({ method: 'GET', url: `${base}/jobs?kind=source_batch&limit=1` })).json()).toEqual({ items: [job], nextCursor: null });
   });
   it('validates separate update and refresh jobs with a durable operation identity', async () => {
     const job = { id: uuid, kind: 'update', state: 'queued', libraryId: 5 };

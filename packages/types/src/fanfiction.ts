@@ -68,7 +68,7 @@ export interface FanfictionProfileView extends FanfictionProfileSummary {
   cookies: FanfictionCookie[];
 }
 
-export type FanfictionJobKind = "preview" | "discovery" | "adopt" | "import" | "update" | "refresh" | "rollback";
+export type FanfictionJobKind = "preview" | "discovery" | "adopt" | "import" | "update" | "refresh" | "rollback" | "source_batch";
 export type FanfictionJobState =
   "queued" | "running" | "succeeded" | "no_change" | "review_required" | "configuration_blocked" | "failed" | "cancelled";
 
@@ -89,7 +89,7 @@ export interface FanfictionJob {
     revisionId?: string;
     noChange?: boolean;
     discovery?: FanfictionDiscoveryProgress;
-    selection?: { processed: number; failed: number; finished: boolean };
+    selection?: { processed: number; failed: number; finished: boolean; action?: FanfictionSourceBatchAction };
   } | null;
   errorCode: string | null;
   createdAt: string;
@@ -144,6 +144,26 @@ export interface FanfictionDiscoverySelection {
   processed: number;
   failed: number;
   retryFailedOnly?: boolean;
+}
+
+export type FanfictionSourceBatchAction = "update" | "refresh" | "retry" | "schedule";
+
+export interface FanfictionSourceSelection {
+  cutoff: string;
+  cursor: string | null;
+  ids: string[] | null;
+  search: string | null;
+  state: FanfictionSourceState | null;
+  action: FanfictionSourceBatchAction;
+  intervalMinutes: number | null;
+  processed: number;
+  failed: number;
+  retryFailedOnly?: boolean;
+}
+
+export interface FanfictionSourceBatchFailurePage {
+  items: { sourceId: string; title: string; errorCode: string }[];
+  nextCursor: string | null;
 }
 
 export interface FanfictionSource {
@@ -208,7 +228,7 @@ export interface FanfictionActivity {
   libraryId: number;
   sourceId: string | null;
   jobId: string | null;
-  kind: "imported" | "updated" | "rolled_back" | "attention" | "failed";
+  kind: "imported" | "updated" | "rolled_back" | "attention" | "failed" | "batch_completed";
   title: string;
   bookId: number | null;
   revisionId: string | null;

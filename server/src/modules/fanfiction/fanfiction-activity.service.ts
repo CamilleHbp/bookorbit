@@ -18,6 +18,7 @@ const notificationTypes = {
   rolled_back: NotificationType.FanfictionRolledBack,
   attention: NotificationType.FanfictionAttention,
   failed: NotificationType.FanfictionFailed,
+  batch_completed: NotificationType.FanfictionBatchCompleted,
 };
 const titles = {
   imported: 'Story imported',
@@ -25,6 +26,7 @@ const titles = {
   rolled_back: 'Story rolled back',
   attention: 'Story source needs attention',
   failed: 'Story operation failed',
+  batch_completed: 'Bulk story actions processed',
 };
 
 @Injectable()

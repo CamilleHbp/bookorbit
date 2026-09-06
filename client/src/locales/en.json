@@ -10139,7 +10139,8 @@
       "imported": "Imported",
       "updated": "Updated on the server",
       "attention": "Needs attention",
-      "failed": "Failed"
+      "failed": "Failed",
+      "batch_completed": "Bulk story actions processed"
     },
     "retry": "Retry operation",
     "checkNow": "Check for new chapters",
@@ -10198,7 +10199,9 @@
       "source_unrecognized": "No supported source was recognized. Use upload replacement for this book.",
       "source_ambiguous": "Choose one recognized source URL for this book.",
       "source_conflict": "This story or EPUB already has a different managed source. Review its story settings.",
-      "discovery_review_required": "Some candidates need attention. Retry revisits only failures from this selection."
+      "discovery_review_required": "Some candidates need attention. Retry revisits only failures from this selection.",
+      "source_batch_review_required": "Some stories need attention. Review the failed items, then retry them.",
+      "source_batch_item_failed": "This action could not be applied. Check the story status and settings before retrying."
     },
     "title": "Fanfiction",
     "description": "Import stories and manage their source updates.",
@@ -10243,7 +10246,8 @@
       "refresh": "Refresh chapters",
       "discovery": "Discover sources",
       "rollback": "Rollback",
-      "adopt": "Link existing stories"
+      "adopt": "Link existing stories",
+      "source_batch": "Bulk story actions"
     },
     "discovery": {
       "title": "Existing books",
@@ -10278,7 +10282,30 @@
     "removeCookie": "Remove cookie",
     "clearCookies": "Remove all cookies",
     "previousCookies": "Previous cookies",
-    "nextCookies": "More cookies"
+    "nextCookies": "More cookies",
+    "bulk": {
+      "title": "Bulk story actions",
+      "selectStory": "Select {title}",
+      "selected": "{count} selected on this page",
+      "selectPage": "Select this page",
+      "clear": "Clear selection",
+      "allMatching": "All stories matching the current filters",
+      "cutoffHelp": "The selection is saved when you start. Stories added or changed afterward are excluded.",
+      "action": "Action",
+      "update": "Check for new chapters",
+      "refresh": "Refresh existing chapters",
+      "retry": "Retry failed story jobs",
+      "schedule": "Change update schedule",
+      "start": "Start bulk action",
+      "progress": "{processed} processed, {failed} need attention",
+      "queuedHelp": "Update jobs run separately. This progress shows which actions have been processed, not which books have finished updating.",
+      "cancelHelp": "Cancelling stops the remaining selection. Story jobs already queued continue independently.",
+      "failures": "Stories needing attention",
+      "retryFailed": "Retry failed items",
+      "refreshHelp": "Refresh downloads existing chapters again.",
+      "scheduleHelp": "Changing the schedule preserves paused and review states.",
+      "review": "View bulk progress"
+    }
   },
   "koreaderCopies": {
     "title": "Device copies",

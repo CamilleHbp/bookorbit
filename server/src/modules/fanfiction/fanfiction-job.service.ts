@@ -38,9 +38,10 @@ export class FanfictionJobService {
     user: RequestUser,
     scheduled = false,
     rollback?: { revisionId: string; expectedRevisionId: string },
+    transaction?: DatabaseTransaction,
   ): Promise<FanfictionJob> {
     await this.access.administer(user, source.libraryId);
-    return this.db.transaction(async (tx) => {
+    const operation = async (tx: DatabaseTransaction) => {
       const [current] = await tx
         .select()
         .from(schema.fanfictionSources)
@@ -96,7 +97,8 @@ export class FanfictionJobService {
         .returning();
       if (!row) throw new ConflictException('An operation for this story is already active');
       return this.view(row);
-    });
+    };
+    return transaction ? operation(transaction) : this.db.transaction(operation);
   }
 
   async enqueueDue(): Promise<number> {
@@ -259,9 +261,9 @@ export class FanfictionJobService {
     return this.get(libraryId, id, user);
   }
 
-  async retry(libraryId: number, id: string, user: RequestUser) {
+  async retry(libraryId: number, id: string, user: RequestUser, transaction?: DatabaseTransaction) {
     await this.access.administer(user, libraryId);
-    return this.db.transaction(async (tx) => {
+    const operation = async (tx: DatabaseTransaction) => {
       const [job] = await tx
         .select()
         .from(jobs)
@@ -302,6 +304,12 @@ export class FanfictionJobService {
           scheduled: false,
           cancellationRequested: false,
           attempts: 0,
+          ...(job.kind === 'source_batch' && job.sourceSelection && job.state === 'review_required'
+            ? {
+                sourceSelection: { ...job.sourceSelection, cursor: null, processed: 0, failed: 0, retryFailedOnly: true },
+                result: { selection: { processed: 0, failed: 0, finished: false, action: job.sourceSelection.action } },
+              }
+            : {}),
           ...(job.kind === 'adopt' && job.selection && job.state === 'review_required'
             ? {
                 selection: { ...job.selection, cursor: null, processed: 0, failed: 0, retryFailedOnly: true },
@@ -317,7 +325,8 @@ export class FanfictionJobService {
         .where(eq(jobs.id, id))
         .returning();
       return this.view(updated);
-    });
+    };
+    return transaction ? operation(transaction) : this.db.transaction(operation);
   }
 
   async claim() {
@@ -361,7 +370,7 @@ export class FanfictionJobService {
         .from(jobs)
         .where(
           and(
-            inArray(jobs.kind, ['preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback']),
+            inArray(jobs.kind, ['preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch']),
             eq(jobs.cancellationRequested, false),
             lt(jobs.attempts, 3),
             active.length
@@ -446,6 +455,15 @@ export class FanfictionJobService {
         .where(this.owned(job))
         .returning();
       if (rows[0]) await this.recordFailure(tx, rows[0]);
+      if (rows[0]?.kind === 'source_batch' && rows[0].state === 'succeeded')
+        await recordFanfictionActivity(tx, {
+          libraryId: job.libraryId,
+          userId: job.userId,
+          jobId: job.id,
+          eventKey: `${job.id}:batch-completed`,
+          kind: 'batch_completed',
+          title: `${rows[0].result?.selection?.processed ?? 0} story actions processed`,
+        });
       return rows.length === 1;
     });
   }
@@ -469,7 +487,14 @@ export class FanfictionJobService {
 
   private async recordFailure(tx: DatabaseTransaction, job: typeof jobs.$inferSelect): Promise<void> {
     if (!['configuration_blocked', 'review_required', 'failed', 'cancelled'].includes(job.state)) return;
-    let title = job.kind === 'discovery' ? 'Existing book discovery' : job.kind === 'adopt' ? 'Existing book selection' : 'Story import';
+    let title =
+      job.kind === 'source_batch'
+        ? 'Bulk story actions'
+        : job.kind === 'discovery'
+          ? 'Existing book discovery'
+          : job.kind === 'adopt'
+            ? 'Existing book selection'
+            : 'Story import';
     let bookId: number | null = null;
     if (job.sourceId) {
       await tx
@@ -495,7 +520,7 @@ export class FanfictionJobService {
       if (!source) return;
       title = source.title;
       bookId = source.bookId;
-    } else if (!['import', 'discovery', 'adopt'].includes(job.kind)) return;
+    } else if (!['import', 'discovery', 'adopt', 'source_batch'].includes(job.kind)) return;
     if (job.state !== 'cancelled')
       await recordFanfictionActivity(tx, {
         libraryId: job.libraryId,

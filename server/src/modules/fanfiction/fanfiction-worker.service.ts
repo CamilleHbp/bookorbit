@@ -11,6 +11,7 @@ import { FanfictionUpdateService } from './fanfiction-update.service';
 import { FanfictionRollbackService } from './fanfiction-rollback.service';
 import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
 import { FanfictionAdoptionService } from './fanfiction-adoption.service';
+import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
 
 type ClaimedJob = NonNullable<Awaited<ReturnType<FanfictionJobService['claim']>>>;
 
@@ -32,6 +33,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
     private readonly rollbacks: FanfictionRollbackService,
     private readonly discovery: FanfictionDiscoveryService,
     private readonly adoption: FanfictionAdoptionService,
+    private readonly sourceBatches: FanfictionSourceBatchService,
   ) {}
 
   @Interval(2000)
@@ -97,21 +99,23 @@ export class FanfictionWorkerService implements OnModuleDestroy {
         return current;
       };
       const { document, saveCookies } =
-        job.profileId && !['rollback', 'discovery', 'adopt'].includes(job.kind)
+        job.profileId && !['rollback', 'discovery', 'adopt', 'source_batch'].includes(job.kind)
           ? await this.profiles.session(job.libraryId, job.profileId, user, authorizeCookies)
           : { document: { configuration: '', cookies: [] }, saveCookies: undefined };
       const result: FanfictionJob['result'] =
-        job.kind === 'discovery'
-          ? await this.discovery.run(job, () => this.authorized(job), controller.signal)
-          : job.kind === 'adopt'
-            ? await this.adoption.run(job, user, () => this.authorized(job), controller.signal)
-            : job.kind === 'rollback'
-              ? await this.rollbacks.run(job, () => this.authorized(job), controller.signal)
-              : job.kind === 'import'
-                ? await this.imports.run(job, user, document, authorizeCookies, controller.signal, saveCookies)
-                : job.kind === 'update' || job.kind === 'refresh'
-                  ? await this.updates.run(job, document, () => this.authorized(job), controller.signal, saveCookies)
-                  : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
+        job.kind === 'source_batch'
+          ? await this.sourceBatches.run(job, user, () => this.authorized(job), controller.signal)
+          : job.kind === 'discovery'
+            ? await this.discovery.run(job, () => this.authorized(job), controller.signal)
+            : job.kind === 'adopt'
+              ? await this.adoption.run(job, user, () => this.authorized(job), controller.signal)
+              : job.kind === 'rollback'
+                ? await this.rollbacks.run(job, () => this.authorized(job), controller.signal)
+                : job.kind === 'import'
+                  ? await this.imports.run(job, user, document, authorizeCookies, controller.signal, saveCookies)
+                  : job.kind === 'update' || job.kind === 'refresh'
+                    ? await this.updates.run(job, document, () => this.authorized(job), controller.signal, saveCookies)
+                    : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
       await this.authorized(job);
       const continuation = result?.discovery?.finished === false || result?.selection?.finished === false;
       const needsReview = (result?.selection?.failed ?? 0) > 0;
@@ -121,7 +125,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
             job,
             needsReview ? 'review_required' : result?.noChange ? 'no_change' : 'succeeded',
             result,
-            needsReview ? 'discovery_review_required' : null,
+            needsReview ? (job.kind === 'source_batch' ? 'source_batch_review_required' : 'discovery_review_required') : null,
           );
       this.logger.log(
         `[fanfiction.job] [end] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} committed=${committed} - job completed`,

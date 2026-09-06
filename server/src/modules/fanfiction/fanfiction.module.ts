@@ -28,6 +28,8 @@ import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
 import { FanfictionAdoptionService } from './fanfiction-adoption.service';
 import { FanfictionDiscoveryController } from './fanfiction-discovery.controller';
 import { NotificationModule } from '../notification/notification.module';
+import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
+import { FanfictionSourceBatchController } from './fanfiction-source-batch.controller';
 
 @Module({
   imports: [
@@ -58,7 +60,14 @@ import { NotificationModule } from '../notification/notification.module';
     FanfictionRecoveryService,
     FanfictionDiscoveryService,
     FanfictionAdoptionService,
+    FanfictionSourceBatchService,
   ],
-  controllers: [FanfictionController, FanfictionLibraryController, FanfictionSourceController, FanfictionDiscoveryController],
+  controllers: [
+    FanfictionController,
+    FanfictionLibraryController,
+    FanfictionSourceController,
+    FanfictionDiscoveryController,
+    FanfictionSourceBatchController,
+  ],
 })
 export class FanfictionModule {}

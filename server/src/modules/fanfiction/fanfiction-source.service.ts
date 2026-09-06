@@ -248,6 +248,24 @@ export class FanfictionSourceService {
     });
   }
 
+  async setSchedule(tx: DatabaseTransaction, source: typeof sources.$inferSelect, intervalMinutes: number | null) {
+    if (intervalMinutes !== null && (!Number.isInteger(intervalMinutes) || intervalMinutes < 60 || intervalMinutes > 525600))
+      throw new BadRequestException('Invalid story update interval');
+    if (source.state === 'unlinked') throw new ConflictException('The story source is unlinked');
+    if (source.intervalMinutes === intervalMinutes) return;
+    const changed = await tx
+      .update(sources)
+      .set({
+        intervalMinutes,
+        nextCheckAt: source.state === 'active' && intervalMinutes !== null ? sql`now() + (${intervalMinutes} * interval '1 minute')` : null,
+        version: sql`${sources.version} + 1`,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(sources.id, source.id), eq(sources.libraryId, source.libraryId), eq(sources.version, source.version)))
+      .returning({ id: sources.id });
+    if (!changed.length) throw new ConflictException('The story source changed before scheduling');
+  }
+
   async reserve(job: Job, preview: FanfictionPreview, user: RequestUser) {
     if (!job.input || job.kind !== 'import') throw new BadRequestException('Missing managed import settings');
     preview = validateFanfictionPreview(preview);

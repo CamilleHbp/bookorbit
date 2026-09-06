@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, reactive } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Permission } from '@bookorbit/types'
+import { Permission, type FanfictionJob } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
+import StoryBulkActions from './components/StoryBulkActions.vue'
+import { useFanfictionSourceBatch } from './composables/useFanfictionSourceBatch'
 import ExistingStories from './components/ExistingStories.vue'
 import { useFanfiction } from './composables/useFanfiction'
 
@@ -56,6 +58,11 @@ const {
   showActivity,
   showDiscovery,
 } = useFanfiction()
+const bulk = reactive(useFanfictionSourceBatch(libraryId, sources, search, state, refresh))
+function reviewBatch(job: FanfictionJob) {
+  showStories()
+  void bulk.open(job.id)
+}
 function dateLabel(value: string | null) {
   return value ? new Date(value).toLocaleString() : t('fanfiction.never')
 }
@@ -110,9 +117,20 @@ onMounted(() => {
           </select>
           <Button type="submit" variant="outline" :disabled="busy">{{ t('fanfiction.search') }}</Button>
         </form>
+        <StoryBulkActions
+          v-model:all-matching="bulk.allMatching"
+          v-model:action="bulk.action"
+          v-model:interval="bulk.interval"
+          :bulk="bulk"
+          :loading="busy"
+        />
         <p v-if="!sources.length" class="text-muted-foreground text-sm">{{ t('fanfiction.noStories') }}</p>
         <article v-for="source in sources" :key="source.id" class="border-border bg-card grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto]">
           <div class="min-w-0 space-y-1">
+            <label class="text-muted-foreground flex items-center gap-2 text-sm">
+              <input v-model="bulk.selectedIds" type="checkbox" :value="source.id" :disabled="busy || bulk.busy || bulk.active || bulk.allMatching" />
+              {{ t('fanfiction.bulk.selectStory', { title: source.title }) }}
+            </label>
             <RouterLink
               v-if="source.bookId"
               :to="{ name: 'book-detail', params: { bookId: source.bookId } }"
@@ -264,6 +282,9 @@ onMounted(() => {
               >{{ t('fanfiction.openBook') }}</RouterLink
             >
           </div>
+          <Button v-if="job.kind === 'source_batch'" variant="outline" :disabled="busy || bulk.busy" @click="reviewBatch(job)">{{
+            t('fanfiction.bulk.review')
+          }}</Button>
           <Button
             v-if="job.state === 'queued' || job.state === 'running'"
             variant="outline"

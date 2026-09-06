@@ -32,6 +32,7 @@ export const NotificationType = {
   FanfictionRolledBack: "fanfiction_rolled_back",
   FanfictionAttention: "fanfiction_attention",
   FanfictionFailed: "fanfiction_failed",
+  FanfictionBatchCompleted: "fanfiction_batch_completed",
 } as const;
 
 export type NotificationType = (typeof NotificationType)[keyof typeof NotificationType];
@@ -110,6 +111,7 @@ export const NOTIFICATION_TYPE_META: Record<NotificationType, NotificationTypeMe
   [NotificationType.FanfictionRolledBack]: { category: "fanfiction", severity: "success" },
   [NotificationType.FanfictionAttention]: { category: "fanfiction", severity: "warning" },
   [NotificationType.FanfictionFailed]: { category: "fanfiction", severity: "error" },
+  [NotificationType.FanfictionBatchCompleted]: { category: "fanfiction", severity: "success" },
 };
 
 export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, readonly NotificationType[]> = NOTIFICATION_CATEGORY_IDS.reduce(
