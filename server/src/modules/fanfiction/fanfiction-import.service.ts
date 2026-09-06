@@ -38,6 +38,7 @@ export class FanfictionImportService {
       return { sourceId: source.id, ...(source.bookId && source.bookFileId ? { bookId: source.bookId, bookFileId: source.bookFileId } : {}) };
     const input = {
       operationId: source.importOperationId,
+      metadataSourceKey: `fanfiction:${source.id}`,
       libraryId: source.libraryId,
       folderId: source.folderId!,
       userId: source.createdBy,

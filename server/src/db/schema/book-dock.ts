@@ -110,6 +110,7 @@ export const bookDockManagedImports = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     dockFileId: integer('dock_file_id').notNull().unique(),
+    metadataSourceKey: varchar('metadata_source_key', { length: 100 }),
     state: varchar('state', { length: 32 })
       .$type<'reserved' | 'prepared' | 'filesystem_published' | 'database_committed' | 'metadata_committed' | 'cleanup_complete'>()
       .notNull()

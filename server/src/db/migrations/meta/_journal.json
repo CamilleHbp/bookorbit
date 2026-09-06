@@ -792,6 +792,13 @@
       "when": 1788717290569,
       "tag": "0112_fanfiction_cookie_renewal",
       "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1788718173339,
+      "tag": "0113_managed_story_tags",
+      "breakpoints": true
     }
   ]
 }

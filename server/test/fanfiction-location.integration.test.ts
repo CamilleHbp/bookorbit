@@ -12,6 +12,7 @@ import { DB } from '../src/db';
 import * as schema from '../src/db/schema';
 import type { RequestUser } from '../src/common/types/request-user';
 import { FanfictionLocationService } from '../src/modules/fanfiction/fanfiction-location.service';
+import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
@@ -56,6 +57,7 @@ describe.skipIf(!configPath)('managed story relocation', () => {
       providers: [
         FanfictionLocationService,
         FanfictionSourceService,
+        ManagedTagService,
         FanfictionJobService,
         RevisionCoordinationService,
         FileRenameRepository,

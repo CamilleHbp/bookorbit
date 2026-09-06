@@ -30,6 +30,7 @@ import { FanfictionRollbackService } from '../src/modules/fanfiction/fanfiction-
 import { FanfictionRecoveryService } from '../src/modules/fanfiction/fanfiction-recovery.service';
 import { RevisionInterruptionService } from '../src/modules/book-revision/revision-interruption.service';
 import { RevisionRetentionService } from '../src/modules/book-revision/revision-retention.service';
+import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
@@ -72,7 +73,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     chapterCount: 2,
     description: '',
     status: 'In-Progress',
-    tags: [],
+    tags: ['Source tag'],
   };
   const runtime = {
     update: vi.fn(
@@ -126,6 +127,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         RevisionInterruptionService,
         RevisionRetentionService,
         FanfictionSourceService,
+        ManagedTagService,
         FanfictionJobService,
         FanfictionActivityService,
         NotificationService,
@@ -169,6 +171,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     libraryId = library.id;
     const [folder] = await db.insert(schema.libraryFolders).values({ libraryId, path: directory }).returning();
     const [book] = await db.insert(schema.books).values({ libraryId, libraryFolderId: folder.id, folderPath: directory }).returning();
+    await db.insert(schema.bookMetadata).values({ bookId: book.id, title: 'Original title' });
     const [file] = await db
       .insert(schema.bookFiles)
       .values({ bookId: book.id, libraryFolderId: folder.id, absolutePath: target, ino: 1, format: 'epub' })
@@ -215,6 +218,11 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
   const run = (job: NonNullable<Awaited<ReturnType<typeof jobs.claim>>>) => updates.run(job, document, authorize, new AbortController().signal);
   it('updates the existing file, retains rollback bytes, and resumes a lost job completion without fetching twice', async () => {
     const original = await readFile(target);
+    const [manual] = await db
+      .insert(schema.tags)
+      .values({ name: `manual-${randomUUID()}` })
+      .returning();
+    await db.insert(schema.bookTags).values({ bookId: source.bookId!, tagId: manual.id });
     const job = await claim();
     const result = await run(job);
     expect(result).toMatchObject({ bookFileId: fileId, sourceId: source.id, noChange: false });
@@ -230,6 +238,17 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     const retry = (await jobs.claim())!;
     expect(await run(retry)).toEqual(result);
     expect(runtime.update).toHaveBeenCalledTimes(1);
+    const tags = await db
+      .select({ name: schema.tags.name, managedOnly: schema.bookTags.managedOnly })
+      .from(schema.bookTags)
+      .innerJoin(schema.tags, eq(schema.tags.id, schema.bookTags.tagId))
+      .where(eq(schema.bookTags.bookId, source.bookId!));
+    expect(tags).toEqual(
+      expect.arrayContaining([
+        { name: manual.name, managedOnly: false },
+        { name: 'Source tag', managedOnly: true },
+      ]),
+    );
     expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.libraryId, libraryId))).toHaveLength(1);
     expect(await jobs.finish(retry, 'succeeded', result)).toBe(true);
   }, 30_000);

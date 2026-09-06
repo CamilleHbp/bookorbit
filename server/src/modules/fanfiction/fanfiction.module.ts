@@ -1,3 +1,4 @@
+import { MetadataModule } from '../metadata/metadata.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { fanficfareConfig, storageConfig } from '../../config/config';
@@ -32,6 +33,7 @@ import { NotificationModule } from '../notification/notification.module';
   imports: [
     ConfigModule.forFeature(fanficfareConfig),
     ConfigModule.forFeature(storageConfig),
+    MetadataModule,
     LibraryModule,
     UserModule,
     AppSettingsModule,

@@ -4,6 +4,7 @@ import {
   check,
   customType,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -288,8 +289,23 @@ export const bookTags = pgTable(
     tagId: integer('tag_id')
       .notNull()
       .references(() => tags.id, { onDelete: 'cascade' }),
+    managedOnly: boolean('managed_only').notNull().default(false),
   },
   (t) => [primaryKey({ columns: [t.bookId, t.tagId] }), index('book_tags_tag_id_idx').on(t.tagId)],
+);
+
+export const bookTagSources = pgTable(
+  'book_tag_sources',
+  {
+    bookId: integer('book_id').notNull(),
+    tagId: integer('tag_id').notNull(),
+    sourceKey: varchar('source_key', { length: 100 }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.bookId, t.tagId, t.sourceKey] }),
+    index('book_tag_sources_book_source_idx').on(t.bookId, t.sourceKey),
+    foreignKey({ columns: [t.bookId, t.tagId], foreignColumns: [bookTags.bookId, bookTags.tagId] }).onDelete('cascade'),
+  ],
 );
 
 export type BookMetadata = typeof bookMetadata.$inferSelect;

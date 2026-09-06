@@ -27,6 +27,7 @@ import { UploadValidatorService } from '../src/modules/upload/upload-validator.s
 import { BookRevisionService } from '../src/modules/book-revision/book-revision.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import { FanfictionImportService } from '../src/modules/fanfiction/fanfiction-import.service';
+import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
@@ -107,6 +108,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
         RevisionCatalogService,
         FanfictionImportService,
         FanfictionSourceService,
+        ManagedTagService,
         FanfictionJobService,
         { provide: FanfictionAccessService, useValue: { administer: async () => {} } },
         { provide: FanfictionProfileService, useValue: { document: () => Promise.resolve({ document: { configuration: '', cookies: [] } }) } },
@@ -235,6 +237,19 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     expect(result.bookId).toBe(record.bookId);
     expect(result.bookFileId).toBe(record.bookFileId);
   });
+  it('retains metadata source ownership across a failed extraction and rejects reassignment', async () => {
+    const request = { ...input(), metadataSourceKey: `fanfiction:${randomUUID()}` };
+    metadata.extractAndSave.mockRejectedValueOnce(new ConflictException('Metadata interrupted'));
+    await expect(service.ingest(request, authorize)).rejects.toThrow('Metadata interrupted');
+    expect((await receipt(request)).metadataSourceKey).toBe(request.metadataSourceKey);
+    await expect(service.ingest({ ...request, metadataSourceKey: `fanfiction:${randomUUID()}` }, authorize)).rejects.toThrow('source changed');
+    const result = await service.ingest(request, authorize);
+    expect(metadata.extractAndSave).toHaveBeenLastCalledWith(result.bookId, (await receipt(request)).destinationPath, 'epub', {
+      key: request.metadataSourceKey,
+      libraryId,
+    });
+  });
+
   it('does not replace an unrelated destination even when its SHA-256 is identical', async () => {
     const request = input();
     const destination = join(directory, 'library', request.relativePath);

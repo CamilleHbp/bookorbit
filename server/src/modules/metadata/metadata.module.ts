@@ -7,11 +7,12 @@ import { NarratorModule } from '../narrator/narrator.module';
 import { ComicMetadataRepository } from './comic-metadata.repository';
 import { MetadataExtractionService } from './metadata-extraction.service';
 import { MetadataEventsService } from './metadata-events.service';
+import { ManagedTagService } from './managed-tag.service';
 import { MetadataService } from './metadata.service';
 
 @Module({
   imports: [BookMetadataLockModule, EmbeddingModule, MetadataScoreModule, NarratorModule],
-  providers: [MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository],
-  exports: [MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository],
+  providers: [ManagedTagService, MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository],
+  exports: [ManagedTagService, MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository],
 })
 export class MetadataModule {}

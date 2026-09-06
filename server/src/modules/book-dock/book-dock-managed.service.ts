@@ -23,6 +23,7 @@ export interface ManagedDockImport {
   userId: number;
   sourcePath: string;
   relativePath: string;
+  metadataSourceKey?: string;
 }
 
 export type AuthorizeManagedImport = (transaction: DatabaseTransaction) => Promise<void>;
@@ -123,6 +124,8 @@ export class BookDockManagedService {
     if (existing) {
       if (existing.folderId !== input.folderId || resolve(existing.libraryRoot, input.relativePath) !== existing.destinationPath)
         throw new ConflictException('Managed import destination changed');
+      if (existing.metadataSourceKey && existing.metadataSourceKey !== input.metadataSourceKey)
+        throw new ConflictException('Managed metadata source changed');
       await this.recoverReservedInput(input, existing, authorize);
       return;
     }
@@ -172,6 +175,7 @@ export class BookDockManagedService {
       });
       await tx.insert(schema.bookDockManagedImports).values({
         id: input.operationId,
+        metadataSourceKey: input.metadataSourceKey,
         libraryId: input.libraryId,
         folderId: input.folderId,
         userId: input.userId,
@@ -234,7 +238,9 @@ export class BookDockManagedService {
       } else if (state === 'database_committed') {
         if (!row.bookId || !row.bookFileId) throw new NotFoundException('The imported book was deleted');
         await this.verifyPublication(row);
-        await this.metadata.extractAndSave(row.bookId, row.destinationPath, 'epub');
+        if (row.metadataSourceKey)
+          await this.metadata.extractAndSave(row.bookId, row.destinationPath, 'epub', { key: row.metadataSourceKey, libraryId: row.libraryId });
+        else await this.metadata.extractAndSave(row.bookId, row.destinationPath, 'epub');
         state = 'metadata_committed';
       } else if (state === 'metadata_committed') {
         await this.cleanup(row);

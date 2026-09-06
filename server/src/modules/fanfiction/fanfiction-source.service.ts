@@ -16,6 +16,7 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { ImportFanfictionDto, ListFanfictionSourcesDto, UpdateFanfictionSourceDto, RollbackFanfictionSourceDto } from './dto/fanfiction-source.dto';
+import { ManagedTagService } from '../metadata/managed-tag.service';
 import { recordFanfictionActivity } from './fanfiction-activity';
 
 const sources = schema.fanfictionSources;
@@ -31,6 +32,7 @@ export class FanfictionSourceService {
     private readonly profiles: FanfictionProfileService,
     private readonly settings: AppSettingsService,
     private readonly validator: UploadValidatorService,
+    private readonly managedTags: ManagedTagService,
   ) {}
 
   async create(libraryId: number, dto: ImportFanfictionDto, user: RequestUser) {
@@ -100,6 +102,8 @@ export class FanfictionSourceService {
   async completeUpdate(job: Job, result: NonNullable<import('@bookorbit/types').FanfictionJob['result']>, preview?: FanfictionPreview) {
     return this.db.transaction(async (tx) => {
       const source = await this.assertUpdatable(job, tx);
+      if (preview && source.bookId)
+        await this.managedTags.sync(tx, source.bookId, { key: `fanfiction:${source.id}`, libraryId: job.libraryId }, preview.tags);
       await tx
         .update(sources)
         .set({
@@ -205,21 +209,25 @@ export class FanfictionSourceService {
       throw new ConflictException('This source must finish importing or be linked again before updates can resume');
     const interval = dto.intervalMinutes === undefined ? previous.intervalMinutes : dto.intervalMinutes;
     await this.access.administer(user, libraryId);
-    const [updated] = await this.db
-      .update(sources)
-      .set({
-        state,
-        ...(needsProfile && dto.profileId !== undefined ? { attentionCode: null } : {}),
-        ...(dto.profileId !== undefined ? { profileId: dto.profileId } : {}),
-        intervalMinutes: interval,
-        nextCheckAt: state === 'active' && interval !== null ? sql`now() + (${interval} * interval '1 minute')` : null,
-        version: sql`${sources.version} + 1`,
-        updatedAt: sql`now()`,
-      })
-      .where(and(eq(sources.libraryId, libraryId), eq(sources.id, id), eq(sources.version, dto.version)))
-      .returning();
-    if (!updated) throw new ConflictException('The story source changed; reload it before editing');
-    return this.view(updated);
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(sources)
+        .set({
+          state,
+          ...(needsProfile && dto.profileId !== undefined ? { attentionCode: null } : {}),
+          ...(dto.profileId !== undefined ? { profileId: dto.profileId } : {}),
+          intervalMinutes: interval,
+          nextCheckAt: state === 'active' && interval !== null ? sql`now() + (${interval} * interval '1 minute')` : null,
+          version: sql`${sources.version} + 1`,
+          updatedAt: sql`now()`,
+        })
+        .where(and(eq(sources.libraryId, libraryId), eq(sources.id, id), eq(sources.version, dto.version)))
+        .returning();
+      if (!updated) throw new ConflictException('The story source changed; reload it before editing');
+      if (updated.state === 'unlinked' && updated.bookId)
+        await this.managedTags.release(tx, updated.bookId, { key: `fanfiction:${updated.id}`, libraryId });
+      return this.view(updated);
+    });
   }
 
   async reserve(job: Job, preview: FanfictionPreview, user: RequestUser) {

@@ -19,6 +19,7 @@ import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-ac
 import { FanficfareRuntimeService } from '../src/modules/fanfiction/fanficfare-runtime.service';
 import { FanfictionVaultService } from '../src/modules/fanfiction/fanfiction-vault.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
+import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { LibraryService } from '../src/modules/library/library.service';
 import { AppSettingsService } from '../src/modules/app-settings/app-settings.service';
@@ -50,6 +51,7 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('encrypted F
         FanfictionVaultService,
         FanfictionJobService,
         FanfictionSourceService,
+        ManagedTagService,
         UploadValidatorService,
         { provide: DB, useValue: db },
         { provide: FanfictionAccessService, useValue: access },
