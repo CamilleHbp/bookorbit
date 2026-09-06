@@ -85,6 +85,7 @@ function verify(view: AnchorView, target: string): boolean {
   try {
     const resolved = view.resolveCFI(target)
     const document = actual.startContainer.ownerDocument!
+    if (!view.renderer.getContents?.().some((content) => content.index === resolved.index && content.doc === document)) return false
     const expected = resolved.anchor(document)
     return document.contains(expected.startContainer) && actual.comparePoint(expected.startContainer, expected.startOffset) === 0
   } catch {

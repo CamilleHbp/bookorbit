@@ -56,6 +56,7 @@ describe('Foliate navigation', () => {
   let Paginator: new () => {
     sections: { load: () => Promise<string | null> }[]
     goTo: (target: { index: number }) => Promise<void>
+    destroy: () => void
   }
 
   beforeAll(async () => {
@@ -130,6 +131,64 @@ describe('Foliate navigation', () => {
     paginator.sections = [{ load: vi.fn<() => Promise<string | null>>().mockResolvedValue(null) }]
 
     await expect(paginator.goTo({ index: 0 })).rejects.toThrow('Failed to load section 0')
+  })
+
+  it('does not publish a slow section after a newer navigation supersedes it', async () => {
+    const paginator = new Paginator()
+    let finish!: (src: string) => void
+    paginator.sections = [
+      {
+        load: () =>
+          new Promise<string>((resolve) => {
+            finish = resolve
+          }),
+      },
+      { load: async () => null },
+    ]
+    const old = paginator.goTo({ index: 0 })
+    await Promise.resolve()
+    await expect(paginator.goTo({ index: 1 })).rejects.toThrow('Failed to load section 1')
+    const rejected = expect(old).rejects.toMatchObject({ name: 'AbortError' })
+    finish('old-chapter.xhtml')
+    await rejected
+    paginator.destroy()
+  })
+
+  it('does not recreate a frame after the reader closes during section loading', async () => {
+    const paginator = new Paginator()
+    let finish!: (src: string) => void
+    paginator.sections = [
+      {
+        load: () =>
+          new Promise<string>((resolve) => {
+            finish = resolve
+          }),
+      },
+    ]
+    const pending = paginator.goTo({ index: 0 })
+    await Promise.resolve()
+    paginator.destroy()
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    finish('closed-chapter.xhtml')
+    await rejected
+  })
+
+  it('bounds unreadable-section fallback independently of the book size', async () => {
+    const view = new View()
+    const goTo = vi.fn().mockRejectedValue(new Error('Unreadable section'))
+    view.book = { sections: Array.from({ length: 10_000 }, () => ({})), resolveHref: () => ({ index: 5000 }) }
+    view.renderer = { goTo, getContents: () => [] }
+    await view.goTo('chapter.xhtml')
+    expect(goTo).toHaveBeenCalledTimes(5)
+  })
+
+  it('does not navigate to another section after cancellation', async () => {
+    const view = new View()
+    const goTo = vi.fn().mockRejectedValue(new DOMException('Cancelled', 'AbortError'))
+    view.book = { sections: [{}, {}, {}], resolveHref: () => ({ index: 1 }) }
+    view.renderer = { goTo, getContents: () => [] }
+    await view.goTo('chapter.xhtml')
+    expect(goTo).toHaveBeenCalledTimes(1)
   })
 
   it('reports fixed-layout frame indexes for navigation success checks', async () => {

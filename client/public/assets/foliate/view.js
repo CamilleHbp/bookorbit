@@ -753,6 +753,7 @@ export class View extends HTMLElement {
         await this.renderer.goTo(nextResolved)
         return hasContentFor(nextResolved)
       } catch (e) {
+        if (e?.name === 'AbortError') throw e
         console.warn(e)
         return false
       }
@@ -763,7 +764,8 @@ export class View extends HTMLElement {
       let finalResolved = resolved
       if (!opened && typeof resolved?.index === 'number') {
         const total = this.book?.sections?.length ?? 0
-        for (let index = resolved.index + 1; index < total; index++) {
+        let attempts = 0
+        for (let index = resolved.index + 1; index < total && attempts < 2; index++, attempts++) {
           opened = await tryGoTo({ index })
           if (opened) {
             finalTarget = index
@@ -773,7 +775,7 @@ export class View extends HTMLElement {
           }
         }
         if (!opened)
-          for (let index = resolved.index - 1; index >= 0; index--) {
+          for (let index = resolved.index - 1; index >= 0 && attempts < 4; index--, attempts++) {
             opened = await tryGoTo({ index })
             if (opened) {
               finalTarget = index
