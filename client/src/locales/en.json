@@ -10267,5 +10267,38 @@
       "selectBook": "Select {title}",
       "chooseSource": "Choose a recognized source URL"
     }
+  },
+  "koreaderCopies": {
+    "title": "Device copies",
+    "description": "Track each installed EPUB separately. Notify is the default; automatic file delivery is opt-in.",
+    "refresh": "Refresh",
+    "deviceDefaults": "Device defaults",
+    "lastContact": "Last contact: {date}",
+    "updateRequired": "A compatible plugin update is required.",
+    "defaultPolicy": "Default update policy",
+    "notify": "Notify",
+    "automatic": "Automatic",
+    "ignore": "Ignore",
+    "save": "Save",
+    "nextDevices": "Next devices",
+    "deviceFilter": "Device ID",
+    "filter": "Filter copies",
+    "empty": "No accessible copies on this page. Open and synchronize an EPUB with a compatible plugin to register it.",
+    "serverStatus": "Server file",
+    "serverPending": "File inspection pending",
+    "current": "Matches the installed copy",
+    "different": "Differs from the installed copy",
+    "installedStatus": "Installed copy",
+    "identified": "Revision identified",
+    "provisional": "External version awaiting identification",
+    "positionSupport": "Position restoration support",
+    "supported": "Supported by this plugin",
+    "effectivePolicy": "Active policy",
+    "acknowledged": "Acknowledged by device",
+    "awaitingAcknowledgement": "Awaiting device acknowledgement",
+    "copyPolicy": "Policy for this copy",
+    "inherit": "Use device default",
+    "nextCopies": "Next copies",
+    "file": "EPUB file"
   }
 }

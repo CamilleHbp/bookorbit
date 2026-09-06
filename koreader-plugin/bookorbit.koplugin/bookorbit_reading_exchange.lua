@@ -32,6 +32,7 @@ function Exchange.run(plugin)
     end
     if plugin.reading_continuity ~= state or state.record ~= record or state.dirty then return true, "reading_changed" end
     if not Continuity.reconciled(plugin) then return true, "anchor_persistence" end
+    pcall(function() require("bookorbit_copy_inventory").run(plugin) end)
     return true
 end
 

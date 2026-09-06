@@ -1455,6 +1455,31 @@ export class BookRepository {
     return !!row;
   }
 
+  async findAccessibleFiles(fileIds: number[], user: import('../../common/types/request-user').RequestUser) {
+    if (fileIds.length > 100) throw new BadRequestException('File access batches are limited to 100');
+    if (!fileIds.length || !user.active) return [];
+    const access = user.isSuperuser
+      ? []
+      : [
+          sql`exists (select 1 from ${schema.userLibraryAccess} access where access.user_id = ${user.id} and access.library_id = ${books.libraryId})`,
+          ...(user.contentFilters ? buildContentFilterClauses(user.contentFilters, this.db) : []),
+        ];
+    return this.db
+      .select({
+        id: bookFiles.id,
+        bookId: bookFiles.bookId,
+        libraryId: books.libraryId,
+        format: bookFiles.format,
+        currentRevisionId: bookFiles.currentRevisionId,
+        sha256: bookFiles.sha256,
+        sizeBytes: bookFiles.sizeBytes,
+      })
+      .from(bookFiles)
+      .innerJoin(books, eq(books.id, bookFiles.bookId))
+      .where(and(inArray(bookFiles.id, fileIds), ...access))
+      .limit(100);
+  }
+
   async findFileById(fileId: number) {
     const [file] = await this.db
       .select({

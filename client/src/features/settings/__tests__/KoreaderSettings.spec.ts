@@ -4,6 +4,8 @@ import KoreaderSettings from '../KoreaderSettings.vue'
 import type { BookCard, KoreaderCredentials, KoreaderManualHashLink, KoreaderSyncStatus, KoreaderUnmatchedBook } from '@bookorbit/types'
 import { copyToClipboard } from '@/lib/clipboard'
 
+vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
+
 const routerState = vi.hoisted(() => ({
   currentQuery: {} as Record<string, string>,
   replacedQuery: null as Record<string, string> | null,

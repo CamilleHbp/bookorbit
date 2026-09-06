@@ -81,6 +81,7 @@ function Continuity.ready(plugin, on_done)
         local revision = "sha256:" .. state.sha256
         local record = state.record
         if record then
+            if record.path ~= path then record.inventory = nil end
             record.copyId = record.path == path and record.copyId or require("random").uuid(true):lower()
             record.copyId = record.copyId or require("random").uuid(true):lower()
             record.path = path
@@ -172,6 +173,7 @@ function Continuity.capture(plugin)
     if not ok or not record then return end
     record.sha256, record.signature = state.sha256, state.signature
     record.copyId = state.record and state.record.path == plugin.ui.document.file and state.record.copyId or require("random").uuid(true):lower()
+    record.inventory = state.record and state.record.path == plugin.ui.document.file and state.record.inventory or nil
     record.path, record.awaitingReconciliation = plugin.ui.document.file, state.changed
     if state.record then
         record.anchor.bookId = state.record.anchor.bookId
@@ -248,6 +250,13 @@ end
 function Continuity.isRestoring(plugin)
     local state = plugin.reading_continuity
     return state and (state.restoring or not state.ready) or false
+end
+
+function Continuity.setCopyInventory(plugin, record, inventory)
+    local state = plugin.reading_continuity
+    if not state or state.record ~= record then return false end
+    record.inventory = inventory
+    return save(plugin)
 end
 
 return Continuity

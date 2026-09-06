@@ -311,6 +311,24 @@ function StateManager.commit(expected_generation, fn)
     return StateManager.mutate(fn)
 end
 
+function StateManager.reserveInventorySequence(minimum)
+    if active_mutation then return nil, "mutation_in_progress" end
+    local sequence
+    local ok = pcall(StateManager.mutateScoped, { global = true }, function(session)
+        local previous = session.global.copyInventorySequence or 0
+        if type(previous) ~= "number" or previous < 0 or previous >= 9007199254740991 or previous % 1 ~= 0 then
+            error("invalid_inventory_sequence", 0)
+        end
+        if minimum ~= nil and (type(minimum) ~= "number" or minimum < 0 or minimum > 9007199254740991 or minimum % 1 ~= 0) then
+            error("invalid_inventory_sequence", 0)
+        end
+        sequence = math.max(previous + 1, minimum or 0)
+        session.global.copyInventorySequence = sequence
+    end)
+    if not ok then return nil, "state_flush_failed" end
+    return sequence
+end
+
 function StateManager.onDeviceMaps()
     if maps and maps_generation == generation then
         return maps

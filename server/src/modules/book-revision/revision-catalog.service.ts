@@ -15,6 +15,29 @@ export class RevisionCatalogService {
     private readonly coordination: RevisionCoordinationService,
   ) {}
 
+  async identifyFiles(files: { bookFileId: number; sha256: string; sizeBytes: number; revisionId?: string | null }[]): Promise<(string | null)[]> {
+    if (files.length > 100) throw new BadRequestException('Revision identity batches are limited to 100');
+    if (!files.length) return [];
+    const values = sql.join(
+      files.map(
+        (file, ordinal) =>
+          sql`(${ordinal}::integer, ${file.bookFileId}::integer, ${file.sha256}::text, ${file.sizeBytes}::bigint, ${file.revisionId ?? null}::uuid)`,
+      ),
+      sql`, `,
+    );
+    const result = await this.db.execute<{ ordinal: number; revisionId: string | null }>(sql`
+      select input.ordinal, matched.id as "revisionId"
+      from (values ${values}) input(ordinal, file_id, sha256, size_bytes, revision_id)
+      left join lateral (
+        select id from ${schema.bookFileRevisions} revision
+        where revision.book_file_id = input.file_id and revision.sha256 = input.sha256 and revision.size_bytes = input.size_bytes
+          and (input.revision_id is null or revision.id = input.revision_id)
+        order by revision.created_at desc, revision.id desc limit 1
+      ) matched on true order by input.ordinal
+    `);
+    return result.rows.map((row) => row.revisionId);
+  }
+
   async discoveryCutoff(libraryId: number): Promise<number> {
     const [row] = await this.db
       .select({ id: sql<number>`coalesce(max(${schema.bookFiles.id}), 0)` })

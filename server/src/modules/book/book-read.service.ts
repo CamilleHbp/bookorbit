@@ -11,6 +11,10 @@ export class BookReadService {
     return this.bookRepo.findLibraryIdByBookId(bookId);
   }
 
+  findAccessibleFiles(fileIds: number[], user: import('../../common/types/request-user').RequestUser) {
+    return this.bookRepo.findAccessibleFiles(fileIds, user);
+  }
+
   findFileById(fileId: number) {
     return this.bookRepo.findFileById(fileId);
   }

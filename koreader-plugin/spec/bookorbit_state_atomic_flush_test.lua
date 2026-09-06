@@ -69,6 +69,22 @@ state:flush()
 assert(loadfile(state_path)().global.marker == "second", "new generation is published")
 assert(loadfile(state_path .. ".old")().global.marker == "first", "previous generation is retained")
 
+local Manager = require("bookorbit_state_manager")
+assert(Manager.reserveInventorySequence() == 1)
+assert(loadfile(state_path)().global.copyInventorySequence == 1)
+assert(Manager.reserveInventorySequence(50) == 50)
+assert(loadfile(state_path)().global.copyInventorySequence == 50)
+local rename = os.rename
+os.rename = function(from, to)
+    if from == state_path .. ".bookorbit.tmp" then return nil, "publication failed" end
+    return rename(from, to)
+end
+assert(Manager.reserveInventorySequence() == nil, "failed persistence cannot reserve a network sequence")
+os.rename = rename
+assert(loadfile(state_path)().global.copyInventorySequence == 50)
+local next_sequence = assert(Manager.reserveInventorySequence())
+assert(next_sequence > 50 and loadfile(state_path)().global.copyInventorySequence == next_sequence)
+
 os.execute("rm -rf '" .. temp_root .. "'")
 
 print("bookorbit_state_atomic_flush_test.lua: ok")

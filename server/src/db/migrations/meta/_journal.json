@@ -743,6 +743,20 @@
       "when": 1788682509054,
       "tag": "0105_revision_publication_file_lookup",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1788684495479,
+      "tag": "0106_koreader_installed_copies",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1788684706381,
+      "tag": "0107_koreader_copy_device_pagination",
+      "breakpoints": true
     }
   ]
 }

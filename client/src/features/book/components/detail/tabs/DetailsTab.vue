@@ -65,6 +65,7 @@ import StorygraphBookSyncGridItem from '@/features/storygraph/components/Storygr
 import BookEditionsCard from '@/features/book/components/detail/details/BookEditionsCard.vue'
 import BookReadingActivityCard from '@/features/book/components/detail/details/BookReadingActivityCard.vue'
 import { useBookReadingLog } from '@/features/book/composables/useBookReadingLog'
+import BookDeviceCopies from '@/features/koreader/components/BookDeviceCopies.vue'
 
 type FileProgress = {
   percentage: number
@@ -2124,6 +2125,8 @@ watch(
       <DiscoverRow class="h-full" :book-id="book.id" :series-name="book.seriesName" :author-count="book.authors.length" size="lg" flush />
     </div>
   </div>
+
+  <BookDeviceCopies v-if="canViewKoreader" :files="book.files" />
 
   <AddToCollectionSheet
     :open="addToCollectionOpen"
