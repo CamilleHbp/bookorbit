@@ -66,6 +66,7 @@ local LAST_ERROR_LABELS = {
     body_too_large = _("request too large"),
     background_request_interrupted = _("background request interrupted"),
     partial_failure = _("partial sync failure"),
+    annotation_restoration_pending = _("highlights and bookmarks are waiting for verified positions in this version"),
     outbox_persistence = _("lifecycle sync could not be saved"),
 }
 
@@ -1068,7 +1069,7 @@ function BookOrbit:exchangeAnnotationsForOpenBook(reason, retry_count)
     elseif result then
         summary = BookOrbitHighlightSummary.add(summary, result)
     elseif err then
-        summary.skipped = err == "unmatched" and 1 or 0
+        summary.skipped = (err == "unmatched" or err == "annotation_restoration_pending") and 1 or 0
         summary.failed = (err == "network" or err == "unsupported_server") and 1 or 0
         error_code = err
         if err ~= "unmatched" and err ~= "unsupported_server" and err ~= "network" then

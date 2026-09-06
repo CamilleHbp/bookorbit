@@ -8,6 +8,7 @@ matter which path uploaded them.
 ]]
 
 local DocSettings = require("docsettings")
+local AnnotationGuard = require("bookorbit_annotation_guard")
 local BookList = require("ui/widget/booklist")
 local lfs = require("libs/libkoreader-lfs")
 
@@ -345,6 +346,7 @@ function BookOrbitSidecar.extract(file, doc_settings)
     if not doc_settings and not DocSettings:hasSidecarFile(file) then return nil end
 
     doc_settings = doc_settings or DocSettings:open(file)
+    if AnnotationGuard.pending(doc_settings) then return nil, "annotation_restoration_pending" end
     local summary = BookOrbitSidecar.normalizeSummary(doc_settings:readSetting("summary"))
     local raw_annotations = doc_settings:readSetting("annotations")
     local annotations, max_datetime, signature = BookOrbitSidecar.normalizeAnnotations(raw_annotations)

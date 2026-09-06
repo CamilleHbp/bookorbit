@@ -233,6 +233,20 @@ state = ui.bookorbit.reading_continuity
 assert(state.record.anchor.event.id == original_id)
 assert(state.record.acknowledgement.quality == "exact", "second open must use the verified native projection")
 assert(state.changed, "reopening must preserve pending reconciliation")
+if arg[6] == "pending_annotations" then
+    local annotations = ui.doc_settings:readSetting("bookorbit_revision_annotations_v1")
+    annotations.pending = { { sha256 = "unavailable-original", items = { { text = "Keep unresolved note", note = "Preserve me" } } } }
+    ui.doc_settings:saveSetting("bookorbit_revision_annotations_v1", annotations)
+    ui.doc_settings:flush()
+    state.annotations_pending = true
+    local snapshot, snapshot_error = require("bookorbit_sidecar").extract(path)
+    assert(not snapshot and snapshot_error == "annotation_restoration_pending")
+    local opts = { ui = ui, client = {}, state = {}, digest = "pending-copy" }
+    for _, module in ipairs({ "bookorbit_annotations", "bookorbit_bookmarks" }) do
+        local result, err = require(module).exchangeOpenBook(opts)
+        assert(not result and err == "annotation_restoration_pending", "manual exchange must preserve held notes")
+    end
+end
 local exchange_calls = {}
 local remote = { bookId = 2, bookFileId = 9, resetGeneration = 0, anchor = original }
 function ui.bookorbit:newClient()
@@ -264,6 +278,10 @@ else
 end
 assert(state.record.anchor.revision == original.revision, "reconciliation must retain the canonical source revision")
 assert(not state.changed and ui.statistics.mem_read_pages == 0)
+if arg[6] == "pending_annotations" then
+    assert(ui.doc_settings:readSetting("bookorbit_revision_annotations_v1").pending[1].items[1].note == "Preserve me")
+    assert(state.annotations_pending, "reading reconciliation must not clear pending annotation verification")
+end
 remote = { bookId = 2, bookFileId = 9, resetGeneration = 1 }
 handled, exchange_error = require("bookorbit_reading_exchange").run(ui.bookorbit)
 assert(handled and not exchange_error)
