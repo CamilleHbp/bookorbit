@@ -63,6 +63,7 @@ export interface FanfictionProfileSummary {
 export interface FanfictionProfileView extends FanfictionProfileSummary {
   configuration: string;
   cookieCount: number;
+  cookies: FanfictionCookie[];
 }
 
 export type FanfictionJobKind = "preview" | "discovery" | "adopt" | "import" | "update" | "refresh" | "rollback";

@@ -10266,7 +10266,18 @@
       "empty": "No candidates in this category.",
       "selectBook": "Select {title}",
       "chooseSource": "Choose a recognized source URL"
-    }
+    },
+    "cookiesTitle": "Authentication cookies",
+    "cookiesHelp": "Add cookies required by your story site. Saved values stay hidden and unchanged unless you replace them. Enter a new value when changing a cookie name, domain, or path. Changes take effect when you save the profile.",
+    "cookieName": "Cookie name",
+    "cookieDomain": "Site domain",
+    "cookieValue": "Cookie value",
+    "cookiePath": "Site path",
+    "addCookie": "Add cookie",
+    "removeCookie": "Remove cookie",
+    "clearCookies": "Remove all cookies",
+    "previousCookies": "Previous cookies",
+    "nextCookies": "More cookies"
   },
   "koreaderCopies": {
     "title": "Device copies",

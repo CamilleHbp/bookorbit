@@ -7,6 +7,7 @@ import type {
   FanfictionProfilePage,
   FanfictionProfileSummary,
   FanfictionProfileView,
+  FanfictionCookie,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
 
@@ -30,6 +31,11 @@ export function useFanfictionSettings() {
   const password = ref('')
   const usernameChanged = ref(false)
   const passwordChanged = ref(false)
+  const cookies = ref<(FanfictionCookie & { key: string })[]>([])
+  const cookiesChanged = ref(false)
+  const cookiePage = ref(0)
+  const cookieRows = computed(() => cookies.value.slice(cookiePage.value * 10, cookiePage.value * 10 + 10))
+  const moreCookies = computed(() => (cookiePage.value + 1) * 10 < cookies.value.length)
   const previewUrl = ref('')
   const previewProfileId = ref('')
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -147,6 +153,9 @@ export function useFanfictionSettings() {
     password.value = ''
     usernameChanged.value = false
     passwordChanged.value = false
+    cookies.value = []
+    cookiesChanged.value = false
+    cookiePage.value = 0
   }
   function newProfile() {
     clearEditor()
@@ -165,6 +174,7 @@ export function useFanfictionSettings() {
       editing.value = view
       name.value = view.name
       configuration.value = view.configuration
+      cookies.value = (view.cookies ?? []).map((cookie) => ({ ...cookie, key: crypto.randomUUID() }))
       showEditor.value = true
     })
   }
@@ -177,6 +187,31 @@ export function useFanfictionSettings() {
   function clearPassword() {
     password.value = ''
     passwordChanged.value = true
+  }
+  function changeCookies() {
+    cookiesChanged.value = true
+  }
+  function addCookie() {
+    if (cookies.value.length >= 200) return
+    cookies.value.push({ key: crypto.randomUUID(), name: '', value: '', domain: '', path: '/', secure: true })
+    cookiePage.value = Math.floor((cookies.value.length - 1) / 10)
+    changeCookies()
+  }
+  function removeCookie(key: string) {
+    cookies.value = cookies.value.filter((cookie) => cookie.key !== key)
+    cookiePage.value = Math.min(cookiePage.value, Math.max(0, Math.ceil(cookies.value.length / 10) - 1))
+    changeCookies()
+  }
+  function clearCookies() {
+    cookies.value = []
+    cookiePage.value = 0
+    changeCookies()
+  }
+  function nextCookies() {
+    if (moreCookies.value) cookiePage.value++
+  }
+  function previousCookies() {
+    cookiePage.value = Math.max(0, cookiePage.value - 1)
   }
   async function saveProfile() {
     const current = generation
@@ -192,7 +227,13 @@ export function useFanfictionSettings() {
       await request(
         `${base.value}/profiles${editing.value ? `/${editing.value.id}` : ''}`,
         json(
-          { name: name.value, configuration: configuration.value, credentials, ...(editing.value ? { version: editing.value.version } : {}) },
+          {
+            name: name.value,
+            configuration: configuration.value,
+            credentials,
+            ...(editing.value ? { version: editing.value.version } : {}),
+            ...(cookiesChanged.value ? { cookies: cookies.value.map(({ key: _key, ...cookie }) => cookie) } : {}),
+          },
           editing.value ? 'PATCH' : 'POST',
         ),
       )
@@ -249,6 +290,16 @@ export function useFanfictionSettings() {
     section,
     username,
     password,
+    cookies,
+    cookieRows,
+    cookiePage,
+    moreCookies,
+    changeCookies,
+    addCookie,
+    removeCookie,
+    clearCookies,
+    nextCookies,
+    previousCookies,
     previewUrl,
     previewProfileId,
     loadLibraries,

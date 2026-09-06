@@ -60,4 +60,62 @@ describe('Fanfiction settings API contract', () => {
     expect(first).toEqual({ url: state.previewUrl.value, idempotencyKey: expect.any(String) })
     expect(state.jobs.value[0]?.id).toBe('job')
   })
+  it('preserves masked cookies, sends only DTO fields, and clears secrets after saving', async () => {
+    const state = settings()
+    state.libraryId.value = 5
+    const profile = { id: 'profile', libraryId: 5, name: 'AO3', version: 3, updatedAt: '2026-09-06T12:00:00Z' }
+    const cookie = { name: 'session', value: '********', domain: 'archiveofourown.org', path: '/', secure: true }
+    mockApi.mockResolvedValueOnce(response({ ...profile, configuration: '[defaults]\n', cookieCount: 1, cookies: [cookie] }))
+    await state.editProfile(profile)
+    expect(state.cookieRows.value[0]?.value).toBe('********')
+    state.addCookie()
+    Object.assign(state.cookies.value[1]!, { name: 'another', domain: cookie.domain, value: 'replacement-secret' })
+    state.changeCookies()
+    mockApi.mockResolvedValue(response({ items: [], nextCursor: null }))
+    await state.saveProfile()
+    const sent = mockApi.mock.calls.find(([, options]) => options?.method === 'PATCH')!
+    const body = JSON.parse(sent[1]!.body as string)
+    expect(body.version).toBe(3)
+    expect(body.cookies).toEqual([cookie, { ...cookie, name: 'another', value: 'replacement-secret' }])
+    expect(state.cookies.value).toEqual([])
+    expect(state.showEditor.value).toBe(false)
+  })
+  it('omits untouched cookie values and submits explicit cookie removal', async () => {
+    const state = settings()
+    state.libraryId.value = 5
+    const profile = { id: 'profile', libraryId: 5, name: 'AO3', version: 1, updatedAt: '' }
+    const view = {
+      ...profile,
+      configuration: '',
+      cookieCount: 1,
+      cookies: [{ name: 'session', value: '********', domain: 'example.org', path: '/', secure: true }],
+    }
+    mockApi.mockResolvedValueOnce(response(view))
+    await state.editProfile(profile)
+    mockApi.mockResolvedValue(response({ items: [], nextCursor: null }))
+    await state.saveProfile()
+    let requests = mockApi.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+    expect(JSON.parse(requests[0]![1]!.body as string).cookies).toBeUndefined()
+    mockApi.mockResolvedValueOnce(response(view))
+    await state.editProfile(profile)
+    state.clearCookies()
+    await state.saveProfile()
+    requests = mockApi.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+    expect(JSON.parse(requests[1]![1]!.body as string).cookies).toEqual([])
+  })
+  it('bounds cookie rendering and removes unsaved secrets when the editor closes', () => {
+    const state = settings()
+    state.newProfile()
+    for (let i = 0; i < 201; i++) state.addCookie()
+    expect(state.cookies.value).toHaveLength(200)
+    expect(state.cookieRows.value).toHaveLength(10)
+    expect(state.cookiePage.value).toBe(19)
+    state.previousCookies()
+    expect(state.cookiePage.value).toBe(18)
+    state.removeCookie(state.cookieRows.value[0]!.key)
+    expect(state.cookies.value).toHaveLength(199)
+    state.closeEditor()
+    expect(state.cookies.value).toEqual([])
+    expect(state.cookiePage.value).toBe(0)
+  })
 })

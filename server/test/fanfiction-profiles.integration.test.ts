@@ -109,27 +109,39 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('encrypted F
         name: 'AO3',
         configuration: '[defaults]\ninclude_titlepage: true\n',
         credentials: { section: 'archiveofourown.org', username: 'reader', password: 'private-password' },
+        cookies: [{ name: 'session', value: 'private-session-cookie', domain: 'archiveofourown.org', path: '/', secure: true }],
       },
       user,
     );
     const [stored] = await db.select().from(schema.fanfictionProfiles).where(eq(schema.fanfictionProfiles.id, created.id));
     expect(JSON.stringify(stored)).not.toContain('private-password');
+    expect(JSON.stringify(stored)).not.toContain('private-session-cookie');
     const view = await service.get(libraryId, created.id, user);
     expect(view.configuration).toContain('password = ********');
     expect(view.configuration).not.toContain('private-password');
+    expect(view.cookies).toEqual([{ name: 'session', value: '********', domain: 'archiveofourown.org', path: '/', secure: true }]);
     const updated = await service.update(
       libraryId,
       created.id,
-      { name: 'AO3 renamed', version: view.version, configuration: view.configuration, credentials: { section: 'defaults', isAdult: true } },
+      {
+        name: 'AO3 renamed',
+        version: view.version,
+        configuration: view.configuration,
+        credentials: { section: 'defaults', isAdult: true },
+        cookies: view.cookies,
+      },
       user,
     );
     const internal = await service.document(libraryId, created.id, user);
     expect(internal.document.configuration).toContain('password = private-password');
     expect(internal.document.configuration).toContain('include_titlepage = true');
     expect(internal.document.configuration).toContain('is_adult = true');
+    expect(internal.document.cookies[0].value).toBe('private-session-cookie');
     await expect(service.update(libraryId, created.id, { name: 'stale', version: view.version }, user)).rejects.toThrow('changed');
     await expect(service.get(libraryId + 1, created.id, user)).rejects.toThrow('not found');
     expect((await service.list(libraryId, { limit: 1 }, user)).items[0]).toEqual(updated);
+    await service.update(libraryId, created.id, { name: updated.name, version: updated.version, cookies: [] }, user);
+    expect((await service.document(libraryId, created.id, user)).document.cookies).toEqual([]);
     access.administer.mockRejectedValueOnce(new ForbiddenException());
     await expect(service.get(libraryId, created.id, user)).rejects.toBeInstanceOf(ForbiddenException);
   }, 30_000);
@@ -145,6 +157,24 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('encrypted F
     expect(claims).toHaveLength(2);
     expect(new Set(claims.map((row) => row.site)).size).toBe(2);
     expect(await jobs.claim()).toBeNull();
+  });
+  it('rejects cookie profiles that cannot fit in a bounded runtime request', async () => {
+    await expect(
+      service.create(
+        libraryId,
+        {
+          name: 'Oversized cookies',
+          cookies: Array.from({ length: 200 }, (_, index) => ({
+            name: `cookie-${index}`,
+            value: 'a'.repeat(4096),
+            domain: 'example.org',
+            path: '/',
+            secure: true,
+          })),
+        },
+        user,
+      ),
+    ).rejects.toThrow('too large');
   });
 
   it('fences expired workers and holds cancellation across claim recovery', async () => {

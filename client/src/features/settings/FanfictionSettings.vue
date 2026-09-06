@@ -25,6 +25,16 @@ const {
   section,
   username,
   password,
+  cookies,
+  cookieRows,
+  cookiePage,
+  moreCookies,
+  changeCookies,
+  addCookie,
+  removeCookie,
+  clearCookies,
+  nextCookies,
+  previousCookies,
   previewUrl,
   previewProfileId,
   loadLibraries,
@@ -111,6 +121,65 @@ onMounted(() => {
           /></label>
         </div>
         <Button type="button" variant="outline" @click="clearPassword">{{ t('fanfiction.clearPassword') }}</Button>
+        <fieldset class="space-y-3 rounded-lg border border-border p-3">
+          <legend class="px-1 text-sm font-medium">{{ t('fanfiction.cookiesTitle') }}</legend>
+          <p class="text-xs text-muted-foreground">{{ t('fanfiction.cookiesHelp') }}</p>
+          <div v-for="cookie in cookieRows" :key="cookie.key" class="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-2">
+            <label class="block space-y-1 text-sm"
+              ><span>{{ t('fanfiction.cookieName') }}</span>
+              <input
+                v-model="cookie.name"
+                required
+                maxlength="256"
+                class="w-full rounded-md border border-input bg-background p-2"
+                @input="changeCookies"
+              />
+            </label>
+            <label class="block space-y-1 text-sm"
+              ><span>{{ t('fanfiction.cookieDomain') }}</span>
+              <input
+                v-model="cookie.domain"
+                required
+                maxlength="255"
+                placeholder="archiveofourown.org"
+                class="w-full rounded-md border border-input bg-background p-2"
+                @input="changeCookies"
+              />
+            </label>
+            <label class="block space-y-1 text-sm"
+              ><span>{{ t('fanfiction.cookieValue') }}</span>
+              <input
+                v-model="cookie.value"
+                type="password"
+                autocomplete="new-password"
+                maxlength="4096"
+                class="w-full rounded-md border border-input bg-background p-2"
+                @input="changeCookies"
+              />
+            </label>
+            <label class="block space-y-1 text-sm"
+              ><span>{{ t('fanfiction.cookiePath') }}</span>
+              <input
+                v-model="cookie.path"
+                required
+                maxlength="4096"
+                class="w-full rounded-md border border-input bg-background p-2"
+                @input="changeCookies"
+              />
+            </label>
+            <Button type="button" variant="outline" :disabled="busy" @click="removeCookie(cookie.key)">{{ t('fanfiction.removeCookie') }}</Button>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" :disabled="busy || cookies.length >= 200" @click="addCookie">{{
+              t('fanfiction.addCookie')
+            }}</Button>
+            <Button v-if="cookies.length" type="button" variant="outline" :disabled="busy" @click="clearCookies">{{
+              t('fanfiction.clearCookies')
+            }}</Button>
+            <Button v-if="cookiePage > 0" type="button" variant="outline" @click="previousCookies">{{ t('fanfiction.previousCookies') }}</Button>
+            <Button v-if="moreCookies" type="button" variant="outline" @click="nextCookies">{{ t('fanfiction.nextCookies') }}</Button>
+          </div>
+        </fieldset>
         <label class="block space-y-1 text-sm"
           ><span>{{ t('fanfiction.advanced') }}</span
           ><textarea

@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
@@ -10,6 +10,7 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionVaultService } from './fanfiction-vault.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { CreateFanfictionProfileDto, ListFanfictionProfilesDto, UpdateFanfictionProfileDto } from './dto/fanfiction-profile.dto';
+import { mergeFanfictionCookies, redactFanfictionCookies } from './fanfiction-cookies';
 
 const profiles = schema.fanfictionProfiles;
 const summaryFields = {
@@ -44,7 +45,7 @@ export class FanfictionProfileService {
   async get(libraryId: number, id: string, user: RequestUser): Promise<FanfictionProfileView> {
     const { row, document } = await this.document(libraryId, id, user);
     const configuration = await this.runtime.mergeConfiguration(document.configuration, undefined, undefined, true);
-    return { ...this.summary(row), configuration, cookieCount: document.cookies.length };
+    return { ...this.summary(row), configuration, cookieCount: document.cookies.length, cookies: redactFanfictionCookies(document.cookies) };
   }
 
   async create(libraryId: number, dto: CreateFanfictionProfileDto, user: RequestUser): Promise<FanfictionProfileSummary> {
@@ -52,7 +53,12 @@ export class FanfictionProfileService {
     const configuration = await this.runtime.mergeConfiguration('', dto.configuration, dto.credentials);
     const id = randomUUID();
     const [existing] = await this.db.select({ id: profiles.id }).from(profiles).limit(1);
-    const document = await this.vault.encrypt(libraryId, id, JSON.stringify({ configuration, cookies: dto.cookies ?? [] }), !existing);
+    const document = await this.vault.encrypt(
+      libraryId,
+      id,
+      this.serialize({ configuration, cookies: mergeFanfictionCookies([], dto.cookies) }),
+      !existing,
+    );
     await this.access.administer(user, libraryId);
     const [row] = await this.db.insert(profiles).values({ id, libraryId, name: dto.name, createdBy: user.id, document }).returning(summaryFields);
     return this.summary(row);
@@ -62,7 +68,12 @@ export class FanfictionProfileService {
     const old = await this.document(libraryId, id, user);
     if (old.row.version !== dto.version) throw new ConflictException('Profile changed; reload before saving');
     const configuration = await this.runtime.mergeConfiguration(old.document.configuration, dto.configuration, dto.credentials);
-    const document = await this.vault.encrypt(libraryId, id, JSON.stringify({ configuration, cookies: dto.cookies ?? old.document.cookies }), false);
+    const document = await this.vault.encrypt(
+      libraryId,
+      id,
+      this.serialize({ configuration, cookies: mergeFanfictionCookies(old.document.cookies, dto.cookies) }),
+      false,
+    );
     await this.access.administer(user, libraryId);
     const [row] = await this.db
       .update(profiles)
@@ -83,6 +94,13 @@ export class FanfictionProfileService {
     if (!row) throw new NotFoundException('Fanfiction profile not found in this library');
     const document = JSON.parse(await this.vault.decrypt(libraryId, id, row.document)) as FanfictionProfileDocument;
     return { row, document };
+  }
+
+  private serialize(document: FanfictionProfileDocument) {
+    const value = JSON.stringify(document);
+    // Leave room for the operation and story URL in the bounded runtime request.
+    if (Buffer.byteLength(value) > 480 * 1024) throw new BadRequestException('The profile configuration and cookies are too large');
+    return value;
   }
 
   private summary(row: Pick<typeof profiles.$inferSelect, 'id' | 'libraryId' | 'name' | 'version' | 'updatedAt'>): FanfictionProfileSummary {

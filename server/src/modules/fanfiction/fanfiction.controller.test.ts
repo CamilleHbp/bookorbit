@@ -159,6 +159,33 @@ describe('Fanfiction HTTP contracts', () => {
     expect((await app.inject({ method: 'POST', url: `${base}/profiles`, payload: { ...payload, libraryId: 99 } })).statusCode).toBe(400);
     expect((await app.inject({ method: 'PATCH', url: `${base}/profiles/${uuid}`, payload })).statusCode).toBe(400);
   });
+  it('accepts cookie edits and returns masked cookie metadata through the profile contract', async () => {
+    const cookie = { name: 'session', domain: 'archiveofourown.org', path: '/', secure: true, value: '********' };
+    const view = {
+      id: uuid,
+      libraryId: 5,
+      name: 'AO3',
+      version: 2,
+      updatedAt: new Date().toISOString(),
+      configuration: '',
+      cookieCount: 1,
+      cookies: [cookie],
+    };
+    profiles.get.mockResolvedValue(view);
+    expect((await app.inject({ method: 'GET', url: `${base}/profiles/${uuid}` })).json()).toEqual(view);
+    const payload = { name: 'AO3', version: 2, cookies: [cookie] };
+    profiles.update.mockResolvedValue({ ...view, version: 3 });
+    expect((await app.inject({ method: 'PATCH', url: `${base}/profiles/${uuid}`, payload })).statusCode).toBe(200);
+    expect(profiles.update).toHaveBeenCalledWith(5, uuid, expect.objectContaining(payload), undefined);
+    for (const invalid of [
+      { ...cookie, key: 'client-only' },
+      { ...cookie, value: 'bad\nvalue' },
+      { ...cookie, expires: Number.MAX_SAFE_INTEGER + 1 },
+    ])
+      expect((await app.inject({ method: 'PATCH', url: `${base}/profiles/${uuid}`, payload: { ...payload, cookies: [invalid] } })).statusCode).toBe(
+        400,
+      );
+  });
   it('accepts durable preview and cancellation requests with 202 responses and rejects oversized pagination', async () => {
     const job = { id: uuid, state: 'queued', libraryId: 5 };
     jobs.preview.mockResolvedValue(job);

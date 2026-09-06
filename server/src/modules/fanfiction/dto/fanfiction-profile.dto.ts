@@ -23,7 +23,7 @@ export class FanfictionCookieDto {
   @IsString() @MinLength(1) @MaxLength(255) @Matches(/^\.?[a-zA-Z0-9.-]+$/) domain!: string;
   @IsString() @MaxLength(4096) @Matches(/^\/[^\r\n]*$/) path!: string;
   @IsBoolean() secure!: boolean;
-  @IsOptional() @IsInt() @Min(0) expires?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) expires?: number;
 }
 
 export class FanfictionCredentialsDto {
