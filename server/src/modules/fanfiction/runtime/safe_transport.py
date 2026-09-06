@@ -8,6 +8,10 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import zlib
+
+
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 class PolicyError(Exception):
@@ -82,6 +86,7 @@ class PinnedConnection(http.client.HTTPSConnection):
 class SafeTransport:
     def __init__(self, max_bytes=128 * 1024 * 1024, max_requests=10_000, timeout=600):
         self.remaining_bytes = max_bytes
+        self.remaining_decoded_bytes = max_bytes
         self.remaining_requests = max_requests
         self.deadline = time.monotonic() + timeout
         self.cookies = http.cookiejar.CookieJar()
@@ -120,7 +125,7 @@ class SafeTransport:
             if self.remaining_requests <= 0 or time.monotonic() >= self.deadline:
                 raise PolicyError('Request budget exceeded')
             self.remaining_requests -= 1
-            safe_headers = {'User-Agent': 'BookOrbit/FanFicFare', 'Accept-Encoding': 'identity'}
+            safe_headers = {'User-Agent': 'BookOrbit/FanFicFare', 'Accept-Encoding': 'gzip, deflate'}
             for name, value in (headers or {}).items():
                 if name.lower() in ('user-agent', 'accept') and isinstance(value, str) and len(value) < 1024 and '\r' not in value and '\n' not in value:
                     safe_headers[name] = value
@@ -144,20 +149,46 @@ class SafeTransport:
                         method, body = 'GET', None
                     url = target
                     continue
-                if response.getheader('Content-Encoding', 'identity').lower() != 'identity':
-                    raise PolicyError('Compressed HTTP responses are disabled')
-                chunks = []
-                size = 0
-                while True:
-                    chunk = response.read(min(64 * 1024, self.remaining_bytes + 1))
-                    if not chunk:
-                        break
-                    size += len(chunk)
-                    self.remaining_bytes -= len(chunk)
-                    if self.remaining_bytes < 0 or size > 16 * 1024 * 1024 or time.monotonic() >= self.deadline:
-                        raise PolicyError('Download limit exceeded')
-                    chunks.append(chunk)
-                return response.status, b''.join(chunks), url
+                return response.status, self.read_body(response), url
             finally:
                 connection.close()
         raise PolicyError('Redirect limit exceeded')
+
+    def read_body(self, response):
+        encoding = response.getheader('Content-Encoding', 'identity').strip().lower()
+        if encoding not in ('identity', 'gzip', 'deflate'):
+            raise PolicyError('Unsupported HTTP content encoding')
+        decoder = None if encoding == 'identity' else zlib.decompressobj(
+            zlib.MAX_WBITS + 16 if encoding == 'gzip' else zlib.MAX_WBITS)
+        content_buffer = bytearray()
+        received = 0
+        expanded = 0
+        while True:
+            if time.monotonic() >= self.deadline:
+                raise PolicyError('Download deadline exceeded')
+            chunk = response.read(min(64 * 1024, self.remaining_bytes + 1))
+            if time.monotonic() >= self.deadline:
+                raise PolicyError('Download limit exceeded')
+            if not chunk:
+                break
+            received += len(chunk)
+            self.remaining_bytes -= len(chunk)
+            if self.remaining_bytes < 0 or received > MAX_RESPONSE_BYTES:
+                raise PolicyError('Download limit exceeded')
+            allowance = min(MAX_RESPONSE_BYTES - expanded, self.remaining_decoded_bytes)
+            try:
+                content = decoder.decompress(chunk, allowance + 1) if decoder else chunk
+            except zlib.error as error:
+                raise PolicyError('Invalid compressed HTTP response') from error
+            if time.monotonic() >= self.deadline:
+                raise PolicyError('Download deadline exceeded')
+            if len(content) > allowance:
+                raise PolicyError('Expanded HTTP response limit exceeded')
+            if decoder and decoder.unused_data:
+                raise PolicyError('Unexpected data after compressed HTTP response')
+            self.remaining_decoded_bytes -= len(content)
+            expanded += len(content)
+            content_buffer.extend(content)
+        if decoder and not decoder.eof:
+            raise PolicyError('Incomplete compressed HTTP response')
+        return bytes(content_buffer)

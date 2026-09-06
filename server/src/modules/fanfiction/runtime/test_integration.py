@@ -12,6 +12,15 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_http_authentication_failures_are_configuration_blocked_instead_of_retried(self):
+        from fanficfare.exceptions import HTTPErrorFFF
+        from fanficfare_wrapper import failure_code
+        for status in [401, 403]:
+            self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/private', status, 'secret response')), 'authentication_required')
+        for status in [429, 500, 503]:
+            self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/story', status, 'server error')), 'source_failed')
+        self.assertEqual(failure_code(PolicyError('Unsafe setting')), 'configuration_blocked')
+
     def test_recognizes_canonical_urls_without_network_or_authenticated_access(self):
         from safe_transport import SafeTransport
         with patch.object(SafeTransport, 'request', side_effect=AssertionError('Recognition must stay offline')):

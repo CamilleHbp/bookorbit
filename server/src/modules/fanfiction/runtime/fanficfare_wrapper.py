@@ -122,6 +122,13 @@ def run(request):
     return {'preview': preview, 'output': 'output.epub'}
 
 
+def failure_code(error):
+    if type(error).__name__ in ('FailedToLogin', 'AdultCheckRequired', 'AccessDenied') or (
+            type(error).__name__ == 'HTTPErrorFFF' and getattr(error, 'status_code', None) in (401, 403)):
+        return 'authentication_required'
+    return 'configuration_blocked' if isinstance(error, (PolicyError, ValueError)) else 'source_failed'
+
+
 def main():
     limits()
     logging.disable(logging.CRITICAL)
@@ -136,9 +143,7 @@ def main():
         result = {'ok': True, 'result': run(request)}
     except Exception as error:
         name = type(error).__name__
-        code = 'configuration_blocked' if isinstance(error, (PolicyError, ValueError)) else 'source_failed'
-        if name in ('FailedToLogin', 'AdultCheckRequired', 'AccessDenied'):
-            code = 'authentication_required'
+        code = failure_code(error)
         result = {'ok': False, 'code': code, 'errorClass': name}
     encoded = json.dumps(result, ensure_ascii=True)
     if len(encoded) > 1024 * 1024:

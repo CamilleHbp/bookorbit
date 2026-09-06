@@ -1,3 +1,8 @@
+import gzip
+import io
+from email.message import Message
+from unittest.mock import MagicMock
+import zlib
 import socket
 import unittest
 from unittest.mock import patch
@@ -33,6 +38,90 @@ class TransportPolicyTest(unittest.TestCase):
             SafeTransport().request('POST', 'https://example.org', b'x' * (2 * 1024 * 1024 + 1))
         with self.assertRaises(PolicyError):
             SafeTransport(max_requests=0).request('GET', 'https://example.org')
+
+
+class FakeResponse:
+    def __init__(self, data, encoding='identity', status=200, headers=None, chunk_size=7):
+        self.body = io.BytesIO(data)
+        self.status = status
+        self.headers = Message()
+        self.headers['Content-Encoding'] = encoding
+        for key, value in (headers or {}).items():
+            self.headers[key] = value
+        self.chunk_size = chunk_size
+
+    def info(self):
+        return self.headers
+
+    def getheader(self, key, default=None):
+        return self.headers.get(key, default)
+
+    def read(self, size):
+        return self.body.read(min(size, self.chunk_size))
+
+
+class HttpResponseTest(unittest.TestCase):
+    def request(self, response, transport=None, **kwargs):
+        connection = MagicMock()
+        connection.getresponse.return_value = response
+        with patch('safe_transport.PinnedConnection', return_value=connection):
+            try:
+                return (transport or SafeTransport()).request('GET', 'https://example.org/story', **kwargs)
+            finally:
+                connection.close.assert_called_once()
+
+    def test_decodes_streaming_responses_and_preserves_unicode(self):
+        text = ('A café\u00a0故事\n' * 100).encode('utf-8')
+        for encoding, encoded in [('identity', text), ('gzip', gzip.compress(text)), ('deflate', zlib.compress(text))]:
+            with self.subTest(encoding=encoding):
+                status, result, url = self.request(FakeResponse(encoded, encoding))
+                self.assertEqual((status, result, url), (200, text, 'https://example.org/story'))
+
+    def test_expansion_limit_is_applied_before_allocating_unbounded_output(self):
+        compressed = gzip.compress(b'x' * (128 * 1024))
+        with patch('safe_transport.MAX_RESPONSE_BYTES', 1024), self.assertRaisesRegex(PolicyError, 'Expanded'):
+            self.request(FakeResponse(compressed, 'gzip', chunk_size=65536))
+
+    def test_total_decoded_budget_applies_across_requests(self):
+        transport = SafeTransport(max_bytes=1500)
+        compressed = gzip.compress(b'x' * 1000)
+        self.request(FakeResponse(compressed, 'gzip'), transport)
+        with self.assertRaisesRegex(PolicyError, 'Expanded'):
+            self.request(FakeResponse(compressed, 'gzip'), transport)
+
+    def test_wire_budget_is_independent_of_expanded_budget(self):
+        with self.assertRaisesRegex(PolicyError, 'Download limit'):
+            self.request(FakeResponse(b'x' * 101), SafeTransport(max_bytes=100))
+
+    def test_malformed_truncated_and_trailing_compressed_data_are_rejected(self):
+        compressed = gzip.compress(b'A complete chapter')
+        for value in [b'invalid gzip', compressed[:-1], compressed + b'junk', compressed + compressed]:
+            with self.subTest(value=value), self.assertRaises(PolicyError):
+                self.request(FakeResponse(value, 'gzip'))
+
+    def test_unsupported_encoding_and_multiple_encodings_are_rejected(self):
+        for encoding in ['br', 'gzip, gzip', 'gzip, deflate']:
+            with self.subTest(encoding=encoding), self.assertRaisesRegex(PolicyError, 'Unsupported'):
+                self.request(FakeResponse(b'data', encoding))
+
+    def test_deadline_is_checked_while_reading(self):
+        transport = SafeTransport()
+        response = FakeResponse(b'data')
+        read = response.read
+        def expire(size):
+            transport.deadline = 0
+            return read(size)
+        response.read = expire
+        with self.assertRaisesRegex(PolicyError, 'Download limit'):
+            self.request(response, transport)
+
+    def test_unsafe_redirect_is_rejected_before_fetching_it(self):
+        with self.assertRaises(PolicyError):
+            self.request(FakeResponse(b'', status=302, headers={'Location': 'https://localhost/private'}))
+
+    def test_authentication_status_reaches_the_pinned_adapter(self):
+        for status in [401, 403]:
+            self.assertEqual(self.request(FakeResponse(gzip.compress(b'Denied'), 'gzip', status=status))[:2], (status, b'Denied'))
 
 
 if __name__ == '__main__':
