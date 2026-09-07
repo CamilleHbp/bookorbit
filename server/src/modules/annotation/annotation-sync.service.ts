@@ -658,6 +658,10 @@ export class AnnotationSyncService {
     return this.syncRepo.findPositionsByAnnotationIds(annotationIds, formats);
   }
 
+  async findPositionFileIdentity(userId: number, bookId: number, bookFileId: number) {
+    return this.syncRepo.findPositionFileIdentity(userId, bookId, bookFileId);
+  }
+
   /**
    * Applies a device's acknowledgment of pushed changes. Only here do
    * lastAppliedVersion and deleteAckedAt advance; corrected positions are stored and

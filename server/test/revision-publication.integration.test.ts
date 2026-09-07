@@ -283,6 +283,12 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const positions = module.get(AnnotationPositionRepository);
     const conversions = module.get(AnnotationConversionService);
     const [note] = await db.insert(schema.annotations).values({ userId: ownerUserId, bookId: file.bookId, text: 'Original passage' }).returning();
+    expect(await syncRepository.findPositionFileIdentity(ownerUserId, file.bookId, fileId)).toEqual({
+      revisionId: file.currentRevisionId,
+      sha256: file.sha256,
+    });
+    expect(await syncRepository.findPositionFileIdentity(-1, file.bookId, fileId)).toBeNull();
+    expect(await syncRepository.findPositionFileIdentity(ownerUserId, -1, fileId)).toBeNull();
     await positions.upsert({
       annotationId: note.id,
       userId: ownerUserId,
@@ -296,6 +302,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     expect(await positions.findCfiConversionCandidates(ownerUserId, file.bookId, 2, 25)).toEqual([]);
     const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
     const installed = await service.resume(prepared.publicationId, libraryId);
+    expect(await syncRepository.findPositionFileIdentity(ownerUserId, file.bookId, fileId)).toMatchObject({ revisionId: installed.revisionId });
     expect(await repository.findById(file.bookId, note.id, ownerUserId)).toMatchObject({ cfi: null, cfiStatus: 'pending' });
     converter.xpointerToCfi.mockResolvedValue({ status: 'exact', cfi: 'epubcfi(/6/2!/4/2/1:0)' });
     expect(await conversions.ensureCfiPositionsForBook(ownerUserId, file.bookId)).toBe(1);

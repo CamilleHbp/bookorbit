@@ -18,6 +18,13 @@ const PUSH_DOWN_PAGE = 100;
 const CONVERSION_BUDGET_PER_REQUEST = 20;
 
 type DevicePositionsByFormat = { pdf?: AnnotationPosition; xpointer?: AnnotationPosition; cfi?: AnnotationPosition };
+type PositionFileIdentity = NonNullable<Awaited<ReturnType<AnnotationSyncService['findPositionFileIdentity']>>>;
+
+function stalePosition(position: AnnotationPosition | undefined | null, identity: PositionFileIdentity): boolean {
+  if (position?.converterVersion == null) return false;
+  const extras = position.extras as { revisionId?: string | null; sha256?: string | null } | null;
+  return (extras?.revisionId ?? null) !== identity.revisionId || (extras?.sha256 ?? null) !== identity.sha256;
+}
 
 export interface ExchangeAddEntry {
   sourceAnchor?: ReadingAnchor;
@@ -274,6 +281,9 @@ export class KoreaderAnnotationExchangeService {
   ): Promise<{ addEntries: ExchangeAddEntry[]; skippedNoPosition: number }> {
     if (adds.length === 0) return { addEntries: [], skippedNoPosition: 0 };
 
+    const identity = await this.annotationSync.findPositionFileIdentity(userId, bookId, bookFileId);
+    if (!identity) return { addEntries: [], skippedNoPosition: adds.length };
+
     const positions = await this.loadDevicePositions(adds);
     const converterVersion = this.positionConverter.version;
 
@@ -288,10 +298,8 @@ export class KoreaderAnnotationExchangeService {
         continue;
       }
       const formats = positions.get(annotation.id);
-      // KOReader's apply path is reflowable/xpointer-only and rejects PDF adds. A PDF-only
-      // annotation (a web highlight in a PDF with no EPUB anchor) has nothing to send, so skip
-      // it rather than fall into the CFI->xpointer path, which would store a failed xpointer and
-      // inflate the needs-review count. A mixed PDF+CFI annotation still converts its CFI below.
+      if (formats?.cfi && stalePosition(formats.cfi, identity)) delete formats.cfi;
+      // KOReader's apply path rejects PDF adds; mixed PDF+CFI annotations can still convert.
       const position = formats?.xpointer ?? null;
       const cfiConvertible = formats?.cfi?.pos0 != null;
       if (!position && formats?.pdf && !cfiConvertible) {
@@ -300,12 +308,14 @@ export class KoreaderAnnotationExchangeService {
       }
       const usable =
         position?.pos0 != null &&
+        !stalePosition(position, identity) &&
         position.status !== 'failed' &&
         (position.converterVersion == null || position.converterVersion >= converterVersion);
-      const retryable = position == null || position.converterVersion == null || position.converterVersion < converterVersion;
+      const retryable =
+        position == null || stalePosition(position, identity) || position.converterVersion == null || position.converterVersion < converterVersion;
 
       if (!usable) {
-        if (conversionBudget > 0 && retryable) {
+        if (conversionBudget > 0 && retryable && cfiConvertible) {
           conversionBudget -= 1;
           convertible.push(annotation);
         } else {
@@ -316,7 +326,7 @@ export class KoreaderAnnotationExchangeService {
       pushable.push({ annotation, position });
     }
 
-    const converted = await this.convertCfiPositions(userId, bookFileId, convertible, positions);
+    const converted = await this.convertCfiPositions(userId, bookFileId, convertible, positions, identity);
 
     // Mint in the original push-down order so the values match what a per-annotation
     // loop would have assigned, and only for annotations that actually reached the device
@@ -366,23 +376,12 @@ export class KoreaderAnnotationExchangeService {
     bookFileId: number,
     annotationRows: AnnotationRow[],
     positions: Map<number, DevicePositionsByFormat>,
+    identity: PositionFileIdentity,
   ): Promise<Set<number>> {
     const converted = new Set<number>();
     for (const annotation of annotationRows) {
       const cfiPosition = positions.get(annotation.id)?.cfi ?? null;
-      if (!cfiPosition?.pos0) {
-        await this.annotationSync.upsertGeneratedPosition({
-          annotationId: annotation.id,
-          userId,
-          bookFileId,
-          format: 'xpointer',
-          pos0: '',
-          pos1: null,
-          status: 'failed',
-          converterVersion: this.positionConverter.version,
-        });
-        continue;
-      }
+      if (!cfiPosition?.pos0) continue;
 
       const outcome = await this.positionConverter.cfiToXpointer({
         bookFileId,
@@ -399,7 +398,7 @@ export class KoreaderAnnotationExchangeService {
           pos1: null,
           status: 'failed',
           converterVersion: this.positionConverter.version,
-          extras: outcome.reason ? { reason: outcome.reason } : null,
+          extras: { ...identity, ...(outcome.reason && { reason: outcome.reason }) },
         });
         continue;
       }
@@ -413,7 +412,7 @@ export class KoreaderAnnotationExchangeService {
         pos1: outcome.pos1,
         status: 'pending',
         converterVersion: this.positionConverter.version,
-        extras: outcome.chapterIndex != null ? { chapterIndex: outcome.chapterIndex, converterStatus: outcome.status } : null,
+        extras: { ...identity, ...(outcome.chapterIndex != null && { chapterIndex: outcome.chapterIndex, converterStatus: outcome.status }) },
       });
       converted.add(annotation.id);
     }

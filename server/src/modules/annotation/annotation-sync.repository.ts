@@ -427,6 +427,26 @@ export class AnnotationSyncRepository {
       .where(and(inArray(annotationPositions.annotationId, annotationIds), inArray(annotationPositions.format, formats)));
   }
 
+  async findPositionFileIdentity(userId: number, bookId: number, bookFileId: number) {
+    const [file] = await this.db
+      .select({ revisionId: schema.bookFiles.currentRevisionId, sha256: schema.bookFiles.sha256 })
+      .from(schema.bookFiles)
+      .where(
+        and(
+          eq(schema.bookFiles.id, bookFileId),
+          eq(schema.bookFiles.bookId, bookId),
+          exists(
+            this.db
+              .select({ one: sql`1` })
+              .from(annotations)
+              .where(and(eq(annotations.userId, userId), eq(annotations.bookId, bookId), isNull(annotations.deletedAt))),
+          ),
+        ),
+      )
+      .limit(1);
+    return file ?? null;
+  }
+
   async findActiveByBook(userId: number, bookId: number, ex: Executor = this.db): Promise<AnnotationRow[]> {
     return ex
       .select()
