@@ -78,6 +78,8 @@ export interface ReadingEventReceipt extends CanonicalReadingState {
   outcome: "accepted" | "duplicate" | "superseded" | "reset_required";
 }
 
+export interface DeviceReadingEventReceipt extends ReadingEventReceipt, DeviceCanonicalReadingState {}
+
 export type PositionResolutionQuality = "exact" | "relocated" | "approximate";
 
 export interface ResolvedReadingAnchor {

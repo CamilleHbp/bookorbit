@@ -1,11 +1,10 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { isDeepStrictEqual } from 'node:util';
 import type { CanonicalReadingState, ReadingAnchor, ReadingEventReceipt, RevisionPositionAcknowledgement } from '@bookorbit/types';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
-import { isNewerReadingEvent } from './reading-event';
+import { isNewerReadingEvent, isSameReadingEvent } from './reading-event';
 import { BookProgressProjectionService } from '../book/book-progress-projection.service';
 import { clampFraction, resolveReadingAnchor } from './reading-anchor';
 
@@ -58,7 +57,7 @@ export class CanonicalReadingService {
         .where(and(eventScope(userId, fileId), eq(events.id, identity.id)))
         .limit(1);
       if (duplicate) {
-        if (!isDeepStrictEqual(duplicate.anchor, anchor)) throw new ConflictException('Reading event identity was reused with different content');
+        if (!isSameReadingEvent(duplicate.anchor, anchor)) throw new ConflictException('Reading event identity was reused with different content');
         return { ...state, outcome: 'duplicate' };
       }
       const [latest] = await tx

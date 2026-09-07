@@ -3,7 +3,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BookService } from '../book/book.service';
+import { BookReadService } from '../book/book-read.service';
 import { CanonicalReadingService } from '../book-revision/canonical-reading.service';
 import { KoreaderAuthGuard } from './koreader-auth.guard';
 import { KoreaderReadingController } from './koreader-reading.controller';
@@ -12,7 +12,7 @@ import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.
 
 describe('KOReader reading HTTP contract', () => {
   let app: NestFastifyApplication;
-  const books = { verifyFileAccess: vi.fn() };
+  const books = { findAccessibleFiles: vi.fn() };
   const reading = { state: vi.fn(), record: vi.fn(), acknowledge: vi.fn() };
   const uuid = '95f66679-bff3-4f7e-a8c6-1d4cf246700a';
   const anchor = {
@@ -35,7 +35,7 @@ describe('KOReader reading HTTP contract', () => {
       controllers: [KoreaderReadingController],
       providers: [
         KoreaderReadingService,
-        { provide: BookService, useValue: books },
+        { provide: BookReadService, useValue: books },
         { provide: CanonicalReadingService, useValue: reading },
         { provide: KoreaderDeliveryExecutionService, useValue: { acknowledgeRestoration: vi.fn() } },
       ],
@@ -59,7 +59,7 @@ describe('KOReader reading HTTP contract', () => {
   });
   beforeEach(() => {
     vi.resetAllMocks();
-    books.verifyFileAccess.mockResolvedValue({ bookId: 2, libraryId: 5, currentRevisionId: uuid, sha256: 'b'.repeat(64) });
+    books.findAccessibleFiles.mockResolvedValue([{ bookId: 2, libraryId: 5, currentRevisionId: uuid, sha256: 'b'.repeat(64) }]);
     reading.state.mockResolvedValue(state);
     reading.record.mockResolvedValue({ ...state, outcome: 'duplicate' });
     reading.acknowledge.mockResolvedValue(state);
@@ -75,7 +75,7 @@ describe('KOReader reading HTTP contract', () => {
     expect(received.json()).toEqual({ ...state, bookId: 2, bookFileId: 9, revision: uuid, sha256: 'b'.repeat(64) });
     const recorded = await app.inject({ method: 'POST', url, payload: { anchor } });
     expect(recorded.statusCode).toBe(201);
-    expect(recorded.json()).toEqual({ ...state, outcome: 'duplicate' });
+    expect(recorded.json()).toEqual({ ...state, outcome: 'duplicate', bookId: 2, bookFileId: 9, revision: uuid, sha256: 'b'.repeat(64) });
     const acknowledgement = { eventId: uuid, revision: `sha256:${'b'.repeat(64)}`, nativeLocator: anchor.nativeLocator, quality: 'relocated' };
     const accepted = await app.inject({
       method: 'POST',
@@ -98,7 +98,7 @@ describe('KOReader reading HTTP contract', () => {
     expect(reading.record).not.toHaveBeenCalled();
   });
   it('checks current file access for every request', async () => {
-    books.verifyFileAccess.mockRejectedValue(new ForbiddenException());
+    books.findAccessibleFiles.mockRejectedValue(new ForbiddenException());
     expect((await app.inject({ method: 'GET', url })).statusCode).toBe(403);
     expect((await app.inject({ method: 'POST', url, payload: { anchor } })).statusCode).toBe(403);
     expect(reading.state).not.toHaveBeenCalled();

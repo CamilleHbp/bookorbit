@@ -1,15 +1,15 @@
-import { ForbiddenException, ValidationPipe, BadRequestException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, ValidationPipe, BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RequestUser } from '../../common/types/request-user';
-import { BookService } from '../book/book.service';
+import { BookReadService } from '../book/book-read.service';
 import { CanonicalReadingService } from '../book-revision/canonical-reading.service';
 import { KoreaderReadingService } from './koreader-reading.service';
 import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
 import { RecordReadingEventDto, AcknowledgeReadingPositionDto } from '../book-revision/dto/reading-event.dto';
 
 const user = { id: 7, isSuperuser: false } as RequestUser;
-const libraries = { verifyFileAccess: vi.fn() };
+const libraries = { findAccessibleFiles: vi.fn() };
 const reading = { state: vi.fn(), record: vi.fn(), acknowledge: vi.fn() };
 const deliveries = { acknowledgeRestoration: vi.fn() };
 const uuid = '95f66679-bff3-4f7e-a8c6-1d4cf246700a';
@@ -36,11 +36,11 @@ const acknowledgement = {
 let service: KoreaderReadingService;
 beforeEach(async () => {
   vi.resetAllMocks();
-  libraries.verifyFileAccess.mockResolvedValue({ bookId: 2, libraryId: 5, currentRevisionId: uuid, sha256: null });
+  libraries.findAccessibleFiles.mockResolvedValue([{ bookId: 2, libraryId: 5, currentRevisionId: uuid, sha256: null }]);
   const module = await Test.createTestingModule({
     providers: [
       KoreaderReadingService,
-      { provide: BookService, useValue: libraries },
+      { provide: BookReadService, useValue: libraries },
       { provide: CanonicalReadingService, useValue: reading },
       { provide: KoreaderDeliveryExecutionService, useValue: deliveries },
     ],
@@ -50,11 +50,20 @@ beforeEach(async () => {
 
 describe('KOReader reading event boundaries', () => {
   it('denies revoked access before any user data is read or changed', async () => {
-    libraries.verifyFileAccess.mockRejectedValue(new ForbiddenException());
+    libraries.findAccessibleFiles.mockRejectedValue(new ForbiddenException());
     await expect(service.state(9, user)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.record(9, { anchor }, user)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.acknowledge(9, acknowledgement, user)).rejects.toBeInstanceOf(ForbiddenException);
     for (const method of Object.values(reading)) expect(method).not.toHaveBeenCalled();
+  });
+
+  it('rejects files omitted by the scoped file lookup before reading or acknowledging state', async () => {
+    libraries.findAccessibleFiles.mockResolvedValue([]);
+    await expect(service.state(9, user)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.record(9, { anchor }, user)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.acknowledge(9, acknowledgement, user)).rejects.toBeInstanceOf(NotFoundException);
+    for (const method of Object.values(reading)) expect(method).not.toHaveBeenCalled();
+    expect(deliveries.acknowledgeRestoration).not.toHaveBeenCalled();
   });
 
   it('uses the authenticated user and preserves receipt and acknowledgement responses', async () => {
@@ -63,12 +72,19 @@ describe('KOReader reading event boundaries', () => {
     reading.record.mockResolvedValue({ ...state, outcome: 'accepted' });
     reading.acknowledge.mockResolvedValue(state);
     await expect(service.state(9, user)).resolves.toEqual({ ...state, bookId: 2, bookFileId: 9, revision: uuid, sha256: null });
-    await expect(service.record(9, { anchor }, user)).resolves.toEqual({ ...state, outcome: 'accepted' });
+    await expect(service.record(9, { anchor }, user)).resolves.toEqual({
+      ...state,
+      outcome: 'accepted',
+      bookId: 2,
+      bookFileId: 9,
+      revision: uuid,
+      sha256: null,
+    });
     await expect(service.acknowledge(9, acknowledgement, user)).resolves.toEqual(state);
     expect(reading.record).toHaveBeenCalledWith(7, 9, 5, anchor);
     expect(reading.acknowledge).toHaveBeenCalledWith(7, 9, 5, 'reader', uuid, acknowledgement.acknowledgement);
     expect(deliveries.acknowledgeRestoration).toHaveBeenCalledWith(7, 9, 'reader', uuid, acknowledgement.acknowledgement);
-    expect(libraries.verifyFileAccess).toHaveBeenCalledWith(9, user);
+    expect(libraries.findAccessibleFiles).toHaveBeenCalledWith([9], user);
   });
 
   const pipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true });
