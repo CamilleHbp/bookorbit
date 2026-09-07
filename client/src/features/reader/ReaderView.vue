@@ -285,6 +285,7 @@ const {
   bookLanguage,
   isFixedLayout,
   captureAnnotationAnchor,
+  annotationProjector,
 } = useFoliate(() => containerRef.value, onRelocateHandler, onApplyStylesHandler, onMiddleTapHandler)
 
 const { handleHighlight, handleOpenNoteDialog, handleSaveNote } = useReaderAnnotationActions({
@@ -348,6 +349,8 @@ onMounted(async () => {
   sectionFractions.value = getSectionFractions()
   await bookmarks.load(bookId)
   await annotations.load(bookId)
+  const projector = annotationProjector()
+  if (projector) await annotations.projectForFile(fileId, projector)
   const drawableAnnotations = annotations.drawableForFile(fileId)
   if (drawableAnnotations.length > 0) {
     addAnnotations(
@@ -363,7 +366,9 @@ onMounted(async () => {
 
   if (deepLinkCfi) {
     try {
-      await goTo(deepLinkCfi)
+      const target = annotations.projectedTarget(deepLinkCfi)
+      if (target) await goTo(target)
+      else toast.error(t('reader.toast.linkedHighlightError'))
     } catch {
       toast.error(t('reader.toast.linkedHighlightError'))
     }

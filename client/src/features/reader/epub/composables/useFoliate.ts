@@ -6,6 +6,7 @@ import { useFoliateInput } from './useFoliateInput'
 import type { EpubBookInfo, EpubReaderSettings, EpubReadingRevision, CanonicalReadingState, ReadingAnchor } from '@bookorbit/types'
 import { loadRevisionBook } from './reader-revision-book'
 import { captureAnnotationAnchor, captureNativeAnchor, restoreNativeAnchor, type AnchorView } from './reader-native-anchor'
+import { createAnnotationProjector } from './reader-annotation-projection'
 import { readingCopyIdentity, readingDeviceIdentity } from '../../shared/composables/reading-event-identity'
 
 export interface RelocateDetail {
@@ -423,6 +424,10 @@ export function useFoliate(
     bookLanguage,
     isFixedLayout,
     view: viewRef,
+    annotationProjector: () => {
+      const view = getViewEl()
+      return view && installedRevision ? createAnnotationProjector(view as unknown as AnchorView, installedRevision) : null
+    },
     captureAnnotationAnchor: (cfi: string, text: string) => {
       const view = getViewEl()
       return view && installedRevision ? captureAnnotationAnchor(view as unknown as AnchorView, installedRevision, cfi, text) : null

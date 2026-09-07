@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import type { AnnotationItem, EpubAnnotationInput } from '@bookorbit/types'
+import type { AnnotationProjection } from './reader-annotation-projection'
 import { api } from '@/lib/api'
 
 export type Annotation = AnnotationItem
@@ -12,6 +13,8 @@ export interface AnnotationPatch {
 
 export function useAnnotations() {
   const annotations = ref<Annotation[]>([])
+  const projections = new Map<number, AnnotationProjection>()
+  const originalTargets = new Map<string, number>()
   const loadError = ref<string | null>(null)
 
   function drawableForFile(fileId: number) {
@@ -32,6 +35,26 @@ export function useAnnotations() {
     )
   }
 
+  async function projectForFile(fileId: number, resolve: (annotation: Annotation, budgetMs: number) => Promise<AnnotationProjection>) {
+    const deadline = performance.now() + 500
+    let attempts = 0
+    for (const annotation of annotations.value) {
+      if (!annotation.sourceAnchor || (annotation.jumpFileId != null && annotation.jumpFileId !== fileId)) continue
+      if (annotation.cfi) originalTargets.set(annotation.cfi, annotation.id)
+      const result =
+        ++attempts <= 100 && performance.now() < deadline
+          ? await resolve(annotation, Math.min(100, deadline - performance.now())).catch(() => ({ cfi: null, positionStatus: 'pending' as const }))
+          : { cfi: null, positionStatus: 'pending' as const }
+      projections.set(annotation.id, result)
+    }
+    annotations.value = annotations.value.map((annotation) => ({ ...annotation, ...projections.get(annotation.id) }))
+  }
+
+  function projectedTarget(cfi: string): string | null {
+    const id = originalTargets.get(cfi)
+    return id === undefined ? cfi : (projections.get(id)?.cfi ?? null)
+  }
+
   async function load(bookId: number) {
     loadError.value = null
     const res = await api(`/api/v1/books/${bookId}/annotations`)
@@ -39,6 +62,8 @@ export function useAnnotations() {
       loadError.value = 'Failed to load'
       return
     }
+    projections.clear()
+    originalTargets.clear()
     annotations.value = await res.json()
   }
 
@@ -62,7 +87,8 @@ export function useAnnotations() {
     })
     if (!res.ok) return null
 
-    const updated: Annotation = await res.json()
+    const response: Annotation = await res.json()
+    const updated = { ...response, ...projections.get(id) }
     annotations.value = annotations.value.map((a) => (a.id === id ? updated : a))
     return updated
   }
@@ -80,5 +106,5 @@ export function useAnnotations() {
     }
   }
 
-  return { annotations, loadError, drawableForFile, hasUnverifiedForFile, load, create, update, updateNote, remove }
+  return { annotations, loadError, projectForFile, projectedTarget, drawableForFile, hasUnverifiedForFile, load, create, update, updateNote, remove }
 }
