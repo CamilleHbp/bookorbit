@@ -147,6 +147,9 @@ importers:
       '@lucide/vue':
         specifier: 1.35.0
         version: 1.35.0(vue@3.5.42(typescript@6.0.3))
+      '@noble/hashes':
+        specifier: 1.8.0
+        version: 1.8.0
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.2(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
