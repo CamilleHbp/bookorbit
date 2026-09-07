@@ -1,8 +1,9 @@
-import type { AnnotationPdfPosition } from '@bookorbit/types';
+import type { AnnotationPdfPosition, ReadingAnchor } from '@bookorbit/types';
 
 import type { AnnotationWithCfi } from '../annotation.repository';
 
 export class AnnotationResponseDto {
+  sourceAnchor!: ReadingAnchor | null;
   id!: number;
   bookId!: number;
   cfi!: string | null;
@@ -21,6 +22,7 @@ export class AnnotationResponseDto {
 
   static from(row: AnnotationWithCfi): AnnotationResponseDto {
     const dto = new AnnotationResponseDto();
+    dto.sourceAnchor = row.sourceAnchor ?? null;
     dto.id = row.id;
     dto.bookId = row.bookId;
     dto.cfi = row.cfi;

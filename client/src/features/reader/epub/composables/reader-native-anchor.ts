@@ -1,4 +1,5 @@
 import type { EpubReadingRevision, ReadingAnchor, RevisionPositionAcknowledgement } from '@bookorbit/types'
+import { verifiesAnnotationRange } from './annotation-range'
 import { captureDomPassage, indexAnchorDocument, locateDomPassage, type AnchorDomIndex } from './reader-anchor-dom'
 
 export interface AnchorView {
@@ -33,6 +34,35 @@ function index(document: Document) {
     indexes.set(document, result)
   }
   return result
+}
+
+export function captureAnnotationAnchor(view: AnchorView, revision: EpubReadingRevision, cfi: string, text: string): ReadingAnchor | null {
+  try {
+    const resolved = view.resolveCFI?.(cfi)
+    if (!resolved) return null
+    const document = view.renderer.getContents?.().find((item) => item.index === resolved.index)?.doc
+    if (!document) return null
+    const range = resolved.anchor(document)
+    if (!verifiesAnnotationRange(range, text)) return null
+    const passage = captureDomPassage(index(document), range)
+    if (!passage?.quote) return null
+    const fractions = view.getSectionFractions?.()
+    const start = fractions?.[resolved.index] ?? 0
+    const end = fractions?.[resolved.index + 1] ?? 1
+    return {
+      schemaVersion: 1,
+      bookId: revision.bookId,
+      bookFileId: revision.bookFileId,
+      revision: revision.revision,
+      nativeLocator: { kind: 'cfi', value: cfi },
+      chapterIndex: resolved.index,
+      chapterHref: view.book?.sections[resolved.index]?.id,
+      ...passage,
+      bookFraction: clamp(start + (end - start) * (passage.chapterFraction ?? 0)),
+    }
+  } catch {
+    return null
+  }
 }
 
 export function captureNativeAnchor(view: AnchorView, revision: EpubReadingRevision): ReadingAnchor | null {

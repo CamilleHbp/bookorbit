@@ -1,4 +1,5 @@
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
+import { AnnotationRepository } from '../src/modules/annotation/annotation.repository';
 import { storageConfig } from '../src/config/config';
 import { BookRevisionService } from '../src/modules/book-revision/book-revision.service';
 import { RevisionMetadataService } from '../src/modules/book-revision/revision-metadata.service';
@@ -191,6 +192,38 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const [row] = await db.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, id));
     return row;
   }
+
+  it('retains annotation source anchors across note edits and rejects another file revision', async () => {
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    const module = await Test.createTestingModule({ providers: [AnnotationRepository, { provide: DB, useValue: db }] }).compile();
+    const repository = module.get(AnnotationRepository);
+    const sourceAnchor = {
+      schemaVersion: 1 as const,
+      bookId: file.bookId,
+      bookFileId: fileId,
+      revision: originalId,
+      nativeLocator: { kind: 'cfi' as const, value: 'epubcfi(/6/2!/4/2/1:0)' },
+      chapterIndex: 0,
+      chapterFraction: 0,
+      bookFraction: 0,
+      quote: 'Original passage',
+    };
+    await catalog.requireRevision(fileId, originalId);
+    await expect(catalog.requireRevision(fileId + 1, originalId)).rejects.toThrow('Revision not found for this file');
+    const saved = await repository.create({
+      userId: ownerUserId,
+      bookId: file.bookId,
+      bookFileId: fileId,
+      cfi: sourceAnchor.nativeLocator.value,
+      text: 'Original passage',
+      sourceAnchor,
+    });
+    expect(saved.sourceAnchor).toEqual(sourceAnchor);
+    const edited = await repository.update(file.bookId, saved.id, ownerUserId, { note: 'A later note', color: 'yellow' });
+    expect(edited?.sourceAnchor).toEqual(sourceAnchor);
+    expect(edited?.note).toBe('A later note');
+    await module.close();
+  });
 
   it('journals actual EPUB metadata writes without losing the story rollback copy or Kobo annotations', async () => {
     const story = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');

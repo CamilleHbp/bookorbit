@@ -201,6 +201,10 @@ export class RevisionCatalogService {
     return resolveReadingAnchor(verified, targetRevisionId, target.chapters ?? [], source);
   }
 
+  async requireRevision(bookFileId: number, revisionId: string): Promise<void> {
+    await this.get(bookFileId, revisionId);
+  }
+
   private async get(bookFileId: number, revisionId: string) {
     const [revision] = await this.db
       .select()

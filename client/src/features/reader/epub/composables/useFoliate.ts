@@ -5,7 +5,7 @@ import { useFoliateSelection } from './useFoliateSelection'
 import { useFoliateInput } from './useFoliateInput'
 import type { EpubBookInfo, EpubReaderSettings, EpubReadingRevision, CanonicalReadingState, ReadingAnchor } from '@bookorbit/types'
 import { loadRevisionBook } from './reader-revision-book'
-import { captureNativeAnchor, restoreNativeAnchor, type AnchorView } from './reader-native-anchor'
+import { captureAnnotationAnchor, captureNativeAnchor, restoreNativeAnchor, type AnchorView } from './reader-native-anchor'
 import { readingCopyIdentity, readingDeviceIdentity } from '../../shared/composables/reading-event-identity'
 
 export interface RelocateDetail {
@@ -94,6 +94,7 @@ export function useFoliate(
   const viewRef = ref<unknown>(null)
   const bookLanguage = ref<string>('en')
   const isFixedLayout = ref(false)
+  let installedRevision: EpubReadingRevision | null = null
   let deliberateNavigation = false
 
   let onAnnotationClick: ((cfi: string, popupPosition: { x: number; y: number; showBelow: boolean }) => void) | null = null
@@ -266,6 +267,7 @@ export function useFoliate(
         if (makeRevisionBook) {
           const loaded = await loadRevisionBook(bookId, fileId, options?.trackReading !== false)
           reading = loaded
+          installedRevision = loaded.revision
           const book = await makeRevisionBook(loaded.file)
           const rawLang = (book as { metadata?: { language?: unknown } }).metadata?.language
           bookLanguage.value = typeof rawLang === 'string' && rawLang ? (rawLang.split('-')[0] ?? 'en').toLowerCase() : 'en'
@@ -352,6 +354,7 @@ export function useFoliate(
   }
 
   function closeView() {
+    installedRevision = null
     const view = getViewEl()
     if (view?.close) view.close()
     else view?.destroy?.()
@@ -420,6 +423,10 @@ export function useFoliate(
     bookLanguage,
     isFixedLayout,
     view: viewRef,
+    captureAnnotationAnchor: (cfi: string, text: string) => {
+      const view = getViewEl()
+      return view && installedRevision ? captureAnnotationAnchor(view as unknown as AnchorView, installedRevision, cfi, text) : null
+    },
     open: (bookId: number, fileId: number, format: string, cfi?: string | null, fallbackFraction?: number, options?: EpubOpenOptions) =>
       open(bookId, fileId, format, cfi, fallbackFraction, options),
     prev: () => getViewEl()?.prev?.(),

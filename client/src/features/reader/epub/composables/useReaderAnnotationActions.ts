@@ -1,12 +1,10 @@
 import type { Ref } from 'vue'
+import type { EpubAnnotationInput, ReadingAnchor } from '@bookorbit/types'
 import type { Annotation, AnnotationPatch } from './useAnnotations'
 
 interface ReaderAnnotations {
   annotations: Ref<Annotation[]>
-  create: (
-    bookId: number,
-    data: { cfi: string; bookFileId?: number; text: string; color: string; style: string; note?: string | null; chapterTitle?: string | null },
-  ) => Promise<Annotation | null>
+  create: (bookId: number, data: EpubAnnotationInput) => Promise<Annotation | null>
   update: (bookId: number, id: number, data: AnnotationPatch) => Promise<Annotation | null>
 }
 
@@ -27,6 +25,7 @@ interface ReaderAnnotationActionsOptions {
   annotations: ReaderAnnotations
   selection: ReaderSelection
   addAnnotation: (cfi: string, color: string, style: string, text?: string) => void
+  captureAnnotationAnchor?: (cfi: string, text: string) => ReadingAnchor | null
   redrawAnnotation: (cfi: string, color: string, style: string) => void
 }
 
@@ -41,6 +40,7 @@ export function useReaderAnnotationActions({
   selection,
   addAnnotation,
   redrawAnnotation,
+  captureAnnotationAnchor,
 }: ReaderAnnotationActionsOptions) {
   function selectedAnnotation(): Annotation | null {
     const id = selection.overlappingAnnotationId.value
@@ -71,8 +71,10 @@ export function useReaderAnnotationActions({
     const annotationCfi = selection.cfi.value
     if (!selection.text.value || !annotationCfi) return
 
+    const sourceAnchor = captureAnnotationAnchor?.(annotationCfi, selection.text.value)
     const created = await annotations.create(bookId, {
       cfi: annotationCfi,
+      ...(sourceAnchor && { sourceAnchor }),
       bookFileId: fileId,
       text: selection.text.value,
       color,

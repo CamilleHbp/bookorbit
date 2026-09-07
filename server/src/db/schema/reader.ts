@@ -1,6 +1,13 @@
 import { sql } from 'drizzle-orm';
 import { check, date, index, integer, jsonb, pgTable, primaryKey, real, serial, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
-import type { ReadStatus, ReadStatusSource, ReadingAttemptOrigin, ReadingAttemptOutcome, ReadingSessionSource } from '@bookorbit/types';
+import type {
+  ReadingAnchor,
+  ReadStatus,
+  ReadStatusSource,
+  ReadingAttemptOrigin,
+  ReadingAttemptOutcome,
+  ReadingSessionSource,
+} from '@bookorbit/types';
 
 import { bookFiles, books } from './books';
 import { timestamptz } from './columns';
@@ -395,6 +402,7 @@ export const annotations = pgTable(
       .notNull()
       .references(() => books.id, { onDelete: 'cascade' }),
     text: text('text').notNull(),
+    sourceAnchor: jsonb('source_anchor').$type<ReadingAnchor>(),
     color: varchar('color', { length: 20 }).notNull().default('yellow'),
     style: varchar('style', { length: 20 }).notNull().default('highlight'),
     note: text('note'),

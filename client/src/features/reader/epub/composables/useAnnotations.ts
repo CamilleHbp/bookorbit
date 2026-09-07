@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import type { AnnotationItem } from '@bookorbit/types'
+import type { AnnotationItem, EpubAnnotationInput } from '@bookorbit/types'
 import { api } from '@/lib/api'
 
 export type Annotation = AnnotationItem
@@ -42,10 +42,7 @@ export function useAnnotations() {
     annotations.value = await res.json()
   }
 
-  async function create(
-    bookId: number,
-    data: { cfi: string; bookFileId?: number; text: string; color: string; style: string; note?: string | null; chapterTitle?: string | null },
-  ): Promise<Annotation | null> {
+  async function create(bookId: number, data: EpubAnnotationInput): Promise<Annotation | null> {
     const res = await api(`/api/v1/books/${bookId}/annotations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

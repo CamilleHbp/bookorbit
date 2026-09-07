@@ -284,6 +284,7 @@ const {
   view: foliateView,
   bookLanguage,
   isFixedLayout,
+  captureAnnotationAnchor,
 } = useFoliate(() => containerRef.value, onRelocateHandler, onApplyStylesHandler, onMiddleTapHandler)
 
 const { handleHighlight, handleOpenNoteDialog, handleSaveNote } = useReaderAnnotationActions({
@@ -292,6 +293,7 @@ const { handleHighlight, handleOpenNoteDialog, handleSaveNote } = useReaderAnnot
   chapterTitle,
   annotations,
   selection,
+  captureAnnotationAnchor,
   addAnnotation,
   redrawAnnotation,
 })

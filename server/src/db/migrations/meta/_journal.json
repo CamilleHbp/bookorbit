@@ -834,6 +834,13 @@
       "when": 1788733240748,
       "tag": "0118_replacement_hash_alias",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1788742530590,
+      "tag": "0119_annotation-source-anchor",
+      "breakpoints": true
     }
   ]
 }
