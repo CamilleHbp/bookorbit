@@ -580,7 +580,14 @@ export class AnnotationSyncService {
   }
 
   /** Pending changes for a device and book, capped at limit entries across all kinds. */
-  async computePushDown(userId: number, source: AnnotationSyncSource, deviceId: string, bookId: number, limit: number): Promise<PushDownSets> {
+  async computePushDown(
+    userId: number,
+    source: AnnotationSyncSource,
+    deviceId: string,
+    bookId: number,
+    limit: number,
+    converterVersion?: number,
+  ): Promise<PushDownSets> {
     const deletesRaw = await this.syncRepo.findDeleteCandidates(userId, source, deviceId, bookId, limit + 1);
     const deletes = deletesRaw.slice(0, limit);
     let remaining = limit - deletes.length;
@@ -590,7 +597,10 @@ export class AnnotationSyncService {
     remaining -= edits.length;
 
     const requiredAddFormats: AnnotationPositionFormat[] | undefined = source === 'koreader' ? ['xpointer', 'cfi'] : undefined;
-    const addsRaw = remaining > 0 ? await this.syncRepo.findAddCandidates(userId, source, deviceId, bookId, remaining + 1, requiredAddFormats) : [];
+    const addsRaw =
+      remaining > 0
+        ? await this.syncRepo.findAddCandidates(userId, source, deviceId, bookId, remaining + 1, requiredAddFormats, converterVersion)
+        : [];
     const adds = addsRaw.slice(0, Math.max(remaining, 0));
 
     const more = deletesRaw.length > deletes.length || editsRaw.length > edits.length || addsRaw.length > adds.length;

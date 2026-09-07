@@ -329,6 +329,45 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     await sync.close();
   }, 60_000);
 
+  it('pages past current KOReader conversion failures and retries them after a revision change', async () => {
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    const module = await Test.createTestingModule({ providers: [AnnotationSyncRepository, { provide: DB, useValue: db }] }).compile();
+    const repository = module.get(AnnotationSyncRepository);
+    const notes = await db
+      .insert(schema.annotations)
+      .values(
+        Array.from({ length: 141 }, (_, index) => ({
+          userId: ownerUserId,
+          bookId: file.bookId,
+          text: `Passage ${index}`,
+        })),
+      )
+      .returning();
+    await db.insert(schema.annotationPositions).values(
+      notes.map((note, index) => ({
+        annotationId: note.id,
+        userId: ownerUserId,
+        bookFileId: fileId,
+        format: 'xpointer' as const,
+        pos0: index === 140 ? '/valid' : '',
+        status: index === 140 ? ('exact' as const) : ('failed' as const),
+        converterVersion: 2,
+        extras: { revisionId: file.currentRevisionId, sha256: file.sha256 },
+      })),
+    );
+    expect(
+      (await repository.findAddCandidates(ownerUserId, 'koreader', 'reader', file.bookId, 100, ['xpointer', 'cfi'], 2)).map((row) => row.id),
+    ).toEqual([notes[140].id]);
+    expect(await repository.findAddCandidates(-1, 'koreader', 'reader', file.bookId, 100, ['xpointer', 'cfi'], 2)).toEqual([]);
+    expect(await repository.findAddCandidates(ownerUserId, 'koreader', 'reader', file.bookId, 100, ['xpointer', 'cfi'], 3)).toHaveLength(100);
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    await service.resume(prepared.publicationId, libraryId);
+    const retryable = await repository.findAddCandidates(ownerUserId, 'koreader', 'reader', file.bookId, 100, ['xpointer', 'cfi'], 2);
+    expect(retryable.map((row) => row.id)).toEqual(notes.slice(0, 100).map((row) => row.id));
+    expect(retryable.every((row) => row.version === 1)).toBe(true);
+    await module.close();
+  }, 60_000);
+
   it('retains annotation source anchors across note edits and rejects another file revision', async () => {
     const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
     const module = await Test.createTestingModule({

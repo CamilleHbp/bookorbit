@@ -232,7 +232,7 @@ export class KoreaderAnnotationExchangeService {
       });
     }
 
-    const pushDown = await this.annotationSync.computePushDown(userId, 'koreader', deviceId, bookId, PUSH_DOWN_PAGE);
+    const pushDown = await this.annotationSync.computePushDown(userId, 'koreader', deviceId, bookId, PUSH_DOWN_PAGE, this.positionConverter.version);
 
     const deleteEntries: ExchangeDeleteEntry[] = pushDown.deletes.map(({ state, annotation }) => ({
       serverId: annotation.id,

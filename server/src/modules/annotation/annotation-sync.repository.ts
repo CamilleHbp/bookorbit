@@ -1,6 +1,6 @@
 import type { ReadingAnchor } from '@bookorbit/types';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, exists, getTableColumns, inArray, isNotNull, isNull, notExists, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, getTableColumns, gte, inArray, isNotNull, isNull, not, notExists, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { DB } from '../../db';
@@ -18,6 +18,7 @@ import {
   NewAnnotationSyncState,
 } from '../../db/schema';
 import type { AnnotationPositionFormat, AnnotationSyncSource } from './annotation.constants';
+import { staleGeneratedPositionForFile } from './annotation-position-revision';
 
 type Db = NodePgDatabase<typeof schema>;
 export type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -241,6 +242,7 @@ export class AnnotationSyncRepository {
     bookId: number,
     limit: number,
     requiredPositionFormats?: AnnotationPositionFormat[],
+    converterVersion?: number,
   ): Promise<AnnotationRow[]> {
     return this.db
       .select(getTableColumns(annotations))
@@ -250,6 +252,22 @@ export class AnnotationSyncRepository {
           eq(annotations.userId, userId),
           eq(annotations.bookId, bookId),
           isNull(annotations.deletedAt),
+          source === 'koreader' && converterVersion != null
+            ? notExists(
+                this.db
+                  .select({ one: sql`1` })
+                  .from(annotationPositions)
+                  .where(
+                    and(
+                      eq(annotationPositions.annotationId, annotations.id),
+                      eq(annotationPositions.format, 'xpointer'),
+                      eq(annotationPositions.status, 'failed'),
+                      gte(annotationPositions.converterVersion, converterVersion),
+                      not(staleGeneratedPositionForFile(annotationPositions)!),
+                    ),
+                  ),
+              )
+            : undefined,
           notExists(
             this.db
               .select({ one: sql`1` })
