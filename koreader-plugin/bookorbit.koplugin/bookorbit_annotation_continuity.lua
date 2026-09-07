@@ -80,29 +80,41 @@ function Annotations.ready(ui, state, sha256)
         state.held = nil
     end
     state.sha256 = sha256
-    local deadline, remaining = now() + 0.15, {}
+    local deadline, remaining, retry = now() + 0.15, {}, {}
+    local attempted = 0
     for _, group in ipairs(state.pending or {}) do
         local items, anchors, keys = {}, {}, {}
-        for index, annotation in ipairs(group.items) do
-            local location, anchor = nil, group.anchors and group.anchors[index]
-            local key = group.anchorKeys and group.anchorKeys[index]
+        local cursor = group.cursor or 1
+        while cursor <= #group.items and attempted < 100 and now() < deadline do
+            local annotation = group.items[cursor]
+            local location, anchor = nil, group.anchors and group.anchors[cursor]
+            local key = group.anchorKeys and group.anchorKeys[cursor]
             if group.anchorKeys and key ~= annotationKey(annotation) then anchor = nil end
-            if anchor and now() < deadline then
+            attempted = attempted + 1
+            if anchor then
                 local ok, result = pcall(Native.resolveAnnotation, ui, anchor, { seconds = deadline - now() })
                 if ok then location = result end
             end
             if location then
                 local mapped = {}
-                for key, value in pairs(annotation) do mapped[key] = value end
+                for field, value in pairs(annotation) do mapped[field] = value end
                 mapped.page, mapped.pos0, mapped.pos1, mapped.pageno = location.page, location.pos0, location.pos1, location.pageno
                 restored[#restored + 1] = mapped
             else
                 local next_index = #items + 1
                 items[next_index], anchors[next_index], keys[next_index] = annotation, anchor, key
             end
+            cursor = cursor + 1
         end
-        if #items > 0 then remaining[#remaining + 1] = { sha256 = group.sha256, items = items, anchors = anchors, anchorKeys = group.anchorKeys and keys } end
+        if cursor <= #group.items then
+            group.cursor = cursor
+            remaining[#remaining + 1] = group
+        end
+        if #items > 0 then
+            retry[#retry + 1] = { sha256 = group.sha256, items = items, anchors = anchors, anchorKeys = group.anchorKeys and keys }
+        end
     end
+    for _, group in ipairs(retry) do remaining[#remaining + 1] = group end
     state.pending = #remaining > 0 and remaining or nil
     if not same_revision then state.anchors, state.anchorKeys, state.captureCursor = nil, nil, nil end
     if ui.annotation then

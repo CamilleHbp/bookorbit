@@ -7,6 +7,7 @@ package.loaded.bookorbit_native_anchor = {
         return { anchor = { schemaVersion = 1, revision = revision, quote = annotation.text } }
     end,
     resolveAnnotation = function(_, record)
+        if record.anchor.quote == "blocked" then clock = clock + 1; return nil end
         resolved[#resolved + 1] = record.anchor.quote
         return { page = record.anchor.quote, pos0 = record.anchor.quote }
     end,
@@ -41,10 +42,29 @@ assert(stored.anchors[1] and stored.anchors[150] and stored.anchors[250], "earli
 items[1], items[250] = items[250], items[1]
 local pending = Capture.begin(ui, { sha256 = sha })
 assert(Capture.ready(ui, pending, ("b"):rep(64)))
-assert(#resolved == 248 and #ui.annotation.annotations == 248)
-assert(#pending.pending[1].items == 2, "unverified reordered annotations must stay pending")
-assert(pending.pending[1].items[1].text == "Passage 250")
-assert(pending.pending[1].items[2].text == "Passage 1")
+assert(#resolved == 99 and #ui.annotation.annotations == 99, "restoration must also stop after a bounded batch")
+assert(pending.pending[1].cursor == 101)
+for _ = 1, 2 do
+    pending = Capture.begin(ui, { sha256 = ("b"):rep(64) })
+    assert(Capture.ready(ui, pending, ("b"):rep(64)))
+end
+assert(#resolved == 248 and #ui.annotation.annotations == 248, "later batches must restore without duplicating earlier highlights")
+local unresolved = {}
+for _, group in ipairs(pending.pending) do
+    for _, annotation in ipairs(group.items) do unresolved[annotation.text] = true end
+end
+assert(unresolved["Passage 250"] and unresolved["Passage 1"], "unverified reordered annotations must stay pending")
 assert(items[250].bookorbit_source_anchor.revision == "sha256:" .. sha,
     "resumable capture must preserve original source identity")
+ui.annotation.annotations = {}
+local blocked = { sha256 = sha, pending = { {
+    sha256 = sha, items = { { text = "blocked" }, { text = "later" } },
+    anchors = { { anchor = { quote = "blocked" } }, { anchor = { quote = "later" } } },
+} } }
+assert(Capture.ready(ui, blocked, ("b"):rep(64)))
+assert(#ui.annotation.annotations == 0 and blocked.pending[1].cursor == 2)
+assert(Capture.ready(ui, blocked, ("b"):rep(64)))
+assert(#ui.annotation.annotations == 1 and ui.annotation.annotations[1].text == "later",
+    "a slow unresolved passage must not consume every future restoration budget")
+assert(#blocked.pending == 1 and blocked.pending[1].items[1].text == "blocked")
 print("Bounded annotation capture batches passed")
