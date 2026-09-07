@@ -619,8 +619,8 @@ export class Paginator extends HTMLElement {
         else setSelectionTo(this.#anchor, -1)
       }
     })
-    const checkPointerSelection = debounce((range, sel) => {
-      if (!sel.rangeCount) return
+    const checkPointerSelection = debounce((doc, range, sel) => {
+      if (this.#view?.document !== doc || !sel?.rangeCount) return
       const selRange = sel.getRangeAt(0)
       const backward = selectionIsBackward(sel)
       if (backward && selRange.compareBoundaryPoints(Range.START_TO_START, range) < 0) this.prev()
@@ -634,12 +634,12 @@ export class Paginator extends HTMLElement {
       doc.addEventListener('keydown', () => (isKeyboardSelecting = true))
       doc.addEventListener('keyup', () => (isKeyboardSelecting = false))
       doc.addEventListener('selectionchange', () => {
-        if (this.scrolled) return
+        if (this.scrolled || this.#view?.document !== doc) return
         const range = this.#lastVisibleRange
         if (!range) return
         const sel = doc.getSelection()
-        if (!sel.rangeCount) return
-        if (isPointerSelecting && sel.type === 'Range') checkPointerSelection(range, sel)
+        if (!sel?.rangeCount) return
+        if (isPointerSelecting && sel.type === 'Range') checkPointerSelection(doc, range, sel)
         else if (isKeyboardSelecting) {
           const selRange = sel.getRangeAt(0).cloneRange()
           const backward = selectionIsBackward(sel)
@@ -651,7 +651,9 @@ export class Paginator extends HTMLElement {
         this.scrolled
           ? null
           : // NOTE: `requestAnimationFrame` is needed in WebKit
-            requestAnimationFrame(() => this.#scrollToAnchor(e.target)),
+            requestAnimationFrame(() => {
+              if (this.#view?.document === doc) this.#scrollToAnchor(e.target)
+            }),
       )
     })
 
@@ -1149,7 +1151,9 @@ export class Paginator extends HTMLElement {
   }
   setStyles(styles) {
     this.#styles = styles
-    const $$styles = this.#styleMap.get(this.#view?.document)
+    const view = this.#view
+    const doc = view?.document
+    const $$styles = this.#styleMap.get(doc)
     if (!$$styles) return
     const [$beforeStyle, $style] = $$styles
     if (Array.isArray(styles)) {
@@ -1159,10 +1163,14 @@ export class Paginator extends HTMLElement {
     } else $style.textContent = styles
 
     // NOTE: needs `requestAnimationFrame` in Chromium
-    requestAnimationFrame(() => (this.#background.style.background = getBackground(this.#view.document)))
+    requestAnimationFrame(() => {
+      if (this.#view === view && view.document === doc) this.#background.style.background = getBackground(doc)
+    })
 
     // needed because the resize observer doesn't work in Firefox
-    this.#view?.document?.fonts?.ready?.then(() => this.#view.expand())
+    doc?.fonts?.ready?.then(() => {
+      if (this.#view === view && view.document === doc) view.expand()
+    })
   }
   focusView() {
     this.#view.document.defaultView.focus()

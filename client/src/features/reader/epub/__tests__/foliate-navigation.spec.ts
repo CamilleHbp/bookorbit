@@ -126,6 +126,52 @@ describe('Foliate navigation', () => {
     expect(view.renderer!.getContents!()).toEqual([{ index: 1 }])
   })
 
+  it('ignores queued chapter styling and focus after the chapter is destroyed', async () => {
+    const frames: FrameRequestCallback[] = []
+    const animation = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    const doc = document.implementation.createHTMLDocument('Retired chapter')
+    Object.defineProperty(doc, 'URL', { value: 'https://reader.test/chapter.xhtml' })
+    let fontsReady!: () => void
+    Object.defineProperty(doc, 'fonts', {
+      value: {
+        ready: new Promise<void>((resolve) => {
+          fontsReady = resolve
+        }),
+      },
+    })
+    const create = document.createElement.bind(document)
+    const elements = vi.spyOn(document, 'createElement').mockImplementation(((name: string) => {
+      const element = create(name)
+      if (name === 'iframe') {
+        Object.defineProperty(element, 'contentDocument', { get: () => doc })
+        Object.defineProperty(element, 'src', {
+          set: (value: string) => {
+            if (value !== 'about:blank') element.dispatchEvent(new Event('load'))
+          },
+        })
+      }
+      return element
+    }) as typeof document.createElement)
+    try {
+      const paginator = new Paginator()
+      paginator.sections = [{ load: async () => 'https://reader.test/chapter.xhtml' }]
+      // A detached document has no defaultView, so rendering fails after load listeners run.
+      await expect(paginator.goTo({ index: 0 })).rejects.toThrow()
+      paginator.destroy()
+      doc.body.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+      expect(frames.length).toBeGreaterThan(0)
+      for (const callback of frames) expect(() => callback(0)).not.toThrow()
+      fontsReady()
+      await Promise.resolve()
+    } finally {
+      elements.mockRestore()
+      animation.mockRestore()
+    }
+  })
+
   it('rejects paginator navigation when a section load does not produce a source', async () => {
     const paginator = new Paginator()
     paginator.sections = [{ load: vi.fn<() => Promise<string | null>>().mockResolvedValue(null) }]
