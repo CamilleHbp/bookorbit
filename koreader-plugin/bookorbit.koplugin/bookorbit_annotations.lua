@@ -436,6 +436,21 @@ function BookOrbitAnnotations.applyLive(ui, to_apply)
     if touched > 0 then
         UIManager:setDirty("all", "ui")
     end
+    local continuity = ui.bookorbit and ui.bookorbit.reading_continuity
+    local installed_sha = continuity and continuity.ready and continuity.sha256
+    if installed_sha then
+        local revisions = {}
+        for _, entry in ipairs(to_apply.add or {}) do
+            if entry.positionSha256 == installed_sha then revisions[entry.serverId] = entry end
+        end
+        for _, acknowledgement in ipairs(applied) do
+            local entry = revisions[acknowledgement.serverId]
+            if entry then
+                acknowledgement.positionSha256 = installed_sha
+                acknowledgement.positionRevisionId = entry.positionRevisionId
+            end
+        end
+    end
     return applied, deleted, touched, deleted_touched
 end
 

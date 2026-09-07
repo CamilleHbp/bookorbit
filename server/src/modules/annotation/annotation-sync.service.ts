@@ -1,4 +1,4 @@
-import type { ReadingAnchor } from '@bookorbit/types';
+import type { ReadingAnchor, AnnotationPositionRevision } from '@bookorbit/types';
 import { AnnotationAnchorService } from './annotation-anchor.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
@@ -681,27 +681,31 @@ export class AnnotationSyncService {
     userId: number;
     source: AnnotationSyncSource;
     deviceId: string;
+    bookId: number;
     bookFileId: number;
     applied: AckAppliedEntry[];
     deleted: AckDeletedEntry[];
     converterVersion: number;
   }): Promise<{ acked: number }> {
-    const { userId, source, deviceId, bookFileId } = params;
+    const { userId, source, deviceId, bookId, bookFileId } = params;
     let acked = 0;
 
     await this.syncRepo.transaction(async (tx) => {
+      const identity = await this.syncRepo.findPositionFileIdentity(userId, bookId, bookFileId, tx, true);
       for (const entry of params.applied) {
-        const annotation = await this.syncRepo.findAnnotationById(entry.serverId, userId, tx);
-        if (!annotation) continue;
+        const annotation = await this.syncRepo.findAnnotationById(entry.serverId, userId, tx, true);
+        if (!annotation || annotation.bookId !== bookId || annotation.deletedAt || annotation.version !== entry.version) continue;
+        const currentPosition =
+          identity != null && (entry.positionSha256 ?? null) === identity.sha256 && (entry.positionRevisionId ?? null) === identity.revisionId;
 
         if (entry.status === 'failed') {
-          await this.syncRepo.updatePosition(annotation.id, 'xpointer', { status: 'failed' }, tx);
+          if (currentPosition) await this.syncRepo.updatePosition(annotation.id, 'xpointer', { status: 'failed' }, tx);
           acked += 1;
           continue;
         }
 
         let versionForState = entry.version;
-        if (entry.corrected && entry.pos0) {
+        if (currentPosition && entry.corrected && entry.pos0) {
           await this.syncRepo.upsertPosition(
             {
               annotationId: annotation.id,
@@ -712,17 +716,22 @@ export class AnnotationSyncService {
               pos1: entry.pos1 ?? null,
               status: entry.verified ? 'repaired' : 'pending',
               converterVersion: params.converterVersion,
-              extras: entry.pageno != null ? { pageno: entry.pageno } : null,
+              extras: { ...identity, ...(entry.pageno != null && { pageno: entry.pageno }) },
             },
             tx,
           );
           versionForState = await this.syncRepo.bumpVersion(annotation.id, tx);
-        } else if (entry.verified) {
+        } else if (currentPosition && entry.verified) {
           await this.syncRepo.updatePosition(annotation.id, 'xpointer', { status: 'exact' }, tx);
         }
 
-        const pos0 = entry.pos0 ?? (await this.syncRepo.findDevicePosition(annotation.id, 'xpointer', tx))?.pos0 ?? '';
-        const externalKey = buildAnnotationKey(annotation.deviceCreatedAt ?? '', pos0);
+        const existingState = entry.pos0 ? null : await this.syncRepo.findStateByAnnotationAndDevice(annotation.id, source, deviceId, tx);
+        const pos0 = entry.pos0 ?? (currentPosition ? (await this.syncRepo.findDevicePosition(annotation.id, 'xpointer', tx))?.pos0 : null);
+        const externalKey = existingState?.externalKey ?? (pos0 ? buildAnnotationKey(annotation.deviceCreatedAt ?? '', pos0) : null);
+        if (!externalKey) {
+          acked += 1;
+          continue;
+        }
         await this.syncRepo.insertState(
           {
             annotationId: annotation.id,
@@ -743,6 +752,8 @@ export class AnnotationSyncService {
 
       for (const entry of params.deleted) {
         if (entry.status !== 'applied') continue;
+        const annotation = await this.syncRepo.findAnnotationById(entry.serverId, userId, tx, true);
+        if (!annotation || annotation.bookId !== bookId || !annotation.deletedAt) continue;
         const state = await this.syncRepo.findStateByAnnotationAndDevice(entry.serverId, source, deviceId, tx);
         if (!state || state.userId !== userId) continue;
         await this.syncRepo.setDeleteAcked(state.id, tx);
@@ -780,7 +791,7 @@ export interface PushDownSets {
   more: boolean;
 }
 
-export interface AckAppliedEntry {
+export interface AckAppliedEntry extends AnnotationPositionRevision {
   serverId: number;
   version: number;
   status: 'applied' | 'failed';

@@ -93,12 +93,13 @@ export class AnnotationSyncRepository {
     return row ?? null;
   }
 
-  async findAnnotationById(annotationId: number, userId: number, ex: Executor = this.db): Promise<AnnotationRow | null> {
-    const [row] = await ex
+  async findAnnotationById(annotationId: number, userId: number, ex: Executor = this.db, lock = false): Promise<AnnotationRow | null> {
+    const query = ex
       .select()
       .from(annotations)
       .where(and(eq(annotations.id, annotationId), eq(annotations.userId, userId)))
       .limit(1);
+    const [row] = await (lock ? query.for('update') : query);
     return row ?? null;
   }
 
@@ -445,8 +446,8 @@ export class AnnotationSyncRepository {
       .where(and(inArray(annotationPositions.annotationId, annotationIds), inArray(annotationPositions.format, formats)));
   }
 
-  async findPositionFileIdentity(userId: number, bookId: number, bookFileId: number) {
-    const [file] = await this.db
+  async findPositionFileIdentity(userId: number, bookId: number, bookFileId: number, ex: Executor = this.db, lock = false) {
+    const query = ex
       .select({ revisionId: schema.bookFiles.currentRevisionId, sha256: schema.bookFiles.sha256 })
       .from(schema.bookFiles)
       .where(
@@ -462,6 +463,7 @@ export class AnnotationSyncRepository {
         ),
       )
       .limit(1);
+    const [file] = await (lock ? query.for('share') : query);
     return file ?? null;
   }
 

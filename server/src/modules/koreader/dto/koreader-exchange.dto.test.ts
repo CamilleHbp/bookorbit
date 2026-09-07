@@ -24,6 +24,24 @@ function failedProperties(errors: ValidationError[]): string[] {
 }
 
 describe('AnnotationExchangeAckDto', () => {
+  it('accepts bounded revision evidence while preserving strict request validation', async () => {
+    const entry = { ...APPLIED_ENTRY, positionRevisionId: '62580767-571d-4d31-87c0-3d18f0b437fe', positionSha256: 'a'.repeat(64) };
+    const dto = plainToInstance(AnnotationExchangeAckDto, { ...DEVICE, books: [{ hash: HASH, applied: [entry], deleted: [] }] });
+    expect(await validate(dto, { whitelist: true, forbidNonWhitelisted: true })).toEqual([]);
+    expect(dto.books[0].applied[0].positionSha256).toBe(entry.positionSha256);
+  });
+
+  it.each([{ positionSha256: 'partial-md5' }, { positionRevisionId: 'another-file' }, { positionSha256: 123 }])(
+    'rejects invalid revision evidence: %j',
+    async (evidence) => {
+      const dto = plainToInstance(AnnotationExchangeAckDto, {
+        ...DEVICE,
+        books: [{ hash: HASH, applied: [{ ...APPLIED_ENTRY, ...evidence }], deleted: [] }],
+      });
+      expect(await validate(dto, { whitelist: true, forbidNonWhitelisted: true })).not.toEqual([]);
+    },
+  );
+
   it('accepts an ack with applied entries and an empty deleted array', async () => {
     const dto = plainToInstance(AnnotationExchangeAckDto, {
       ...DEVICE,

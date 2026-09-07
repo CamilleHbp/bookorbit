@@ -368,6 +368,41 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     await module.close();
   }, 60_000);
 
+  it('locks acknowledged annotations against concurrent edits without exposing another owner', async () => {
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    const module = await Test.createTestingModule({ providers: [AnnotationSyncRepository, { provide: DB, useValue: db }] }).compile();
+    const repository = module.get(AnnotationSyncRepository);
+    const [note] = await db.insert(schema.annotations).values({ userId: ownerUserId, bookId: file.bookId, text: 'Original passage' }).returning();
+    await db.transaction(async (tx) => {
+      expect(await repository.findPositionFileIdentity(ownerUserId, file.bookId, fileId, tx, true)).toMatchObject({
+        revisionId: file.currentRevisionId,
+      });
+      expect(await repository.findAnnotationById(note.id, -1, tx, true)).toBeNull();
+      expect(await repository.findAnnotationById(note.id, ownerUserId, tx, true)).toMatchObject({ version: note.version });
+      const competing = await pool.connect();
+      try {
+        for (const [query, id] of [
+          ['UPDATE annotations SET version = version + 1 WHERE id = $1', note.id],
+          ['UPDATE book_files SET size_bytes = size_bytes WHERE id = $1', fileId],
+        ] as const) {
+          await competing.query('BEGIN');
+          await competing.query("SET LOCAL lock_timeout = '100ms'");
+          await expect(competing.query(query, [id])).rejects.toMatchObject({ code: '55P03' });
+          await competing.query('ROLLBACK');
+        }
+      } finally {
+        await competing.query('ROLLBACK');
+        competing.release();
+      }
+    });
+    await db
+      .update(schema.annotations)
+      .set({ version: note.version + 1 })
+      .where(eq(schema.annotations.id, note.id));
+    expect(await repository.findAnnotationById(note.id, ownerUserId)).toMatchObject({ version: note.version + 1 });
+    await module.close();
+  });
+
   it('retains annotation source anchors across note edits and rejects another file revision', async () => {
     const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
     const module = await Test.createTestingModule({

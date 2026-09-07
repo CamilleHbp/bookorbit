@@ -143,6 +143,8 @@ describe('KoreaderAnnotationExchangeService', () => {
   });
 
   it('builds add entries with projected drawer, named color and minted datetime', async () => {
+    const identity = { revisionId: '62580767-571d-4d31-87c0-3d18f0b437fe', sha256: 'a'.repeat(64) };
+    annotationSync.findPositionFileIdentity.mockResolvedValue(identity);
     annotationSync.computePushDown.mockResolvedValue({ adds: [makeAnnotationRow()], edits: [], deletes: [], more: false });
     annotationSync.findPositions.mockResolvedValue([
       {
@@ -152,7 +154,7 @@ describe('KoreaderAnnotationExchangeService', () => {
         pos1: '/body/DocFragment[1]/body/p/text().5',
         status: 'pending',
         converterVersion: 1,
-        extras: { pageno: 3 },
+        extras: { pageno: 3, ...identity },
       },
     ]);
 
@@ -170,6 +172,8 @@ describe('KoreaderAnnotationExchangeService', () => {
       posFormat: 'xpointer',
       pos0: '/body/DocFragment[1]/body/p/text().0',
       pageno: 3,
+      positionRevisionId: identity.revisionId,
+      positionSha256: identity.sha256,
     });
   });
 

@@ -257,11 +257,14 @@ end
 if arg[6] == "server_annotation" then
     local entries = require("bookorbit_annotations").applyLive(ui, { add = { {
         serverId = 987, version = 1, datetime = "2099-01-01 00:00:00",
+        positionSha256 = state.sha256, positionRevisionId = delivered_revision,
         posFormat = "xpointer", pos0 = "/obsolete", pos1 = "/obsolete.end",
         sourceAnchor = annotation_anchor.anchor, text = annotation.text, note = "Server anchored note",
         drawer = "lighten", color = "yellow",
     } } })
     assert(entries[1].verified and entries[1].corrected, "server source anchors must verify against the installed EPUB")
+    assert(entries[1].positionSha256 == state.sha256 and entries[1].positionRevisionId == delivered_revision,
+        "actual reader acknowledgements must identify the verified installed revision")
     assert(#ui.annotation.annotations == 2, "verified server annotation must be installed")
     assert(ui.bookorbit.page_update_counter == 0 and ui.statistics.mem_read_pages == 0,
         "annotation projection must not produce reading activity")

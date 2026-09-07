@@ -160,4 +160,21 @@ entry.text, entry.datetime, entry.pos0 = "", "2099-01-03 00:00:00", "/empty"
 applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
 assertEqual(applied[1].verified, false, "empty text cannot establish a verified annotation range")
 
+ui.bookorbit = { reading_continuity = { ready = true, sha256 = string.rep("a", 64) } }
+entry.positionSha256, entry.positionRevisionId = string.rep("a", 64), "current-revision"
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].positionSha256, entry.positionSha256, "acknowledgement identifies the installed bytes")
+assertEqual(applied[1].positionRevisionId, entry.positionRevisionId, "acknowledgement echoes the matching server revision")
+ui.bookorbit.reading_continuity.sha256 = string.rep("b", 64)
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].positionSha256, nil, "a different installed copy cannot verify the server projection")
+assertEqual(applied[1].positionRevisionId, nil, "a different installed copy cannot claim the server revision")
+ui.bookorbit.reading_continuity.sha256, ui.bookorbit.reading_continuity.ready = string.rep("a", 64), false
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].positionSha256, nil, "unfinished restoration cannot provide revision evidence")
+ui.bookorbit.reading_continuity.ready = true
+entry.positionSha256, entry.positionRevisionId = nil, nil
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].positionSha256, nil, "legacy servers receive the legacy acknowledgement shape")
+
 print("bookorbit_annotations_live_apply_test.lua: ok")

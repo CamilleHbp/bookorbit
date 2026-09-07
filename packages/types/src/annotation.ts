@@ -271,3 +271,7 @@ export interface AnnotationSyncDetail {
   positions: AnnotationPositionInfo[];
   devices: AnnotationDeviceSyncInfo[];
 }
+export interface AnnotationPositionRevision {
+  positionRevisionId?: string;
+  positionSha256?: string;
+}

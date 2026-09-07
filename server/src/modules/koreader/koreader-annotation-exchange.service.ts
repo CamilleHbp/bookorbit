@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import type { ReadingAnchor } from '@bookorbit/types';
+import type { ReadingAnchor, AnnotationPositionRevision } from '@bookorbit/types';
 
 import type { RequestUser } from '../../common/types/request-user';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
@@ -26,7 +26,7 @@ function stalePosition(position: AnnotationPosition | undefined | null, identity
   return (extras?.revisionId ?? null) !== identity.revisionId || (extras?.sha256 ?? null) !== identity.sha256;
 }
 
-export interface ExchangeAddEntry {
+export interface ExchangeAddEntry extends AnnotationPositionRevision {
   sourceAnchor?: ReadingAnchor;
   serverId: number;
   version: number;
@@ -161,6 +161,7 @@ export class KoreaderAnnotationExchangeService {
           userId: user.id,
           source: 'koreader',
           deviceId: dto.deviceId,
+          bookId: match.bookId,
           bookFileId: match.bookFileId,
           applied: book.applied.map((entry) => ({
             serverId: entry.serverId,
@@ -172,6 +173,8 @@ export class KoreaderAnnotationExchangeService {
             pos1: entry.pos1 ?? null,
             pageno: entry.pageno ?? null,
             datetimeUpdated: entry.datetimeUpdated,
+            positionRevisionId: entry.positionRevisionId,
+            positionSha256: entry.positionSha256,
           })),
           deleted: book.deleted,
           converterVersion: this.positionConverter.version,
@@ -337,6 +340,8 @@ export class KoreaderAnnotationExchangeService {
     const datetimes = await this.annotationSync.ensureDeviceCreatedAtMany(userId, bookId, needsIdentity, deviceClockOffsetMs);
 
     const addEntries = pushable.map(({ annotation, position }) => ({
+      positionRevisionId: identity.revisionId ?? undefined,
+      positionSha256: identity.sha256 ?? undefined,
       ...(annotation.sourceAnchor && { sourceAnchor: annotation.sourceAnchor }),
       serverId: annotation.id,
       version: annotation.version,
