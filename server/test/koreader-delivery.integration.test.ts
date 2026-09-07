@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import { ValidationPipe } from '@nestjs/common';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -23,6 +25,8 @@ import { RevisionDownloadService } from '../src/modules/book-revision/revision-d
 import { KoreaderCopyService } from '../src/modules/koreader/koreader-copy.service';
 import { KoreaderRepository } from '../src/modules/koreader/koreader.repository';
 import { KoreaderDeliveryService } from '../src/modules/koreader/koreader-delivery.service';
+import { KoreaderPluginDeliveryController } from '../src/modules/koreader/koreader-delivery.controller';
+import { KoreaderPluginCopiesController } from '../src/modules/koreader/koreader-copy.controller';
 import { KoreaderDeliverySchedulerService } from '../src/modules/koreader/koreader-delivery-scheduler.service';
 import { KoreaderDeliveryExecutionService } from '../src/modules/koreader/koreader-delivery-execution.service';
 import { KoreaderDeliveryAccessService } from '../src/modules/koreader/koreader-delivery-access.service';
@@ -424,6 +428,92 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
     expect((await deliveries.get(installed.id, users[0])).restorationState).toBe('approximate');
     expect(await db.select().from(schema.canonicalReadingEvents).where(eq(schema.canonicalReadingEvents.userId, users[0].id))).toEqual([]);
   });
+  it('authenticates and validates the complete delivery HTTP lifecycle against durable state', async () => {
+    const key = createHash('md5').update('isolated-delivery-http-fixture').digest('hex');
+    await db.update(schema.koreaderUsers).set({ passwordMd5: key }).where(eq(schema.koreaderUsers.userId, users[0].id));
+    const httpModule = await Test.createTestingModule({
+      controllers: [KoreaderPluginDeliveryController, KoreaderPluginCopiesController],
+      providers: [
+        KoreaderDeliveryService,
+        KoreaderDeliveryExecutionService,
+        KoreaderCopyService,
+        KoreaderRepository,
+        UserService,
+        PermissionService,
+      ].map((provide) => ({ provide, useValue: module.get(provide) })),
+    }).compile();
+    const app = httpModule.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+    await app.init();
+    await app.getHttpAdapter().getInstance().ready();
+    const headers = { 'x-auth-user': users[0].username, 'x-auth-key': key };
+    const prefix = '/api/v1/koreader/plugin';
+    const post = (route: string, payload: object) => app.inject({ method: 'POST', url: `${prefix}${route}`, headers, payload });
+    try {
+      expect((await app.inject({ method: 'GET', url: `${prefix}/deliveries` })).statusCode).toBe(401);
+      expect(
+        (await post(`/deliveries/copies/${copyId}`, { idempotencyKey: randomUUID(), expectedRevisionId: revision.id, userId: users[1].id }))
+          .statusCode,
+      ).toBe(400);
+      const requested = await post(`/deliveries/copies/${copyId}`, { idempotencyKey: randomUUID(), expectedRevisionId: revision.id });
+      expect(requested.statusCode, requested.body).toBe(202);
+      const jobId = requested.json().id as string;
+      const claimed = await post(`/deliveries/${jobId}/claim`, { deviceId: 'reader', claimId: randomUUID() });
+      expect(claimed.statusCode, claimed.body).toBe(200);
+      const lease = claimed.json<KoreaderDeliveryLease>();
+      expect((await post(`/deliveries/${jobId}/publication`, identity(lease))).statusCode).toBe(409);
+      const downloading = await post(`/deliveries/${jobId}/progress`, progress(lease));
+      expect(downloading.statusCode, downloading.body).toBe(200);
+      expect(downloading.json().installationState).toBe('downloading');
+      const downloaded = await post(`/deliveries/${jobId}/download`, identity(lease));
+      expect(downloaded.statusCode, downloaded.body).toBe(200);
+      expect(downloaded.rawPayload).toEqual(content);
+      expect(downloaded.headers).toMatchObject({
+        'content-type': 'application/epub+zip',
+        'content-length': String(content.length),
+        'x-bookorbit-revision': revision.id,
+        'x-bookorbit-sha256': sha256,
+      });
+      const permitted = await post(`/deliveries/${jobId}/publication`, identity(lease));
+      expect(permitted.statusCode, permitted.body).toBe(200);
+      const installed = await post(
+        `/deliveries/${jobId}/progress`,
+        progress(lease, {
+          sequence: 2,
+          state: 'installed',
+          publicationToken: permitted.json().token,
+          localSha256: sha256,
+          localSizeBytes: content.length,
+        }),
+      );
+      expect(installed.statusCode, installed.body).toBe(200);
+      expect(installed.json()).toMatchObject({ installationState: 'installed', restorationState: 'verification_pending' });
+      const reported = await post('/copies', {
+        protocolVersion: 1,
+        deviceId: 'reader',
+        sequence: 2,
+        pluginVersion: 'validation',
+        deliveryCapabilityVersion: 1,
+        positionCapabilityVersion: 1,
+        copies: [
+          { copyId: localCopyId, bookFileId: file.id, pathname: '/books/story.epub', sha256, revisionId: revision.id, sizeBytes: content.length },
+        ],
+      });
+      expect(reported.statusCode, reported.body).toBe(200);
+      const restoration = { deviceId: 'reader', copyId: localCopyId, sha256, quality: 'verified', nativePosition: '/body/p[1]' };
+      const verified = await post(`/deliveries/${jobId}/restoration`, restoration);
+      expect(verified.statusCode, verified.body).toBe(200);
+      expect(verified.json().restorationState).toBe('verified');
+      expect((await post(`/deliveries/${jobId}/restoration`, restoration)).json().version).toBe(verified.json().version);
+      expect(await db.select().from(schema.canonicalReadingEvents).where(eq(schema.canonicalReadingEvents.userId, users[0].id))).toEqual([]);
+      await db.update(schema.koreaderUsers).set({ syncEnabled: false }).where(eq(schema.koreaderUsers.userId, users[0].id));
+      expect((await post(`/deliveries/${jobId}/restoration`, restoration)).statusCode).toBe(403);
+    } finally {
+      await app.close();
+    }
+  }, 60_000);
+
   it('fences expired workers and allows only one concurrent claim', async () => {
     const job = await request();
     const attempts = await Promise.allSettled([0, 1].map(() => execution.claim(job.id, { deviceId: 'reader', claimId: randomUUID() }, users[0])));
