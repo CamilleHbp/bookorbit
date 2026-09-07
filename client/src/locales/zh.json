@@ -6275,6 +6275,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "重试",
     "pdf": {
       "openError": "无法打开此 PDF",

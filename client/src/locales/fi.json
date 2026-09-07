@@ -5662,6 +5662,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "Yritä Uudelleen",
     "pdf": {
       "preparing": "Valmistellaan PDF-lukijaa",

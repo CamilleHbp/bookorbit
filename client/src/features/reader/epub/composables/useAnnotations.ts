@@ -14,6 +14,24 @@ export function useAnnotations() {
   const annotations = ref<Annotation[]>([])
   const loadError = ref<string | null>(null)
 
+  function drawableForFile(fileId: number) {
+    return annotations.value.filter(
+      (annotation): annotation is Annotation & { cfi: string } =>
+        annotation.cfi != null &&
+        (annotation.jumpFileId == null || annotation.jumpFileId === fileId) &&
+        annotation.positionStatus !== 'pending' &&
+        annotation.positionStatus !== 'failed',
+    )
+  }
+
+  function hasUnverifiedForFile(fileId: number) {
+    return annotations.value.some(
+      (annotation) =>
+        (annotation.jumpFileId == null || annotation.jumpFileId === fileId) &&
+        (annotation.positionStatus === 'pending' || annotation.positionStatus === 'failed'),
+    )
+  }
+
   async function load(bookId: number) {
     loadError.value = null
     const res = await api(`/api/v1/books/${bookId}/annotations`)
@@ -65,5 +83,5 @@ export function useAnnotations() {
     }
   }
 
-  return { annotations, loadError, load, create, update, updateNote, remove }
+  return { annotations, loadError, drawableForFile, hasUnverifiedForFile, load, create, update, updateNote, remove }
 }

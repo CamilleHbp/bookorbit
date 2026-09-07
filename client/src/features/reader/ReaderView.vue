@@ -142,6 +142,7 @@ useWakeLock()
 
 const bookmarks = useBookmarks()
 const annotations = useAnnotations()
+const annotationsAwaitingVerification = computed(() => annotations.hasUnverifiedForFile(fileId))
 
 const toc = useToc()
 const { chapters, expandedHrefs, activeHref, setChapters, toggleExpand } = toc
@@ -275,6 +276,7 @@ const {
   getRenderer,
   addAnnotation,
   addAnnotations,
+  pendingAnnotationCount,
   deleteAnnotation,
   redrawAnnotation,
   setTextSelectedHandler,
@@ -344,13 +346,14 @@ onMounted(async () => {
   sectionFractions.value = getSectionFractions()
   await bookmarks.load(bookId)
   await annotations.load(bookId)
-  const drawableAnnotations = annotations.annotations.value.filter((a): a is typeof a & { cfi: string } => a.cfi != null)
+  const drawableAnnotations = annotations.drawableForFile(fileId)
   if (drawableAnnotations.length > 0) {
     addAnnotations(
       drawableAnnotations.map((a) => ({
         cfi: a.cfi,
         color: a.color,
         style: a.style,
+        text: a.text,
       })),
     )
   }
@@ -695,12 +698,15 @@ watch(
     </div>
 
     <div
-      v-if="synchronizationError"
+      v-if="synchronizationError || pendingAnnotationCount || annotationsAwaitingVerification"
       role="alert"
       class="absolute bottom-16 inset-x-4 z-30 mx-auto max-w-xl rounded-lg border border-border bg-card p-3 text-sm text-card-foreground"
     >
-      <p>{{ synchronizationError }}</p>
-      <button type="button" class="mt-2 text-primary underline" @click="retrySynchronization">{{ t('common.retry') }}</button>
+      <p v-if="pendingAnnotationCount || annotationsAwaitingVerification">{{ t('reader.annotationVerificationPending') }}</p>
+      <p v-if="synchronizationError">{{ synchronizationError }}</p>
+      <button v-if="synchronizationError" type="button" class="mt-2 text-primary underline" @click="retrySynchronization">
+        {{ t('common.retry') }}
+      </button>
     </div>
 
     <ReaderFooter

@@ -39,6 +39,21 @@ function response(ok: boolean, payload: unknown = null): ApiResponse {
 }
 
 describe('useAnnotations', () => {
+  it('draws only verified locations belonging to the open file and keeps unresolved notes available', () => {
+    const store = useAnnotations()
+    store.annotations.value = [
+      makeAnnotation(1),
+      { ...makeAnnotation(2), jumpFileId: 44 },
+      { ...makeAnnotation(3), positionStatus: 'pending' },
+      { ...makeAnnotation(4), positionStatus: 'failed' },
+      { ...makeAnnotation(5), jumpFileId: null },
+    ]
+    expect(store.drawableForFile(33).map((annotation) => annotation.id)).toEqual([1, 5])
+    expect(store.hasUnverifiedForFile(33)).toBe(true)
+    expect(store.hasUnverifiedForFile(44)).toBe(false)
+    expect(store.annotations.value).toHaveLength(5)
+  })
+
   beforeEach(() => {
     apiMock.mockReset()
   })

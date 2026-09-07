@@ -26,7 +26,7 @@ interface ReaderAnnotationActionsOptions {
   chapterTitle: Ref<string | null | undefined>
   annotations: ReaderAnnotations
   selection: ReaderSelection
-  addAnnotation: (cfi: string, color: string, style: string) => void
+  addAnnotation: (cfi: string, color: string, style: string, text?: string) => void
   redrawAnnotation: (cfi: string, color: string, style: string) => void
 }
 
@@ -81,7 +81,7 @@ export function useReaderAnnotationActions({
       chapterTitle: chapterTitle.value || null,
     })
     if (created?.cfi) {
-      addAnnotation(created.cfi, created.color, created.style)
+      addAnnotation(created.cfi, created.color, created.style, created.text)
     }
     selection.dismiss()
   }

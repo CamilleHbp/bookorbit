@@ -79,7 +79,7 @@ describe('useReaderAnnotationActions', () => {
       chapterTitle: 'Intro',
     })
     expect(update).not.toHaveBeenCalled()
-    expect(addAnnotation).toHaveBeenCalledWith(created.cfi, '#38BDF8', 'underline')
+    expect(addAnnotation).toHaveBeenCalledWith(created.cfi, '#38BDF8', 'underline', created.text)
     expect(redrawAnnotation).not.toHaveBeenCalled()
     expect(selection.dismiss).toHaveBeenCalledTimes(1)
   })
@@ -129,7 +129,7 @@ describe('useReaderAnnotationActions', () => {
 
     expect(create).toHaveBeenCalledWith(9, expect.objectContaining({ color: '#FACC15', style: 'highlight', note: 'new note' }))
     expect(update).not.toHaveBeenCalled()
-    expect(addAnnotation).toHaveBeenCalledWith(created.cfi, '#FACC15', 'highlight')
+    expect(addAnnotation).toHaveBeenCalledWith(created.cfi, '#FACC15', 'highlight', created.text)
     expect(selection.showNoteDialog.value).toBe(false)
     expect(selection.noteText.value).toBe('')
   })

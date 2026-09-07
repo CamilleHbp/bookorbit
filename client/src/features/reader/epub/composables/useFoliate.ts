@@ -440,8 +440,10 @@ export function useFoliate(
     getChapters: (): unknown[] => getViewEl()?.book?.toc ?? [],
     getRenderer: (): FoliateRenderer | null => getViewEl()?.renderer ?? null,
     getLocationContext: (target: string): Promise<FoliateLocationContext> => getLocationContext(target),
-    addAnnotation: (cfi: string, color = '#FACC15', style = 'highlight') => annotations.addAnnotation(viewRef.value, cfi, color, style),
-    addAnnotations: (anns: { cfi: string; color: string; style: string }[]) => annotations.addAnnotations(viewRef.value, anns),
+    addAnnotation: (cfi: string, color = '#FACC15', style = 'highlight', text?: string) =>
+      annotations.addAnnotation(viewRef.value, cfi, color, style, text),
+    pendingAnnotationCount: annotations.pendingAnnotationCount,
+    addAnnotations: (anns: { cfi: string; color: string; style: string; text?: string }[]) => annotations.addAnnotations(viewRef.value, anns),
     deleteAnnotation: (cfi: string) => annotations.deleteAnnotation(viewRef.value, cfi),
     redrawAnnotation: (cfi: string, color: string, style: string) => annotations.redrawAnnotation(viewRef.value, cfi, color, style),
     setTextSelectedHandler: selection.setHandler,
