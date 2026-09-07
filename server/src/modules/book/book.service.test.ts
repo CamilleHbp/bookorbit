@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import type { MockedFunction } from 'vitest';
 import { access, readdir, rm, stat, rename } from 'fs/promises';
 
@@ -5255,6 +5255,27 @@ describe('BookService', () => {
       expect(rm).toHaveBeenCalledWith('/path/to/old.epub', { force: true });
       expect(bookRepo.deleteBookFile).toHaveBeenCalledWith(fileId);
       expect(bookRepo.updateBookPrimaryFile).toHaveBeenCalledWith(10, 101);
+    });
+
+    it('preserves the database row and primary file when disk deletion fails', async () => {
+      const { service, bookRepo } = makeService();
+      const fileId = 100;
+      const file = { absolutePath: '/path/to/old.epub', bookId: 10, libraryId: 1 };
+
+      bookRepo.findFileById = vi.fn().mockResolvedValue(file);
+      bookRepo.deleteBookFile = vi.fn();
+      bookRepo.findFilesForBook = vi.fn();
+      bookRepo.findBookBase = vi.fn();
+      bookRepo.updateBookPrimaryFile = vi.fn();
+      vi.mocked(rm).mockRejectedValue(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+
+      await expect(service.deleteFile(fileId, makeUser())).rejects.toBeInstanceOf(InternalServerErrorException);
+
+      expect(rm).toHaveBeenCalledWith(file.absolutePath, { force: true });
+      expect(bookRepo.findBookBase).not.toHaveBeenCalled();
+      expect(bookRepo.deleteBookFile).not.toHaveBeenCalled();
+      expect(bookRepo.findFilesForBook).not.toHaveBeenCalled();
+      expect(bookRepo.updateBookPrimaryFile).not.toHaveBeenCalled();
     });
   });
 });

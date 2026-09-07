@@ -1487,13 +1487,9 @@ export class BookService {
       try {
         await rm(file.absolutePath, { force: true });
       } catch {
-        this.logger.warn(`Failed to physically delete file at ${file.absolutePath}`);
+        throw new InternalServerErrorException('Failed to delete file from disk');
       }
 
-      // the file watcher will eventually catch the unlink and clean up the database.
-      // however, to be responsive, we can manually clean up the database here too,
-      // but if the file is the last file, the scanner logic is better suited to mark the book missing.
-      // So we leave the DB cleanup to the file watcher, which is more robust.
       const book = await this.bookRepo.findBookBase(file.bookId);
       const wasPrimary = book?.primaryFileId === fileId;
 
