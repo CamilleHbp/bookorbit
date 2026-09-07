@@ -120,4 +120,44 @@ assertEqual(handled_event.payload[1], ui.annotation.annotations[1], "event point
 assertEqual(handled_event.payload.nb_highlights_added, 1, "event increments highlight count")
 assertEqual(handled_event.payload.index_modified, 1, "event carries inserted index")
 
+local entry = {
+    serverId = 50, version = 1, datetime = "2026-07-09 09:10:11", text = "fresh web highlight",
+    posFormat = "xpointer", pos0 = "/old", pos1 = "/old.end",
+}
+ui.document.isXPointerInDocument = function(_, xp) return xp ~= "/old" end
+ui.document.findAllText = function()
+    return { { start = "/first", ["end"] = "/first.end" }, { start = "/second", ["end"] = "/second.end" } }
+end
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].status, "failed", "ambiguous repair must not choose the nearest repeated passage")
+assertEqual(#ui.annotation.annotations, 1, "ambiguous repair does not insert a highlight")
+
+ui.document.isXPointerInDocument = function() return true end
+entry.sourceAnchor = { revision = "original", quote = "fresh web highlight", bookFraction = 0.2 }
+package.loaded.bookorbit_native_anchor = { resolveAnnotation = function() return nil end }
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].status, "failed", "an unresolved source anchor must not fall back to a reused native range")
+package.loaded.bookorbit_native_anchor.resolveAnnotation = function(_, record)
+    assertEqual(record.anchor, entry.sourceAnchor, "original source anchor reaches the native resolver")
+    assertEqual(record.selection, entry.text, "full selection reaches the native resolver")
+    return { pos0 = "/mapped", pos1 = "/mapped.end", page = "/mapped" }
+end
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].status, "applied", "verified source anchor can be installed")
+assertEqual(applied[1].corrected, true, "mapped native range is acknowledged as corrected")
+assertEqual(ui.annotation.annotations[2].bookorbit_source_anchor, entry.sourceAnchor, "original source anchor remains on the local annotation")
+
+ui.document.getTextFromXPointers = function() return "unrelated installed text" end
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].status, "failed", "redelivery must verify the existing native range")
+assertEqual(applied[1].verified, false, "redelivery cannot falsely confirm restoration")
+
+ui.document.getTextFromXPointers = function() return "fresh web highlight" end
+entry.sourceAnchor, entry.text, entry.datetime, entry.pos0 = nil, "fresh\194\160web highlight", "2099-01-02 00:00:00", "/unicode"
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].verified, true, "annotation verification uses shared Unicode whitespace normalization")
+entry.text, entry.datetime, entry.pos0 = "", "2099-01-03 00:00:00", "/empty"
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].verified, false, "empty text cannot establish a verified annotation range")
+
 print("bookorbit_annotations_live_apply_test.lua: ok")

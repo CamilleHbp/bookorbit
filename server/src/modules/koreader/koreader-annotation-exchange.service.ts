@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import type { ReadingAnchor } from '@bookorbit/types';
 
 import type { RequestUser } from '../../common/types/request-user';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
@@ -19,6 +20,7 @@ const CONVERSION_BUDGET_PER_REQUEST = 20;
 type DevicePositionsByFormat = { pdf?: AnnotationPosition; xpointer?: AnnotationPosition; cfi?: AnnotationPosition };
 
 export interface ExchangeAddEntry {
+  sourceAnchor?: ReadingAnchor;
   serverId: number;
   version: number;
   datetime: string;
@@ -281,6 +283,10 @@ export class KoreaderAnnotationExchangeService {
     let skippedNoPosition = 0;
 
     for (const annotation of adds) {
+      if (annotation.sourceAnchor && (annotation.sourceAnchor.bookId !== bookId || annotation.sourceAnchor.bookFileId !== bookFileId)) {
+        skippedNoPosition += 1;
+        continue;
+      }
       const formats = positions.get(annotation.id);
       // KOReader's apply path is reflowable/xpointer-only and rejects PDF adds. A PDF-only
       // annotation (a web highlight in a PDF with no EPUB anchor) has nothing to send, so skip
@@ -321,6 +327,7 @@ export class KoreaderAnnotationExchangeService {
     const datetimes = await this.annotationSync.ensureDeviceCreatedAtMany(userId, bookId, needsIdentity, deviceClockOffsetMs);
 
     const addEntries = pushable.map(({ annotation, position }) => ({
+      ...(annotation.sourceAnchor && { sourceAnchor: annotation.sourceAnchor }),
       serverId: annotation.id,
       version: annotation.version,
       datetime: datetimes.get(annotation.id)!,

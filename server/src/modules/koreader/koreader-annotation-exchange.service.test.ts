@@ -172,6 +172,29 @@ describe('KoreaderAnnotationExchangeService', () => {
     });
   });
 
+  it('forwards original passage anchors only to their logical file', async () => {
+    const sourceAnchor = {
+      schemaVersion: 1,
+      bookId: 20,
+      bookFileId: 10,
+      revision: 'original',
+      chapterIndex: 0,
+      chapterFraction: 0.1,
+      bookFraction: 0.1,
+      quote: 'highlighted text',
+    };
+    annotationSync.computePushDown.mockResolvedValue({ adds: [makeAnnotationRow({ sourceAnchor })], edits: [], deletes: [], more: false });
+    annotationSync.findPositions.mockResolvedValue([
+      { annotationId: 100, format: 'xpointer', pos0: '/old', pos1: '/old.end', status: 'exact', converterVersion: 1 },
+    ]);
+    const first = await service.exchange(makeUser(), makeExchangeDto([makeBook()]));
+    expect(first.results[0].toApply.add[0].sourceAnchor).toEqual(sourceAnchor);
+    sourceAnchor.bookFileId = 11;
+    const anotherFile = await service.exchange(makeUser(), makeExchangeDto([makeBook()]));
+    expect(anotherFile.results[0].toApply.add).toEqual([]);
+    expect(anotherFile.results[0].skippedNoPosition).toBe(1);
+  });
+
   it('converts missing xpointers within the budget and defers the entry to the next exchange', async () => {
     annotationSync.computePushDown.mockResolvedValue({ adds: [makeAnnotationRow()], edits: [], deletes: [], more: false });
     annotationSync.findPositions.mockResolvedValue([{ annotationId: 100, format: 'cfi', pos0: 'epubcfi(/6/2!/4/2,/1:0,/1:5)', status: 'exact' }]);

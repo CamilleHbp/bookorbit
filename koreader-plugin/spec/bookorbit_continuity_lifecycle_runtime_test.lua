@@ -227,6 +227,18 @@ assert(ui.statistics.mem_read_pages == 0, "restoration must not increment statis
 assert(ui.statistics.mem_read_time == 0, "restoration must not increment statistics time")
 local record = assert(ui.doc_settings:readSetting("bookorbit_revision_anchor_v1"))
 assert(record.anchor.event.id == original_id, "restoration must persist the original event")
+if arg[6] == "server_annotation" then
+    local entries = require("bookorbit_annotations").applyLive(ui, { add = { {
+        serverId = 987, version = 1, datetime = "2099-01-01 00:00:00",
+        posFormat = "xpointer", pos0 = "/obsolete", pos1 = "/obsolete.end",
+        sourceAnchor = annotation_anchor.anchor, text = annotation.text, note = "Server anchored note",
+        drawer = "lighten", color = "yellow",
+    } } })
+    assert(entries[1].verified and entries[1].corrected, "server source anchors must verify against the installed EPUB")
+    assert(#ui.annotation.annotations == 2, "verified server annotation must be installed")
+    assert(ui.bookorbit.page_update_counter == 0 and ui.statistics.mem_read_pages == 0,
+        "annotation projection must not produce reading activity")
+end
 close(ui)
 ui = open()
 state = ui.bookorbit.reading_continuity
