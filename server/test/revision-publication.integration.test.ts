@@ -1,4 +1,5 @@
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
+import { AnnotationPositionRepository } from '../src/modules/annotation/annotation-position.repository';
 import { AnnotationRepository } from '../src/modules/annotation/annotation.repository';
 import { AnnotationSyncRepository } from '../src/modules/annotation/annotation-sync.repository';
 import { storageConfig } from '../src/config/config';
@@ -193,6 +194,65 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const [row] = await db.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.id, id));
     return row;
   }
+
+  it('bounds annotation conversion batches after filtering completed and unusable positions', async () => {
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    const module = await Test.createTestingModule({
+      providers: [AnnotationPositionRepository, { provide: DB, useValue: db }],
+    }).compile();
+    const repository = module.get(AnnotationPositionRepository);
+    const notes = await db
+      .insert(schema.annotations)
+      .values(
+        Array.from({ length: 140 }, (_, index) => ({
+          userId: ownerUserId,
+          bookId: file.bookId,
+          text: `Passage ${index}`,
+          deletedAt: index === 37 ? new Date() : null,
+        })),
+      )
+      .returning({ id: schema.annotations.id });
+    await db.insert(schema.annotationPositions).values(
+      notes.map((note, index) => ({
+        annotationId: note.id,
+        userId: ownerUserId,
+        bookFileId: index === 36 ? null : fileId,
+        format: 'xpointer' as const,
+        pos0: index === 35 ? null : `/passage/${index}`,
+        status: index === 34 ? ('failed' as const) : index === 35 ? ('pending' as const) : ('exact' as const),
+      })),
+    );
+    await db.insert(schema.annotationPositions).values(
+      notes.slice(0, 34).map((note, index) => ({
+        annotationId: note.id,
+        userId: ownerUserId,
+        bookFileId: fileId,
+        format: 'cfi' as const,
+        pos0: `/converted/${index}`,
+        status: index === 33 ? ('pending' as const) : index === 31 || index === 32 ? ('failed' as const) : ('exact' as const),
+        converterVersion: index === 30 ? null : index === 32 ? 1 : 2,
+      })),
+    );
+    const first = await repository.findCfiConversionCandidates(ownerUserId, file.bookId, 2, 3);
+    expect(first.map((row) => row.annotationId)).toEqual([notes[32].id, notes[33].id, notes[38].id]);
+    expect(await repository.findCfiConversionCandidates(ownerUserId + 1, file.bookId, 2, 3)).toEqual([]);
+    expect(await repository.findCfiConversionCandidates(ownerUserId, file.bookId + 1, 2, 3)).toEqual([]);
+    expect(await repository.findCfiConversionCandidates(ownerUserId, file.bookId, 2, 0)).toEqual([]);
+    expect(await repository.findCfiConversionCandidates(ownerUserId, file.bookId, 2, 1000)).toHaveLength(100);
+    for (const candidate of first)
+      await repository.upsert({
+        annotationId: candidate.annotationId,
+        userId: ownerUserId,
+        bookFileId: fileId,
+        format: 'cfi',
+        pos0: '/converted',
+        status: 'exact',
+        converterVersion: 2,
+      });
+    const second = await repository.findCfiConversionCandidates(ownerUserId, file.bookId, 2, 3);
+    expect(second.map((row) => row.annotationId)).toEqual(notes.slice(39, 42).map((note) => note.id));
+    await module.close();
+  });
 
   it('retains annotation source anchors across note edits and rejects another file revision', async () => {
     const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));

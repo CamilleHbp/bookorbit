@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { DB } from '../../db';
@@ -47,11 +48,10 @@ export class AnnotationPositionRepository {
       .where(and(...conditions));
   }
 
-  /** Active annotations of a book joined with their device xpointer position. */
-  async findXPointerRowsForBook(
-    userId: number,
-    bookId: number,
-  ): Promise<{ annotationId: number; text: string; pos0: string | null; pos1: string | null; bookFileId: number | null; status: string }[]> {
+  async findCfiConversionCandidates(userId: number, bookId: number, converterVersion: number, limit: number) {
+    const batchSize = Number.isFinite(limit) ? Math.min(100, Math.max(0, Math.floor(limit))) : 25;
+    if (batchSize === 0) return [];
+    const cfi = alias(annotationPositions, 'cfi_position');
     return this.db
       .select({
         annotationId: annotations.id,
@@ -63,7 +63,21 @@ export class AnnotationPositionRepository {
       })
       .from(annotations)
       .innerJoin(annotationPositions, and(eq(annotationPositions.annotationId, annotations.id), eq(annotationPositions.format, 'xpointer')))
-      .where(and(eq(annotations.userId, userId), eq(annotations.bookId, bookId), isNull(annotations.deletedAt)));
+      .leftJoin(cfi, and(eq(cfi.annotationId, annotations.id), eq(cfi.format, 'cfi')))
+      .where(
+        and(
+          eq(annotations.userId, userId),
+          eq(annotations.bookId, bookId),
+          eq(annotationPositions.userId, userId),
+          isNull(annotations.deletedAt),
+          isNotNull(annotationPositions.pos0),
+          isNotNull(annotationPositions.bookFileId),
+          ne(annotationPositions.status, 'failed'),
+          or(isNull(cfi.id), eq(cfi.status, 'pending'), lt(cfi.converterVersion, converterVersion)),
+        ),
+      )
+      .orderBy(asc(annotations.id))
+      .limit(batchSize);
   }
 
   async markPending(annotationId: number, format: AnnotationPositionFormat): Promise<void> {

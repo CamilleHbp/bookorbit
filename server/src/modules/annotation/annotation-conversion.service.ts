@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-import { type AnnotationPosition } from '../../db/schema';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { PositionConverterService } from '../position-converter/position-converter.service';
 import { AnnotationPositionRepository } from './annotation-position.repository';
@@ -86,34 +85,13 @@ export class AnnotationConversionService {
     bookId: number,
     limit: number,
   ): Promise<{ annotationId: number; text: string; pos0: string; pos1: string | null; bookFileId: number }[]> {
-    const xpointerRows = await this.positionRepo.findXPointerRowsForBook(userId, bookId);
-
-    const usable = xpointerRows.filter((row) => row.pos0 != null && row.bookFileId != null && row.status !== 'failed');
-    if (usable.length === 0) return [];
-
-    const cfiRows = await this.annotationSync.findPositions(
-      usable.map((row) => row.annotationId),
-      ['cfi'],
-    );
-    const cfiByAnnotation = new Map<number, AnnotationPosition>();
-    for (const row of cfiRows) cfiByAnnotation.set(row.annotationId, row);
-
-    const version = this.positionConverter.version;
-    const needsConversion = (cfi: AnnotationPosition | undefined): boolean => {
-      if (!cfi) return true;
-      if (cfi.status === 'pending') return true;
-      return cfi.converterVersion != null && cfi.converterVersion < version;
-    };
-
-    return usable
-      .filter((row) => needsConversion(cfiByAnnotation.get(row.annotationId)))
-      .slice(0, limit)
-      .map((row) => ({
-        annotationId: row.annotationId,
-        text: row.text,
-        pos0: row.pos0!,
-        pos1: row.pos1,
-        bookFileId: row.bookFileId!,
-      }));
+    const candidates = await this.positionRepo.findCfiConversionCandidates(userId, bookId, this.positionConverter.version, limit);
+    return candidates.map((row) => ({
+      annotationId: row.annotationId,
+      text: row.text,
+      pos0: row.pos0!,
+      pos1: row.pos1,
+      bookFileId: row.bookFileId!,
+    }));
   }
 }
