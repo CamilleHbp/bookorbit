@@ -44,7 +44,7 @@ export class KoreaderDeliveryAccessService {
       .limit(1);
     if (!row) throw new NotFoundException('Installed copy unavailable');
     const [file] = await this.books.findAccessibleFiles([row.copy.bookFileId], fresh);
-    if (!file || !['epub', 'kepub'].includes(file.format)) throw new NotFoundException('Installed copy unavailable');
+    if (!file || !['epub', 'kepub'].includes(file.format ?? '')) throw new NotFoundException('Installed copy unavailable');
     return { ...row, file, user: fresh };
   }
 }

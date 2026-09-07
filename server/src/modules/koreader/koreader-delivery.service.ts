@@ -32,7 +32,7 @@ export class KoreaderDeliveryService {
     const files = await this.books.findAccessibleFiles(fileIds, fresh);
     return {
       items: files.flatMap((file) =>
-        ['epub', 'kepub'].includes(file.format) && file.currentRevisionId && file.sha256 && file.sizeBytes !== null
+        ['epub', 'kepub'].includes(file.format ?? '') && file.currentRevisionId && file.sha256 && file.sizeBytes !== null
           ? [{ bookFileId: file.id, bookId: file.bookId, revisionId: file.currentRevisionId, sha256: file.sha256, sizeBytes: file.sizeBytes }]
           : [],
       ),

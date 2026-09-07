@@ -164,7 +164,7 @@ type ExportCandidateFile = {
   absolutePath: string;
   format: string | null;
   sizeBytes: number | null;
-  sortOrder?: number;
+  sortOrder?: number | null;
 };
 
 export type ExportPlan = {
