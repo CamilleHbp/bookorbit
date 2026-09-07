@@ -227,6 +227,33 @@ assert(ui.statistics.mem_read_pages == 0, "restoration must not increment statis
 assert(ui.statistics.mem_read_time == 0, "restoration must not increment statistics time")
 local record = assert(ui.doc_settings:readSetting("bookorbit_revision_anchor_v1"))
 assert(record.anchor.event.id == original_id, "restoration must persist the original event")
+if arg[6] == "annotation_upload" then
+    local entries, max_datetime, signature = require("bookorbit_sidecar").normalizeAnnotations(ui.annotation.annotations)
+    assert(entries[1].sourceAnchor and entries[1].sourceAnchor.bookId == 2 and entries[1].sourceAnchor.bookFileId == 9,
+        "cold offline replacement must preserve the original annotation upload identity")
+    local original_source = entries[1].sourceAnchor
+    assert(original_source.revision == original.revision and original_source.provisionalSha256,
+        "restoration must not replace the original annotation source revision")
+    local book = { annotation_watermark = "2099-01-01 00:00:00" }
+    local uploaded = 0
+    local result, err = require("bookorbit_annotations").exchangeBook({
+        ui = ui, digest = require("util").partialMD5(path), state = { getBook = function() return book end },
+        annotations = entries, ann_max_datetime = max_datetime, ann_signature = signature, apply_mode = "skip",
+        client = {
+            annotationAnchorSupport = function() return true end,
+            exchangeAnnotations = function(_, books)
+                assert(books[1].changes[1].sourceAnchor == original_source, "existing notes must upload their original anchor")
+                local file = assert(io.open(fixture_dir .. "/annotation-upload.json", "wb"))
+                assert(file:write(require("rapidjson").encode({ deviceId = "offline-runtime-device", deviceModel = "Emulator", pluginVersion = "1.5.2", books = books })))
+                file:close()
+                uploaded = uploaded + 1
+                return { results = { { toApply = {}, more = false } } }
+            end,
+        },
+    })
+    assert(result and not err and uploaded == 1 and book.annotation_anchor_signature == signature,
+        "a completed anchor backfill must persist its checkpoint")
+end
 if arg[6] == "server_annotation" then
     local entries = require("bookorbit_annotations").applyLive(ui, { add = { {
         serverId = 987, version = 1, datetime = "2099-01-01 00:00:00",

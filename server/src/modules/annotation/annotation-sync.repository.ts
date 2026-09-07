@@ -1,3 +1,4 @@
+import type { ReadingAnchor } from '@bookorbit/types';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, exists, getTableColumns, inArray, isNotNull, isNull, notExists, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -30,6 +31,13 @@ export interface CanonicalWithPosition {
 @Injectable()
 export class AnnotationSyncRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
+
+  async attachSourceAnchor(annotationId: number, userId: number, sourceAnchor: ReadingAnchor, tx: DbTx): Promise<void> {
+    await tx
+      .update(annotations)
+      .set({ sourceAnchor })
+      .where(and(eq(annotations.id, annotationId), eq(annotations.userId, userId), isNull(annotations.sourceAnchor)));
+  }
 
   transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
     return this.db.transaction(fn);

@@ -1,3 +1,4 @@
+import { AnnotationAnchorService } from './annotation-anchor.service';
 import { BookRevisionModule } from '../book-revision/book-revision.module';
 import { Module } from '@nestjs/common';
 
@@ -20,6 +21,7 @@ import { DevicePositionRebuilderRegistry } from './device-position-rebuilder';
   imports: [BookModule, AchievementModule, PositionConverterModule, BookRevisionModule],
   controllers: [AnnotationController, AnnotationHubController],
   providers: [
+    AnnotationAnchorService,
     AnnotationService,
     AnnotationRepository,
     AnnotationPositionRepository,

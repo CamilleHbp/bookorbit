@@ -14,10 +14,23 @@ function Annotations.capture(ui, sha256)
     for index, annotation in ipairs(ui.annotation.annotations or {}) do
         if index > 100 or now() >= deadline then break end
         local ok, anchor = pcall(Native.captureAnnotation, ui, annotation, "sha256:" .. sha256, { seconds = math.max(0, deadline - now()) })
-        if ok and anchor then anchors[index] = anchor end
+        if ok and anchor then
+            anchors[index] = anchor
+            local continuity = ui.bookorbit and ui.bookorbit.reading_continuity
+            local identity = continuity and continuity.record and continuity.record.anchor
+            if not annotation.bookorbit_source_anchor then
+                anchor.anchor.provisionalSha256 = sha256
+                annotation.bookorbit_source_anchor = anchor.anchor
+            end
+            local source = annotation.bookorbit_source_anchor
+            if not source.bookId and not source.bookFileId and identity and identity.bookId and identity.bookFileId then
+                source.bookId, source.bookFileId = identity.bookId, identity.bookFileId
+            end
+        end
     end
     state.anchors, state.sha256 = anchors, sha256
     ui.doc_settings:saveSetting(KEY, state)
+    ui.doc_settings:saveSetting("annotations", ui.annotation.annotations)
 end
 
 function Annotations.begin(ui, revision_record, options)

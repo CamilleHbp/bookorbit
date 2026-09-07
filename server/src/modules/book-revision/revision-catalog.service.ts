@@ -202,7 +202,18 @@ export class RevisionCatalogService {
   }
 
   async requireRevision(bookFileId: number, revisionId: string): Promise<void> {
-    await this.get(bookFileId, revisionId);
+    await this.requireRevisions(bookFileId, [revisionId]);
+  }
+
+  async requireRevisions(bookFileId: number, revisionIds: string[]): Promise<void> {
+    const unique = [...new Set(revisionIds)];
+    if (!unique.length) return;
+    if (unique.length > 100) throw new BadRequestException('Too many annotation source revisions');
+    const found = await this.db
+      .select({ id: schema.bookFileRevisions.id })
+      .from(schema.bookFileRevisions)
+      .where(and(eq(schema.bookFileRevisions.bookFileId, bookFileId), inArray(schema.bookFileRevisions.id, unique)));
+    if (found.length !== unique.length) throw new NotFoundException('Revision not found for this file');
   }
 
   private async get(bookFileId: number, revisionId: string) {

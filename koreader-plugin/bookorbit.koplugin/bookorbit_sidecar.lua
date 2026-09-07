@@ -70,6 +70,10 @@ local function entryHash(entry)
     local pos0 = entry.pos0 or ""
     local key = entry.datetime .. "|" .. #pos0 .. "|" .. pos0:sub(1, 24) .. "|" .. pos0:sub(-24)
         .. "|" .. (entry.datetimeUpdated or "")
+    if entry.sourceAnchor then
+        key = key .. "|anchor:" .. tostring(entry.sourceAnchor.revision)
+            .. ":" .. tostring(entry.sourceAnchor.bookId) .. ":" .. tostring(entry.sourceAnchor.bookFileId)
+    end
     local hash = 5381
     for index = 1, #key do
         hash = (hash * 33 + key:byte(index)) % 4294967296
@@ -91,6 +95,8 @@ function BookOrbitSidecar.normalizeAnnotations(raw)
             if pos0 then
                 local pos1 = serializePos(a.pos1)
                 local entry = {
+                    sourceAnchor = type(a.bookorbit_source_anchor) == "table" and a.bookorbit_source_anchor.bookId
+                        and a.bookorbit_source_anchor.bookFileId and a.bookorbit_source_anchor or nil,
                     datetime = a.datetime,
                     datetimeUpdated = isDeviceDatetime(a.datetime_updated) and a.datetime_updated or nil,
                     drawer = a.drawer,

@@ -1,4 +1,4 @@
-import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
+import { AnnotationAnchorService } from './annotation-anchor.service';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
@@ -24,7 +24,7 @@ export class AnnotationService {
     private readonly bookService: BookService,
     private readonly achievementEvents: AchievementEventsService,
     private readonly conversionService: AnnotationConversionService,
-    private readonly revisions: RevisionCatalogService,
+    private readonly anchors: AnnotationAnchorService,
   ) {}
 
   async getAnnotations(bookId: number, user: RequestUser): Promise<AnnotationResponseDto[]> {
@@ -104,11 +104,7 @@ export class AnnotationService {
       ) {
         throw new BadRequestException('Annotation anchor does not match its book file and location');
       }
-      if (/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(anchor.revision)) {
-        await this.revisions.requireRevision(dto.bookFileId, anchor.revision);
-      } else if (!anchor.provisionalSha256 || anchor.revision !== `sha256:${anchor.provisionalSha256}`) {
-        throw new BadRequestException('Annotation anchor has no valid revision identity');
-      }
+      await this.anchors.validate(bookId, dto.bookFileId, [anchor]);
     }
     const startedAtMs = Date.now();
     const format = dto.pdf ? 'pdf' : 'cfi';

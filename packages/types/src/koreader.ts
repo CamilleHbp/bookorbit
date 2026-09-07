@@ -403,7 +403,7 @@ export interface KoreaderCatalogManifestPage {
   restartRequired: boolean;
 }
 
-export type KoreaderPluginCapability = "catalogBulkManifest" | "catalogDashboardSections" | "bookmarkSync";
+export type KoreaderPluginCapability = "catalogBulkManifest" | "catalogDashboardSections" | "bookmarkSync" | "annotationAnchorsV1";
 
 export interface KoreaderPluginVersionInfo {
   pluginVersion: string;

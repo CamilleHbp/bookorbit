@@ -1,5 +1,6 @@
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import { AnnotationRepository } from '../src/modules/annotation/annotation.repository';
+import { AnnotationSyncRepository } from '../src/modules/annotation/annotation-sync.repository';
 import { storageConfig } from '../src/config/config';
 import { BookRevisionService } from '../src/modules/book-revision/book-revision.service';
 import { RevisionMetadataService } from '../src/modules/book-revision/revision-metadata.service';
@@ -195,7 +196,9 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
 
   it('retains annotation source anchors across note edits and rejects another file revision', async () => {
     const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
-    const module = await Test.createTestingModule({ providers: [AnnotationRepository, { provide: DB, useValue: db }] }).compile();
+    const module = await Test.createTestingModule({
+      providers: [AnnotationRepository, AnnotationSyncRepository, { provide: DB, useValue: db }],
+    }).compile();
     const repository = module.get(AnnotationRepository);
     const sourceAnchor = {
       schemaVersion: 1 as const,
@@ -222,6 +225,22 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
     const edited = await repository.update(file.bookId, saved.id, ownerUserId, { note: 'A later note', color: 'yellow' });
     expect(edited?.sourceAnchor).toEqual(sourceAnchor);
     expect(edited?.note).toBe('A later note');
+    const sync = module.get(AnnotationSyncRepository);
+    await db.transaction((tx) => sync.attachSourceAnchor(saved.id, ownerUserId, { ...sourceAnchor, quote: 'An older projection' }, tx));
+    expect((await repository.findById(file.bookId, saved.id, ownerUserId))?.sourceAnchor).toEqual(sourceAnchor);
+    const legacy = await repository.create({
+      userId: ownerUserId,
+      bookId: file.bookId,
+      bookFileId: fileId,
+      cfi: sourceAnchor.nativeLocator.value,
+      text: 'Original passage',
+    });
+    await db.transaction((tx) => sync.attachSourceAnchor(legacy.id, ownerUserId + 1, sourceAnchor, tx));
+    expect((await repository.findById(file.bookId, legacy.id, ownerUserId))?.sourceAnchor).toBeNull();
+    await db.transaction((tx) => sync.attachSourceAnchor(legacy.id, ownerUserId, sourceAnchor, tx));
+    const backfilled = await repository.findById(file.bookId, legacy.id, ownerUserId);
+    expect(backfilled?.sourceAnchor).toEqual(sourceAnchor);
+    expect(backfilled?.version).toBe(legacy.version);
     await module.close();
   });
 

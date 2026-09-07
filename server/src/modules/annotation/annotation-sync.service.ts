@@ -1,3 +1,5 @@
+import type { ReadingAnchor } from '@bookorbit/types';
+import { AnnotationAnchorService } from './annotation-anchor.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 
@@ -23,6 +25,7 @@ const INGEST_EVENT = 'annotation.sync_ingest';
 const INGEST_EMIT_EVENT = 'annotation.sync_event';
 
 export interface IncomingDeviceAnnotation {
+  sourceAnchor?: ReadingAnchor;
   /**
    * Device-authoritative identity (Kobo annotation UUID). When present it replaces the
    * datetime|pos0 dedup key and disables the datetime-based reconcile heuristics.
@@ -84,6 +87,7 @@ export class AnnotationSyncService {
   constructor(
     private readonly syncRepo: AnnotationSyncRepository,
     private readonly achievementEvents: AchievementEventsService,
+    private readonly anchors: AnnotationAnchorService,
   ) {}
 
   /**
@@ -97,6 +101,8 @@ export class AnnotationSyncService {
     const createdIds: number[] = [];
 
     try {
+      const sourceAnchors = params.annotations.flatMap((annotation) => (annotation.sourceAnchor ? [annotation.sourceAnchor] : []));
+      if (sourceAnchors.length) await this.anchors.validate(params.bookId, params.bookFileId, sourceAnchors);
       await this.syncRepo.transaction(async (tx) => {
         for (const incoming of this.dedupeByKey(params.annotations)) {
           await this.ingestOne(params, incoming, result, createdIds, tx);
@@ -279,6 +285,7 @@ export class AnnotationSyncService {
         userId,
         bookId,
         text: incoming.text ?? '',
+        ...(incoming.sourceAnchor && { sourceAnchor: incoming.sourceAnchor }),
         color: incoming.colorSpace === 'kobo' ? hexFromKoboColor(incoming.color) : hexFromKoreaderColor(incoming.color),
         style: incoming.style ?? styleFromDrawer(incoming.drawer),
         note: incoming.note ?? null,
@@ -320,6 +327,9 @@ export class AnnotationSyncService {
     bookFileId: number,
     tx: DbTx,
   ): Promise<{ newVersion: number } | null> {
+    if (!annotation.sourceAnchor && incoming.sourceAnchor) {
+      await this.syncRepo.attachSourceAnchor(annotation.id, annotation.userId, incoming.sourceAnchor, tx);
+    }
     const storedEffective = annotation.deviceUpdatedAt ?? annotation.deviceCreatedAt ?? '';
     const incomingEffective = incoming.datetimeUpdated ?? incoming.datetime;
     const hasNewEdit = incomingEffective > storedEffective;

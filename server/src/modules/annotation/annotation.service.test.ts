@@ -1,3 +1,4 @@
+import { AnnotationAnchorService } from './annotation-anchor.service';
 import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -82,10 +83,11 @@ async function makeService() {
   const conversionService = {
     ensureCfiPositionsForBook: vi.fn().mockResolvedValue(0),
   };
-  const revisions = { requireRevision: vi.fn().mockResolvedValue(undefined) };
+  const revisions = { requireRevisions: vi.fn().mockResolvedValue(undefined) };
   const module = await Test.createTestingModule({
     providers: [
       AnnotationService,
+      AnnotationAnchorService,
       { provide: RevisionCatalogService, useValue: revisions },
       { provide: AnnotationRepository, useValue: annotationRepo },
       { provide: BookService, useValue: bookService },
@@ -185,7 +187,7 @@ describe('AnnotationService', () => {
         bookFileId: 50,
         sourceAnchor,
       });
-      expect(revisions.requireRevision).toHaveBeenCalledWith(50, sourceAnchor.revision);
+      expect(revisions.requireRevisions).toHaveBeenCalledWith(50, [sourceAnchor.revision]);
       expect(annotationRepo.create).toHaveBeenCalledWith(expect.objectContaining({ sourceAnchor, userId: 1 }));
       expect(result.sourceAnchor).toEqual(sourceAnchor);
     });
@@ -209,7 +211,7 @@ describe('AnnotationService', () => {
     });
     it('does not persist a revision owned by a different logical file', async () => {
       const { service, annotationRepo, revisions } = await makeService();
-      revisions.requireRevision.mockRejectedValue(new NotFoundException());
+      revisions.requireRevisions.mockRejectedValue(new NotFoundException());
       await expect(
         service.createAnnotation(5, makeUser(), {
           cfi: sourceAnchor.nativeLocator.value,

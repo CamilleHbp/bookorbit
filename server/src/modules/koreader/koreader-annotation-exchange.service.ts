@@ -436,6 +436,7 @@ export class KoreaderAnnotationExchangeService {
 
   private toIncoming(change: KoreaderAnnotationDto): IncomingDeviceAnnotation {
     return {
+      ...(change.sourceAnchor && { sourceAnchor: change.sourceAnchor }),
       datetime: change.datetime,
       datetimeUpdated: change.datetimeUpdated ?? null,
       drawer: change.drawer,

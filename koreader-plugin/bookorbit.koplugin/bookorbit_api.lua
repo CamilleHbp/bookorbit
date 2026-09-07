@@ -574,7 +574,23 @@ end
 
 -- Deprecated one-way upload, kept as fallback for pre-0.4 servers.
 function BookOrbitApi:uploadAnnotations(books)
-    return self:request("POST", "/koreader/plugin/annotations", self:withDevice({ books = books }))
+    local compatible = {}
+    for _, book in ipairs(books) do
+        local copy = {}
+        for key, value in pairs(book) do copy[key] = value end
+        copy.annotations = {}
+        for _, annotation in ipairs(book.annotations or {}) do
+            local fields = {}
+            for key, value in pairs(annotation) do if key ~= "sourceAnchor" then fields[key] = value end end
+            copy.annotations[#copy.annotations + 1] = fields
+        end
+        compatible[#compatible + 1] = copy
+    end
+    return self:request("POST", "/koreader/plugin/annotations", self:withDevice({ books = compatible }))
+end
+
+function BookOrbitApi:annotationAnchorSupport()
+    return require("bookorbit_capabilities").supports(self, "annotationAnchorsV1")
 end
 
 function BookOrbitApi:exchangeAnnotations(books)

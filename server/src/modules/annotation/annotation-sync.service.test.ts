@@ -1,3 +1,4 @@
+import { AnnotationAnchorService } from './annotation-anchor.service';
 import { Logger } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -98,6 +99,7 @@ function makeRepo(): RepoMock {
     updateState: vi.fn().mockResolvedValue(undefined),
     touchState: vi.fn().mockResolvedValue(undefined),
     createCanonical: vi.fn().mockImplementation((annotation: Record<string, unknown>) => Promise.resolve(makeAnnotationRow(annotation))),
+    attachSourceAnchor: vi.fn().mockResolvedValue(undefined),
     applyContentPatch: vi.fn().mockResolvedValue(2),
     updatePosition: vi.fn().mockResolvedValue(undefined),
     markPositionPending: vi.fn().mockResolvedValue(undefined),
@@ -122,7 +124,9 @@ function makeRepo(): RepoMock {
 }
 
 function makeService(repo: RepoMock, achievementEvents: AchievementEventsService) {
-  return new AnnotationSyncService(repo as unknown as AnnotationSyncRepository, achievementEvents);
+  return new AnnotationSyncService(repo as unknown as AnnotationSyncRepository, achievementEvents, {
+    validate: vi.fn().mockResolvedValue(undefined),
+  } as unknown as AnnotationAnchorService);
 }
 
 function ingest(service: AnnotationSyncService, annotations: IncomingDeviceAnnotation[]) {
@@ -150,6 +154,43 @@ describe('AnnotationSyncService', () => {
     achievementEvents = new AchievementEventsService();
     emitSpy = vi.spyOn(achievementEvents, 'emit');
     service = makeService(repo, achievementEvents);
+  });
+
+  it('retains a new device annotation source anchor', async () => {
+    const sourceAnchor = {
+      schemaVersion: 1 as const,
+      bookId: BOOK_ID,
+      bookFileId: BOOK_FILE_ID,
+      revision: 'old',
+      chapterIndex: 0,
+      chapterFraction: 0,
+      bookFraction: 0,
+    };
+    await ingest(service, [makeIncoming({ sourceAnchor })]);
+    expect(repo.createCanonical).toHaveBeenCalledWith(expect.objectContaining({ sourceAnchor }), expect.anything(), expect.anything(), TX);
+  });
+
+  it('backfills a missing anchor without a new version or annotation event', async () => {
+    const sourceAnchor = {
+      schemaVersion: 1 as const,
+      bookId: BOOK_ID,
+      bookFileId: BOOK_FILE_ID,
+      revision: 'old',
+      chapterIndex: 0,
+      chapterFraction: 0,
+      bookFraction: 0,
+    };
+    repo.findStateByDeviceKey.mockResolvedValue(makeStateRow());
+    repo.findAnnotationById.mockResolvedValue(makeAnnotationRow());
+    const result = await ingest(service, [makeIncoming({ sourceAnchor })]);
+    expect(repo.attachSourceAnchor).toHaveBeenCalledWith(100, USER_ID, sourceAnchor, TX);
+    expect(repo.applyContentPatch).not.toHaveBeenCalled();
+    expect(emitSpy).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ created: 0, updated: 0, unchanged: 1 });
+    repo.findAnnotationById.mockResolvedValue(makeAnnotationRow({ sourceAnchor }));
+    repo.attachSourceAnchor.mockClear();
+    await ingest(service, [makeIncoming({ sourceAnchor: { ...sourceAnchor, revision: 'projected' } })]);
+    expect(repo.attachSourceAnchor).not.toHaveBeenCalled();
   });
 
   describe('buildAnnotationKey', () => {

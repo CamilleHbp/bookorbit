@@ -545,6 +545,17 @@ function BookOrbitAnnotations.exchangeBook(opts)
     local book = opts.state:getBook(opts.digest)
     if not book then return nil, "unmatched" end
 
+    local has_anchors = false
+    for _, annotation in ipairs(opts.annotations) do
+        if annotation.sourceAnchor then has_anchors = true; break end
+    end
+    local anchors_supported = false
+    if has_anchors and opts.client.annotationAnchorSupport then
+        anchors_supported = opts.client:annotationAnchorSupport()
+        if anchors_supported == nil then return nil, "network" end
+    end
+    local anchor_backfill = anchors_supported and (book.annotation_anchor_signature == nil or book.annotation_anchor_signature ~= opts.ann_signature)
+
     local keys = BookOrbitAnnotations.collectKeys(opts.annotations)
     local keys_complete = #keys <= MAX_KEYS_PER_BOOK
     if not keys_complete then keys = {} end
@@ -554,8 +565,12 @@ function BookOrbitAnnotations.exchangeBook(opts)
     local delta = {}
     for _, annotation in ipairs(opts.annotations) do
         local effective = annotation.datetimeUpdated or annotation.datetime
-        if effective > watermark then
-            table.insert(delta, annotation)
+        if effective > watermark or (anchor_backfill and annotation.sourceAnchor) then
+            local fields = {}
+            for key, value in pairs(annotation) do
+                if key ~= "sourceAnchor" or anchors_supported then fields[key] = value end
+            end
+            table.insert(delta, fields)
         end
     end
 
@@ -599,12 +614,18 @@ function BookOrbitAnnotations.exchangeBook(opts)
             end
         end
         response = body.results and body.results[1] or nil
+        if type(response) ~= "table" or type(response.toApply) ~= "table"
+            or response.hash and response.hash ~= opts.digest then
+            result.had_errors, upload_failed = true, true
+            break
+        end
         result.uploaded = result.uploaded + #chunk
         first_request = false
     until cursor > #delta
 
     if not upload_failed then
         BookOrbitAnnotations.advanceWatermark(book, opts.ann_max_datetime, device_now)
+        if anchors_supported then book.annotation_anchor_signature = opts.ann_signature end
     end
 
     -- Recorded only when the complete key set went out and nothing was left
