@@ -15,6 +15,7 @@ import { KoreaderDeliveryController, KoreaderPluginDeliveryController } from './
 import { KoreaderCopiesController, KoreaderPluginCopiesController } from './koreader-copy.controller';
 import { KoreaderCopyService } from './koreader-copy.service';
 import { KoreaderDeliveryService } from './koreader-delivery.service';
+import { KoreaderDeliverySchedulerService } from './koreader-delivery-scheduler.service';
 import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
 import { KoreaderDeliveryAccessService } from './koreader-delivery-access.service';
 import { KoreaderReadingController } from './koreader-reading.controller';
@@ -42,6 +43,7 @@ describe('KoreaderModule', () => {
       KoreaderReadingController,
     ]);
     expect(Reflect.getMetadata('providers', KoreaderModule)).toEqual([
+      KoreaderDeliverySchedulerService,
       KoreaderDeliveryService,
       KoreaderDeliveryExecutionService,
       KoreaderDeliveryAccessService,
