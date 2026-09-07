@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { Test } from '@nestjs/testing';
 import { ZipArchive } from 'archiver';
 import { mkdtemp, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
@@ -91,12 +92,14 @@ describe.each(['epub', 'kepub'] as const)('%s conversion cache identity', (forma
     vi.spyOn(unzipper.Open, 'file').mockImplementationOnce(async (...args) => {
       const archive = await open(...args);
       const chapter = archive.files.find((entry) => entry.path === 'chapter.xhtml')!;
-      const buffer = chapter.buffer.bind(chapter);
-      chapter.buffer = async (...options) => {
-        const bytes = await buffer(...options);
-        await rename(replacement, path);
-        return bytes;
-      };
+      const stream = chapter.stream.bind(chapter);
+      chapter.stream = (...options) =>
+        Readable.from(
+          (async function* () {
+            for await (const chunk of stream(...options)) yield chunk;
+            await rename(replacement, path);
+          })(),
+        ) as ReturnType<typeof chapter.stream>;
       return archive;
     });
     expect(await load()).toBeNull();

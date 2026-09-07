@@ -1,8 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { fileCacheIdentity } from './file-cache-identity';
 import { eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import * as unzipper from 'unzipper';
+import type * as unzipper from 'unzipper';
+import { openConversionArchive, readConversionResource } from './conversion-archive';
 import { XMLParser } from 'fast-xml-parser';
 
 import { DB } from '../../db';
@@ -22,6 +23,12 @@ const xmlParser = new XMLParser({
   attributeNamePrefix: '@_',
   textNodeName: '#text',
 });
+
+async function readPackageXml(entry: unzipper.File): Promise<Record<string, unknown>> {
+  const xml = (await readConversionResource(entry, 1024 * 1024)).toString('utf8');
+  if (/<!ENTITY\s/i.test(xml)) throw new BadRequestException('EPUB package entity declarations are not supported');
+  return xmlParser.parse(xml) as Record<string, unknown>;
+}
 
 function toArray<T>(v: T | T[] | undefined | null): T[] {
   if (v == null) return [];
@@ -69,7 +76,7 @@ export interface EpubSpine {
 export async function readEpubSpine(zip: unzipper.CentralDirectory): Promise<EpubSpine> {
   const containerEntry = findInZip(zip.files, 'META-INF/container.xml');
   if (!containerEntry) throw new Error('Missing META-INF/container.xml');
-  const containerDoc = xmlParser.parse(await containerEntry.buffer()) as Record<string, unknown>;
+  const containerDoc = await readPackageXml(containerEntry);
   const container = containerDoc['container'] as Record<string, unknown>;
   const rootfiles = (container?.rootfiles as Record<string, unknown>)?.rootfile;
   const rootfile: unknown = Array.isArray(rootfiles) ? rootfiles[0] : rootfiles;
@@ -79,7 +86,7 @@ export async function readEpubSpine(zip: unzipper.CentralDirectory): Promise<Epu
   const rootPath = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
   const opfEntry = findInZip(zip.files, opfPath);
   if (!opfEntry) throw new Error(`OPF not found: ${opfPath}`);
-  const opfDoc = xmlParser.parse(await opfEntry.buffer()) as Record<string, unknown>;
+  const opfDoc = await readPackageXml(opfEntry);
   const pkg = (opfDoc['package'] ?? opfDoc) as Record<string, unknown>;
   const manifestEl = pkg['manifest'] as Record<string, unknown> | undefined;
   const spineEl = pkg['spine'] as Record<string, unknown> | undefined;
@@ -102,7 +109,7 @@ export async function readEpubSpine(zip: unzipper.CentralDirectory): Promise<Epu
 export async function loadChapterFromZip(zip: unzipper.CentralDirectory, href: string): Promise<ChapterDocument | null> {
   const entry = findInZip(zip.files, href);
   if (!entry) return null;
-  const xhtml = (await entry.buffer()).toString('utf-8');
+  const xhtml = (await readConversionResource(entry, 2 * 1024 * 1024)).toString('utf-8');
   return parseChapterDocument(xhtml);
 }
 
@@ -145,7 +152,7 @@ export class EpubDomService {
     }
 
     try {
-      const zip = await unzipper.Open.file(entry.absolutePath);
+      const zip = await openConversionArchive(entry.absolutePath);
       const doc = await loadChapterFromZip(zip, href);
       if (!doc || (await this.currentIdentity(bookFileId))?.identity !== entry.identity) return null;
       this.chapterCache.set(cacheKey, doc);
@@ -185,7 +192,7 @@ export class EpubDomService {
       if (!current) return null;
       const cached = this.spineCache.get(bookFileId);
       if (cached?.identity === current.identity) return cached;
-      const zip = await unzipper.Open.file(current.absolutePath);
+      const zip = await openConversionArchive(current.absolutePath);
       const spine = await readEpubSpine(zip);
       if ((await this.currentIdentity(bookFileId))?.identity !== current.identity) return null;
       const entry: SpineCacheEntry = { ...current, spine };

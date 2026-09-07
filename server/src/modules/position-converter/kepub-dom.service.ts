@@ -1,7 +1,7 @@
 import { fileCacheIdentity } from './file-cache-identity';
 
 import { Injectable, Logger } from '@nestjs/common';
-import * as unzipper from 'unzipper';
+import { openConversionArchive } from './conversion-archive';
 
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { EpubSpine, loadChapterFromZip, readEpubSpine } from './epub-dom.service';
@@ -77,7 +77,7 @@ export class KepubDomService {
     }
 
     try {
-      const zip = await unzipper.Open.file(kepubPath);
+      const zip = await openConversionArchive(kepubPath);
       const doc = await loadChapterFromZip(zip, href);
       if (!doc || (await fileCacheIdentity(kepubPath)) !== entry.identity) return null;
       this.chapterCache.set(cacheKey, doc);
@@ -98,7 +98,7 @@ export class KepubDomService {
       if (!identity) return null;
       const cached = this.spineCache.get(kepubPath);
       if (cached?.identity === identity) return cached;
-      const zip = await unzipper.Open.file(kepubPath);
+      const zip = await openConversionArchive(kepubPath);
       const spine = await readEpubSpine(zip);
       if ((await fileCacheIdentity(kepubPath)) !== identity) return null;
       const entry: SpineCacheEntry = { identity, spine };
