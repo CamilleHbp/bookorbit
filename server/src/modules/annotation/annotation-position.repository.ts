@@ -1,3 +1,4 @@
+import { staleGeneratedPosition } from './annotation-position-revision';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -60,9 +61,12 @@ export class AnnotationPositionRepository {
         pos1: annotationPositions.pos1,
         bookFileId: annotationPositions.bookFileId,
         status: annotationPositions.status,
+        revisionId: schema.bookFiles.currentRevisionId,
+        sha256: schema.bookFiles.sha256,
       })
       .from(annotations)
       .innerJoin(annotationPositions, and(eq(annotationPositions.annotationId, annotations.id), eq(annotationPositions.format, 'xpointer')))
+      .innerJoin(schema.bookFiles, and(eq(schema.bookFiles.id, annotationPositions.bookFileId), eq(schema.bookFiles.bookId, bookId)))
       .leftJoin(cfi, and(eq(cfi.annotationId, annotations.id), eq(cfi.format, 'cfi')))
       .where(
         and(
@@ -73,7 +77,7 @@ export class AnnotationPositionRepository {
           isNotNull(annotationPositions.pos0),
           isNotNull(annotationPositions.bookFileId),
           ne(annotationPositions.status, 'failed'),
-          or(isNull(cfi.id), eq(cfi.status, 'pending'), lt(cfi.converterVersion, converterVersion)),
+          or(isNull(cfi.id), eq(cfi.status, 'pending'), lt(cfi.converterVersion, converterVersion), staleGeneratedPosition(cfi, schema.bookFiles)),
         ),
       )
       .orderBy(asc(annotations.id))

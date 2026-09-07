@@ -1,3 +1,6 @@
+import { AnnotationConversionService } from '../src/modules/annotation/annotation-conversion.service';
+import { AnnotationSyncService } from '../src/modules/annotation/annotation-sync.service';
+import { PositionConverterService } from '../src/modules/position-converter/position-converter.service';
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import { AnnotationPositionRepository } from '../src/modules/annotation/annotation-position.repository';
 import { AnnotationRepository } from '../src/modules/annotation/annotation.repository';
@@ -231,6 +234,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
         pos0: `/converted/${index}`,
         status: index === 33 ? ('pending' as const) : index === 31 || index === 32 ? ('failed' as const) : ('exact' as const),
         converterVersion: index === 30 ? null : index === 32 ? 1 : 2,
+        extras: { revisionId: originalId, sha256: originalSha },
       })),
     );
     const first = await repository.findCfiConversionCandidates(ownerUserId, file.bookId, 2, 3);
@@ -248,11 +252,75 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
         pos0: '/converted',
         status: 'exact',
         converterVersion: 2,
+        extras: { revisionId: originalId, sha256: originalSha },
       });
     const second = await repository.findCfiConversionCandidates(ownerUserId, file.bookId, 2, 3);
     expect(second.map((row) => row.annotationId)).toEqual(notes.slice(39, 42).map((note) => note.id));
     await module.close();
   });
+
+  it('invalidates generated annotation positions and failed conversions after publication and rollback', async () => {
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    const converter = { version: 2, xpointerToCfi: vi.fn().mockResolvedValue({ status: 'failed', reason: 'passage_unavailable' }) };
+    const sync = await Test.createTestingModule({ providers: [AnnotationSyncRepository, { provide: DB, useValue: db }] }).compile();
+    const syncRepository = sync.get(AnnotationSyncRepository);
+    const module = await Test.createTestingModule({
+      providers: [
+        AnnotationRepository,
+        AnnotationPositionRepository,
+        AnnotationConversionService,
+        { provide: DB, useValue: db },
+        { provide: PositionConverterService, useValue: converter },
+        {
+          provide: AnnotationSyncService,
+          useValue: {
+            upsertGeneratedPosition: (position: typeof schema.annotationPositions.$inferInsert) => syncRepository.upsertPosition(position),
+          },
+        },
+      ],
+    }).compile();
+    const repository = module.get(AnnotationRepository);
+    const positions = module.get(AnnotationPositionRepository);
+    const conversions = module.get(AnnotationConversionService);
+    const [note] = await db.insert(schema.annotations).values({ userId: ownerUserId, bookId: file.bookId, text: 'Original passage' }).returning();
+    await positions.upsert({
+      annotationId: note.id,
+      userId: ownerUserId,
+      bookFileId: fileId,
+      format: 'xpointer',
+      pos0: '/original',
+      status: 'exact',
+    });
+    expect(await conversions.ensureCfiPositionsForBook(ownerUserId, file.bookId)).toBe(0);
+    expect((await repository.findById(file.bookId, note.id, ownerUserId))?.cfiStatus).toBe('failed');
+    expect(await positions.findCfiConversionCandidates(ownerUserId, file.bookId, 2, 25)).toEqual([]);
+    const prepared = await service.prepare(fileId, libraryId, originalId, input, 'fanficfare');
+    const installed = await service.resume(prepared.publicationId, libraryId);
+    expect(await repository.findById(file.bookId, note.id, ownerUserId)).toMatchObject({ cfi: null, cfiStatus: 'pending' });
+    converter.xpointerToCfi.mockResolvedValue({ status: 'exact', cfi: 'epubcfi(/6/2!/4/2/1:0)' });
+    expect(await conversions.ensureCfiPositionsForBook(ownerUserId, file.bookId)).toBe(1);
+    expect(await repository.findById(file.bookId, note.id, ownerUserId)).toMatchObject({
+      cfi: 'epubcfi(/6/2!/4/2/1:0)',
+      cfiStatus: 'exact',
+      cfiExtras: { revisionId: installed.revisionId },
+      version: note.version,
+    });
+    const retained = await catalog.retained(fileId, libraryId, originalId, installed.revisionId);
+    const rollback = await service.prepare(fileId, libraryId, installed.revisionId, retained.path, 'rollback', undefined, retained.sha256);
+    await service.resume(rollback.publicationId, libraryId);
+    expect(await repository.findById(file.bookId, note.id, ownerUserId)).toMatchObject({ cfi: null, cfiStatus: 'pending', version: note.version });
+    expect(await positions.findCfiConversionCandidates(ownerUserId, file.bookId, 2, 25)).toHaveLength(1);
+    expect(await repository.findHubById(ownerUserId, note.id)).toMatchObject({ cfi: null, cfiStatus: 'pending' });
+    expect(await repository.countHubNeedsReview(ownerUserId, { bookId: file.bookId })).toBe(1);
+    expect(
+      (await repository.findHubPaginated(ownerUserId, { bookId: file.bookId, needsReview: true }, { by: 'createdAt', dir: 'asc' }, 1, 25)).items,
+    ).toHaveLength(1);
+    const manual = await repository.create({ userId: ownerUserId, bookId: file.bookId, bookFileId: fileId, text: 'Manual source', cfi: '/source' });
+    expect(await repository.findById(file.bookId, manual.id, ownerUserId)).toMatchObject({ cfi: '/source', cfiStatus: 'exact' });
+
+    await module.close();
+    await sync.close();
+  }, 60_000);
 
   it('retains annotation source anchors across note edits and rejects another file revision', async () => {
     const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
