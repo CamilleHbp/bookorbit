@@ -159,7 +159,7 @@ describe('Foliate navigation', () => {
       const paginator = new Paginator()
       paginator.sections = [{ load: async () => 'https://reader.test/chapter.xhtml' }]
       // A detached document has no defaultView, so rendering fails after load listeners run.
-      await expect(paginator.goTo({ index: 0 })).rejects.toThrow()
+      await expect(paginator.goTo({ index: 0 })).rejects.toThrow(/getComputedStyle/)
       paginator.destroy()
       doc.body.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
       expect(frames.length).toBeGreaterThan(0)
