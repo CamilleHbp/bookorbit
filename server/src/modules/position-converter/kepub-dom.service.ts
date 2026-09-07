@@ -1,4 +1,4 @@
-import { stat } from 'fs/promises';
+import { fileCacheIdentity } from './file-cache-identity';
 
 import { Injectable, Logger } from '@nestjs/common';
 import * as unzipper from 'unzipper';
@@ -12,7 +12,7 @@ const CHAPTER_CACHE_MAX = 12;
 const SPINE_CACHE_MAX = 24;
 
 interface SpineCacheEntry {
-  mtimeMs: number;
+  identity: string;
   spine: EpubSpine;
 }
 
@@ -68,7 +68,7 @@ export class KepubDomService {
   }
 
   private async loadChapter(kepubPath: string, entry: SpineCacheEntry, chapterIndex: number, href: string): Promise<ChapterDocument | null> {
-    const cacheKey = `${kepubPath}:${entry.mtimeMs}:${chapterIndex}`;
+    const cacheKey = JSON.stringify([kepubPath, entry.identity, chapterIndex]);
     const cached = this.chapterCache.get(cacheKey);
     if (cached) {
       this.chapterCache.delete(cacheKey);
@@ -79,7 +79,7 @@ export class KepubDomService {
     try {
       const zip = await unzipper.Open.file(kepubPath);
       const doc = await loadChapterFromZip(zip, href);
-      if (!doc) return null;
+      if (!doc || (await fileCacheIdentity(kepubPath)) !== entry.identity) return null;
       this.chapterCache.set(cacheKey, doc);
       while (this.chapterCache.size > CHAPTER_CACHE_MAX) {
         const oldest = this.chapterCache.keys().next().value as string;
@@ -93,21 +93,15 @@ export class KepubDomService {
   }
 
   private async getSpineEntry(kepubPath: string): Promise<SpineCacheEntry | null> {
-    let mtimeMs: number;
     try {
-      mtimeMs = (await stat(kepubPath)).mtimeMs;
-    } catch (error) {
-      this.logFail(kepubPath, error);
-      return null;
-    }
-
-    const cached = this.spineCache.get(kepubPath);
-    if (cached && cached.mtimeMs === mtimeMs) return cached;
-
-    try {
+      const identity = await fileCacheIdentity(kepubPath);
+      if (!identity) return null;
+      const cached = this.spineCache.get(kepubPath);
+      if (cached?.identity === identity) return cached;
       const zip = await unzipper.Open.file(kepubPath);
       const spine = await readEpubSpine(zip);
-      const entry: SpineCacheEntry = { mtimeMs, spine };
+      if ((await fileCacheIdentity(kepubPath)) !== identity) return null;
+      const entry: SpineCacheEntry = { identity, spine };
       this.spineCache.set(kepubPath, entry);
       while (this.spineCache.size > SPINE_CACHE_MAX) {
         const oldest = this.spineCache.keys().next().value as string;

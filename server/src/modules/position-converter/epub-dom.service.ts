@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { stat } from 'fs/promises';
+import { fileCacheIdentity } from './file-cache-identity';
 import { eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as unzipper from 'unzipper';
@@ -108,7 +108,7 @@ export async function loadChapterFromZip(zip: unzipper.CentralDirectory, href: s
 
 interface SpineCacheEntry {
   absolutePath: string;
-  mtimeMs: number;
+  identity: string;
   spine: EpubSpine;
 }
 
@@ -136,7 +136,7 @@ export class EpubDomService {
     const href = entry.spine.hrefs[chapterIndex];
     if (href == null) return null;
 
-    const cacheKey = `${bookFileId}:${entry.mtimeMs}:${chapterIndex}`;
+    const cacheKey = JSON.stringify([bookFileId, entry.identity, chapterIndex]);
     const cached = this.chapterCache.get(cacheKey);
     if (cached) {
       this.chapterCache.delete(cacheKey);
@@ -147,7 +147,7 @@ export class EpubDomService {
     try {
       const zip = await unzipper.Open.file(entry.absolutePath);
       const doc = await loadChapterFromZip(zip, href);
-      if (!doc) return null;
+      if (!doc || (await this.currentIdentity(bookFileId))?.identity !== entry.identity) return null;
       this.chapterCache.set(cacheKey, doc);
       while (this.chapterCache.size > CHAPTER_CACHE_MAX) {
         const oldest = this.chapterCache.keys().next().value as string;
@@ -160,29 +160,35 @@ export class EpubDomService {
     }
   }
 
-  private async getSpineEntry(bookFileId: number): Promise<SpineCacheEntry | null> {
+  private async currentIdentity(bookFileId: number): Promise<{ absolutePath: string; identity: string } | null> {
     const [file] = await this.db
-      .select({ absolutePath: bookFiles.absolutePath, format: bookFiles.format })
+      .select({
+        absolutePath: bookFiles.absolutePath,
+        format: bookFiles.format,
+        bookId: bookFiles.bookId,
+        libraryFolderId: bookFiles.libraryFolderId,
+        revisionId: bookFiles.currentRevisionId,
+        sha256: bookFiles.sha256,
+      })
       .from(bookFiles)
       .where(eq(bookFiles.id, bookFileId))
       .limit(1);
     if (!file || file.format !== 'epub') return null;
+    const signature = await fileCacheIdentity(file.absolutePath);
+    if (!signature) return null;
+    return { absolutePath: file.absolutePath, identity: JSON.stringify([file, signature]) };
+  }
 
-    let mtimeMs: number;
+  private async getSpineEntry(bookFileId: number): Promise<SpineCacheEntry | null> {
     try {
-      mtimeMs = (await stat(file.absolutePath)).mtimeMs;
-    } catch (error) {
-      this.logFail(bookFileId, error);
-      return null;
-    }
-
-    const cached = this.spineCache.get(bookFileId);
-    if (cached && cached.absolutePath === file.absolutePath && cached.mtimeMs === mtimeMs) return cached;
-
-    try {
-      const zip = await unzipper.Open.file(file.absolutePath);
+      const current = await this.currentIdentity(bookFileId);
+      if (!current) return null;
+      const cached = this.spineCache.get(bookFileId);
+      if (cached?.identity === current.identity) return cached;
+      const zip = await unzipper.Open.file(current.absolutePath);
       const spine = await readEpubSpine(zip);
-      const entry: SpineCacheEntry = { absolutePath: file.absolutePath, mtimeMs, spine };
+      if ((await this.currentIdentity(bookFileId))?.identity !== current.identity) return null;
+      const entry: SpineCacheEntry = { ...current, spine };
       this.spineCache.set(bookFileId, entry);
       while (this.spineCache.size > SPINE_CACHE_MAX) {
         const oldest = this.spineCache.keys().next().value as number;
