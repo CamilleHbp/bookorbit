@@ -33,6 +33,15 @@ import { KoreaderDeliveryAccessService } from '../src/modules/koreader/koreader-
 import { UserService } from '../src/modules/user/user.service';
 import type { KoreaderDeliveryProgressDto } from '../src/modules/koreader/dto/koreader-delivery.dto';
 
+import { runKoreaderHttpFixture } from './helpers/koreader-runtime';
+import { KoreaderReadingController } from '../src/modules/koreader/koreader-reading.controller';
+import { KoreaderReadingService } from '../src/modules/koreader/koreader-reading.service';
+import { CanonicalReadingService } from '../src/modules/book-revision/canonical-reading.service';
+import { EpubManifestService } from '../src/modules/book-revision/epub-manifest.service';
+import { BookProgressProjectionService } from '../src/modules/book/book-progress-projection.service';
+import { ReadingAttemptService } from '../src/modules/user-book-status/reading-attempt.service';
+import { ReadingAttemptRepository } from '../src/modules/user-book-status/reading-attempt.repository';
+
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
 describe.skipIf(!configPath)('durable KOReader delivery', () => {
   let pool: Pool;
@@ -82,6 +91,12 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
         RevisionCatalogService,
         RevisionCoordinationService,
         RevisionDownloadService,
+        KoreaderReadingService,
+        CanonicalReadingService,
+        EpubManifestService,
+        BookProgressProjectionService,
+        ReadingAttemptService,
+        ReadingAttemptRepository,
         PermissionService,
         { provide: DB, useValue: db },
         { provide: storageConfig.KEY, useValue: { appDataPath: root } },
@@ -428,6 +443,103 @@ describe.skipIf(!configPath)('durable KOReader delivery', () => {
     expect((await deliveries.get(installed.id, users[0])).restorationState).toBe('approximate');
     expect(await db.select().from(schema.canonicalReadingEvents).where(eq(schema.canonicalReadingEvents.userId, users[0].id))).toEqual([]);
   });
+  it.skipIf(process.env.KOREADER_RUNTIME_VALIDATION !== '1').each([
+    ['dir', 'managed'],
+    ['hash', 'managed'],
+    ['dir', 'external'],
+    ['hash', 'external'],
+  ])(
+    'delivers and restores through actual KOReader and authenticated HTTP with %s sidecars and %s replacement',
+    async (sidecarMode, replacement) => {
+      const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, file.id));
+      const old = revisions.find((item) => item.reason === 'baseline')!;
+      for (const [name, id] of [
+        ['original', old.id],
+        ['regenerated', revision.id],
+      ]) {
+        const path = join(import.meta.dirname, '../../client/test/fixtures/revision-continuity', `${name}.epub`);
+        const bytes = await readFile(path);
+        const manifest = await module.get(EpubManifestService).inspect(path);
+        const identity = { sha256: createHash('sha256').update(bytes).digest('hex'), sizeBytes: bytes.length };
+        await db
+          .update(schema.bookFileRevisions)
+          .set({
+            ...identity,
+            chapters: manifest.chapters,
+            manifestVersion: manifest.version,
+            contentHash: manifest.contentHash,
+            metadataHash: manifest.metadataHash,
+            coverHash: manifest.coverHash,
+          })
+          .where(eq(schema.bookFileRevisions.id, id));
+        if (name === 'regenerated') {
+          await writeFile(file.absolutePath!, bytes);
+          await db.update(schema.bookFiles).set(identity).where(eq(schema.bookFiles.id, file.id));
+        }
+      }
+      const key = createHash('md5').update('isolated-native-http-fixture').digest('hex');
+      await db.update(schema.koreaderUsers).set({ passwordMd5: key }).where(eq(schema.koreaderUsers.userId, users[0].id));
+      const httpModule = await Test.createTestingModule({
+        controllers: [KoreaderPluginDeliveryController, KoreaderPluginCopiesController, KoreaderReadingController],
+        providers: [
+          KoreaderDeliveryService,
+          KoreaderDeliveryExecutionService,
+          KoreaderCopyService,
+          KoreaderReadingService,
+          KoreaderRepository,
+          UserService,
+          PermissionService,
+        ].map((provide) => ({ provide, useValue: module.get(provide) })),
+      }).compile();
+      const app = httpModule.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+      app.setGlobalPrefix('api/v1');
+      app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+      try {
+        app
+          .getHttpAdapter()
+          .getInstance()
+          .addHook('onSend', async (req, reply, payload) => {
+            if (reply.statusCode >= 400) console.error('Native fixture HTTP failure', req.method, req.url, String(payload));
+            return payload;
+          });
+        await app.listen(0, '127.0.0.1');
+        const address = app.getHttpServer().address();
+        if (!address || typeof address === 'string') throw new Error('HTTP listener unavailable');
+        const output = await runKoreaderHttpFixture(address.port, {
+          sidecarMode,
+          replacement,
+          username: users[0].username,
+          key,
+          bookId: file.bookId,
+          bookFileId: file.id,
+          oldRevisionId: old.id,
+          revisionId: revision.id,
+          copyId,
+          localCopyId,
+        });
+        const line = output.split('\n').find((value) => value.startsWith('REAL_API_RESULT:'));
+        expect(line, output).toBeDefined();
+        const result = JSON.parse(line!.slice('REAL_API_RESULT:'.length)) as { eventId: string; jobId?: string };
+        const events = await db.select().from(schema.canonicalReadingEvents).where(eq(schema.canonicalReadingEvents.bookFileId, file.id));
+        expect(events).toHaveLength(1);
+        expect(events[0].id).toBe(result.eventId);
+        expect(events[0].anchor.revision).toBe(old.id);
+        expect(await db.select().from(schema.readingSessions).where(eq(schema.readingSessions.bookFileId, file.id))).toEqual([]);
+        const [installed] = await db.select().from(schema.koreaderInstalledCopies).where(eq(schema.koreaderInstalledCopies.id, copyId));
+        expect(installed.revisionId).toBe(revision.id);
+        if (replacement === 'managed') {
+          expect(result.jobId).toBeDefined();
+          expect(await deliveries.get(result.jobId!, users[0])).toMatchObject({ installationState: 'installed', restorationState: 'verified' });
+        } else {
+          expect(result.jobId).toBeUndefined();
+          expect(await db.select().from(schema.koreaderDeliveryJobs).where(eq(schema.koreaderDeliveryJobs.installedCopyId, copyId))).toEqual([]);
+        }
+      } finally {
+        await app.close();
+      }
+    },
+    240_000,
+  );
   it('authenticates and validates the complete delivery HTTP lifecycle against durable state', async () => {
     const key = createHash('md5').update('isolated-delivery-http-fixture').digest('hex');
     await db.update(schema.koreaderUsers).set({ passwordMd5: key }).where(eq(schema.koreaderUsers.userId, users[0].id));
