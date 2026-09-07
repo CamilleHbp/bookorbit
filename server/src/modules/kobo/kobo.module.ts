@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { storageConfig } from '../../config/config';
+import { RevisionFileModule } from '../book-revision/revision-file.module';
 
 import { CommonModule } from '../../common/common.module';
 import { AchievementModule } from '../achievement/achievement.module';
@@ -38,6 +41,8 @@ import { KoboAnalyticsService } from './services/kobo-analytics.service';
 
 @Module({
   imports: [
+    RevisionFileModule,
+    ConfigModule.forFeature(storageConfig),
     CommonModule,
     AchievementModule,
     AnnotationModule,
