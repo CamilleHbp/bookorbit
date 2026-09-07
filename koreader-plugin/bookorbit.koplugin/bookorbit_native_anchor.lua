@@ -181,7 +181,7 @@ local function locate(ui, record, available)
     local anchor = record.anchor
     local quote = anchor.quote or ""
     local choices = candidates(ui, record, available)
-    if #quote < 16 or #choices >= 8 then return nil, choices[1] end
+    if Text.scalarLength(quote) < 16 or #choices >= 8 then return nil, choices[1] end
     local found
     for _, choice in ipairs(choices) do
         local xp = ui.document:getPageXPointer(choice.page)
@@ -201,6 +201,7 @@ local function locate(ui, record, available)
                 end
                 offset, count = last + 1, count + 1
             end
+            if count >= 32 then return nil, choices[1] end
         end
     end
     if not available() then return nil, choices[1] end
