@@ -78,13 +78,15 @@ local function pointerAt(result, normalized_byte)
     end
 end
 
-local function toc(ui)
+local function toc(ui, available)
     local items = ui.toc and ui.toc.toc or ui.document:getToc() or {}
     local result = {}
-    for index = 1, math.min(#items, MAX_TOC) do
+    if #items > MAX_TOC then return nil end
+    for index = 1, #items do
+        if not available() then return nil end
         local item = items[index]
         if type(item.page) == "number" and item.page >= 1 then
-            result[#result + 1] = { page = item.page, title = Text.bound(normalized(item.title), 512), xp = item.xpointer }
+            result[#result + 1] = { page = item.page, title = Text.bound(normalized(item.title, 2048), 512), xp = item.xpointer }
         end
     end
     return result
@@ -121,7 +123,7 @@ function Native.capture(ui, revision, event, options)
     if not xp or not document:isXPointerInDocument(xp) then return nil end
     local page, total = document:getPageFromXPointer(xp), document:getPageCount()
     if not page or not total or total < 1 then return nil end
-    local items = toc(ui)
+    local items = toc(ui, available) or {}
     local index, chapter, span = sectionAt(items, page, total, document, xp)
     local following = window(document, xp, 0, 384, available)
     local prefix = window(document, xp, 128, 0, available)
@@ -145,8 +147,11 @@ function Native.capture(ui, revision, event, options)
 end
 
 local function candidates(ui, record, available)
-    local items, found, weak = toc(ui), {}, {}
+    local items, found, weak = toc(ui, available), {}, {}
     local total = ui.document:getPageCount()
+    if not items then
+        return { { page = math.max(1, math.min(total, 1 + math.floor(clamp(record.anchor.bookFraction) * total))) } }, false
+    end
     local chapter = record.chapter or { title = record.anchor.chapterTitle }
     for index, item in ipairs(items) do
         if item.title == chapter.title and #found < 8 then
@@ -178,13 +183,14 @@ local function candidates(ui, record, available)
     if #found == 0 then
         found[1] = { page = math.max(1, math.min(total, 1 + math.floor(clamp(record.anchor.bookFraction) * total))) }
     end
-    return found
+    return found, true
 end
 
 local function locate(ui, record, available)
     local anchor = record.anchor
     local quote = anchor.quote or ""
-    local choices = candidates(ui, record, available)
+    local choices, complete = candidates(ui, record, available)
+    if not complete then return nil, choices[1] end
     if Text.scalarLength(quote) < 16 or #choices >= 8 then return nil, choices[1] end
     local found
     for _, choice in ipairs(choices) do

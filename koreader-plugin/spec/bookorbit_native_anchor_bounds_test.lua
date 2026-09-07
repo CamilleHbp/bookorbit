@@ -45,4 +45,18 @@ assert(captured.anchor.chapterTitle == "Old ending", "a later chapter on the sam
 function document:getXPointer() return "50" end
 captured = assert(Native.capture({ document = document }, "appended", nil, { clock = function() return 0 end }))
 assert(captured.anchor.chapterTitle == "New chapter", "native positions after the chapter boundary must use the new chapter")
+local ticks = 0
+local partial = assert(Native.capture({ document = document }, "appended", nil, {
+    clock = function() ticks = ticks + 1; return ticks / 10 end,
+}))
+assert(partial.anchor.chapterTitle == "", "an incomplete chapter index must not supply false chapter evidence")
+assert(partial.anchor.nativeLocator.value == "50", "budget exhaustion must retain the verified native identity")
+function document:getToc()
+    local entries = {}
+    for index = 1, 10001 do entries[index] = { title = "Chapter", page = 1, xpointer = "1" } end
+    return entries
+end
+assert(not Native.resolveAnnotation({ document = document }, {
+    anchor = { revision = "old", chapterTitle = "Chapter", chapterFraction = 0, bookFraction = 0.5, quote = quote },
+}, { clock = function() return 0 end }), "a truncated chapter index must not establish an exact passage match")
 print("Native anchor search bounds passed")
