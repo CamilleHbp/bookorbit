@@ -90,10 +90,14 @@ local function toc(ui)
     return result
 end
 
-local function sectionAt(items, page, total)
+local function sectionAt(items, page, total, document, xp)
     local index = 1
     for i, item in ipairs(items) do
         if item.page > page then break end
+        if item.page == page and item.xp and document.compareXPointers then
+            local ok, order = pcall(document.compareXPointers, document, item.xp, xp)
+            if ok and order == -1 then break end
+        end
         index = i
     end
     local item = items[index] or { page = 1, title = "" }
@@ -118,7 +122,7 @@ function Native.capture(ui, revision, event, options)
     local page, total = document:getPageFromXPointer(xp), document:getPageCount()
     if not page or not total or total < 1 then return nil end
     local items = toc(ui)
-    local index, chapter, span = sectionAt(items, page, total)
+    local index, chapter, span = sectionAt(items, page, total, document, xp)
     local following = window(document, xp, 0, 384, available)
     local prefix = window(document, xp, 128, 0, available)
     local quote = Text.bound(following and following.text or "", 256)

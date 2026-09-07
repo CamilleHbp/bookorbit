@@ -56,4 +56,41 @@ for _, name in ipairs({ "appended", "regenerated", "edited", "empty-chapter" }) 
     assert(original.anchor.event.id == "original-event", "restoration must preserve event identity")
     raw:close()
 end
+
+local ending_ui, ending_raw = open("original")
+ending_raw:gotoPage(ending_raw:getPages())
+local old_ending = assert(Native.capture(ending_ui, "original", { id = "old-ending-event" }))
+ending_raw:close()
+local appended_ui, appended_raw = open("appended")
+local ending_restored = assert(Native.restore(appended_ui, old_ending, "appended"))
+local ending_position = assert(Native.capture(appended_ui, "appended"))
+assert(ending_restored.quality == "relocated", "the old ending must retain its passage after an append")
+assert(ending_position.anchor.chapterTitle == "Chapter 10", "new chapters must remain unread at the old ending")
+assert(ending_position.anchor.bookFraction < old_ending.anchor.bookFraction)
+
+local legacy = { anchor = { revision = "legacy", chapterFraction = 0, bookFraction = 0.4 } }
+assert(Native.restore(appended_ui, legacy, "appended").quality == "approximate", "percentage-only progress must restore automatically")
+local strengthened = assert(Native.capture(appended_ui, "appended", { id = "deliberate-reading-event" }))
+assert(#strengthened.anchor.quote > 100 and strengthened.anchor.nativeLocator.value,
+    "subsequent reading must capture a native position and passage")
+
+appended_raw:gotoPage(appended_raw:getPages() - 2)
+local newer = assert(Native.capture(appended_ui, "appended", { id = "newer-chapter-event" }))
+assert(newer.anchor.chapterTitle == "Chapter 15")
+appended_raw:close()
+local newer_quote, newer_locator = newer.anchor.quote, newer.anchor.nativeLocator.value
+for _, version in ipairs({ "original", "regenerated", "original" }) do
+    local target_ui, target_raw = open(version)
+    local mapped = assert(Native.restore(target_ui, newer, version == "original" and "rollback-revision" or version))
+    assert(target_raw:isXPointerInDocument(mapped.nativeLocator.value))
+    if version == "original" then
+        assert(mapped.quality == "approximate", "an older or rolled-back copy cannot claim the missing newer passage")
+    else
+        assert(mapped.quality == "relocated", "skipping intermediate revisions must retain the newer passage")
+    end
+    assert(newer.anchor.event.id == "newer-chapter-event" and newer.anchor.chapterTitle == "Chapter 15"
+        and newer.anchor.quote == newer_quote and newer.anchor.nativeLocator.value == newer_locator,
+        "older projections and repeated updates must not overwrite the newer canonical anchor")
+    target_raw:close()
+end
 print("KOReader rendering-engine continuity acceptance passed")
