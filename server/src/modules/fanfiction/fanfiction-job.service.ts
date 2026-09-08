@@ -309,6 +309,8 @@ export class FanfictionJobService {
         .for('update');
       if (!job) throw new NotFoundException('Fanfiction job not found in this library');
       if (['queued', 'running', 'succeeded', 'no_change'].includes(job.state)) return this.view(job);
+      if (job.errorCode === 'profile_deleted')
+        throw new ConflictException('This profile was deleted. Start again with another profile or Public access.');
       if (job.sourceId) {
         const [source] = await tx
           .select()

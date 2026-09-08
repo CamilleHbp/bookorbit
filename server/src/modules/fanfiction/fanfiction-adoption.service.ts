@@ -62,6 +62,7 @@ export class FanfictionAdoptionService {
         tokenVersion: user.tokenVersion,
         idempotencyKey: dto.idempotencyKey,
         kind: 'adopt',
+        profileId: dto.profileId ?? null,
         url: '',
         site: `local-library-${libraryId}`,
         selection,

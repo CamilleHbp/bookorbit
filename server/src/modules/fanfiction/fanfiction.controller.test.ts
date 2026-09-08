@@ -26,7 +26,7 @@ import { FanfictionSourceBatchService } from './fanfiction-source-batch.service'
 describe('Fanfiction HTTP contracts', () => {
   let app: NestFastifyApplication;
   const replacements = { upload: vi.fn() };
-  const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn() };
+  const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn(), remove: vi.fn() };
   const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn(), retry: vi.fn(), approveReplacement: vi.fn() };
   const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), check: vi.fn(), rollback: vi.fn() };
   const discovery = { start: vi.fn(), list: vi.fn() };
@@ -69,6 +69,16 @@ describe('Fanfiction HTTP contracts', () => {
   });
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+  it('deletes a profile with an empty response and rejects invalid identifiers', async () => {
+    profiles.remove.mockResolvedValue(undefined);
+    const deleted = await app.inject({ method: 'DELETE', url: `${base}/profiles/${uuid}` });
+    expect(deleted.statusCode).toBe(204);
+    expect(deleted.body).toBe('');
+    expect(profiles.remove).toHaveBeenCalledWith(5, uuid, undefined);
+    expect((await app.inject({ method: 'DELETE', url: `${base}/profiles/invalid` })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'DELETE', url: `/api/v1/libraries/invalid/fanfiction/profiles/${uuid}` })).statusCode).toBe(400);
+    expect(profiles.remove).toHaveBeenCalledTimes(1);
   });
   it('requires library administration at both permission and library role boundaries', () => {
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionReplacementController)).toBe(Permission.ManageLibraries);

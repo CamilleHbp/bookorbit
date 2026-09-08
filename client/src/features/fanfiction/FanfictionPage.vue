@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive } from 'vue'
+import { computed, onMounted, reactive, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Permission, type FanfictionJob } from '@bookorbit/types'
@@ -8,6 +8,7 @@ import { usePermissions } from '@/features/auth/composables/usePermissions'
 import StoryBulkActions from './components/StoryBulkActions.vue'
 import { useFanfictionSourceBatch } from './composables/useFanfictionSourceBatch'
 import ExistingStories from './components/ExistingStories.vue'
+import SourceProfiles from './components/SourceProfiles.vue'
 import SourceProfileEditor from './components/SourceProfileEditor.vue'
 import { useInlineSourceSettings } from './composables/useInlineSourceSettings'
 import { sourcePresets } from './lib/source-presets'
@@ -68,6 +69,20 @@ const { sourceSettings, detectedSite, selectedProfile, addSource, chooseSource, 
   profileId,
   urls,
 )
+function showProfiles() {
+  tab.value = 'profiles'
+}
+function handleRefresh() {
+  if (tab.value === 'profiles') void sourceSettings.reload()
+  else void refresh()
+}
+watch([tab, libraryId], ([activeTab, id]) => {
+  if (activeTab === 'profiles' && id !== null) void sourceSettings.reload()
+})
+function handleProfileDeleted(id: string) {
+  profiles.value = profiles.value.filter((profile) => profile.id !== id)
+  if (profileId.value === id) profileId.value = ''
+}
 const bulk = reactive(useFanfictionSourceBatch(libraryId, sources, search, state, refresh))
 function reviewBatch(job: FanfictionJob) {
   showStories()
@@ -88,7 +103,9 @@ onMounted(() => {
         <h1 class="text-2xl font-semibold">{{ t('fanfiction.title') }}</h1>
         <p class="text-muted-foreground text-sm">{{ t('fanfiction.description') }}</p>
       </div>
-      <RouterLink :to="{ name: 'settings-fanfiction' }" class="text-primary text-sm underline">{{ t('fanfiction.settingsTitle') }}</RouterLink>
+      <Button variant="outline" as-child
+        ><RouterLink :to="{ name: 'settings-fanfiction' }">{{ t('fanfiction.settingsTitle') }}</RouterLink></Button
+      >
     </header>
     <div class="flex flex-wrap items-end gap-3">
       <label class="min-w-48 space-y-1 text-sm"
@@ -98,7 +115,9 @@ onMounted(() => {
         </select>
       </label>
       <Button v-if="libraryCursor !== null" variant="outline" :disabled="busy" @click="loadLibraries">{{ t('fanfiction.moreLibraries') }}</Button>
-      <Button variant="outline" :disabled="busy || libraryId === null" @click="refresh">{{ t('fanfiction.refresh') }}</Button>
+      <Button variant="outline" :disabled="busy || sourceSettings.busy || libraryId === null" @click="handleRefresh">{{
+        t('fanfiction.refresh')
+      }}</Button>
     </div>
     <p v-if="!libraries.length && !busy" class="text-muted-foreground">{{ t('fanfiction.noLibraries') }}</p>
     <p v-if="error" role="alert" class="border-destructive text-destructive rounded-md border p-3 text-sm">{{ error }}</p>
@@ -108,7 +127,12 @@ onMounted(() => {
         <Button :variant="tab === 'add' ? 'default' : 'outline'" @click="showAdd">{{ t('fanfiction.addStories') }}</Button>
         <Button :variant="tab === 'discovery' ? 'default' : 'outline'" @click="showDiscovery">{{ t('fanfiction.discovery.title') }}</Button>
         <Button :variant="tab === 'activity' ? 'default' : 'outline'" @click="showActivity">{{ t('fanfiction.activity') }}</Button>
+        <Button :variant="tab === 'profiles' ? 'default' : 'outline'" @click="showProfiles">{{ t('fanfiction.profiles') }}</Button>
       </nav>
+      <div v-if="tab === 'profiles'" class="space-y-4">
+        <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
+        <SourceProfiles :settings="sourceSettings" @saved="useSavedProfile" @deleted="handleProfileDeleted" />
+      </div>
       <section v-if="tab === 'stories'" class="space-y-4">
         <form class="flex flex-wrap gap-3" @submit.prevent="refresh">
           <input

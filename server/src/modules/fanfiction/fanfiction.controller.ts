@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Permission } from '@bookorbit/types';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -104,5 +104,11 @@ export class FanfictionController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.profiles.update(libraryId, id, dto, user);
+  }
+
+  @Delete('profiles/:profileId')
+  @HttpCode(204)
+  remove(@Param('libraryId', ParseIntPipe) libraryId: number, @Param('profileId', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+    return this.profiles.remove(libraryId, id, user);
   }
 }

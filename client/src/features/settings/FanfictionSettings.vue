@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useFanfictionSettings } from '@/features/fanfiction/composables/useFanfictionSettings'
 
-import SourceProfileEditor from '@/features/fanfiction/components/SourceProfileEditor.vue'
+import SourceProfiles from '@/features/fanfiction/components/SourceProfiles.vue'
 
 const settings = reactive(useFanfictionSettings())
 const { t } = useI18n()
@@ -16,7 +16,6 @@ const {
   libraryCursor,
   libraryId,
   profiles,
-  profileCursor,
   health,
   jobs,
   jobCursor,
@@ -26,10 +25,7 @@ const {
   previewProfileId,
   loadLibraries,
   reload,
-  moreProfiles,
   moreJobs,
-  newProfile,
-  editProfile,
   preview,
   cancelJob,
 } = toRefs(settings)
@@ -63,21 +59,7 @@ onMounted(() => {
         </div>
         <Button variant="outline" :disabled="busy" @click="reload">{{ t('fanfiction.refresh') }}</Button>
       </section>
-      <section class="space-y-3">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-lg font-medium">{{ t('fanfiction.profiles') }}</h2>
-          <Button :disabled="busy || !health?.ready" @click="newProfile">{{ t('fanfiction.addProfile') }}</Button>
-        </div>
-        <p class="text-sm text-muted-foreground">{{ t('fanfiction.profileHelp') }}</p>
-        <ul class="max-h-80 overflow-y-auto divide-y divide-border rounded-lg border border-border">
-          <li v-for="profile in profiles" :key="profile.id" class="flex items-center justify-between gap-3 p-3">
-            <span class="truncate text-sm">{{ profile.name }}</span>
-            <Button variant="outline" :disabled="busy || !health?.ready" @click="editProfile(profile)">{{ t('fanfiction.edit') }}</Button>
-          </li>
-        </ul>
-        <Button v-if="profileCursor" variant="outline" :disabled="busy" @click="moreProfiles">{{ t('fanfiction.more') }}</Button>
-      </section>
-      <SourceProfileEditor :settings="settings" />
+      <SourceProfiles :settings="settings" />
       <form class="space-y-3 rounded-lg border border-border p-4" @submit.prevent="preview">
         <h2 class="text-lg font-medium">{{ t('fanfiction.testSource') }}</h2>
         <label class="block space-y-1 text-sm"

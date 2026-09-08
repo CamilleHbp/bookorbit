@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, gt } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, ne, notInArray, or, sql } from 'drizzle-orm';
+import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
 import type { FanfictionProfileDocument, FanfictionProfileSummary, FanfictionProfileView } from '@bookorbit/types';
@@ -89,6 +90,68 @@ export class FanfictionProfileService {
       .returning(summaryFields);
     if (!row) throw new ConflictException('Profile changed; reload before saving');
     return this.summary(row);
+  }
+
+  async remove(libraryId: number, id: string, user: RequestUser): Promise<void> {
+    const started = Date.now();
+    const fields = `libraryId=${libraryId} profileId=${id} userId=${user.id}`;
+    this.logger.log(`[fanfiction-profile-delete] [start] ${fields} - Deleting profile`);
+    try {
+      await this.access.administer(user, libraryId);
+      await this.db.transaction(async (tx) => {
+        const [profile] = await tx
+          .select({ id: profiles.id })
+          .from(profiles)
+          .where(and(eq(profiles.libraryId, libraryId), eq(profiles.id, id)))
+          .for('update');
+        if (!profile) throw new NotFoundException('Fanfiction profile not found in this library');
+        const sources = schema.fanfictionSources;
+        const jobs = schema.fanfictionJobs;
+        // Older adoption jobs only stored the profile in their selection.
+        const jobProfile = or(eq(jobs.profileId, id), and(eq(jobs.kind, 'adopt'), sql`${jobs.selection}->>'profileId' = ${id}`));
+        const [source] = await tx
+          .select({ id: sources.id })
+          .from(sources)
+          .where(and(eq(sources.libraryId, libraryId), eq(sources.profileId, id), ne(sources.state, 'unlinked')))
+          .limit(1);
+        if (source)
+          throw new ConflictException(
+            'This profile is assigned to stories. Choose another profile or Public access in each story’s Updates settings before deleting it.',
+          );
+        await tx
+          .update(sources)
+          .set({ profileId: null })
+          .where(and(eq(sources.libraryId, libraryId), eq(sources.profileId, id), eq(sources.state, 'unlinked')));
+        await tx
+          .update(jobs)
+          .set({
+            profileId: null,
+            errorCode: sql`case when ${jobs.state} in ('failed', 'cancelled') then 'profile_deleted' else ${jobs.errorCode} end`,
+          })
+          .where(and(eq(jobs.libraryId, libraryId), jobProfile, inArray(jobs.state, ['succeeded', 'no_change', 'failed', 'cancelled'])));
+        const [pending] = await tx
+          .select({ id: jobs.id })
+          .from(jobs)
+          .where(and(eq(jobs.libraryId, libraryId), jobProfile, notInArray(jobs.state, ['succeeded', 'no_change', 'failed', 'cancelled'])))
+          .limit(1);
+        if (pending)
+          throw new ConflictException(
+            'This profile is needed by an unfinished operation. Finish or cancel it in Activity before deleting the profile.',
+          );
+        await tx.delete(profiles).where(and(eq(profiles.libraryId, libraryId), eq(profiles.id, id)));
+      });
+      this.logger.log(`[fanfiction-profile-delete] [end] ${fields} durationMs=${Date.now() - started} deleted=1 - Profile deleted`);
+    } catch (error) {
+      this.logger.warn(
+        `[fanfiction-profile-delete] [fail] ${fields} durationMs=${Date.now() - started} errorClass=${error instanceof Error ? error.name : 'Unknown'} error="${sanitizeLogValue(error instanceof Error ? error.message : error)}" - Profile deletion failed`,
+      );
+      const cause = error as { code?: string; cause?: { code?: string } };
+      if (cause?.code === '23503' || cause?.cause?.code === '23503')
+        throw new ConflictException(
+          'This profile is still in use. Refresh and try again after changing the story profile or finishing its activity.',
+        );
+      throw error;
+    }
   }
 
   async document(libraryId: number, id: string, user: RequestUser) {

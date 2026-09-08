@@ -145,7 +145,9 @@ onMounted(() => {
         </label>
         <div class="flex flex-wrap items-center gap-3">
           <Button type="submit" :disabled="updating">{{ t('common.save') }}</Button>
-          <RouterLink :to="{ name: 'settings-fanfiction' }" class="text-primary text-sm underline">{{ t('fanfiction.settingsTitle') }}</RouterLink>
+          <Button variant="outline" as-child
+            ><RouterLink :to="{ name: 'settings-fanfiction' }">{{ t('fanfiction.settingsTitle') }}</RouterLink></Button
+          >
         </div>
       </form>
       <form v-if="canReplace" class="border-border space-y-3 rounded-xl border p-4" @submit.prevent="uploadReplacement">

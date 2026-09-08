@@ -25,6 +25,7 @@ export function useFanfictionSettings() {
   const error = ref('')
   const editing = ref<FanfictionProfileView | null>(null)
   const showEditor = ref(false)
+  const deleting = ref<FanfictionProfileSummary | null>(null)
   const name = ref('')
   const configuration = ref('')
   const section = ref('defaults')
@@ -135,6 +136,7 @@ export function useFanfictionSettings() {
     busy.value = false
     clearEditor()
     showEditor.value = false
+    deleting.value = null
     error.value = ''
   }
   async function reload() {
@@ -142,6 +144,7 @@ export function useFanfictionSettings() {
     const current = ++generation
     clearEditor()
     showEditor.value = false
+    deleting.value = null
     profiles.value = []
     jobs.value = []
     health.value = null
@@ -322,6 +325,30 @@ export function useFanfictionSettings() {
     })
     return saved
   }
+  function requestDelete(profile: FanfictionProfileSummary) {
+    if (busy.value) return
+    error.value = ''
+    deleting.value = profile
+  }
+  function cancelDelete() {
+    if (!busy.value) deleting.value = null
+  }
+  async function deleteProfile() {
+    if (busy.value || !deleting.value) return
+    const current = generation
+    const id = deleting.value.id
+    let deleted: string | undefined
+    await perform(async () => {
+      await request<void>(`${base.value}/profiles/${id}`, { method: 'DELETE' })
+      if (current !== generation || disposed) return
+      profiles.value = profiles.value.filter((profile) => profile.id !== id)
+      if (editing.value?.id === id) closeEditor()
+      if (previewProfileId.value === id) previewProfileId.value = ''
+      deleting.value = null
+      deleted = id
+    })
+    return deleted
+  }
   async function preview() {
     const current = generation
     const signature = JSON.stringify([libraryId.value, previewUrl.value, previewProfileId.value])
@@ -363,6 +390,10 @@ export function useFanfictionSettings() {
     error,
     editing,
     showEditor,
+    deleting,
+    requestDelete,
+    cancelDelete,
+    deleteProfile,
     name,
     configuration,
     section,

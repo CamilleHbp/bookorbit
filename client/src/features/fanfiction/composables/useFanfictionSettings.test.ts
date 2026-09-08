@@ -21,6 +21,61 @@ describe('Fanfiction settings API contract', () => {
   function settings() {
     return scope.run(() => useFanfictionSettings())!
   }
+  it('requires confirmation and clears the deleted profile and editor after an empty response', async () => {
+    const state = settings()
+    state.libraryId.value = 5
+    const profile = { id: 'profile', libraryId: 5, name: 'AO3', version: 1, updatedAt: '' }
+    state.profiles.value = [profile]
+    state.previewProfileId.value = profile.id
+    state.editing.value = { ...profile, configuration: '', cookies: [], cookieCount: 0 }
+    state.showEditor.value = true
+    state.password.value = 'unsaved-secret'
+    await state.deleteProfile()
+    expect(mockApi).not.toHaveBeenCalled()
+    state.requestDelete(profile)
+    expect(mockApi).not.toHaveBeenCalled()
+    mockApi.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    expect(await state.deleteProfile()).toBe(profile.id)
+    expect(mockApi).toHaveBeenCalledWith('/api/v1/libraries/5/fanfiction/profiles/profile', { method: 'DELETE' })
+    expect(state.profiles.value).toEqual([])
+    expect(state.deleting.value).toBeNull()
+    expect(state.previewProfileId.value).toBe('')
+    expect(state.showEditor.value).toBe(false)
+    expect(state.password.value).toBe('')
+  })
+  it('keeps the profile and confirmation open when deletion is blocked', async () => {
+    const state = settings()
+    state.libraryId.value = 5
+    const profile = { id: 'profile', libraryId: 5, name: 'AO3', version: 1, updatedAt: '' }
+    state.profiles.value = [profile]
+    state.requestDelete(profile)
+    mockApi.mockResolvedValueOnce(response({ message: 'This profile is assigned to stories.' }, false))
+    expect(await state.deleteProfile()).toBeUndefined()
+    expect(state.profiles.value).toEqual([profile])
+    expect(state.deleting.value).toEqual(profile)
+    expect(state.error.value).toBe('This profile is assigned to stories.')
+    state.cancelDelete()
+    expect(state.deleting.value).toBeNull()
+  })
+  it('ignores a deletion response after switching libraries', async () => {
+    const state = settings()
+    state.libraryId.value = 5
+    const profile = { id: 'profile', libraryId: 5, name: 'AO3', version: 1, updatedAt: '' }
+    state.requestDelete(profile)
+    let resolve!: (value: Response) => void
+    mockApi.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done
+      }),
+    )
+    const pending = state.deleteProfile()
+    state.setLibrary(6)
+    state.profiles.value = [{ ...profile, libraryId: 6 }]
+    resolve(new Response(null, { status: 204 }))
+    expect(await pending).toBeUndefined()
+    expect(state.profiles.value).toHaveLength(1)
+    expect(state.deleting.value).toBeNull()
+  })
   it('loads only administrable libraries and bounded profile/activity pages', async () => {
     mockApi.mockImplementation(async (path) => {
       if (String(path).startsWith('/api/v1/fanfiction/libraries')) return response({ items: [{ id: 5, name: 'Stories' }], nextCursor: null })
