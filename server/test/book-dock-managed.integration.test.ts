@@ -292,7 +292,17 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
   it('connects the durable source job to Book Dock and an initial revision, including a lost completion response', async () => {
     await sources.create(libraryId, { url: 'https://example.org/story/2001', folderId, idempotencyKey: randomUUID() }, requestUser);
     const first = (await jobs.claim())!;
-    const result = await imports.run(first, requestUser, { configuration: '', cookies: [] }, authorize, new AbortController().signal);
+    const result = await imports.run(
+      first,
+      requestUser,
+      { configuration: '', cookies: [] },
+      authorize,
+      new AbortController().signal,
+      undefined,
+      (progress) => jobs.reportProgress(first, progress),
+    );
+    const [tracked] = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, first.id));
+    expect(tracked.result?.progress?.stage).toBe('finalizing');
     expect(result?.bookId).toBeGreaterThan(0);
     const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, result!.bookFileId!));
     expect(revisions).toHaveLength(1);
@@ -303,6 +313,9 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
       .set({ leaseExpiresAt: sql`now() - interval '1 second'` })
       .where(eq(schema.fanfictionJobs.id, first.id));
     const retry = (await jobs.claim())!;
+    await jobs.reportProgress(first, { stage: 'metadata' });
+    const [fenced] = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, first.id));
+    expect(fenced.result?.progress?.stage).toBe('finalizing');
     expect(await imports.run(retry, requestUser, { configuration: '', cookies: [] }, authorize, new AbortController().signal)).toEqual(result);
     expect(runtime.preview).toHaveBeenCalledTimes(1);
     expect(runtime.download).toHaveBeenCalledTimes(1);

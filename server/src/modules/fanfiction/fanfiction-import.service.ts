@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { FanfictionProfileDocument, FanfictionJob } from '@bookorbit/types';
+import type { FanfictionProfileDocument, FanfictionJob, FanfictionImportProgress } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import type * as schema from '../../db/schema';
 import { BookDockManagedService, type AuthorizeManagedImport } from '../book-dock/book-dock-managed.service';
@@ -31,7 +31,9 @@ export class FanfictionImportService {
     authorize: () => Promise<unknown>,
     signal: AbortSignal,
     saveCookies?: FanfictionCookieSink,
+    reportProgress: (progress: FanfictionImportProgress) => Promise<void> = async () => {},
   ): Promise<FanfictionJob['result']> {
+    await reportProgress({ stage: 'metadata' });
     const resumed = await this.sources.resume(job, user);
     const { source, owned } = resumed ?? (await this.sources.reserve(job, await this.runtime.preview(job.url, document, signal, saveCookies), user));
     if (!owned)
@@ -51,7 +53,9 @@ export class FanfictionImportService {
       await this.sources.assertImportable(job, source.id, tx);
     };
     const install = async (path: string) => {
+      await reportProgress({ stage: 'importing', completedChapters: source.chapterCount, totalChapters: source.chapterCount });
       const installed = await this.dock.ingest({ ...input, sourcePath: path }, authorizeImport);
+      await reportProgress({ stage: 'finalizing', completedChapters: source.chapterCount, totalChapters: source.chapterCount });
       await authorize();
       await this.catalog.requireFile(installed.bookFileId, source.libraryId);
       await this.revisions.observeFile(installed.bookFileId, {});
@@ -76,6 +80,7 @@ export class FanfictionImportService {
       },
       signal,
       effective.saveCookies,
+      reportProgress,
     );
   }
 }

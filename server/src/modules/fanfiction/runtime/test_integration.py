@@ -133,7 +133,13 @@ class ConfigurationTest(unittest.TestCase):
                 os.chdir(directory)
                 Path('personal.ini').write_text('[defaults]\npre_process_cmd: invalid\noutput_filename: outside.epub\n')
                 request = {'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\n'}
-                result = run(request)
+                progress = []
+                result = run(request, report_progress=progress.append)
+                self.assertEqual(progress[0], {'stage': 'metadata'})
+                chapters = [item for item in progress if item['stage'] == 'downloading']
+                self.assertEqual(chapters[0]['completedChapters'], 0)
+                self.assertEqual(chapters[-1]['completedChapters'], result['preview']['chapterCount'])
+                self.assertEqual([item['stage'] for item in progress[-2:]], ['packaging', 'validating'])
                 self.assertEqual(result['output'], 'output.epub')
                 self.assertGreater(validate_epub('output.epub'), 2)
                 Path('output.epub').rename('input.epub')

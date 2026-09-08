@@ -72,6 +72,12 @@ export type FanfictionJobKind = "preview" | "discovery" | "adopt" | "import" | "
 export type FanfictionJobState =
   "queued" | "running" | "succeeded" | "no_change" | "review_required" | "configuration_blocked" | "failed" | "cancelled";
 
+export interface FanfictionImportProgress {
+  stage: "metadata" | "downloading" | "packaging" | "validating" | "importing" | "finalizing";
+  completedChapters?: number;
+  totalChapters?: number;
+}
+
 export interface FanfictionJob {
   id: string;
   libraryId: number;
@@ -81,6 +87,7 @@ export interface FanfictionJob {
   attempts: number;
   cancellationRequested: boolean;
   result: {
+    progress?: FanfictionImportProgress;
     preview?: FanfictionPreview;
     replacement?: FanfictionReplacementReview;
     urls?: string[];

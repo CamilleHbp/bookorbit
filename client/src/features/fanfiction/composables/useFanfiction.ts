@@ -306,9 +306,12 @@ export function useFanfiction() {
   function schedulePoll(current: number) {
     clearTimeout(timer)
     if (!currentScope(current)) return
-    timer = setTimeout(() => {
-      void poll(current)
-    }, 5000)
+    timer = setTimeout(
+      () => {
+        void poll(current)
+      },
+      candidates.value.some((candidate) => candidate.job && ['queued', 'running'].includes(candidate.job.state)) ? 2000 : 5000,
+    )
   }
   async function poll(current: number) {
     if (!currentScope(current)) return
