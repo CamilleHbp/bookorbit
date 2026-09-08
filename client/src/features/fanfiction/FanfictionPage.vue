@@ -205,8 +205,7 @@ onMounted(() => {
         </div>
         <details class="rounded-lg border border-border p-3">
           <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.suggestedSources') }}</summary>
-          <p class="my-3 text-sm text-muted-foreground">{{ t('fanfiction.suggestedSourcesHelp') }}</p>
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <article v-for="site in sourcePresets" :key="site.id" class="space-y-2 rounded-md border border-border bg-card p-3">
               <h3 class="font-medium">{{ site.name }}</h3>
               <p class="text-sm text-muted-foreground">{{ t(`fanfiction.presets.${site.id}`) }}</p>
@@ -320,7 +319,6 @@ onMounted(() => {
         </article>
         <Button v-if="activityCursor" variant="outline" :disabled="busy" @click="moreActivity">{{ t('fanfiction.nextPage') }}</Button>
         <h2 class="text-lg font-medium">{{ t('fanfiction.operations') }}</h2>
-        <p class="text-muted-foreground text-sm">{{ t('fanfiction.serverActivityHelp') }}</p>
         <p v-if="!jobs.length" class="text-muted-foreground text-sm">{{ t('fanfiction.noActivity') }}</p>
         <article
           v-for="job in jobs"

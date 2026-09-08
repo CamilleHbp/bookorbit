@@ -80,14 +80,10 @@ async function save() {
       <Button v-if="!preset || preset.login" type="button" variant="outline" @click="clearPassword">{{ t('fanfiction.clearPassword') }}</Button>
       <label class="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
         <input v-model="isAdult" type="checkbox" class="mt-1" @change="changeAdult" />
-        <span
-          ><span class="block font-medium">{{ t('fanfiction.adultConfirmation') }}</span>
-          <span class="text-muted-foreground">{{ t('fanfiction.adultHelp') }}</span></span
-        >
+        <span class="font-medium">{{ t('fanfiction.adultConfirmation') }}</span>
       </label>
       <details class="space-y-3 rounded-lg border border-border p-3">
         <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.advancedSettings') }}</summary>
-        <p class="text-xs text-muted-foreground">{{ t('fanfiction.advancedHelp') }}</p>
         <label class="block space-y-1 text-sm"
           ><span>{{ t('fanfiction.siteSection') }}</span>
           <input v-model="section" required maxlength="255" class="w-full rounded-md border border-input bg-background p-2" @change="readSection" />
@@ -162,7 +158,6 @@ async function save() {
           />
         </label>
       </details>
-      <p class="text-xs text-muted-foreground">{{ t('fanfiction.secretHelp') }}</p>
       <div class="flex gap-2">
         <Button type="submit" :disabled="busy">{{ t('fanfiction.save') }}</Button
         ><Button type="button" variant="outline" :disabled="busy" @click="closeEditor">{{ t('fanfiction.cancel') }}</Button>

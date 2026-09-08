@@ -102,6 +102,16 @@ Examples:
 - Testing: Vitest + `@vue/test-utils`. Config in `vitest.config.ts`.
 - Responsive design required - support desktop and mobile.
 
+## User-Facing Copy
+
+- Write for the person using the app: short, plain labels and direct actions or outcomes.
+- Do not add meta commentary about implementation, storage, configuration precedence, background orchestration, or how the app works internally.
+- Remove helper text when the label and controls already make the action clear. Do not narrate the form or repeat its workflow.
+- Keep guidance only when it helps the user make a decision, meet an input requirement, understand a meaningful consequence, or recover from an error. Put it next to the relevant control or show it when needed.
+- Describe websites by the content users can find there. Keep adapter behavior, preset details, and speculative access caveats out of source descriptions.
+- Prefer a clear control or status over explanatory prose. For example, use "Clear password" without a paragraph explaining how unchanged passwords are saved.
+- Review visible copy, including translation strings and error messages, for these rules before completing UI work.
+
 ## Shared Types
 
 - `packages/types/` is the source of truth for types shared between server and client. Add types there and import via the `@bookorbit/types` alias. Don't duplicate shared types in both workspaces.

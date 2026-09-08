@@ -180,7 +180,6 @@ onMounted(() => {
           @click="retryJob"
           >{{ t('fanfiction.retry') }}</Button
         >
-        <p class="text-muted-foreground">{{ t('fanfiction.serverActivityHelp') }}</p>
       </div>
       <section class="border-border space-y-3 rounded-xl border p-4">
         <h2 class="font-semibold">{{ t('book.detail.files.revisions.title') }}</h2>

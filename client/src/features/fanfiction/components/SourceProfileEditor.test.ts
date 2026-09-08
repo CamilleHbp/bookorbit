@@ -17,7 +17,6 @@ describe('guided source editor', () => {
     const wrapper = mount(SourceProfileEditor, { props: { settings } })
     try {
       await wrapper.get('select').setValue('fictionlive')
-      expect(wrapper.text()).toContain('does not use a Fiction.live username/password')
       expect(wrapper.find('input[autocomplete="off"]').exists()).toBe(false)
       expect(wrapper.get('details').attributes('open')).toBeUndefined()
       await wrapper.get('input[type="checkbox"]').setValue(true)
