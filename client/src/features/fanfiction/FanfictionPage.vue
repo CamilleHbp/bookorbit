@@ -373,7 +373,7 @@ onMounted(() => {
             >{{ t('fanfiction.cancel') }}</Button
           >
           <Button
-            v-else-if="['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)"
+            v-else-if="job.errorCode !== 'profile_deleted' && ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)"
             variant="outline"
             :disabled="busy"
             @click="retryJob(job)"

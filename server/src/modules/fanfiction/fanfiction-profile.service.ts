@@ -126,17 +126,17 @@ export class FanfictionProfileService {
           .update(jobs)
           .set({
             profileId: null,
-            errorCode: sql`case when ${jobs.state} in ('failed', 'cancelled') then 'profile_deleted' else ${jobs.errorCode} end`,
+            errorCode: sql`case when ${jobs.state} in ('failed', 'cancelled', 'configuration_blocked', 'review_required') then 'profile_deleted' else ${jobs.errorCode} end`,
           })
-          .where(and(eq(jobs.libraryId, libraryId), jobProfile, inArray(jobs.state, ['succeeded', 'no_change', 'failed', 'cancelled'])));
+          .where(and(eq(jobs.libraryId, libraryId), jobProfile, notInArray(jobs.state, ['queued', 'running'])));
         const [pending] = await tx
           .select({ id: jobs.id })
           .from(jobs)
-          .where(and(eq(jobs.libraryId, libraryId), jobProfile, notInArray(jobs.state, ['succeeded', 'no_change', 'failed', 'cancelled'])))
+          .where(and(eq(jobs.libraryId, libraryId), jobProfile, inArray(jobs.state, ['queued', 'running'])))
           .limit(1);
         if (pending)
           throw new ConflictException(
-            'This profile is needed by an unfinished operation. Finish or cancel it in Activity before deleting the profile.',
+            'This profile is used by queued or running activity. Wait for it to finish or cancel it in Activity before deleting the profile.',
           );
         await tx.delete(profiles).where(and(eq(profiles.libraryId, libraryId), eq(profiles.id, id)));
       });

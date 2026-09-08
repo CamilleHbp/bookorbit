@@ -10160,7 +10160,7 @@
     "noProfiles": "No profiles yet. Add one to save your site login and download preferences.",
     "editProfileNamed": "Edit {name}",
     "deleteProfileNamed": "Delete {name}?",
-    "deleteProfileDescription": "This permanently removes the profile and its saved login details. Your books and activity history will be kept. Profiles assigned to stories or unfinished operations must be released first.",
+    "deleteProfileDescription": "This permanently removes the profile and its saved login details. Your books and activity history will be kept. Stopped activity that used this profile cannot be retried. Profiles assigned to stories or queued or running activity cannot be deleted.",
     "edit": "Edit",
     "more": "Load more",
     "profileName": "Name",

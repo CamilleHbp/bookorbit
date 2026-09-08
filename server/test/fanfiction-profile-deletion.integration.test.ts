@@ -105,11 +105,22 @@ describe.skipIf(!configPath)('profile deletion with PostgreSQL', () => {
     await expect(service.remove(libraryId + 1, profileId, user)).rejects.toBeInstanceOf(NotFoundException);
     expect(await remainingProfile()).toHaveLength(1);
   });
-  it.each(['queued', 'running', 'review_required', 'configuration_blocked'] as const)('preserves profiles used by %s activity', async (state) => {
+  it.each(['queued', 'running'] as const)('preserves profiles used by %s activity', async (state) => {
     await addJob(state);
     await expect(service.remove(libraryId, profileId, user)).rejects.toBeInstanceOf(ConflictException);
     expect(await remainingProfile()).toHaveLength(1);
   });
+  it.each(['review_required', 'configuration_blocked'] as const)(
+    'deletes profiles used only by stopped %s activity without clearing history',
+    async (state) => {
+      const job = await addJob(state);
+      await service.remove(libraryId, profileId, user);
+      expect(await remainingProfile()).toEqual([]);
+      const [history] = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, job.id));
+      expect(history).toMatchObject({ id: job.id, state, profileId: null, errorCode: 'profile_deleted' });
+      await expect(jobs.retry(libraryId, job.id, user)).rejects.toThrow('profile was deleted');
+    },
+  );
   it('keeps completed history and prevents retrying failed activity without its deleted credentials', async () => {
     const success = await addJob('succeeded');
     const failed = await addJob('failed');
@@ -119,6 +130,13 @@ describe.skipIf(!configPath)('profile deletion with PostgreSQL', () => {
     expect(history.find((job) => job.id === success.id)).toMatchObject({ profileId: null, state: 'succeeded', errorCode: null });
     expect(history.find((job) => job.id === failed.id)).toMatchObject({ profileId: null, state: 'failed', errorCode: 'profile_deleted' });
     await expect(jobs.retry(libraryId, failed.id, user)).rejects.toThrow('profile was deleted');
+  });
+  it('leaves stopped activity unchanged when running work still blocks deletion', async () => {
+    const stopped = await addJob('configuration_blocked');
+    await addJob('running');
+    await expect(service.remove(libraryId, profileId, user)).rejects.toBeInstanceOf(ConflictException);
+    const [preserved] = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, stopped.id));
+    expect(preserved).toMatchObject({ profileId, state: 'configuration_blocked', errorCode: null });
   });
   it('protects profiles referenced by older adoption selections', async () => {
     const job = await addJob('queued');
@@ -140,7 +158,7 @@ describe.skipIf(!configPath)('profile deletion with PostgreSQL', () => {
       })
       .where(eq(schema.fanfictionJobs.id, job.id));
     await expect(service.remove(libraryId, profileId, user)).rejects.toBeInstanceOf(ConflictException);
-    await db.update(schema.fanfictionJobs).set({ state: 'failed' }).where(eq(schema.fanfictionJobs.id, job.id));
+    await db.update(schema.fanfictionJobs).set({ state: 'configuration_blocked' }).where(eq(schema.fanfictionJobs.id, job.id));
     await service.remove(libraryId, profileId, user);
     await expect(jobs.retry(libraryId, job.id, user)).rejects.toThrow('profile was deleted');
   });
