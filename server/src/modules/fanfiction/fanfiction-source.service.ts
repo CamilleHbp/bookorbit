@@ -281,7 +281,7 @@ export class FanfictionSourceService {
 
   async reserve(job: Job, preview: FanfictionPreview, user: RequestUser) {
     if (!job.input || job.kind !== 'import') throw new BadRequestException('Missing managed import settings');
-    preview = validateFanfictionPreview(preview);
+    preview = validateFanfictionPreview({ ...preview, ...job.input.metadata });
     const canonicalUrl = this.canonicalUrl(preview.canonicalUrl);
     const canonicalKey = createHash('sha256').update(canonicalUrl).digest('hex');
     const { library } = await this.libraries.importDestination(job.libraryId, job.input.folderId);
@@ -345,7 +345,7 @@ export class FanfictionSourceService {
   }
 
   async recordImportMetadata(job: Job, sourceId: string, value: FanfictionPreview, user: RequestUser) {
-    const preview = validateFanfictionPreview(value);
+    const preview = validateFanfictionPreview({ ...value, ...job.input?.metadata });
     await this.access.administer(user, job.libraryId);
     const startedAt = Date.now();
     this.logger.log(
@@ -413,6 +413,14 @@ export class FanfictionSourceService {
         })
         .where(and(eq(sources.id, sourceId), eq(sources.libraryId, job.libraryId)))
         .returning();
+      if (job.input?.metadata) {
+        await this.managedMetadata.applyImportEdits(
+          tx,
+          installed.bookId,
+          { key: `fanfiction:${sourceId}`, libraryId: job.libraryId },
+          job.input.metadata,
+        );
+      }
       await recordFanfictionActivity(tx, {
         libraryId: job.libraryId,
         userId: job.userId,

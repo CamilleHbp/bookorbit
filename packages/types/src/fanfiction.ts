@@ -216,7 +216,10 @@ export interface FanfictionFolderPage {
   nextCursor: number | null;
 }
 
+export type FanfictionMetadataEdits = Partial<Pick<FanfictionPreview, "title" | "authors" | "description" | "tags">>;
+
 export interface FanfictionImportRequest {
+  metadata?: FanfictionMetadataEdits;
   url: string;
   idempotencyKey: string;
   profileId?: string;

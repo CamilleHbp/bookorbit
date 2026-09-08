@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, asc, desc, eq, gt, inArray, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { FanfictionJob, FanfictionJobState, FanfictionImportRequest, FanfictionImportProgress } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { DB } from '../../db';
@@ -28,7 +29,12 @@ export class FanfictionJobService {
   }
 
   async importStory(libraryId: number, dto: FanfictionImportRequest, user: RequestUser): Promise<FanfictionJob> {
-    return this.enqueue(libraryId, dto, user, 'import', { ...dto, intervalMinutes: dto.intervalMinutes === undefined ? 1440 : dto.intervalMinutes });
+    const metadata = dto.metadata && Object.fromEntries(Object.entries(dto.metadata).filter(([, value]) => value !== undefined));
+    return this.enqueue(libraryId, dto, user, 'import', {
+      ...dto,
+      metadata,
+      intervalMinutes: dto.intervalMinutes === undefined ? 1440 : dto.intervalMinutes,
+    });
   }
 
   async updateStory(
@@ -239,7 +245,8 @@ export class FanfictionJobService {
       existing.profileId !== (dto.profileId ?? null) ||
       existing.kind !== kind ||
       existing.input?.folderId !== input?.folderId ||
-      existing.input?.intervalMinutes !== input?.intervalMinutes
+      existing.input?.intervalMinutes !== input?.intervalMinutes ||
+      !isDeepStrictEqual(existing.input?.metadata ?? {}, input?.metadata ?? {})
     )
       throw new ConflictException('Operation identity was reused with different input');
     return this.view(existing);

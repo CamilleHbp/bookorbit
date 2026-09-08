@@ -1,5 +1,8 @@
+import 'reflect-metadata';
+import { plainToInstance } from 'class-transformer';
+import { ImportFanfictionDto } from './dto/fanfiction-source.dto';
 import { Test } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
@@ -45,6 +48,44 @@ describe('blocked import recovery', () => {
     }).compile();
     return { module, service: module.get(FanfictionJobService), writes, profiles };
   }
+  it('accepts identical metadata after serialization and rejects edits under the same request key', async () => {
+    const dto = plainToInstance(ImportFanfictionDto, {
+      url: 'https://fiction.live/stories/story/id',
+      folderId: 8,
+      idempotencyKey: 'key',
+      metadata: { title: 'My title' },
+    });
+    const existing = {
+      id: 'job',
+      libraryId: 5,
+      userId: 7,
+      profileId: null,
+      url: dto.url,
+      kind: 'import',
+      state: 'queued',
+      input: { folderId: 8, intervalMinutes: 1440, metadata: { title: 'My title' } },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const db = {
+      insert: () => ({ values: () => ({ onConflictDoNothing: () => ({ returning: () => Promise.resolve([]) }) }) }),
+      select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([existing]) }) }) }),
+    };
+    const module = await Test.createTestingModule({
+      providers: [
+        FanfictionJobService,
+        { provide: DB, useValue: db },
+        { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
+        { provide: FanfictionProfileService, useValue: {} },
+      ],
+    }).compile();
+    const service = module.get(FanfictionJobService);
+    expect((await service.importStory(5, dto, { id: 7 } as RequestUser)).id).toBe('job');
+    await expect(service.importStory(5, { ...dto, metadata: { title: 'Different title' } }, { id: 7 } as RequestUser)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    await module.close();
+  });
   it('resumes the reserved story with the chosen credentials', async () => {
     const { module, service, writes, profiles } = await setup();
     const user = { id: 7, tokenVersion: 1 } as RequestUser;

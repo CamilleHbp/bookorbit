@@ -1,9 +1,48 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+  IsObject,
+  ValidateNested,
+} from 'class-validator';
 import type { FanfictionImportRequest, FanfictionSourceState } from '@bookorbit/types';
 import { PreviewFanfictionDto } from './fanfiction-profile.dto';
 
+export class FanfictionMetadataEditsDto {
+  @ValidateIf((_object, value) => value !== undefined) @IsString() @MaxLength(500) @Matches(/\S/) title?: string;
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(500, { each: true })
+  @Matches(/\S/, { each: true })
+  authors?: string[];
+  @ValidateIf((_object, value) => value !== undefined) @IsString() @MaxLength(65536) description?: string;
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @IsString({ each: true })
+  @MaxLength(500, { each: true })
+  @Matches(/\S/, { each: true })
+  tags?: string[];
+}
+
 export class ImportFanfictionDto extends PreviewFanfictionDto implements FanfictionImportRequest {
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsObject()
+  @ValidateNested()
+  @Type(() => FanfictionMetadataEditsDto)
+  metadata?: FanfictionMetadataEditsDto;
   @IsInt() @Min(1) folderId!: number;
   @IsOptional() @IsInt() @Min(60) @Max(525600) intervalMinutes?: number | null;
 }

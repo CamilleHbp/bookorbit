@@ -31,52 +31,72 @@ describe('managed Fanfiction page requests', () => {
     vi.useRealTimers()
   })
   const create = () => scope.run(() => useFanfiction())!
-  it('imports mixed sources directly using a matching profile for each URL', async () => {
+  it('previews matching sources and imports only after explicit confirmation', async () => {
     const state = create()
     state.libraryId.value = 5
     state.folderId.value = 8
     state.urls.value = 'https://fiction.live/stories/a/id\nhttps://archiveofourown.org/works/123'
-    mockApi.mockImplementation(async (url) => {
-      if (String(url).includes('profile-match')) return response({ profile: String(url).includes('archiveofourown') ? { id: 'ao3-profile' } : null })
-      return response({ id: crypto.randomUUID(), kind: 'import', state: 'queued' })
+    mockApi.mockImplementation(async (url) =>
+      String(url).includes('profile-match')
+        ? response({ profile: String(url).includes('archiveofourown') ? { id: 'ao3-profile' } : null })
+        : response(completedPreview),
+    )
+    await state.reviewStories()
+    const requests = mockApi.mock.calls.filter(([url]) => String(url).endsWith('/previews')).map(([, options]) => JSON.parse(options!.body as string))
+    expect(requests).toHaveLength(2)
+    expect(requests[0]).not.toHaveProperty('profileId')
+    expect(requests[1].profileId).toBe('ao3-profile')
+    expect(mockApi.mock.calls.some(([url]) => String(url).endsWith('/sources'))).toBe(false)
+    state.dismissReview()
+    expect(state.reviewCandidate.value).toBe(state.candidates.value[1])
+    mockApi.mockResolvedValue(response({ id: 'import-job', kind: 'import', state: 'queued' }))
+    await state.confirmReview({ title: 'Edited title', tags: [] })
+    expect(JSON.parse(mockApi.mock.lastCall![1]!.body as string)).toEqual({
+      url: preview.canonicalUrl,
+      folderId: 8,
+      intervalMinutes: 1440,
+      profileId: 'ao3-profile',
+      idempotencyKey: expect.any(String),
+      metadata: { title: 'Edited title', tags: [] },
     })
-    await state.importStories()
-    const imports = mockApi.mock.calls.filter(([url]) => String(url).endsWith('/sources')).map(([, options]) => JSON.parse(options!.body as string))
-    expect(imports).toHaveLength(2)
-    expect(imports[0]).not.toHaveProperty('profileId')
-    expect(imports[1].profileId).toBe('ao3-profile')
-    expect(mockApi.mock.calls.some(([url]) => String(url).includes('/previews'))).toBe(false)
-    await state.importStories()
-    expect(mockApi.mock.calls.filter(([url]) => String(url).endsWith('/sources'))).toHaveLength(2)
+    expect(state.reviewCandidate.value).toBeUndefined()
+    state.reopenReview(state.candidates.value[0]!)
+    expect(state.reviewCandidate.value).toBe(state.candidates.value[0])
   })
 
-  it('retains profile, destination and request identity after an uncertain direct import', async () => {
+  it('retains confirmed edits and request identity after an uncertain import', async () => {
     const state = create()
     state.libraryId.value = 5
     state.folderId.value = 8
     state.profileId.value = 'chosen-profile'
     state.urls.value = preview.canonicalUrl
-    mockApi.mockRejectedValueOnce(new Error('Disconnected')).mockResolvedValue(response({ id: 'job', kind: 'import', state: 'queued' }))
-    await state.importStories()
+    mockApi.mockResolvedValueOnce(response(completedPreview))
+    await state.reviewStories()
+    mockApi.mockRejectedValueOnce(new Error('Disconnected'))
+    await state.confirmReview({ title: 'My title' })
+    expect(state.reviewCandidate.value).toBeDefined()
     state.folderId.value = 9
     state.profileId.value = 'another-profile'
-    await state.importStories()
-    expect(mockApi.mock.calls[0]?.[1]?.body).toBe(mockApi.mock.calls[1]?.[1]?.body)
-    expect(mockApi.mock.calls.every(([url]) => String(url).endsWith('/sources'))).toBe(true)
+    mockApi.mockResolvedValueOnce(response({ id: 'job', kind: 'import', state: 'queued' }))
+    await state.confirmReview({ title: 'Different title' })
+    expect(mockApi.mock.calls[1]?.[1]?.body).toBe(mockApi.mock.calls[2]?.[1]?.body)
   })
 
-  it('retries the existing blocked import with the saved profile', async () => {
+  it('retries a blocked preview with saved credentials before confirmation', async () => {
     const state = create()
     state.libraryId.value = 5
     state.folderId.value = 8
     state.profileId.value = 'old-profile'
     state.urls.value = preview.canonicalUrl
-    mockApi.mockResolvedValue(response({ id: 'job', kind: 'import', state: 'configuration_blocked', errorCode: 'authentication_required' }))
-    await state.importStories()
+    mockApi.mockResolvedValueOnce(response({ id: 'job', kind: 'preview', state: 'configuration_blocked' }))
+    await state.reviewStories()
+    const key = state.candidates.value[0]!.previewKey
+    mockApi.mockResolvedValueOnce(response(completedPreview))
     await state.retryImport(state.candidates.value[0]!, { id: 'new-profile', libraryId: 5, name: 'Login', version: 1, updatedAt: '' })
-    const retry = JSON.parse(mockApi.mock.calls[1]![1]!.body as string)
-    expect(retry.profileId).toBe('new-profile')
-    expect(mockApi.mock.calls[1]![0]).toBe('/api/v1/libraries/5/fanfiction/jobs/job/retry')
+    expect(JSON.parse(mockApi.mock.calls[1]![1]!.body as string).profileId).toBe('new-profile')
+    expect(state.candidates.value[0]!.previewKey).not.toBe(key)
+    expect(state.reviewCandidate.value).toBeDefined()
+    expect(mockApi.mock.calls.every(([url]) => String(url).endsWith('/previews'))).toBe(true)
   })
 
   it('keeps the same update request identity after an uncertain response and sends refresh separately', async () => {
@@ -120,23 +140,25 @@ describe('managed Fanfiction page requests', () => {
     state.folderId.value = 8
     state.urls.value = preview.canonicalUrl
     state.schedule.value = 'manual'
+    state.profileId.value = 'chosen-profile'
     mockApi.mockRejectedValueOnce(new Error('Connection interrupted')).mockResolvedValueOnce(response(completedPreview))
-    await state.previewStories()
-    await state.previewStories()
+    await state.reviewStories()
+    await state.reviewStories()
     expect(mockApi.mock.calls[0]?.[1]?.body).toBe(mockApi.mock.calls[1]?.[1]?.body)
-    expect(state.canImport.value).toBe(true)
+    expect(state.reviewCandidate.value).toBeDefined()
     mockApi
       .mockResolvedValueOnce(response({ id: 'import-job', kind: 'import', state: 'queued' }))
       .mockResolvedValueOnce(response({ items: [], nextCursor: null }))
-    await state.importSelected()
+    await state.confirmReview({})
     expect(mockApi.mock.calls[2]?.[0]).toBe('/api/v1/libraries/5/fanfiction/sources')
     expect(JSON.parse(mockApi.mock.calls[2]?.[1]?.body as string)).toEqual({
       url: preview.canonicalUrl,
+      profileId: 'chosen-profile',
       folderId: 8,
       intervalMinutes: null,
       idempotencyKey: expect.any(String),
     })
-    expect(state.canImport.value).toBe(false)
+    expect(state.reviewCandidate.value).toBeUndefined()
   })
 
   it('requires a fresh preview when the authentication profile changes', async () => {
@@ -144,20 +166,21 @@ describe('managed Fanfiction page requests', () => {
     state.libraryId.value = 5
     state.folderId.value = 8
     state.urls.value = preview.canonicalUrl
+    state.profileId.value = 'initial-profile'
     mockApi.mockResolvedValue(response(completedPreview))
-    await state.previewStories()
+    await state.reviewStories()
     const key = state.candidates.value[0]?.previewKey
     state.profileId.value = 'new-profile'
-    expect(state.canImport.value).toBe(false)
-    await state.previewStories()
+    await state.reviewStories()
     expect(state.candidates.value[0]?.previewKey).not.toBe(key)
     expect(JSON.parse(mockApi.mock.calls[1]?.[1]?.body as string).profileId).toBe('new-profile')
   })
 
   it('rejects oversized URL batches before sending requests', async () => {
     const state = create()
+    state.folderId.value = 8
     state.urls.value = Array.from({ length: 101 }, (_, index) => `https://example.org/story/${index}`).join('\n')
-    await state.previewStories()
+    await state.reviewStories()
     expect(mockApi).not.toHaveBeenCalled()
     expect(state.error.value).toContain('100')
   })
@@ -186,15 +209,16 @@ describe('managed Fanfiction page requests', () => {
     state.libraryId.value = 5
     state.folderId.value = 8
     state.urls.value = preview.canonicalUrl
+    state.profileId.value = 'initial-profile'
     mockApi.mockResolvedValue(response(completedPreview))
-    await state.previewStories()
+    await state.reviewStories()
     const oldKey = state.candidates.value[0]!.previewKey
     const profile = { id: 'saved-profile', libraryId: 5, name: 'AO3', version: 2, updatedAt: '' }
     state.useSavedProfile(profile)
     expect(state.profileId.value).toBe(profile.id)
     expect(state.urls.value).toBe(preview.canonicalUrl)
-    expect(state.canImport.value).toBe(false)
-    await state.previewStories()
+    expect(state.reviewCandidate.value).toBeUndefined()
+    await state.reviewStories()
     expect(state.candidates.value[0]!.previewKey).not.toBe(oldKey)
     expect(JSON.parse(mockApi.mock.calls[1]![1]!.body as string).profileId).toBe(profile.id)
     state.useSavedProfile({ ...profile, id: 'other', libraryId: 6 })

@@ -335,6 +335,33 @@ describe('Fanfiction HTTP contracts', () => {
     expect((await app.inject({ method: 'POST', url: `${base}/jobs/status`, payload: { ids: Array(101).fill(uuid) } })).statusCode).toBe(400);
   });
 
+  it('accepts editable story metadata and rejects invalid or unrecognized fields', async () => {
+    sources.create.mockResolvedValue({ id: uuid, state: 'queued', kind: 'import' });
+    const payload = {
+      url: 'https://archiveofourown.org/works/123',
+      idempotencyKey: uuid,
+      folderId: 8,
+      metadata: { title: 'My title', authors: ['Writer'], description: 'Notes', tags: [] },
+    };
+    expect((await app.inject({ method: 'POST', url: `${base}/sources`, payload })).statusCode).toBe(202);
+    expect(sources.create).toHaveBeenCalledWith(5, expect.objectContaining(payload), undefined);
+    for (const metadata of [
+      null,
+      [],
+      { title: null },
+      { tags: null },
+      { title: ' ' },
+      { title: 'x'.repeat(501) },
+      { authors: [' '] },
+      { authors: [123] },
+      { tags: Array(1001).fill('tag') },
+      { description: 'x'.repeat(65537) },
+      { bookId: 99 },
+      { tags: 'tag' },
+    ])
+      expect((await app.inject({ method: 'POST', url: `${base}/sources`, payload: { ...payload, metadata } })).statusCode).toBe(400);
+  });
+
   it('validates import, manual scheduling, bounded source queries, and optimistic source changes', async () => {
     const job = { id: uuid, state: 'queued', kind: 'import', libraryId: 5 };
     sources.create.mockResolvedValue(job);

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, eq } from 'drizzle-orm';
-import type { FanfictionPreview } from '@bookorbit/types';
+import type { FanfictionPreview, FanfictionMetadataEdits } from '@bookorbit/types';
 import type { DatabaseTransaction } from '../../db/transaction';
 import { authors, bookAuthors, bookMetadata, books } from '../../db/schema';
 import { normalizeMetadataText, normalizeMetadataTextKey } from '../../common/utils/metadata-text-normalize.utils';
@@ -21,17 +21,15 @@ export class ManagedMetadataService {
     tx: DatabaseTransaction,
     bookId: number,
     source: ManagedTagSource,
-    preview: Pick<FanfictionPreview, 'title' | 'description' | 'authors' | 'tags'>,
+    preview: Partial<Pick<FanfictionPreview, 'title' | 'description' | 'authors' | 'tags'>>,
   ) {
     if (
-      typeof preview.title !== 'string' ||
-      !preview.title.trim() ||
-      preview.title.length > 500 ||
-      typeof preview.description !== 'string' ||
-      preview.description.length > 256 * 1024 ||
-      !Array.isArray(preview.authors) ||
-      preview.authors.length > 100 ||
-      preview.authors.some((name) => typeof name !== 'string' || name.length > 500)
+      (preview.title !== undefined && (typeof preview.title !== 'string' || !preview.title.trim() || preview.title.length > 500)) ||
+      (preview.description !== undefined && (typeof preview.description !== 'string' || preview.description.length > 256 * 1024)) ||
+      (preview.authors !== undefined &&
+        (!Array.isArray(preview.authors) ||
+          preview.authors.length > 100 ||
+          preview.authors.some((name) => typeof name !== 'string' || name.length > 500)))
     )
       throw new BadRequestException('Invalid managed story metadata');
     const startedAt = Date.now();
@@ -94,5 +92,10 @@ export class ManagedMetadataService {
       );
       throw error;
     }
+  }
+  async applyImportEdits(tx: DatabaseTransaction, bookId: number, source: ManagedTagSource, edits: FanfictionMetadataEdits) {
+    await this.apply(tx, bookId, source, edits);
+    const locked = await this.locks.getLockedFields(bookId, tx);
+    await this.locks.replaceLockedFields(bookId, [...locked, ...Object.keys(edits)], tx);
   }
 }

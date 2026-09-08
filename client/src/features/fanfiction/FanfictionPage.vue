@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ImportProgress from './components/ImportProgress.vue'
+import StoryPreviewModal from './components/StoryPreviewModal.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -50,7 +51,11 @@ const {
   refresh,
   moreSources,
   moreJobs,
-  importStories,
+  reviewStories,
+  reviewCandidate,
+  confirmReview,
+  dismissReview,
+  reopenReview,
   retryImport,
   useSavedProfile,
   cancelJob,
@@ -285,9 +290,19 @@ onMounted(() => {
         <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
         <SourceProfileEditor :settings="sourceSettings" :compact="configuring !== null" @saved="handleProfileSaved" />
         <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
-        <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null" @click="importStories">{{
-          t('fanfiction.importStories')
+        <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null" @click="reviewStories">{{
+          t('fanfiction.previewStory')
         }}</Button>
+        <StoryPreviewModal
+          v-if="reviewCandidate?.preview"
+          :key="reviewCandidate.previewKey"
+          :preview="reviewCandidate.preview"
+          :busy="busy"
+          :locked="!!reviewCandidate.importRequest"
+          :error="error"
+          @confirm="confirmReview"
+          @cancel="dismissReview"
+        />
         <article v-for="candidate in candidates" :key="candidate.previewKey" class="border-border bg-card space-y-2 rounded-lg border p-4">
           <p class="min-w-0 break-words font-medium">{{ candidate.preview?.title || candidate.url }}</p>
           <p v-if="candidate.preview" class="text-muted-foreground text-sm">
@@ -295,6 +310,13 @@ onMounted(() => {
             {{ candidate.preview.status }}
             <span v-if="candidate.preview.wordCount != null"> · {{ t('fanfiction.wordCount', { count: candidate.preview.wordCount }) }}</span>
           </p>
+          <Button
+            v-if="candidate.preview && candidate.job?.kind === 'preview' && candidate.job.state === 'succeeded'"
+            variant="outline"
+            :disabled="busy"
+            @click="reopenReview(candidate)"
+            >{{ t('fanfiction.previewStory') }}</Button
+          >
           <ImportProgress v-if="candidate.job" :job="candidate.job" />
           <Button
             v-if="candidate.job && ['queued', 'running'].includes(candidate.job.state)"

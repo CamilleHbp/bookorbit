@@ -10349,7 +10349,6 @@
     "setUpSource": "Set up",
     "allSupportedSites": "All supported websites",
     "sourceSelectionHelp": "Choose saved settings for mature or restricted stories.",
-    "previewProgressHelp": "Preview with your selected source settings before importing.",
     "presets": {
       "fictionlive": "Interactive fiction and quests.",
       "ao3": "Fanfiction and fanworks. Sign in for locked works.",
@@ -10365,7 +10364,16 @@
     "automaticProfile": "Automatic",
     "importStories": "Import stories",
     "allowAdultStories": "I am an adult. Allow adult stories.",
-    "configureSource": "Sign in or configure source"
+    "configureSource": "Sign in or configure source",
+    "previewStory": "Preview story",
+    "confirmImport": "Confirm import",
+    "editStoryData": "Edit details",
+    "storyTitle": "Title",
+    "storyAuthors": "Authors (one per line)",
+    "storyDescription": "Description",
+    "storyTags": "Tags (one per line)",
+    "invalidStoryDetails": "Enter a title. Use at most 100 authors and 1,000 tags, with no more than 500 characters per entry.",
+    "retryConfirmedImport": "Retry import"
   },
   "koreaderCopies": {
     "title": "Device copies",
