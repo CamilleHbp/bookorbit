@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import resource
+import time
 
 from controlled_config import make_configuration, merge_configuration, validate_ini
 from epub_policy import validate_epub
@@ -87,7 +88,24 @@ def story_preview(adapter, story):
     }
 
 
-def run(request, save_cookies=None):
+class ProgressReporter:
+    def __init__(self, emit):
+        self.emit = emit
+        self.last_sent = 0
+        self.total = 0
+
+    def chapters(self, fraction, _url):
+        completed = min(self.total, max(0, round(fraction * self.total)))
+        now = time.monotonic()
+        if completed < self.total and now - self.last_sent < 1:
+            return
+        self.last_sent = now
+        self.emit({'stage': 'downloading', 'completedChapters': completed, 'totalChapters': self.total})
+        if completed == self.total:
+            self.emit({'stage': 'packaging', 'completedChapters': completed, 'totalChapters': self.total})
+
+
+def run(request, save_cookies=None, report_progress=lambda progress: None):
     actual = importlib.metadata.version('FanFicFare')
     if actual != VERSION:
         raise PolicyError('Pinned FanFicFare runtime version does not match')
@@ -115,6 +133,7 @@ def run(request, save_cookies=None):
         return result
     configuration = make_configuration(url, ini, transport)
     adapter = adapters.getAdapter(configuration, url)
+    report_progress({'stage': 'metadata'})
     story = adapter.getStoryMetadataOnly(get_cover=False)
     preview = story_preview(adapter, story)
     canonical = preview['canonicalUrl']
@@ -136,16 +155,20 @@ def run(request, save_cookies=None):
             (adapter.oldchapters, adapter.oldimgs, adapter.oldcover, adapter.calibrebookmark,
              adapter.logfile, adapter.oldchaptersmap, adapter.oldchaptersdata) = old[2:9]
     with open('output.epub', 'xb') as output:
-        writers.getWriter('epub', configuration, adapter).writeStory(outstream=output)
+        progress = ProgressReporter(report_progress)
+        progress.total = chapter_count
+        report_progress({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
+        writers.getWriter('epub', configuration, adapter).writeStory(outstream=output, notification=progress.chapters)
         output.flush()
         os.fsync(output.fileno())
+    report_progress({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
     validate_epub('output.epub')
     return finish({'preview': story_preview(adapter, adapter.story), 'output': 'output.epub'})
 
 
-def execute_request(request):
+def execute_request(request, report_progress=lambda progress: None):
     cookies = []
-    result = run(request, cookies.extend)
+    result = run(request, cookies.extend, report_progress)
     return {'ok': True, 'result': result, 'cookies': cookies}
 
 
@@ -173,7 +196,10 @@ def main():
         request = json.loads(raw)
         if not isinstance(request, dict):
             raise PolicyError('Invalid integration request')
-        result = execute_request(request)
+        def report_progress(progress):
+            sys.stderr.write('BOOKORBIT_PROGRESS ' + json.dumps(progress) + '\n')
+            sys.stderr.flush()
+        result = execute_request(request, report_progress)
     except Exception as error:
         name = type(error).__name__
         code = failure_code(error)

@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, asc, desc, eq, gt, inArray, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
-import type { FanfictionJob, FanfictionJobState, FanfictionImportRequest } from '@bookorbit/types';
+import type { FanfictionJob, FanfictionJobState, FanfictionImportRequest, FanfictionImportProgress } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
@@ -446,6 +446,16 @@ export class FanfictionJobService {
         .returning();
       return claimed;
     });
+  }
+
+  async reportProgress(job: typeof jobs.$inferSelect, progress: FanfictionImportProgress): Promise<void> {
+    await this.db
+      .update(jobs)
+      .set({
+        result: sql`coalesce(${jobs.result}, '{}'::jsonb) || ${JSON.stringify({ progress })}::jsonb`,
+        updatedAt: sql`now()`,
+      })
+      .where(and(this.owned(job), eq(jobs.libraryId, job.libraryId), eq(jobs.userId, job.userId), eq(jobs.cancellationRequested, false)));
   }
 
   async renew(job: typeof jobs.$inferSelect): Promise<boolean> {

@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { validateFanfictionPreview } from './fanfiction-preview';
 import { validateRuntimeCookies, type FanfictionCookieSink } from './fanfiction-cookies';
+import { FanfictionRuntimeProgress, type FanfictionProgressSink } from './fanfiction-runtime-progress';
 
 type RuntimeRequest = {
   operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
@@ -111,9 +112,10 @@ export class FanficfareRuntimeService {
     consume: (path: string, preview: FanfictionPreview) => Promise<T>,
     signal?: AbortSignal,
     saveCookies?: FanfictionCookieSink,
+    reportProgress?: FanfictionProgressSink,
   ): Promise<T> {
     return this.workspace(async (directory) => {
-      const result = (await this.execute({ operation: 'download', url, ...document }, directory, signal, saveCookies)) as {
+      const result = (await this.execute({ operation: 'download', url, ...document }, directory, signal, saveCookies, reportProgress)) as {
         output?: string;
         preview?: FanfictionPreview;
       };
@@ -145,12 +147,19 @@ export class FanficfareRuntimeService {
     });
   }
 
-  async execute(request: RuntimeRequest, workspace: string, signal?: AbortSignal, saveCookies?: FanfictionCookieSink): Promise<unknown> {
+  async execute(
+    request: RuntimeRequest,
+    workspace: string,
+    signal?: AbortSignal,
+    saveCookies?: FanfictionCookieSink,
+    reportProgress?: FanfictionProgressSink,
+  ): Promise<unknown> {
     if (this.active >= this.config.maxWorkers) throw new ServiceUnavailableException('FanFicFare runtime is busy');
     if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
     const input = JSON.stringify(request);
     if (Buffer.byteLength(input) > 512 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
     this.active++;
+    const progress = new FanfictionRuntimeProgress(reportProgress);
     try {
       const response = await new Promise<Extract<RuntimeResponse, { ok: true }>>((resolve, reject) => {
         const child = spawn(this.config.python, ['-I', join(__dirname, 'runtime', 'fanficfare_wrapper.py')], {
@@ -162,11 +171,15 @@ export class FanficfareRuntimeService {
         const chunks: Buffer[] = [];
         let bytes = 0;
         let failed = false;
+        let timedOut = false;
         const stop = () => {
           failed = true;
           child.kill('SIGKILL');
         };
-        const timer = setTimeout(stop, this.config.timeoutMs);
+        const timer = setTimeout(() => {
+          timedOut = true;
+          stop();
+        }, this.config.timeoutMs);
         signal?.addEventListener('abort', stop, { once: true });
         child.stdout.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
@@ -176,6 +189,7 @@ export class FanficfareRuntimeService {
         child.stderr.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
           if (bytes > 1024 * 1024) stop();
+          else progress.feed(chunk);
         });
         child.stdin.on('error', () => {
           /* Early process exit is handled by close. */
@@ -186,7 +200,13 @@ export class FanficfareRuntimeService {
         child.once('close', (code) => {
           clearTimeout(timer);
           signal?.removeEventListener('abort', stop);
-          if (failed || code !== 0) return reject(new ServiceUnavailableException('FanFicFare runtime failed or exceeded its execution budget'));
+          if (failed || code !== 0)
+            return reject(
+              new ServiceUnavailableException({
+                message: 'Story download could not finish',
+                errorCode: timedOut ? 'download_timeout' : 'runtime_unavailable',
+              }),
+            );
           try {
             const response = JSON.parse(Buffer.concat(chunks).toString('utf8')) as RuntimeResponse;
             if (response.ok !== true)
@@ -198,12 +218,14 @@ export class FanficfareRuntimeService {
         });
         child.stdin.end(input);
       });
+      await progress.flush();
       if (saveCookies) {
         if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
         await saveCookies(validateRuntimeCookies(response.cookies));
       }
       return response.result;
     } finally {
+      await progress.flush().catch(() => {});
       this.active--;
     }
   }

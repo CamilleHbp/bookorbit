@@ -117,7 +117,15 @@ export class FanfictionWorkerService implements OnModuleDestroy {
                 : job.kind === 'rollback'
                   ? await this.rollbacks.run(job, () => this.authorized(job), controller.signal)
                   : job.kind === 'import'
-                    ? await this.imports.run(job, user, document, authorizeCookies, controller.signal, saveCookies)
+                    ? await this.imports.run(
+                        job,
+                        user,
+                        document,
+                        () => this.authorized(job),
+                        controller.signal,
+                        saveCookies,
+                        (progress) => this.jobs.reportProgress(job, progress),
+                      )
                     : job.kind === 'update' || job.kind === 'refresh'
                       ? await this.updates.run(job, document, () => this.authorized(job), controller.signal, saveCookies)
                       : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
@@ -140,7 +148,9 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const code =
         typeof response === 'object' && response && 'errorCode' in response && typeof response.errorCode === 'string'
           ? response.errorCode
-          : 'runtime_failed';
+          : job.kind === 'import'
+            ? 'import_failed'
+            : 'runtime_failed';
       const blocked =
         error instanceof ForbiddenException ||
         ['configuration_blocked', 'authentication_required', 'adult_confirmation_required', 'access_denied'].includes(code);
@@ -163,7 +173,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
         blocked && error instanceof ForbiddenException ? 'access_revoked' : code,
       );
       this.logger.warn(
-        `[fanfiction.job] [fail] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} errorClass=${error instanceof ForbiddenException ? 'ForbiddenException' : 'RuntimeError'} - job did not complete`,
+        `[fanfiction.job] [fail] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} errorClass=${error instanceof ForbiddenException ? 'ForbiddenException' : 'RuntimeError'} errorCode=${code.replace(/[^a-z_]/g, '').slice(0, 80)} - job did not complete`,
       );
     } finally {
       clearInterval(timer);

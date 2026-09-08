@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ImportProgress from './components/ImportProgress.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -294,10 +295,14 @@ onMounted(() => {
             {{ candidate.preview.status }}
             <span v-if="candidate.preview.wordCount != null"> · {{ t('fanfiction.wordCount', { count: candidate.preview.wordCount }) }}</span>
           </p>
-          <p v-if="candidate.job" class="text-sm">
-            {{ t(`fanfiction.states.${candidate.job.state}`)
-            }}<span v-if="candidate.job.errorCode">: {{ t(`fanfiction.errors.${candidate.job.errorCode}`) }}</span>
-          </p>
+          <ImportProgress v-if="candidate.job" :job="candidate.job" />
+          <Button
+            v-if="candidate.job && ['queued', 'running'].includes(candidate.job.state)"
+            variant="outline"
+            :disabled="busy || candidate.job.cancellationRequested"
+            @click="cancelJob(candidate.job)"
+            >{{ t('fanfiction.cancel') }}</Button
+          >
           <template v-if="candidate.job && ['configuration_blocked', 'failed', 'cancelled'].includes(candidate.job.state)">
             <Button
               v-if="candidate.job.errorCode === 'adult_confirmation_required'"
@@ -313,6 +318,7 @@ onMounted(() => {
             >
             <Button v-else :disabled="busy" @click="retryImport(candidate)">{{ t('fanfiction.retry') }}</Button>
           </template>
+
           <RouterLink
             v-if="candidate.job?.result?.bookId"
             :to="{ name: 'book-detail', params: { bookId: candidate.job.result.bookId } }"
@@ -350,10 +356,8 @@ onMounted(() => {
         >
           <div class="min-w-0 flex-1">
             <p class="break-words text-sm">{{ job.url }}</p>
-            <p class="text-muted-foreground text-sm">
-              {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }} · {{ dateLabel(job.updatedAt) }}
-            </p>
-            <p v-if="job.errorCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
+            <p class="text-muted-foreground text-sm">{{ t(`fanfiction.kinds.${job.kind}`) }} · {{ dateLabel(job.updatedAt) }}</p>
+            <ImportProgress :job="job" class="mt-3" />
             <RouterLink
               v-if="job.result?.bookId"
               :to="{ name: 'book-detail', params: { bookId: job.result.bookId } }"
