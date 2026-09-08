@@ -1,22 +1,3 @@
-import type { FanfictionProfileDocument } from '@bookorbit/types';
-import type { RequestUser } from '../../common/types/request-user';
-
-export function withFanfictionDefaults(document: FanfictionProfileDocument, user: RequestUser): FanfictionProfileDocument {
-  const isAdult = user.settings?.fanfictionIsAdult;
-  if (typeof isAdult !== 'boolean') return document;
-  const lines = document.configuration.split(/\r?\n/);
-  let inOverrides = false;
-  const configuration = lines.filter((line) => {
-    const header = line.match(/^\[([^\]]+)\]\s*$/);
-    if (header) inOverrides = header[1] === 'overrides';
-    return !inOverrides || !/^is_adult\s*[:=]/i.test(line);
-  });
-  const index = configuration.findIndex((line) => /^\[overrides\]\s*$/.test(line));
-  if (index < 0) configuration.push('[overrides]', `is_adult: ${isAdult}`);
-  else configuration.splice(index + 1, 0, `is_adult: ${isAdult}`);
-  return { ...document, configuration: configuration.join('\n') };
-}
-
 export function configurationMatchesUrl(configuration: string, value: string): boolean {
   let url: URL;
   try {

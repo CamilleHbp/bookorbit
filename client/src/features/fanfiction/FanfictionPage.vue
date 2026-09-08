@@ -13,7 +13,6 @@ import ExistingStories from './components/ExistingStories.vue'
 import SourceProfiles from './components/SourceProfiles.vue'
 import SourceProfileEditor from './components/SourceProfileEditor.vue'
 import { useInlineSourceSettings } from './composables/useInlineSourceSettings'
-import { useFanfictionPreferences } from './composables/useFanfictionPreferences'
 import { useFanfiction } from './composables/useFanfiction'
 
 const { t } = useI18n()
@@ -69,7 +68,6 @@ const {
   showDiscovery,
 } = useFanfiction()
 const { sourceSettings, detectedSite, selectedProfile, addSource, editSource } = useInlineSourceSettings(libraryId, profiles, profileId, urls)
-const preferences = reactive(useFanfictionPreferences())
 const configuring = ref<(typeof candidates.value)[number] | null>(null)
 function handleAddSource() {
   configuring.value = null
@@ -92,9 +90,6 @@ async function handleProfileSaved(profile: FanfictionProfileSummary) {
   if (profile.libraryId !== libraryId.value) return
   if (candidate) await retryImport(candidate, profile)
   else useSavedProfile(profile)
-}
-async function allowAdultImport(candidate: (typeof candidates.value)[number]) {
-  if (await preferences.allowAdult()) await retryImport(candidate)
 }
 function showProfiles() {
   tab.value = 'profiles'
@@ -289,7 +284,6 @@ onMounted(() => {
         </details>
         <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
         <SourceProfileEditor :settings="sourceSettings" :compact="configuring !== null" @saved="handleProfileSaved" />
-        <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
         <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null" @click="reviewStories">{{
           t('fanfiction.previewStory')
         }}</Button>
@@ -327,13 +321,7 @@ onMounted(() => {
           >
           <template v-if="candidate.job && ['configuration_blocked', 'failed', 'cancelled'].includes(candidate.job.state)">
             <Button
-              v-if="candidate.job.errorCode === 'adult_confirmation_required'"
-              :disabled="busy || preferences.busy"
-              @click="allowAdultImport(candidate)"
-              >{{ t('fanfiction.allowAdultStories') }}</Button
-            >
-            <Button
-              v-else-if="['authentication_required', 'configuration_blocked', 'access_denied'].includes(candidate.job.errorCode ?? '')"
+              v-if="['authentication_required', 'configuration_blocked', 'access_denied'].includes(candidate.job.errorCode ?? '')"
               :disabled="busy || sourceSettings.busy"
               @click="configureImport(candidate)"
               >{{ t('fanfiction.configureSource') }}</Button

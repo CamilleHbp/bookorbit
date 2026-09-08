@@ -33,8 +33,6 @@ const {
   busy,
   presetId,
   preset,
-  isAdult,
-  changeAdult,
   applyPreset,
   readSection,
 } = toRefs(props.settings)
@@ -80,10 +78,6 @@ async function save() {
       <Button v-if="!preset || preset.login" type="button" variant="outline" @click="clearPassword">{{ t('fanfiction.clearPassword') }}</Button>
       <details class="space-y-3 rounded-lg border border-border p-3">
         <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.advancedSettings') }}</summary>
-        <label class="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
-          <input v-model="isAdult" type="checkbox" class="mt-1" @change="changeAdult" />
-          <span class="font-medium">{{ t('fanfiction.adultConfirmation') }}</span>
-        </label>
         <label class="block space-y-1 text-sm"
           ><span>{{ t('fanfiction.siteSection') }}</span>
           <input v-model="section" required maxlength="255" class="w-full rounded-md border border-input bg-background p-2" @change="readSection" />

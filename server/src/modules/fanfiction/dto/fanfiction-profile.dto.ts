@@ -17,10 +17,6 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export class FanfictionPreferencesDto {
-  @IsBoolean() isAdult!: boolean;
-}
-
 export class MatchFanfictionProfileDto {
   @IsString() @MaxLength(4096) @Matches(/^https:\/\/[^\s]+$/) url!: string;
 }
@@ -39,7 +35,6 @@ export class FanfictionCredentialsDto {
   @IsOptional() @IsString() @MinLength(1) @MaxLength(255) @Matches(/^[^\r\n[\]]+$/) section?: string;
   @IsOptional() @IsString() @MaxLength(4096) username?: string;
   @IsOptional() @IsString() @MaxLength(4096) password?: string;
-  @IsOptional() @IsBoolean() isAdult?: boolean;
 }
 
 export class CreateFanfictionProfileDto {

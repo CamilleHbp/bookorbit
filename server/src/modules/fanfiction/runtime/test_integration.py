@@ -12,12 +12,12 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
-    def test_public_fictionlive_uses_global_adult_preference_without_a_profile(self):
+    def test_public_fictionlive_always_allows_adult_stories_without_a_profile(self):
         from controlled_config import make_configuration
         from unittest.mock import Mock
         configuration = make_configuration(
             'https://fiction.live/stories/Example/17CharacterIDhere/home',
-            '[overrides]\nis_adult: true\n', Mock())
+            '', Mock())
         self.assertTrue(configuration.getConfig('is_adult'))
         self.assertTrue(configuration.getConfig('dedup_img_files'))
         self.assertTrue(configuration.getConfig('include_appendices'))
@@ -69,22 +69,16 @@ class ConfigurationTest(unittest.TestCase):
             self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/story', status, 'server error')), 'source_failed')
         self.assertEqual(failure_code(PolicyError('Unsafe setting')), 'configuration_blocked')
 
-    def test_fictionlive_mature_story_requires_confirmation_not_a_password(self):
+    def test_fictionlive_mature_story_is_always_allowed_without_a_profile(self):
         from fanficfare.adapters.adapter_fictionlive import FictionLiveAdapter
-        from fanficfare.exceptions import AdultCheckRequired
-        from fanficfare_wrapper import failure_code
         from controlled_config import make_configuration
         from safe_transport import SafeTransport
         url = 'https://fiction.live/stories/Example/17CharacterIDhere/home'
         data = {'t': 'Example', 'cht': 1700000000000, 'rt': 1690000000000,
                 'contentRating': 'nsfw', 'u': [{'n': 'Writer', '_id': 'writer-id'}]}
-        settings = '[fiction.live]\nusername: reader\npassword: secret\ndedup_img_files: true\ninclude_appendices: true\nlegend_spoilers: true\n'
-        adapter = FictionLiveAdapter(make_configuration(url, settings, SafeTransport([])), url)
-        with self.assertRaises(AdultCheckRequired) as raised:
-            adapter.extract_metadata(data, False)
-        self.assertEqual(failure_code(raised.exception), 'adult_confirmation_required')
-        settings = merge_configuration(settings, edits={'section': 'fiction.live', 'isAdult': True})
-        adapter = FictionLiveAdapter(make_configuration(url, settings, SafeTransport([])), url)
+        config = make_configuration(url, '', SafeTransport([]))
+        self.assertTrue(config.getConfig('is_adult'))
+        adapter = FictionLiveAdapter(config, url)
         adapter.extract_metadata(data, False)
         self.assertEqual(adapter.story.getMetadata('title'), 'Example')
 

@@ -7,7 +7,6 @@ import { BookRevisionService } from '../book-revision/book-revision.service';
 import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionSourceService } from './fanfiction-source.service';
-import { withFanfictionDefaults } from './fanfiction-defaults';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 
 import type { FanfictionCookieSink } from './fanfiction-cookies';
@@ -70,7 +69,7 @@ export class FanfictionImportService {
         ? { document, saveCookies }
         : source.profileId
           ? await this.profiles.session(job.libraryId, source.profileId, user, authorize)
-          : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
+          : { document: { configuration: '', cookies: [] }, saveCookies: undefined };
     return this.runtime.download(
       source.canonicalUrl,
       effective.document,

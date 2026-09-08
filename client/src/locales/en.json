@@ -10226,7 +10226,6 @@
       "replacement_chapter_reduction": "This upload has fewer chapters. Review the counts before approving replacement.",
       "replacement_revision_changed": "This story has changed. Upload the EPUB again.",
       "replacement_upload_missing": "This upload is no longer available. Upload the EPUB again.",
-      "adult_confirmation_required": "Adult confirmation is required to import this story.",
       "access_denied": "The website blocked access. Try again later or upload an EPUB."
     },
     "title": "Fanfiction",
@@ -10341,7 +10340,6 @@
     "editSource": "Edit source settings",
     "chooseSite": "Website",
     "customSource": "Other website",
-    "adultConfirmation": "I am an adult and want to access mature stories",
     "advancedSettings": "Advanced settings and cookies",
     "addStoriesHelp": "Paste story URLs to import them.",
     "suggestedSources": "Explore supported sources",
@@ -10359,11 +10357,9 @@
       "fanfiction": "Fanfiction across fandoms.",
       "fictionpress": "Original fiction and poetry."
     },
-    "adultGlobalHelp": "Applies to all your story sources and libraries.",
     "importOptions": "Import options",
     "automaticProfile": "Automatic",
     "importStories": "Import stories",
-    "allowAdultStories": "I am an adult. Allow adult stories.",
     "configureSource": "Sign in or configure source",
     "previewStory": "Preview story",
     "confirmImport": "Confirm import",

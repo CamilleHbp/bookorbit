@@ -1,7 +1,3 @@
-export interface FanfictionPreferences {
-  isAdult: boolean;
-}
-
 export interface FanfictionProfileMatch {
   profile: FanfictionProfileSummary | null;
 }

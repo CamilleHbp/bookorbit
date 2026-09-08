@@ -22,7 +22,7 @@ type RuntimeRequest = {
   configuration?: string;
   cookies?: FanfictionProfileDocument['cookies'];
   previous?: string;
-  edits?: { section?: string; username?: string; password?: string; isAdult?: boolean };
+  edits?: { section?: string; username?: string; password?: string };
   redact?: boolean;
 };
 type RuntimeResponse = { ok: true; result: unknown; cookies?: unknown } | { ok: false; code: string; errorClass: string };

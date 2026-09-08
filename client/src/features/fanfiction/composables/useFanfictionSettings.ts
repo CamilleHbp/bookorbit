@@ -31,8 +31,6 @@ export function useFanfictionSettings() {
   const section = ref('defaults')
   const presetId = ref('')
   const preset = computed(() => sourcePresets.find((item) => item.id === presetId.value))
-  const isAdult = ref(false)
-  const adultChanged = ref(false)
   function readSection() {
     presetId.value = sourcePresets.find((item) => item.section === section.value)?.id ?? ''
     const values = new Map<string, Record<string, string>>()
@@ -43,20 +41,15 @@ export function useFanfictionSettings() {
         current = header[1]!
         values.set(current, {})
       } else {
-        const entry = line.match(/^(username|password|is_adult)\s*[:=]\s*(.*)$/i)
+        const entry = line.match(/^(username|password)\s*[:=]\s*(.*)$/i)
         if (entry && values.has(current)) values.get(current)![entry[1]!.toLowerCase()] = entry[2]!.trim()
       }
     }
     const effective = { ...values.get('defaults'), ...values.get(section.value) }
     username.value = effective.username ?? ''
     password.value = effective.password ?? ''
-    isAdult.value = effective.is_adult?.toLowerCase() === 'true'
     usernameChanged.value = false
     passwordChanged.value = false
-    adultChanged.value = false
-  }
-  function changeAdult() {
-    adultChanged.value = true
   }
   function applyPreset() {
     if (editing.value) return
@@ -74,8 +67,6 @@ export function useFanfictionSettings() {
     password.value = ''
     usernameChanged.value = false
     passwordChanged.value = false
-    isAdult.value = false
-    adultChanged.value = false
   }
 
   const username = ref('')
@@ -213,8 +204,6 @@ export function useFanfictionSettings() {
     configuration.value = ''
     section.value = 'defaults'
     presetId.value = ''
-    isAdult.value = false
-    adultChanged.value = false
     username.value = ''
     password.value = ''
     usernameChanged.value = false
@@ -293,10 +282,9 @@ export function useFanfictionSettings() {
     let saved: FanfictionProfileSummary | undefined
     await perform(async () => {
       const credentials =
-        usernameChanged.value || passwordChanged.value || adultChanged.value
+        usernameChanged.value || passwordChanged.value
           ? {
               section: section.value,
-              ...(adultChanged.value ? { isAdult: isAdult.value } : {}),
               ...(usernameChanged.value ? { username: username.value } : {}),
               ...(passwordChanged.value ? { password: password.value } : {}),
             }
@@ -399,9 +387,6 @@ export function useFanfictionSettings() {
     section,
     presetId,
     preset,
-    isAdult,
-    adultChanged,
-    changeAdult,
     applyPreset,
     readSection,
     username,

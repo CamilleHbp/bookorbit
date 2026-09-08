@@ -19,7 +19,7 @@ import {
   type FanfictionCookieSink,
 } from './fanfiction-cookies';
 
-import { configurationMatchesUrl, withFanfictionDefaults } from './fanfiction-defaults';
+import { configurationMatchesUrl } from './fanfiction-defaults';
 
 const profiles = schema.fanfictionProfiles;
 const summaryFields = {
@@ -228,7 +228,7 @@ export class FanfictionProfileService {
         throw error;
       }
     };
-    return { document: withFanfictionDefaults(document, user), saveCookies };
+    return { document: document, saveCookies };
   }
 
   private serialize(document: FanfictionProfileDocument) {

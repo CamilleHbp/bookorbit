@@ -5,7 +5,7 @@ from pathlib import Path
 from safe_transport import PolicyError
 
 SAFE_OPTIONS = frozenset('''
-username password is_adult user_agent include_images include_titlepage include_tocpage
+username password user_agent include_images include_titlepage include_tocpage
 include_subject_tags extratags extra_valid_entries extra_titlepage_entries titlepage_entries
 replace_metadata add_to_replace_metadata add_to_extra_valid_entries add_to_extra_titlepage_entries
 add_to_extratags add_to_include_subject_tags keep_summary_html keep_html_attrs keep_empty_tags
@@ -28,21 +28,17 @@ def merge_configuration(previous, incoming=None, edits=None, redact=False):
         if parser.get(section, 'password', fallback=None) == MASK:
             parser.set(section, 'password', old.get(section, 'password', fallback=''))
     if edits is not None:
-        if not isinstance(edits, dict) or set(edits) - {'section', 'username', 'password', 'isAdult'}:
+        if not isinstance(edits, dict) or set(edits) - {'section', 'username', 'password'}:
             raise PolicyError('Invalid structured configuration edit')
         section = edits.get('section', 'defaults')
         if not isinstance(section, str) or not section or len(section) > 255 or any(c in section for c in '\r\n[]'):
             raise PolicyError('Invalid configuration section')
         if not parser.has_section(section):
             parser.add_section(section)
-        for field, option in [('username', 'username'), ('password', 'password'), ('isAdult', 'is_adult')]:
+        for field, option in [('username', 'username'), ('password', 'password')]:
             if field not in edits or field == 'password' and edits[field] == MASK:
                 continue
             value = edits[field]
-            if field == 'isAdult':
-                if not isinstance(value, bool):
-                    raise PolicyError('Invalid adult-content preference')
-                value = 'true' if value else 'false'
             if not isinstance(value, str) or len(value) > 4096 or '\n' in value or '\r' in value:
                 raise PolicyError('Invalid configuration value')
             parser.set(section, option, value)
@@ -113,7 +109,7 @@ def make_configuration(url, ini, transport):
     if not configuration.has_section('overrides'):
         configuration.add_section('overrides')
     overrides = {
-        'force_https': 'true', 'use_browser_cache': 'false', 'use_basic_cache': 'false',
+        'is_adult': 'true', 'force_https': 'true', 'use_browser_cache': 'false', 'use_basic_cache': 'false',
         'use_flaresolverr_proxy': 'false', 'use_nsapa_proxy': 'false', 'use_cloudscraper': 'false',
         'zip_output': 'false', 'make_directories': 'false', 'continue_on_chapter_error': 'false',
         'do_update_hook': 'false', 'pre_process_cmd': '', 'post_process_cmd': '',

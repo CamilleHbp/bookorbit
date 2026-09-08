@@ -173,8 +173,6 @@ def execute_request(request, report_progress=lambda progress: None):
 
 
 def failure_code(error):
-    if type(error).__name__ == 'AdultCheckRequired':
-        return 'adult_confirmation_required'
     if type(error).__name__ == 'AccessDenied':
         return 'access_denied'
     if type(error).__name__ == 'HTTPErrorFFF' and getattr(error, 'status_code', None) == 403:
