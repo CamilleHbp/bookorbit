@@ -282,7 +282,7 @@ onMounted(() => {
           </div>
         </details>
         <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
-        <SourceProfileEditor :settings="sourceSettings" compact @saved="handleProfileSaved" />
+        <SourceProfileEditor :settings="sourceSettings" :compact="configuring !== null" @saved="handleProfileSaved" />
         <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
         <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null" @click="importStories">{{
           t('fanfiction.importStories')

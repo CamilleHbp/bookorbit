@@ -57,7 +57,7 @@ async function save() {
         </label>
         <p v-if="preset && !compact" class="text-sm text-muted-foreground">{{ t(`fanfiction.presets.${preset.id}`) }}</p>
       </div>
-      <label v-if="!compact || !name" class="block space-y-1 text-sm"
+      <label v-if="!compact || !preset" class="block space-y-1 text-sm"
         ><span>{{ t('fanfiction.profileName') }}</span
         ><input v-model="name" required maxlength="120" class="w-full rounded-md border border-input bg-background p-2"
       /></label>
