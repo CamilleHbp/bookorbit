@@ -140,7 +140,9 @@ export class FanfictionWorkerService implements OnModuleDestroy {
         typeof response === 'object' && response && 'errorCode' in response && typeof response.errorCode === 'string'
           ? response.errorCode
           : 'runtime_failed';
-      const blocked = error instanceof ForbiddenException || ['configuration_blocked', 'authentication_required'].includes(code);
+      const blocked =
+        error instanceof ForbiddenException ||
+        ['configuration_blocked', 'authentication_required', 'adult_confirmation_required', 'access_denied'].includes(code);
       await this.jobs.finish(
         job,
         blocked

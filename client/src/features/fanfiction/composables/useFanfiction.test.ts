@@ -133,4 +133,23 @@ describe('managed Fanfiction page requests', () => {
     await first
     expect(state.sources.value.map((source) => source.id)).toEqual(['current-source'])
   })
+  it('selects an inline saved source and previews again with the updated settings', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    state.folderId.value = 8
+    state.urls.value = preview.canonicalUrl
+    mockApi.mockResolvedValue(response(completedPreview))
+    await state.previewStories()
+    const oldKey = state.candidates.value[0]!.previewKey
+    const profile = { id: 'saved-profile', libraryId: 5, name: 'AO3', version: 2, updatedAt: '' }
+    state.useSavedProfile(profile)
+    expect(state.profileId.value).toBe(profile.id)
+    expect(state.urls.value).toBe(preview.canonicalUrl)
+    expect(state.canImport.value).toBe(false)
+    await state.previewStories()
+    expect(state.candidates.value[0]!.previewKey).not.toBe(oldKey)
+    expect(JSON.parse(mockApi.mock.calls[1]![1]!.body as string).profileId).toBe(profile.id)
+    state.useSavedProfile({ ...profile, id: 'other', libraryId: 6 })
+    expect(state.profileId.value).toBe(profile.id)
+  })
 })

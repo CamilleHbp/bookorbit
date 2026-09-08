@@ -118,4 +118,69 @@ describe('Fanfiction settings API contract', () => {
     expect(state.cookies.value).toEqual([])
     expect(state.cookiePage.value).toBe(0)
   })
+  it('creates a Fiction.live preset with explicit age confirmation and selects the saved profile for testing', async () => {
+    const state = settings()
+    state.libraryId.value = 5
+    state.newProfile()
+    state.presetId.value = 'fictionlive'
+    state.applyPreset()
+    expect(state.section.value).toBe('fiction.live')
+    expect(state.isAdult.value).toBe(false)
+    state.isAdult.value = true
+    state.changeAdult()
+    const profile = { id: 'saved-profile', libraryId: 5, name: 'Fiction.live', version: 1, updatedAt: '' }
+    mockApi.mockResolvedValueOnce(response(profile)).mockResolvedValueOnce(response({ items: [profile], nextCursor: null }))
+    expect(await state.saveProfile()).toEqual(profile)
+    const body = JSON.parse(mockApi.mock.calls[0]![1]!.body as string)
+    expect(body.credentials).toEqual({ section: 'fiction.live', isAdult: true })
+    expect(body.configuration).toContain('dedup_img_files: true')
+    expect(body.configuration).not.toContain('is_adult')
+    expect(state.previewProfileId.value).toBe('saved-profile')
+    expect(state.isAdult.value).toBe(false)
+  })
+
+  it('reopens the correct site section and preserves secrets when only age confirmation changes', async () => {
+    const state = settings()
+    state.libraryId.value = 5
+    const profile = { id: 'profile', libraryId: 5, name: 'My fiction', version: 3, updatedAt: '' }
+    mockApi.mockResolvedValueOnce(
+      response({ ...profile, configuration: '[fiction.live]\nusername = reader\npassword = ********\nis_adult = true\n', cookies: [] }),
+    )
+    await state.editProfile(profile)
+    expect(state.section.value).toBe('fiction.live')
+    expect(state.presetId.value).toBe('fictionlive')
+    expect(state.isAdult.value).toBe(true)
+    state.isAdult.value = false
+    state.changeAdult()
+    mockApi.mockResolvedValue(response({ items: [], nextCursor: null }))
+    await state.saveProfile()
+    const body = JSON.parse(mockApi.mock.calls.find(([, options]) => options?.method === 'PATCH')![1]!.body as string)
+    expect(body.credentials).toEqual({ section: 'fiction.live', isAdult: false })
+    expect(body.configuration).toContain('password = ********')
+  })
+
+  it('does not carry credentials or age confirmation from one site preset to another', () => {
+    const state = settings()
+    state.newProfile()
+    state.presetId.value = 'ao3'
+    state.applyPreset()
+    state.username.value = 'reader'
+    state.changeUsername()
+    state.password.value = 'secret'
+    state.changePassword()
+    state.isAdult.value = true
+    state.changeAdult()
+    state.addCookie()
+    state.cookies.value[0]!.value = 'session-secret'
+    state.presetId.value = 'fictionlive'
+    state.applyPreset()
+    expect(state.cookies.value).toEqual([])
+    expect(state.username.value).toBe('')
+    expect(state.password.value).toBe('')
+    expect(state.isAdult.value).toBe(false)
+    state.presetId.value = ''
+    state.applyPreset()
+    expect(state.section.value).toBe('defaults')
+    expect(state.configuration.value).toBe('')
+  })
 })

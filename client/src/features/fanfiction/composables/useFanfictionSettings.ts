@@ -10,6 +10,7 @@ import type {
   FanfictionCookie,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
+import { sourcePresets } from '../lib/source-presets'
 
 export function useFanfictionSettings() {
   const libraries = ref<FanfictionLibraryPage['items']>([])
@@ -27,6 +28,55 @@ export function useFanfictionSettings() {
   const name = ref('')
   const configuration = ref('')
   const section = ref('defaults')
+  const presetId = ref('')
+  const preset = computed(() => sourcePresets.find((item) => item.id === presetId.value))
+  const isAdult = ref(false)
+  const adultChanged = ref(false)
+  function readSection() {
+    presetId.value = sourcePresets.find((item) => item.section === section.value)?.id ?? ''
+    const values = new Map<string, Record<string, string>>()
+    let current = ''
+    for (const line of configuration.value.split(/\r?\n/)) {
+      const header = line.match(/^\[([^\]]+)\]\s*$/)
+      if (header) {
+        current = header[1]!
+        values.set(current, {})
+      } else {
+        const entry = line.match(/^(username|password|is_adult)\s*[:=]\s*(.*)$/i)
+        if (entry && values.has(current)) values.get(current)![entry[1]!.toLowerCase()] = entry[2]!.trim()
+      }
+    }
+    const effective = { ...values.get('defaults'), ...values.get(section.value) }
+    username.value = effective.username ?? ''
+    password.value = effective.password ?? ''
+    isAdult.value = effective.is_adult?.toLowerCase() === 'true'
+    usernameChanged.value = false
+    passwordChanged.value = false
+    adultChanged.value = false
+  }
+  function changeAdult() {
+    adultChanged.value = true
+  }
+  function applyPreset() {
+    if (editing.value) return
+    if (!preset.value) {
+      clearEditor()
+      return
+    }
+    name.value = preset.value.name
+    section.value = preset.value.section
+    configuration.value = preset.value.configuration
+    cookies.value = []
+    cookiesChanged.value = false
+    cookiePage.value = 0
+    username.value = ''
+    password.value = ''
+    usernameChanged.value = false
+    passwordChanged.value = false
+    isAdult.value = false
+    adultChanged.value = false
+  }
+
   const username = ref('')
   const password = ref('')
   const usernameChanged = ref(false)
@@ -56,14 +106,15 @@ export function useFanfictionSettings() {
     body: JSON.stringify(body),
   })
   async function perform(action: () => Promise<void>) {
+    const current = generation
     busy.value = true
     error.value = ''
     try {
       await action()
     } catch (failure) {
-      error.value = failure instanceof Error ? failure.message : 'Request failed'
+      if (current === generation && !disposed) error.value = failure instanceof Error ? failure.message : 'Request failed'
     } finally {
-      busy.value = false
+      if (current === generation && !disposed) busy.value = false
     }
   }
   async function loadLibraries() {
@@ -76,6 +127,15 @@ export function useFanfictionSettings() {
       if (!page.items.some((item) => item.id === libraryId.value) && page.items[0]) libraryId.value = page.items[0].id
     })
     if (libraryId.value !== null) await reload()
+  }
+  function setLibrary(id: number | null) {
+    clearTimeout(timer)
+    generation++
+    libraryId.value = id
+    busy.value = false
+    clearEditor()
+    showEditor.value = false
+    error.value = ''
   }
   async function reload() {
     clearTimeout(timer)
@@ -149,6 +209,9 @@ export function useFanfictionSettings() {
     name.value = ''
     configuration.value = ''
     section.value = 'defaults'
+    presetId.value = ''
+    isAdult.value = false
+    adultChanged.value = false
     username.value = ''
     password.value = ''
     usernameChanged.value = false
@@ -174,6 +237,14 @@ export function useFanfictionSettings() {
       editing.value = view
       name.value = view.name
       configuration.value = view.configuration
+      const sections = [...view.configuration.matchAll(/^\[([^\]\r\n]+)\]\s*$/gm)].map((match) => match[1])
+      const known = sourcePresets.filter((item) => sections.includes(item.section))
+      if (known.length === 1) {
+        presetId.value = known[0]!.id
+        section.value = known[0]!.section
+      } else if (sections.length === 1 && sections[0]) section.value = sections[0]
+
+      readSection()
       cookies.value = (view.cookies ?? []).map((cookie) => ({ ...cookie, key: crypto.randomUUID() }))
       showEditor.value = true
     })
@@ -214,17 +285,20 @@ export function useFanfictionSettings() {
     cookiePage.value = Math.max(0, cookiePage.value - 1)
   }
   async function saveProfile() {
+    if (busy.value) return
     const current = generation
+    let saved: FanfictionProfileSummary | undefined
     await perform(async () => {
       const credentials =
-        usernameChanged.value || passwordChanged.value
+        usernameChanged.value || passwordChanged.value || adultChanged.value
           ? {
               section: section.value,
+              ...(adultChanged.value ? { isAdult: isAdult.value } : {}),
               ...(usernameChanged.value ? { username: username.value } : {}),
               ...(passwordChanged.value ? { password: password.value } : {}),
             }
           : undefined
-      await request(
+      const result = await request<FanfictionProfileSummary>(
         `${base.value}/profiles${editing.value ? `/${editing.value.id}` : ''}`,
         json(
           {
@@ -238,11 +312,15 @@ export function useFanfictionSettings() {
         ),
       )
       if (current !== generation) return
+      saved = result
+      previewProfileId.value = result.id
       closeEditor()
       const page = await request<FanfictionProfilePage>(`${base.value}/profiles?limit=50`)
-      profiles.value = page.items
+      if (current !== generation || disposed) return
+      profiles.value = [result, ...page.items.filter((item) => item.id !== result.id)]
       profileCursor.value = page.nextCursor
     })
+    return saved
   }
   async function preview() {
     const current = generation
@@ -288,6 +366,13 @@ export function useFanfictionSettings() {
     name,
     configuration,
     section,
+    presetId,
+    preset,
+    isAdult,
+    adultChanged,
+    changeAdult,
+    applyPreset,
+    readSection,
     username,
     password,
     cookies,
@@ -303,6 +388,7 @@ export function useFanfictionSettings() {
     previewUrl,
     previewProfileId,
     loadLibraries,
+    setLibrary,
     reload,
     moreProfiles,
     moreJobs,

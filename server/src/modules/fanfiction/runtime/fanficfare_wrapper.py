@@ -150,8 +150,14 @@ def execute_request(request):
 
 
 def failure_code(error):
-    if type(error).__name__ in ('FailedToLogin', 'AdultCheckRequired', 'AccessDenied') or (
-            type(error).__name__ == 'HTTPErrorFFF' and getattr(error, 'status_code', None) in (401, 403)):
+    if type(error).__name__ == 'AdultCheckRequired':
+        return 'adult_confirmation_required'
+    if type(error).__name__ == 'AccessDenied':
+        return 'access_denied'
+    if type(error).__name__ == 'HTTPErrorFFF' and getattr(error, 'status_code', None) == 403:
+        return 'access_denied'
+    if type(error).__name__ == 'FailedToLogin' or (
+            type(error).__name__ == 'HTTPErrorFFF' and getattr(error, 'status_code', None) == 401):
         return 'authentication_required'
     return 'configuration_blocked' if isinstance(error, (PolicyError, ValueError)) else 'source_failed'
 

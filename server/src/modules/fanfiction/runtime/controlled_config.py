@@ -13,6 +13,7 @@ remove_tags replace_tags_with_spans remove_class_chapter strip_chapter_numbers a
 chapter_title_strip_pattern chapter_title_def_pattern chapter_title_add_pattern
 mark_new_chapters output_css sort_ships sort_ships_splits collect_series
 always_login adult_view authors_are_multi author include_author_notes
+dedup_img_files include_appendices legend_spoilers show_spoiler_tags show_timestamps show_nsfw_cover_images
 '''.split())
 
 MASK = '********'

@@ -49,11 +49,39 @@ class ConfigurationTest(unittest.TestCase):
     def test_http_authentication_failures_are_configuration_blocked_instead_of_retried(self):
         from fanficfare.exceptions import HTTPErrorFFF
         from fanficfare_wrapper import failure_code
-        for status in [401, 403]:
+        for status in [401]:
             self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/private', status, 'secret response')), 'authentication_required')
+        self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/private', 403, 'secret response')), 'access_denied')
         for status in [429, 500, 503]:
             self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/story', status, 'server error')), 'source_failed')
         self.assertEqual(failure_code(PolicyError('Unsafe setting')), 'configuration_blocked')
+
+    def test_fictionlive_mature_story_requires_confirmation_not_a_password(self):
+        from fanficfare.adapters.adapter_fictionlive import FictionLiveAdapter
+        from fanficfare.exceptions import AdultCheckRequired
+        from fanficfare_wrapper import failure_code
+        from controlled_config import make_configuration
+        from safe_transport import SafeTransport
+        url = 'https://fiction.live/stories/Example/17CharacterIDhere/home'
+        data = {'t': 'Example', 'cht': 1700000000000, 'rt': 1690000000000,
+                'contentRating': 'nsfw', 'u': [{'n': 'Writer', '_id': 'writer-id'}]}
+        settings = '[fiction.live]\nusername: reader\npassword: secret\ndedup_img_files: true\ninclude_appendices: true\nlegend_spoilers: true\n'
+        adapter = FictionLiveAdapter(make_configuration(url, settings, SafeTransport([])), url)
+        with self.assertRaises(AdultCheckRequired) as raised:
+            adapter.extract_metadata(data, False)
+        self.assertEqual(failure_code(raised.exception), 'adult_confirmation_required')
+        settings = merge_configuration(settings, edits={'section': 'fiction.live', 'isAdult': True})
+        adapter = FictionLiveAdapter(make_configuration(url, settings, SafeTransport([])), url)
+        adapter.extract_metadata(data, False)
+        self.assertEqual(adapter.story.getMetadata('title'), 'Example')
+
+    def test_curated_sources_match_the_pinned_adapter_configuration_sections(self):
+        from fanficfare import adapters
+        for section in ['fiction.live', 'archiveofourown.org', 'www.royalroad.com',
+                        'forums.spacebattles.com', 'forums.sufficientvelocity.com',
+                        'forum.questionablequesting.com', 'www.fanfiction.net', 'www.fictionpress.com']:
+            with self.subTest(section=section):
+                self.assertIn(section, adapters.getConfigSectionsFor('https://' + section))
 
     def test_recognizes_canonical_urls_without_network_or_authenticated_access(self):
         from safe_transport import SafeTransport

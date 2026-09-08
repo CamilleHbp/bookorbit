@@ -8,6 +8,9 @@ import { usePermissions } from '@/features/auth/composables/usePermissions'
 import StoryBulkActions from './components/StoryBulkActions.vue'
 import { useFanfictionSourceBatch } from './composables/useFanfictionSourceBatch'
 import ExistingStories from './components/ExistingStories.vue'
+import SourceProfileEditor from './components/SourceProfileEditor.vue'
+import { useInlineSourceSettings } from './composables/useInlineSourceSettings'
+import { sourcePresets } from './lib/source-presets'
 import { useFanfiction } from './composables/useFanfiction'
 
 const { t } = useI18n()
@@ -47,6 +50,7 @@ const {
   moreSources,
   moreJobs,
   previewStories,
+  useSavedProfile,
   importSelected,
   cancelJob,
   retryJob,
@@ -58,6 +62,12 @@ const {
   showActivity,
   showDiscovery,
 } = useFanfiction()
+const { sourceSettings, detectedSite, selectedProfile, addSource, chooseSource, editSource } = useInlineSourceSettings(
+  libraryId,
+  profiles,
+  profileId,
+  urls,
+)
 const bulk = reactive(useFanfictionSourceBatch(libraryId, sources, search, state, refresh))
 function reviewBatch(job: FanfictionJob) {
   showStories()
@@ -173,6 +183,51 @@ onMounted(() => {
         <Button v-if="sourceCursor" variant="outline" :disabled="busy" @click="moreSources">{{ t('fanfiction.nextPage') }}</Button>
       </section>
       <section v-else-if="tab === 'add'" class="space-y-4">
+        <header class="space-y-1">
+          <h2 class="text-lg font-medium">{{ t('fanfiction.addStories') }}</h2>
+          <p class="text-sm text-muted-foreground">{{ t('fanfiction.addStoriesHelp') }}</p>
+        </header>
+        <label class="block space-y-1 text-sm"
+          >{{ t('fanfiction.storyUrls')
+          }}<textarea
+            v-model="urls"
+            :disabled="busy"
+            rows="5"
+            maxlength="65536"
+            class="border-input bg-background block w-full rounded-md border p-3"
+            :placeholder="t('fanfiction.urlsHelp')"
+          />
+        </label>
+
+        <div v-if="detectedSite" class="rounded-lg border border-border bg-card p-3 text-sm">
+          <p class="font-medium">{{ detectedSite.name }}</p>
+          <p class="text-muted-foreground">{{ t(`fanfiction.presets.${detectedSite.id}`) }}</p>
+        </div>
+        <details class="rounded-lg border border-border p-3">
+          <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.suggestedSources') }}</summary>
+          <p class="my-3 text-sm text-muted-foreground">{{ t('fanfiction.suggestedSourcesHelp') }}</p>
+          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <article v-for="site in sourcePresets" :key="site.id" class="space-y-2 rounded-md border border-border bg-card p-3">
+              <h3 class="font-medium">{{ site.name }}</h3>
+              <p class="text-sm text-muted-foreground">{{ t(`fanfiction.presets.${site.id}`) }}</p>
+              <div class="flex flex-wrap items-center gap-3">
+                <a :href="site.url" target="_blank" rel="noopener noreferrer" class="text-sm text-primary underline">{{
+                  t('fanfiction.visitSite')
+                }}</a>
+                <Button variant="outline" :disabled="busy || sourceSettings.busy" @click="chooseSource(site.id)">{{
+                  t('fanfiction.setUpSource')
+                }}</Button>
+              </div>
+            </article>
+          </div>
+          <a
+            href="https://github.com/JimmXinu/FanFicFare/wiki/SupportedSites"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="mt-3 inline-block text-sm text-primary underline"
+            >{{ t('fanfiction.allSupportedSites') }}</a
+          >
+        </details>
         <div class="grid gap-4 sm:grid-cols-2">
           <label class="space-y-1 text-sm"
             >{{ t('fanfiction.folder')
@@ -192,17 +247,15 @@ onMounted(() => {
           <Button v-if="folderCursor !== null" variant="outline" :disabled="busy" @click="moreFolders">{{ t('fanfiction.moreFolders') }}</Button
           ><Button v-if="profileCursor" variant="outline" :disabled="busy" @click="moreProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
         </div>
-        <label class="block space-y-1 text-sm"
-          >{{ t('fanfiction.storyUrls')
-          }}<textarea
-            v-model="urls"
-            :disabled="busy"
-            rows="5"
-            maxlength="65536"
-            class="border-input bg-background block w-full rounded-md border p-3"
-            :placeholder="t('fanfiction.urlsHelp')"
-          />
-        </label>
+        <div class="flex flex-wrap items-center gap-3">
+          <Button variant="outline" :disabled="busy || sourceSettings.busy" @click="addSource">{{ t('fanfiction.addProfile') }}</Button>
+          <Button v-if="selectedProfile" variant="outline" :disabled="busy || sourceSettings.busy" @click="editSource">{{
+            t('fanfiction.editSource')
+          }}</Button>
+          <p class="text-sm text-muted-foreground">{{ t('fanfiction.sourceSelectionHelp') }}</p>
+        </div>
+        <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
+        <SourceProfileEditor :settings="sourceSettings" @saved="useSavedProfile" />
         <div class="flex flex-wrap items-end gap-3">
           <label class="space-y-1 text-sm"
             >{{ t('fanfiction.schedule')
@@ -212,9 +265,14 @@ onMounted(() => {
               <option value="manual">{{ t('fanfiction.manualOnly') }}</option>
             </select></label
           >
-          <Button :disabled="busy || !urls.trim()" variant="outline" @click="previewStories">{{ t('fanfiction.previewStories') }}</Button>
-          <Button :disabled="busy || !canImport" @click="importSelected">{{ t('fanfiction.importSelected') }}</Button>
+          <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim()" variant="outline" @click="previewStories">{{
+            t('fanfiction.previewStories')
+          }}</Button>
+          <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !canImport" @click="importSelected">{{
+            t('fanfiction.importSelected')
+          }}</Button>
         </div>
+        <p v-if="candidates.length && !canImport" role="status" class="text-sm text-muted-foreground">{{ t('fanfiction.previewProgressHelp') }}</p>
         <article v-for="candidate in candidates" :key="candidate.previewKey" class="border-border bg-card space-y-2 rounded-lg border p-4">
           <label class="flex items-start gap-3"
             ><input

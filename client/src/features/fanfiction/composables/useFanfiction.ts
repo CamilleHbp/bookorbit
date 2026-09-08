@@ -6,6 +6,7 @@ import type {
   FanfictionLibraryPage,
   FanfictionPreview,
   FanfictionProfilePage,
+  FanfictionProfileSummary,
   FanfictionSource,
   FanfictionSourcePage,
   FanfictionActivity,
@@ -197,6 +198,12 @@ export function useFanfiction() {
   async function moreJobs() {
     await perform((current, path) => loadJobs(current, path, jobCursor.value))
   }
+  function useSavedProfile(profile: FanfictionProfileSummary) {
+    if (profile.libraryId !== libraryId.value) return
+    profiles.value = [profile, ...profiles.value.filter((item) => item.id !== profile.id)].slice(0, 50)
+    profileId.value = profile.id
+    candidates.value = candidates.value.filter((row) => row.job?.kind === 'import')
+  }
   async function previewStories() {
     await perform(async (current, path) => {
       const lines = [
@@ -382,6 +389,7 @@ export function useFanfiction() {
     moreSources,
     moreJobs,
     previewStories,
+    useSavedProfile,
     importSelected,
     cancelJob,
     retryJob,
