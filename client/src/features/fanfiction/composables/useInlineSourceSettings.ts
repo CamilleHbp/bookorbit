@@ -19,11 +19,21 @@ export function useInlineSourceSettings(
     },
     { immediate: true },
   )
-  function addSource() {
+  function addSource(value?: string) {
     sourceSettings.newProfile()
-    if (detectedSite.value) {
-      sourceSettings.presetId = detectedSite.value.id
+    const site = sourcePresetForUrl(value ?? urls.value.split(/\r?\n/).find((line) => line.trim()) ?? '')
+    if (site) {
+      sourceSettings.presetId = site.id
       sourceSettings.applyPreset()
+    } else {
+      try {
+        const host = new URL(value ?? urls.value.trim()).hostname
+        sourceSettings.name = host
+        sourceSettings.section = host
+        sourceSettings.configuration = `[${host}]\n`
+      } catch {
+        /* The URL field reports invalid input. */
+      }
     }
   }
   function chooseSource(id: string) {

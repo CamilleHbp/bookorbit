@@ -31,6 +31,55 @@ describe('managed Fanfiction page requests', () => {
     vi.useRealTimers()
   })
   const create = () => scope.run(() => useFanfiction())!
+  it('imports mixed sources directly using a matching profile for each URL', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    state.folderId.value = 8
+    state.urls.value = 'https://fiction.live/stories/a/id\nhttps://archiveofourown.org/works/123'
+    mockApi.mockImplementation(async (url) => {
+      if (String(url).includes('profile-match')) return response({ profile: String(url).includes('archiveofourown') ? { id: 'ao3-profile' } : null })
+      return response({ id: crypto.randomUUID(), kind: 'import', state: 'queued' })
+    })
+    await state.importStories()
+    const imports = mockApi.mock.calls.filter(([url]) => String(url).endsWith('/sources')).map(([, options]) => JSON.parse(options!.body as string))
+    expect(imports).toHaveLength(2)
+    expect(imports[0]).not.toHaveProperty('profileId')
+    expect(imports[1].profileId).toBe('ao3-profile')
+    expect(mockApi.mock.calls.some(([url]) => String(url).includes('/previews'))).toBe(false)
+    await state.importStories()
+    expect(mockApi.mock.calls.filter(([url]) => String(url).endsWith('/sources'))).toHaveLength(2)
+  })
+
+  it('retains profile, destination and request identity after an uncertain direct import', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    state.folderId.value = 8
+    state.profileId.value = 'chosen-profile'
+    state.urls.value = preview.canonicalUrl
+    mockApi.mockRejectedValueOnce(new Error('Disconnected')).mockResolvedValue(response({ id: 'job', kind: 'import', state: 'queued' }))
+    await state.importStories()
+    state.folderId.value = 9
+    state.profileId.value = 'another-profile'
+    await state.importStories()
+    expect(mockApi.mock.calls[0]?.[1]?.body).toBe(mockApi.mock.calls[1]?.[1]?.body)
+    expect(mockApi.mock.calls.every(([url]) => String(url).endsWith('/sources'))).toBe(true)
+  })
+
+  it('retries a blocked import with the saved profile and a new request identity', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    state.folderId.value = 8
+    state.profileId.value = 'old-profile'
+    state.urls.value = preview.canonicalUrl
+    mockApi.mockResolvedValue(response({ id: 'job', kind: 'import', state: 'configuration_blocked', errorCode: 'authentication_required' }))
+    await state.importStories()
+    await state.retryImport(state.candidates.value[0]!, { id: 'new-profile', libraryId: 5, name: 'Login', version: 1, updatedAt: '' })
+    const first = JSON.parse(mockApi.mock.calls[0]![1]!.body as string)
+    const retry = JSON.parse(mockApi.mock.calls[1]![1]!.body as string)
+    expect(retry.profileId).toBe('new-profile')
+    expect(retry.idempotencyKey).not.toBe(first.idempotencyKey)
+  })
+
   it('keeps the same update request identity after an uncertain response and sends refresh separately', async () => {
     const state = create()
     state.libraryId.value = 5

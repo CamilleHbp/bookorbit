@@ -19,6 +19,8 @@ import {
   type FanfictionCookieSink,
 } from './fanfiction-cookies';
 
+import { configurationMatchesUrl, withFanfictionDefaults } from './fanfiction-defaults';
+
 const profiles = schema.fanfictionProfiles;
 const summaryFields = {
   id: profiles.id,
@@ -48,6 +50,25 @@ export class FanfictionProfileService {
       .limit(dto.limit + 1);
     const items = rows.slice(0, dto.limit).map((row) => ({ ...row, updatedAt: row.updatedAt.toISOString() }));
     return { items, nextCursor: rows.length > dto.limit ? items[items.length - 1].id : null };
+  }
+
+  async match(libraryId: number, url: string, user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    let cursor: string | undefined;
+    do {
+      const rows = await this.db
+        .select()
+        .from(profiles)
+        .where(and(eq(profiles.libraryId, libraryId), cursor ? gt(profiles.id, cursor) : undefined))
+        .orderBy(asc(profiles.id))
+        .limit(50);
+      for (const row of rows) {
+        const document = JSON.parse(await this.vault.decrypt(libraryId, row.id, row.document)) as FanfictionProfileDocument;
+        if (configurationMatchesUrl(document.configuration, url)) return { profile: this.summary(row) };
+      }
+      cursor = rows.length === 50 ? rows[rows.length - 1].id : undefined;
+    } while (cursor);
+    return { profile: null };
   }
 
   async get(libraryId: number, id: string, user: RequestUser): Promise<FanfictionProfileView> {
@@ -207,7 +228,7 @@ export class FanfictionProfileService {
         throw error;
       }
     };
-    return { document, saveCookies };
+    return { document: withFanfictionDefaults(document, user), saveCookies };
   }
 
   private serialize(document: FanfictionProfileDocument) {

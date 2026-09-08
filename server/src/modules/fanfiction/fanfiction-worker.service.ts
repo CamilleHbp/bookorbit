@@ -4,6 +4,7 @@ import type { FanfictionJob } from '@bookorbit/types';
 import { UserService } from '../user/user.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
+import { withFanfictionDefaults } from './fanfiction-defaults';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionImportService } from './fanfiction-import.service';
@@ -103,7 +104,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const { document, saveCookies } =
         job.profileId && !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind)
           ? await this.profiles.session(job.libraryId, job.profileId, user, authorizeCookies)
-          : { document: { configuration: '', cookies: [] }, saveCookies: undefined };
+          : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
       const result: FanfictionJob['result'] =
         job.kind === 'replacement'
           ? await this.replacements.run(job, () => this.authorized(job), controller.signal)

@@ -7,6 +7,8 @@ import { useFanfictionSettings } from '@/features/fanfiction/composables/useFanf
 
 import SourceProfiles from '@/features/fanfiction/components/SourceProfiles.vue'
 
+import { useFanfictionPreferences } from '@/features/fanfiction/composables/useFanfictionPreferences'
+const preferences = reactive(useFanfictionPreferences())
 const settings = reactive(useFanfictionSettings())
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
@@ -30,7 +32,10 @@ const {
   cancelJob,
 } = toRefs(settings)
 onMounted(() => {
-  if (canManage.value) void settings.loadLibraries()
+  if (canManage.value) {
+    void settings.loadLibraries()
+    void preferences.load()
+  }
 })
 </script>
 
@@ -41,6 +46,14 @@ onMounted(() => {
       <p class="text-sm text-muted-foreground">{{ t('fanfiction.settingsDescription') }}</p>
     </header>
     <p v-if="error" role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">{{ error }}</p>
+    <section class="space-y-2 rounded-lg border border-border p-4">
+      <label class="flex items-center gap-3 text-sm">
+        <input v-model="preferences.isAdult" type="checkbox" :disabled="preferences.busy" @change="preferences.save" />
+        <span>{{ t('fanfiction.adultConfirmation') }}</span>
+      </label>
+      <p class="text-sm text-muted-foreground">{{ t('fanfiction.adultGlobalHelp') }}</p>
+      <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
+    </section>
     <label class="block space-y-2 text-sm">
       <span>{{ t('fanfiction.library') }}</span>
       <select v-model="libraryId" :disabled="busy" class="w-full rounded-md border border-input bg-background p-2" @change="reload">

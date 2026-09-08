@@ -8,6 +8,7 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import {
+  MatchFanfictionProfileDto,
   CreateFanfictionProfileDto,
   ListFanfictionProfilesDto,
   PreviewFanfictionDto,
@@ -84,6 +85,11 @@ export class FanfictionController {
   @Get('profiles')
   list(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: ListFanfictionProfilesDto, @CurrentUser() user: RequestUser) {
     return this.profiles.list(libraryId, dto, user);
+  }
+
+  @Get('profile-match')
+  match(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: MatchFanfictionProfileDto, @CurrentUser() user: RequestUser) {
+    return this.profiles.match(libraryId, dto.url, user);
   }
 
   @Get('profiles/:profileId')

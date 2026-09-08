@@ -10343,7 +10343,7 @@
     "customSource": "Other website",
     "adultConfirmation": "I am an adult and want to access mature stories",
     "advancedSettings": "Advanced settings and cookies",
-    "addStoriesHelp": "Preview your story links, then choose which to import.",
+    "addStoriesHelp": "Paste story URLs to import them.",
     "suggestedSources": "Explore supported sources",
     "visitSite": "Visit website",
     "setUpSource": "Set up",
@@ -10359,7 +10359,13 @@
       "questionablequesting": "Forum fiction and quests. Sign in for restricted stories.",
       "fanfiction": "Fanfiction across fandoms.",
       "fictionpress": "Original fiction and poetry."
-    }
+    },
+    "adultGlobalHelp": "Applies to all your story sources and libraries.",
+    "importOptions": "Import options",
+    "automaticProfile": "Automatic",
+    "importStories": "Import stories",
+    "allowAdultStories": "I am an adult. Allow adult stories.",
+    "configureSource": "Sign in or configure source"
   },
   "koreaderCopies": {
     "title": "Device copies",
