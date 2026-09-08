@@ -1,0 +1,5 @@
+- Use the root package.json packageManager version and Node >= 24. Install dependencies with `pnpm install`; use `pnpm dev` for native server/client/types watchers.
+- `pnpm setup` is the local bootstrap script. Inspect its database actions before running it in this environment; follow `mem:deployment` for the existing shared PostgreSQL service. Do not start an additional PostgreSQL container.
+- Generate migrations with `pnpm --dir server db:generate <name>`. Apply with `pnpm db:migrate` only after checking the target database. Test migrations in an isolated database in the shared PostgreSQL instance.
+- Targeted tests: `pnpm --filter server test <test-path>` or `pnpm --filter client test:unit --run <test-path>`.
+- `pnpm typecheck` checks server and client. `pnpm lint:check` includes frontend locale/style validation. `pnpm verify:fast` runs lint and typechecks; `pnpm verify` also runs tests.

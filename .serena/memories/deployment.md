@@ -1,0 +1,6 @@
+- Live BookOrbit: https://books.camille.studio on `nf-showcases`, accessible with `ssh nf-showcases`.
+- Deployment is managed in `/home/debian/HomeServer` on that host. Read its AGENTS.md before deployment operations. Local counterpart: `/Users/camille/Dev/Personal/HomeServer`.
+- Use HomeServer's shared PostgreSQL service with BookOrbit's own database and role. Do not create another PostgreSQL container. Use an isolated database in that shared instance for migration/integration tests, never destructive fixtures against live `bookorbit`.
+- Persistent files belong under `/srv/homeserver/data/bookorbit`. Inspect current Compose configuration and mounts before changing them. Never recursively change permissions or ownership of shared storage.
+- A missing local Docker daemon or server/.env does not imply the deployment/database is unavailable; inspect nf-showcases first.
+- Fork remote: `git@github.com:CamilleHbp/bookorbit.git` (origin). Fetch before work, preserve existing changes on a feature branch, synchronize verified implementation with GitHub, and never overwrite remote work or deploy incomplete features.
