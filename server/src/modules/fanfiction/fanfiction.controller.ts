@@ -8,6 +8,8 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import {
+  RetryFanfictionJobDto,
+  MatchFanfictionProfileDto,
   CreateFanfictionProfileDto,
   ListFanfictionProfilesDto,
   PreviewFanfictionDto,
@@ -71,8 +73,13 @@ export class FanfictionController {
 
   @Post('jobs/:jobId/retry')
   @HttpCode(202)
-  retryJob(@Param('libraryId', ParseIntPipe) libraryId: number, @Param('jobId', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
-    return this.jobs.retry(libraryId, id, user);
+  retryJob(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('jobId', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+    @Body() dto: RetryFanfictionJobDto,
+  ) {
+    return this.jobs.retry(libraryId, id, user, undefined, dto.profileId);
   }
 
   @Get('sites')
@@ -84,6 +91,11 @@ export class FanfictionController {
   @Get('profiles')
   list(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: ListFanfictionProfilesDto, @CurrentUser() user: RequestUser) {
     return this.profiles.list(libraryId, dto, user);
+  }
+
+  @Get('profile-match')
+  match(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: MatchFanfictionProfileDto, @CurrentUser() user: RequestUser) {
+    return this.profiles.match(libraryId, dto.url, user);
   }
 
   @Get('profiles/:profileId')

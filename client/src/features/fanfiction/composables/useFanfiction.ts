@@ -5,6 +5,7 @@ import type {
   FanfictionJobPage,
   FanfictionLibraryPage,
   FanfictionPreview,
+  FanfictionProfileMatch,
   FanfictionProfilePage,
   FanfictionProfileSummary,
   FanfictionSource,
@@ -17,6 +18,8 @@ import { api } from '@/lib/api'
 interface Candidate {
   url: string
   profileId: string
+  destination?: { folderId: number; intervalMinutes: number | null }
+  resolvedProfileId?: string
   previewKey: string
   importKey: string
   selected: boolean
@@ -204,6 +207,87 @@ export function useFanfiction() {
     profileId.value = profile.id
     candidates.value = candidates.value.filter((row) => row.job?.kind === 'import')
   }
+  async function submitImport(candidate: Candidate, current: number, path: string) {
+    if (folderId.value === null) return
+    candidate.destination ??= { folderId: folderId.value, intervalMinutes: schedule.value === 'manual' ? null : Number(schedule.value) }
+    if (candidate.resolvedProfileId === undefined) {
+      if (candidate.profileId) candidate.resolvedProfileId = candidate.profileId
+      else {
+        const match = await request<FanfictionProfileMatch>(`${path}/profile-match?${new URLSearchParams({ url: candidate.url })}`)
+        if (!currentScope(current)) return
+        candidate.resolvedProfileId = match.profile?.id ?? ''
+        if (match.profile) profiles.value = [match.profile, ...profiles.value.filter((item) => item.id !== match.profile!.id)].slice(0, 50)
+      }
+    }
+    if (!currentScope(current)) return
+    const job = await request<FanfictionJob>(`${path}/sources`, {
+      url: candidate.url,
+      ...candidate.destination,
+      idempotencyKey: candidate.importKey,
+      ...(candidate.resolvedProfileId ? { profileId: candidate.resolvedProfileId } : {}),
+    })
+    if (!currentScope(current)) return
+    candidate.job = job
+    candidate.selected = false
+    schedulePoll(current)
+  }
+  async function importStories() {
+    if (busy.value || folderId.value === null) return
+    await perform(async (current, path) => {
+      const lines = [
+        ...new Set(
+          urls.value
+            .split(/\r?\n/)
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
+      ]
+      if (!lines.length || lines.length > 100) throw new Error('Enter between 1 and 100 story URLs, one per line.')
+      if (
+        lines.some((value) => {
+          try {
+            const url = new URL(value)
+            return value.length > 4096 || url.protocol !== 'https:' || !!url.username || !!url.password || (!!url.port && url.port !== '443')
+          } catch {
+            return true
+          }
+        })
+      )
+        throw new Error('Each story needs a valid HTTPS URL.')
+      const prior = new Map(candidates.value.map((row) => [row.url, row]))
+      candidates.value = lines.map(
+        (url) =>
+          prior.get(url) ?? {
+            url,
+            profileId: profileId.value,
+            previewKey: crypto.randomUUID(),
+            importKey: crypto.randomUUID(),
+            selected: true,
+            job: null,
+            preview: null,
+          },
+      )
+      for (const candidate of candidates.value) {
+        if (!currentScope(current)) break
+        if (candidate.job) continue
+        await submitImport(candidate, current, path)
+      }
+    })
+  }
+  async function retryImport(candidate: Candidate, profile?: FanfictionProfileSummary) {
+    if (busy.value || !candidate.job || !['configuration_blocked', 'failed', 'cancelled'].includes(candidate.job.state)) return
+    if (profile && profile.libraryId !== libraryId.value) return
+    const id = candidate.job.id
+    const selectedProfile = profile?.id ?? (profileId.value || candidate.resolvedProfileId)
+    await perform(async (current, path) => {
+      const job = await request<FanfictionJob>(`${path}/jobs/${id}/retry`, selectedProfile ? { profileId: selectedProfile } : {})
+      if (!currentScope(current)) return
+      candidate.job = job
+      candidate.resolvedProfileId = selectedProfile
+      if (profile) profiles.value = [profile, ...profiles.value.filter((item) => item.id !== profile.id)].slice(0, 50)
+      schedulePoll(current)
+    })
+  }
   async function previewStories() {
     await perform(async (current, path) => {
       const lines = [
@@ -388,6 +472,8 @@ export function useFanfiction() {
     refresh,
     moreSources,
     moreJobs,
+    importStories,
+    retryImport,
     previewStories,
     useSavedProfile,
     importSelected,

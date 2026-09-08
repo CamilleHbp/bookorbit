@@ -17,6 +17,14 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+export class FanfictionPreferencesDto {
+  @IsBoolean() isAdult!: boolean;
+}
+
+export class MatchFanfictionProfileDto {
+  @IsString() @MaxLength(4096) @Matches(/^https:\/\/[^\s]+$/) url!: string;
+}
+
 export class FanfictionCookieDto {
   @IsString() @MinLength(1) @MaxLength(256) @Matches(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/) name!: string;
   @IsString() @MaxLength(4096) @Matches(/^[\x20-\x7e]*$/) value!: string;
@@ -63,4 +71,8 @@ export class FanfictionLibrariesDto {
 
 export class FanfictionJobsStatusDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @IsUUID(undefined, { each: true }) ids!: string[];
+}
+
+export class RetryFanfictionJobDto {
+  @IsOptional() @IsUUID() profileId?: string;
 }

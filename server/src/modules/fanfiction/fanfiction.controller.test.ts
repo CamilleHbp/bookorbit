@@ -26,7 +26,7 @@ import { FanfictionSourceBatchService } from './fanfiction-source-batch.service'
 describe('Fanfiction HTTP contracts', () => {
   let app: NestFastifyApplication;
   const replacements = { upload: vi.fn() };
-  const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn(), remove: vi.fn() };
+  const profiles = { match: vi.fn(), create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn(), remove: vi.fn() };
   const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn(), retry: vi.fn(), approveReplacement: vi.fn() };
   const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), check: vi.fn(), rollback: vi.fn() };
   const discovery = { start: vi.fn(), list: vi.fn() };
@@ -91,6 +91,19 @@ describe('Fanfiction HTTP contracts', () => {
     expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionController)).toBe('owner');
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionSourceController)).toBe(Permission.ManageLibraries);
     expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionSourceController)).toBe('owner');
+  });
+  it('matches source profiles and validates profile overrides when retrying', async () => {
+    profiles.match.mockResolvedValue({ profile: { id: uuid, name: 'Login' } });
+    const url = 'https://archiveofourown.org/works/123';
+    const match = await app.inject({ method: 'GET', url: `${base}/profile-match?${new URLSearchParams({ url })}` });
+    expect(match.statusCode).toBe(200);
+    expect(match.json()).toEqual({ profile: { id: uuid, name: 'Login' } });
+    expect(profiles.match).toHaveBeenCalledWith(5, url, undefined);
+    expect((await app.inject({ method: 'GET', url: `${base}/profile-match?url=file:///etc/passwd` })).statusCode).toBe(400);
+    jobs.retry.mockResolvedValue({ id: uuid, state: 'queued' });
+    expect((await app.inject({ method: 'POST', url: `${base}/jobs/${uuid}/retry`, payload: { profileId: uuid } })).statusCode).toBe(202);
+    expect(jobs.retry).toHaveBeenCalledWith(5, uuid, undefined, undefined, uuid);
+    expect((await app.inject({ method: 'POST', url: `${base}/jobs/${uuid}/retry`, payload: { profileId: 'invalid' } })).statusCode).toBe(400);
   });
   it('validates multipart replacement and exact reduction approval contracts', async () => {
     const job = { id: uuid, kind: 'replacement', state: 'queued' };
@@ -311,7 +324,7 @@ describe('Fanfiction HTTP contracts', () => {
     expect(response.json()).toEqual(job);
     expect((await app.inject({ method: 'POST', url: `${base}/jobs/${uuid}/cancel`, payload: {} })).statusCode).toBe(202);
     expect((await app.inject({ method: 'POST', url: `${base}/jobs/${uuid}/retry`, payload: {} })).statusCode).toBe(202);
-    expect(jobs.retry).toHaveBeenCalledWith(5, uuid, undefined);
+    expect(jobs.retry).toHaveBeenCalledWith(5, uuid, undefined, undefined, undefined);
     expect((await app.inject({ method: 'GET', url: `${base}/jobs?limit=101` })).statusCode).toBe(400);
     expect((await app.inject({ method: 'POST', url: `${base}/previews`, payload: { ...payload, url: 'file:///etc/passwd' } })).statusCode).toBe(400);
     jobs.status.mockResolvedValue({ items: [job] });

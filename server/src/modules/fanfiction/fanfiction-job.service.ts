@@ -299,8 +299,9 @@ export class FanfictionJobService {
     return this.get(libraryId, id, user);
   }
 
-  async retry(libraryId: number, id: string, user: RequestUser, transaction?: DatabaseTransaction) {
+  async retry(libraryId: number, id: string, user: RequestUser, transaction?: DatabaseTransaction, profileId?: string) {
     await this.access.administer(user, libraryId);
+    if (profileId) await this.profiles.document(libraryId, profileId, user);
     const operation = async (tx: DatabaseTransaction) => {
       const [job] = await tx
         .select()
@@ -309,6 +310,7 @@ export class FanfictionJobService {
         .for('update');
       if (!job) throw new NotFoundException('Fanfiction job not found in this library');
       if (['queued', 'running', 'succeeded', 'no_change'].includes(job.state)) return this.view(job);
+      if (profileId && job.kind !== 'import') throw new BadRequestException('Profile changes are only supported when retrying imports');
       if (job.errorCode === 'profile_deleted')
         throw new ConflictException('This profile was deleted. Start again with another profile or Public access.');
       if (job.sourceId) {
@@ -317,6 +319,7 @@ export class FanfictionJobService {
           .from(schema.fanfictionSources)
           .where(and(eq(schema.fanfictionSources.id, job.sourceId), eq(schema.fanfictionSources.libraryId, libraryId)))
           .for('update');
+        if (profileId && source?.bookFileId) throw new ConflictException('This story has already been imported');
         if (!source || source.state === 'unlinked' || (job.sourceVersion !== null && source.version !== job.sourceVersion && !job.result?.revisionId))
           throw new ConflictException('Source settings changed; review the pending operation before retrying');
         const [other] = await tx
@@ -329,6 +332,7 @@ export class FanfictionJobService {
           await tx
             .update(schema.fanfictionSources)
             .set({
+              ...(profileId ? { profileId, version: source.version + 1 } : {}),
               state: source.bookFileId ? 'paused' : 'pending',
               attentionCode: source.attentionCode === 'destination_profile_required' ? source.attentionCode : null,
             })
@@ -338,6 +342,7 @@ export class FanfictionJobService {
       const [updated] = await tx
         .update(jobs)
         .set({
+          ...(profileId ? { profileId } : {}),
           state: 'queued',
           userId: user.id,
           tokenVersion: user.tokenVersion,

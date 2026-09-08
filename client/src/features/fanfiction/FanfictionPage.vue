@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Permission, type FanfictionJob } from '@bookorbit/types'
+import { Permission, type FanfictionJob, type FanfictionProfileSummary } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import StoryBulkActions from './components/StoryBulkActions.vue'
@@ -11,7 +11,7 @@ import ExistingStories from './components/ExistingStories.vue'
 import SourceProfiles from './components/SourceProfiles.vue'
 import SourceProfileEditor from './components/SourceProfileEditor.vue'
 import { useInlineSourceSettings } from './composables/useInlineSourceSettings'
-import { sourcePresets } from './lib/source-presets'
+import { useFanfictionPreferences } from './composables/useFanfictionPreferences'
 import { useFanfiction } from './composables/useFanfiction'
 
 const { t } = useI18n()
@@ -42,7 +42,6 @@ const {
   busy,
   error,
   tab,
-  canImport,
   loadLibraries,
   changeLibrary,
   moreFolders,
@@ -50,9 +49,9 @@ const {
   refresh,
   moreSources,
   moreJobs,
-  previewStories,
+  importStories,
+  retryImport,
   useSavedProfile,
-  importSelected,
   cancelJob,
   retryJob,
   togglePaused,
@@ -63,12 +62,34 @@ const {
   showActivity,
   showDiscovery,
 } = useFanfiction()
-const { sourceSettings, detectedSite, selectedProfile, addSource, chooseSource, editSource } = useInlineSourceSettings(
-  libraryId,
-  profiles,
-  profileId,
-  urls,
-)
+const { sourceSettings, detectedSite, selectedProfile, addSource, editSource } = useInlineSourceSettings(libraryId, profiles, profileId, urls)
+const preferences = reactive(useFanfictionPreferences())
+const configuring = ref<(typeof candidates.value)[number] | null>(null)
+function handleAddSource() {
+  configuring.value = null
+  addSource()
+}
+async function configureImport(candidate: (typeof candidates.value)[number]) {
+  const override = profiles.value.find((item) => item.id === profileId.value)
+  if (override && override.id !== candidate.resolvedProfileId) {
+    await retryImport(candidate, override)
+    return
+  }
+  configuring.value = candidate
+  const profile = profiles.value.find((item) => item.id === candidate.resolvedProfileId)
+  if (profile) await sourceSettings.editProfile(profile)
+  else addSource(candidate.url)
+}
+async function handleProfileSaved(profile: FanfictionProfileSummary) {
+  const candidate = configuring.value
+  configuring.value = null
+  if (profile.libraryId !== libraryId.value) return
+  if (candidate) await retryImport(candidate, profile)
+  else useSavedProfile(profile)
+}
+async function allowAdultImport(candidate: (typeof candidates.value)[number]) {
+  if (await preferences.allowAdult()) await retryImport(candidate)
+}
 function showProfiles() {
   tab.value = 'profiles'
 }
@@ -76,6 +97,9 @@ function handleRefresh() {
   if (tab.value === 'profiles') void sourceSettings.reload()
   else void refresh()
 }
+watch(libraryId, () => {
+  configuring.value = null
+})
 watch([tab, libraryId], ([activeTab, id]) => {
   if (activeTab === 'profiles' && id !== null) void sourceSettings.reload()
 })
@@ -209,7 +233,6 @@ onMounted(() => {
       <section v-else-if="tab === 'add'" class="space-y-4">
         <header class="space-y-1">
           <h2 class="text-lg font-medium">{{ t('fanfiction.addStories') }}</h2>
-          <p class="text-sm text-muted-foreground">{{ t('fanfiction.addStoriesHelp') }}</p>
         </header>
         <label class="block space-y-1 text-sm"
           >{{ t('fanfiction.storyUrls')
@@ -223,88 +246,49 @@ onMounted(() => {
           />
         </label>
 
-        <div v-if="detectedSite" class="rounded-lg border border-border bg-card p-3 text-sm">
-          <p class="font-medium">{{ detectedSite.name }}</p>
-          <p class="text-muted-foreground">{{ t(`fanfiction.presets.${detectedSite.id}`) }}</p>
-        </div>
-        <details class="rounded-lg border border-border p-3">
-          <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.suggestedSources') }}</summary>
-          <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <article v-for="site in sourcePresets" :key="site.id" class="space-y-2 rounded-md border border-border bg-card p-3">
-              <h3 class="font-medium">{{ site.name }}</h3>
-              <p class="text-sm text-muted-foreground">{{ t(`fanfiction.presets.${site.id}`) }}</p>
-              <div class="flex flex-wrap items-center gap-3">
-                <a :href="site.url" target="_blank" rel="noopener noreferrer" class="text-sm text-primary underline">{{
-                  t('fanfiction.visitSite')
-                }}</a>
-                <Button variant="outline" :disabled="busy || sourceSettings.busy" @click="chooseSource(site.id)">{{
-                  t('fanfiction.setUpSource')
-                }}</Button>
-              </div>
-            </article>
+        <p v-if="detectedSite" class="text-sm text-muted-foreground">{{ detectedSite.name }}</p>
+        <details class="space-y-3 rounded-lg border border-border p-3">
+          <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.importOptions') }}</summary>
+          <div class="grid gap-4 pt-3 sm:grid-cols-2">
+            <label class="space-y-1 text-sm"
+              >{{ t('fanfiction.folder') }}
+              <select v-model="folderId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
+                <option v-for="folder in folders" :key="folder.id" :value="folder.id">{{ folder.path }}</option>
+              </select>
+            </label>
+            <label class="space-y-1 text-sm"
+              >{{ t('fanfiction.profile') }}
+              <select v-model="profileId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
+                <option value="">{{ t('fanfiction.automaticProfile') }}</option>
+                <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+              </select>
+            </label>
+            <label class="space-y-1 text-sm"
+              >{{ t('fanfiction.schedule') }}
+              <select v-model="schedule" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
+                <option value="1440">{{ t('fanfiction.daily') }}</option>
+                <option value="60">{{ t('fanfiction.hourly') }}</option>
+                <option value="manual">{{ t('fanfiction.manualOnly') }}</option>
+              </select>
+            </label>
           </div>
-          <a
-            href="https://github.com/JimmXinu/FanFicFare/wiki/SupportedSites"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="mt-3 inline-block text-sm text-primary underline"
-            >{{ t('fanfiction.allSupportedSites') }}</a
-          >
+          <div class="flex flex-wrap gap-2">
+            <Button v-if="folderCursor !== null" variant="outline" :disabled="busy" @click="moreFolders">{{ t('fanfiction.moreFolders') }}</Button>
+            <Button v-if="profileCursor" variant="outline" :disabled="busy" @click="moreProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
+            <Button variant="outline" :disabled="busy || sourceSettings.busy" @click="handleAddSource">{{ t('fanfiction.addProfile') }}</Button>
+            <Button v-if="selectedProfile" variant="outline" :disabled="busy || sourceSettings.busy" @click="editSource">{{
+              t('fanfiction.editSource')
+            }}</Button>
+          </div>
         </details>
-        <div class="grid gap-4 sm:grid-cols-2">
-          <label class="space-y-1 text-sm"
-            >{{ t('fanfiction.folder')
-            }}<select v-model="folderId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
-              <option v-for="folder in folders" :key="folder.id" :value="folder.id">{{ folder.path }}</option>
-            </select></label
-          >
-          <label class="space-y-1 text-sm"
-            >{{ t('fanfiction.profile')
-            }}<select v-model="profileId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
-              <option value="">{{ t('fanfiction.noProfile') }}</option>
-              <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
-            </select></label
-          >
-        </div>
-        <div class="flex gap-2">
-          <Button v-if="folderCursor !== null" variant="outline" :disabled="busy" @click="moreFolders">{{ t('fanfiction.moreFolders') }}</Button
-          ><Button v-if="profileCursor" variant="outline" :disabled="busy" @click="moreProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
-        </div>
-        <div class="flex flex-wrap items-center gap-3">
-          <Button variant="outline" :disabled="busy || sourceSettings.busy" @click="addSource">{{ t('fanfiction.addProfile') }}</Button>
-          <Button v-if="selectedProfile" variant="outline" :disabled="busy || sourceSettings.busy" @click="editSource">{{
-            t('fanfiction.editSource')
-          }}</Button>
-          <p class="text-sm text-muted-foreground">{{ t('fanfiction.sourceSelectionHelp') }}</p>
-        </div>
         <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
-        <SourceProfileEditor :settings="sourceSettings" @saved="useSavedProfile" />
-        <div class="flex flex-wrap items-end gap-3">
-          <label class="space-y-1 text-sm"
-            >{{ t('fanfiction.schedule')
-            }}<select v-model="schedule" :disabled="busy" class="border-input bg-background block rounded-md border p-2">
-              <option value="1440">{{ t('fanfiction.daily') }}</option>
-              <option value="60">{{ t('fanfiction.hourly') }}</option>
-              <option value="manual">{{ t('fanfiction.manualOnly') }}</option>
-            </select></label
-          >
-          <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim()" variant="outline" @click="previewStories">{{
-            t('fanfiction.previewStories')
-          }}</Button>
-          <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !canImport" @click="importSelected">{{
-            t('fanfiction.importSelected')
-          }}</Button>
-        </div>
-        <p v-if="candidates.length && !canImport" role="status" class="text-sm text-muted-foreground">{{ t('fanfiction.previewProgressHelp') }}</p>
+        <SourceProfileEditor :settings="sourceSettings" compact @saved="handleProfileSaved" />
+        <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
+        <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null" @click="importStories">{{
+          t('fanfiction.importStories')
+        }}</Button>
         <article v-for="candidate in candidates" :key="candidate.previewKey" class="border-border bg-card space-y-2 rounded-lg border p-4">
-          <label class="flex items-start gap-3"
-            ><input
-              v-model="candidate.selected"
-              type="checkbox"
-              :disabled="busy || candidate.job?.kind === 'import' || candidate.job?.state !== 'succeeded'"
-              class="mt-1"
-            /><span class="min-w-0 break-words font-medium">{{ candidate.preview?.title || candidate.url }}</span></label
-          >
+          <p class="min-w-0 break-words font-medium">{{ candidate.preview?.title || candidate.url }}</p>
           <p v-if="candidate.preview" class="text-muted-foreground text-sm">
             {{ candidate.preview.authors.join(', ') }} · {{ t('fanfiction.chapterCount', { count: candidate.preview.chapterCount }) }} ·
             {{ candidate.preview.status }}
@@ -314,6 +298,21 @@ onMounted(() => {
             {{ t(`fanfiction.states.${candidate.job.state}`)
             }}<span v-if="candidate.job.errorCode">: {{ t(`fanfiction.errors.${candidate.job.errorCode}`) }}</span>
           </p>
+          <template v-if="candidate.job && ['configuration_blocked', 'failed', 'cancelled'].includes(candidate.job.state)">
+            <Button
+              v-if="candidate.job.errorCode === 'adult_confirmation_required'"
+              :disabled="busy || preferences.busy"
+              @click="allowAdultImport(candidate)"
+              >{{ t('fanfiction.allowAdultStories') }}</Button
+            >
+            <Button
+              v-else-if="['authentication_required', 'configuration_blocked', 'access_denied'].includes(candidate.job.errorCode ?? '')"
+              :disabled="busy || sourceSettings.busy"
+              @click="configureImport(candidate)"
+              >{{ t('fanfiction.configureSource') }}</Button
+            >
+            <Button v-else :disabled="busy" @click="retryImport(candidate)">{{ t('fanfiction.retry') }}</Button>
+          </template>
           <RouterLink
             v-if="candidate.job?.result?.bookId"
             :to="{ name: 'book-detail', params: { bookId: candidate.job.result.bookId } }"

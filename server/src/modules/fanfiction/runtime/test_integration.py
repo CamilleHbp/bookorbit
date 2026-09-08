@@ -12,6 +12,19 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_public_fictionlive_uses_global_adult_preference_without_a_profile(self):
+        from controlled_config import make_configuration
+        from unittest.mock import Mock
+        configuration = make_configuration(
+            'https://fiction.live/stories/Example/17CharacterIDhere/home',
+            '[overrides]\nis_adult: true\n', Mock())
+        self.assertTrue(configuration.getConfig('is_adult'))
+        self.assertTrue(configuration.getConfig('dedup_img_files'))
+        self.assertTrue(configuration.getConfig('include_appendices'))
+        self.assertTrue(configuration.getConfig('legend_spoilers'))
+        self.assertFalse(configuration.getConfig('username'))
+        self.assertFalse(configuration.getConfig('password'))
+
     def test_uses_raw_chapter_and_word_counts_instead_of_formatted_metadata(self):
         from fanficfare.adapters.adapter_test1 import TestSiteAdapter
         original = TestSiteAdapter.getStoryMetadataOnly

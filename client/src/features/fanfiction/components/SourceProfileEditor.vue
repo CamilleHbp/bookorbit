@@ -5,7 +5,7 @@ import type { FanfictionProfileSummary } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import type { useFanfictionSettings } from '../composables/useFanfictionSettings'
 import { sourcePresets } from '../lib/source-presets'
-const props = defineProps<{ settings: UnwrapRef<ReturnType<typeof useFanfictionSettings>> }>()
+const props = defineProps<{ settings: UnwrapRef<ReturnType<typeof useFanfictionSettings>>; compact?: boolean }>()
 const emit = defineEmits<{ saved: [profile: FanfictionProfileSummary] }>()
 const { t } = useI18n()
 const {
@@ -48,16 +48,16 @@ async function save() {
     <fieldset :disabled="busy" class="space-y-4">
       <div class="space-y-2">
         <h2 class="text-lg font-medium">{{ t(editing ? 'fanfiction.editSource' : 'fanfiction.addProfile') }}</h2>
-        <label v-if="!editing" class="block space-y-1 text-sm">
+        <label v-if="!editing && !compact" class="block space-y-1 text-sm">
           <span>{{ t('fanfiction.chooseSite') }}</span>
           <select v-model="presetId" class="w-full rounded-md border border-input bg-background p-2" @change="applyPreset">
             <option value="">{{ t('fanfiction.customSource') }}</option>
             <option v-for="site in sourcePresets" :key="site.id" :value="site.id">{{ site.name }}</option>
           </select>
         </label>
-        <p v-if="preset" class="text-sm text-muted-foreground">{{ t(`fanfiction.presets.${preset.id}`) }}</p>
+        <p v-if="preset && !compact" class="text-sm text-muted-foreground">{{ t(`fanfiction.presets.${preset.id}`) }}</p>
       </div>
-      <label class="block space-y-1 text-sm"
+      <label v-if="!compact || !name" class="block space-y-1 text-sm"
         ><span>{{ t('fanfiction.profileName') }}</span
         ><input v-model="name" required maxlength="120" class="w-full rounded-md border border-input bg-background p-2"
       /></label>
@@ -78,12 +78,12 @@ async function save() {
         /></label>
       </div>
       <Button v-if="!preset || preset.login" type="button" variant="outline" @click="clearPassword">{{ t('fanfiction.clearPassword') }}</Button>
-      <label class="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
-        <input v-model="isAdult" type="checkbox" class="mt-1" @change="changeAdult" />
-        <span class="font-medium">{{ t('fanfiction.adultConfirmation') }}</span>
-      </label>
       <details class="space-y-3 rounded-lg border border-border p-3">
         <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.advancedSettings') }}</summary>
+        <label class="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
+          <input v-model="isAdult" type="checkbox" class="mt-1" @change="changeAdult" />
+          <span class="font-medium">{{ t('fanfiction.adultConfirmation') }}</span>
+        </label>
         <label class="block space-y-1 text-sm"
           ><span>{{ t('fanfiction.siteSection') }}</span>
           <input v-model="section" required maxlength="255" class="w-full rounded-md border border-input bg-background p-2" @change="readSection" />
