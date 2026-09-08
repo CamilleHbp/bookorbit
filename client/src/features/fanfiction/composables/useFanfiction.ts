@@ -14,6 +14,7 @@ import type {
   FanfictionActivityPage,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
+import { useFanfictionPagination } from './useFanfictionPagination'
 
 interface Candidate {
   url: string
@@ -62,6 +63,8 @@ export function useFanfiction() {
   let generation = 0
   let disposed = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  const appliedSearch = ref('')
+  const appliedState = ref('')
   let sourcePage: string | null = null
   let jobPage: string | null = null
   let sourceRequest = 0
@@ -69,6 +72,12 @@ export function useFanfiction() {
   let activityRequest = 0
   let activityPage: string | null = null
   const pendingChecks = new Map<string, string>()
+  const sourceJobs = ref<Record<string, FanfictionJob>>({})
+  const sourceErrors = ref<Record<string, string>>({})
+  const checkingSourceId = ref<string | null>(null)
+  const sourcePagination = useFanfictionPagination()
+  const jobPagination = useFanfictionPagination()
+  const activityPagination = useFanfictionPagination()
 
   async function request<T>(path: string, body?: unknown, method = 'POST'): Promise<T> {
     const response = await api(
@@ -79,7 +88,7 @@ export function useFanfiction() {
     if (!response.ok) throw new Error(typeof result.message === 'string' ? result.message : `HTTP ${response.status}`)
     return result as T
   }
-  async function perform(operation: (current: number, path: string) => Promise<void>) {
+  async function perform(operation: (current: number, path: string) => Promise<unknown>) {
     const current = generation
     busy.value = true
     error.value = ''
@@ -95,8 +104,8 @@ export function useFanfiction() {
   function sourceQuery(cursor: string | null) {
     const query = new URLSearchParams({ limit: '50' })
     if (cursor) query.set('cursor', cursor)
-    if (search.value) query.set('search', search.value)
-    if (state.value) query.set('state', state.value)
+    if (appliedSearch.value) query.set('search', appliedSearch.value)
+    if (appliedState.value) query.set('state', appliedState.value)
     return query.toString()
   }
   async function loadSources(current: number, path: string, cursor: string | null) {
@@ -106,6 +115,10 @@ export function useFanfiction() {
     sources.value = page.items
     sourceCursor.value = page.nextCursor
     sourcePage = cursor
+    const visible = new Set(page.items.map((source) => source.id))
+    sourceJobs.value = Object.fromEntries(Object.entries(sourceJobs.value).filter(([id]) => visible.has(id)))
+    sourceErrors.value = Object.fromEntries(Object.entries(sourceErrors.value).filter(([id]) => visible.has(id)))
+    return true
   }
   async function loadJobs(current: number, path: string, cursor: string | null) {
     const requestId = ++jobRequest
@@ -114,6 +127,7 @@ export function useFanfiction() {
     jobs.value = page.items
     jobCursor.value = page.nextCursor
     jobPage = cursor
+    return true
   }
   async function loadActivity(current: number, path: string, cursor: string | null) {
     const requestId = ++activityRequest
@@ -122,26 +136,56 @@ export function useFanfiction() {
     activity.value = page.items
     activityCursor.value = page.nextCursor
     activityPage = cursor
+    return true
   }
-  async function moreActivity() {
-    await perform((current, path) => loadActivity(current, path, activityCursor.value))
+  async function navigatePage(kind: 'sources' | 'jobs' | 'activity', direction: 'next' | 'previous') {
+    if (busy.value || libraryId.value === null) return
+    const pagination = kind === 'sources' ? sourcePagination : kind === 'jobs' ? jobPagination : activityPagination
+    const next = kind === 'sources' ? sourceCursor.value : kind === 'jobs' ? jobCursor.value : activityCursor.value
+    if (direction === 'next' ? !next : !pagination.canPrevious.value) return
+    const before = kind === 'sources' ? sourcePage : kind === 'jobs' ? jobPage : activityPage
+    const cursor = direction === 'next' ? next : pagination.previous()
+    const load = kind === 'sources' ? loadSources : kind === 'jobs' ? loadJobs : loadActivity
+    await perform(async (current, path) => {
+      if (!(await load(current, path, cursor))) return
+      if (direction === 'next') pagination.advance(before)
+      else pagination.retreat()
+    })
   }
+  const moreActivity = () => navigatePage('activity', 'next')
+  const previousActivity = () => navigatePage('activity', 'previous')
   async function loadLibraries() {
+    if (busy.value) return
+    let selected = false
     await perform(async (current) => {
       const page = await request<FanfictionLibraryPage>(
         `/api/v1/fanfiction/libraries?limit=50${libraryCursor.value ? `&cursor=${libraryCursor.value}` : ''}`,
       )
       if (!currentScope(current)) return
-      libraries.value = page.items
+      const pinned = libraries.value.find((library) => library.id === libraryId.value)
+      libraries.value = pinned && !page.items.some((library) => library.id === pinned.id) ? [pinned, ...page.items] : page.items
       libraryCursor.value = page.nextCursor
-      libraryId.value = page.items[0]?.id ?? null
+      if (libraryId.value === null) {
+        libraryId.value = page.items[0]?.id ?? null
+        selected = libraryId.value !== null
+      }
     })
-    await changeLibrary()
+    if (selected) await changeLibrary()
   }
   async function changeLibrary() {
     generation++
     clearTimeout(timer)
+    appliedSearch.value = search.value
+    appliedState.value = state.value
     candidates.value = []
+    sourceJobs.value = {}
+    sourceErrors.value = {}
+    checkingSourceId.value = null
+    pendingChecks.clear()
+    sourcePagination.reset()
+    jobPagination.reset()
+    activityPagination.reset()
+    sourceCursor.value = jobCursor.value = null
     sources.value = []
     jobs.value = []
     activity.value = []
@@ -191,16 +235,32 @@ export function useFanfiction() {
     })
   }
   async function refresh() {
+    if (busy.value || libraryId.value === null) return
     await perform(async (current, path) => {
-      await Promise.all([loadSources(current, path, null), loadJobs(current, path, null), loadActivity(current, path, null)])
+      await Promise.all([loadSources(current, path, sourcePage), loadJobs(current, path, jobPage), loadActivity(current, path, activityPage)])
     })
   }
-  async function moreSources() {
-    await perform((current, path) => loadSources(current, path, sourceCursor.value))
+  async function applyFilters() {
+    if (busy.value || libraryId.value === null) return
+    const previous = { search: appliedSearch.value, state: appliedState.value }
+    appliedSearch.value = search.value
+    appliedState.value = state.value
+    await perform(async (current, path) => {
+      try {
+        if (await loadSources(current, path, null)) sourcePagination.reset()
+      } catch (failure) {
+        if (currentScope(current)) {
+          appliedSearch.value = previous.search
+          appliedState.value = previous.state
+        }
+        throw failure
+      }
+    })
   }
-  async function moreJobs() {
-    await perform((current, path) => loadJobs(current, path, jobCursor.value))
-  }
+  const moreSources = () => navigatePage('sources', 'next')
+  const previousSources = () => navigatePage('sources', 'previous')
+  const moreJobs = () => navigatePage('jobs', 'next')
+  const previousJobs = () => navigatePage('jobs', 'previous')
   function useSavedProfile(profile: FanfictionProfileSummary) {
     if (profile.libraryId !== libraryId.value) return
     profiles.value = [profile, ...profiles.value.filter((item) => item.id !== profile.id)].slice(0, 50)
@@ -372,13 +432,26 @@ export function useFanfiction() {
     })
   }
   async function checkSource(source: FanfictionSource, kind: 'update' | 'refresh') {
+    if (busy.value || ['queued', 'running'].includes(sourceJobs.value[source.id]?.state ?? '')) return
+    checkingSourceId.value = source.id
+    delete sourceErrors.value[source.id]
     await perform(async (current, path) => {
       const key = `${source.libraryId}:${source.id}:${kind}`
       const idempotencyKey = pendingChecks.get(key) ?? crypto.randomUUID()
       pendingChecks.set(key, idempotencyKey)
-      await request<FanfictionJob>(`${path}/sources/${source.id}/check`, { kind, idempotencyKey })
-      pendingChecks.delete(key)
-      if (currentScope(current)) await loadJobs(current, path, null)
+      try {
+        const job = await request<FanfictionJob>(`${path}/sources/${source.id}/check`, { kind, idempotencyKey })
+        if (!currentScope(current)) return
+        pendingChecks.delete(key)
+        sourceJobs.value[source.id] = job
+        await loadJobs(current, path, jobPage)
+        schedulePoll(current)
+      } catch (failure) {
+        if (currentScope(current)) sourceErrors.value[source.id] = failure instanceof Error ? failure.message : 'Request failed'
+        throw failure
+      } finally {
+        if (currentScope(current)) checkingSourceId.value = null
+      }
     })
   }
   const checkNow = (source: FanfictionSource) => checkSource(source, 'update')
@@ -399,13 +472,28 @@ export function useFanfiction() {
       if (!busy.value) {
         const path = base.value
         await Promise.all([loadJobs(current, path, jobPage), loadSources(current, path, sourcePage), loadActivity(current, path, activityPage)])
-        const ids = candidates.value.flatMap((candidate) =>
-          candidate.job && ['queued', 'running'].includes(candidate.job.state) ? [candidate.job.id] : [],
-        )
+        const ids = [
+          ...new Set([
+            ...candidates.value.flatMap((candidate) =>
+              candidate.job && ['queued', 'running'].includes(candidate.job.state) ? [candidate.job.id] : [],
+            ),
+            ...Object.values(sourceJobs.value)
+              .filter((job) => ['queued', 'running'].includes(job.state))
+              .map((job) => job.id),
+          ]),
+        ]
         if (ids.length && currentScope(current)) {
-          const page = await request<{ items: FanfictionJob[] }>(`${path}/jobs/status`, { ids })
-          if (!currentScope(current)) return
-          const byId = new Map(page.items.map((job) => [job.id, job]))
+          const updates: FanfictionJob[] = []
+          for (let offset = 0; offset < ids.length; offset += 50) {
+            const page = await request<{ items: FanfictionJob[] }>(`${path}/jobs/status`, { ids: ids.slice(offset, offset + 50) })
+            if (!currentScope(current)) return
+            updates.push(...page.items)
+          }
+          const byId = new Map(updates.map((job) => [job.id, job]))
+          for (const [id, job] of Object.entries(sourceJobs.value)) {
+            const updated = byId.get(job.id)
+            if (updated) sourceJobs.value[id] = updated
+          }
           for (const candidate of candidates.value) {
             const updated = candidate.job && byId.get(candidate.job.id)
             if (updated) {
@@ -455,10 +543,22 @@ export function useFanfiction() {
     activity,
     activityCursor,
     moreActivity,
+    previousActivity,
+    previousSources,
+    previousJobs,
+    sourcePagination,
+    jobPagination,
+    activityPagination,
+    sourceJobs,
+    sourceErrors,
+    checkingSourceId,
+    applyFilters,
     candidates,
     urls,
     search,
     state,
+    appliedSearch,
+    appliedState,
     schedule,
     busy,
     error,
