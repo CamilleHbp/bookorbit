@@ -1,3 +1,4 @@
+local ReadingContinuity = require("bookorbit_reading_continuity")
 --[[--
 Live progress sync mixin for the BookOrbit plugin (kosync mirror).
 
@@ -113,6 +114,7 @@ function ProgressSync:remoteProgressIsNewer(body, local_percentage)
 end
 
 function ProgressSync:applyRemoteProgress(body, on_done)
+    if not ReadingContinuity.canSync(self) then if on_done then on_done(false) end; return end
     self:syncToProgress(body.progress, body.percentage)
     if on_done then
         UIManager:scheduleIn(0.1, function()
@@ -193,6 +195,7 @@ function ProgressSync:reconcileProgressBeforeBookSync(digest, on_done)
 end
 
 function ProgressSync:updateProgress(ensure_networking, interactive, on_suspend)
+    if ReadingContinuity.isRestoring(self) then return end
     if not self:isLoggedIn() then
         if interactive then self:promptLogin() end
         return
@@ -218,6 +221,9 @@ function ProgressSync:updateProgress(ensure_networking, interactive, on_suspend)
         return
     end
 
+    local handled = require("bookorbit_reading_exchange").run(self)
+    if handled then self.push_timestamp = now; return end
+    if not ReadingContinuity.canSync(self) then return end
     local digest = self:getDocumentDigest()
     if not digest then return end
 
@@ -266,6 +272,7 @@ function ProgressSync:updateProgress(ensure_networking, interactive, on_suspend)
 end
 
 function ProgressSync:getProgress(ensure_networking, interactive)
+    if ReadingContinuity.isRestoring(self) then return end
     if not self:isLoggedIn() then
         if interactive then self:promptLogin() end
         return
@@ -291,6 +298,9 @@ function ProgressSync:getProgress(ensure_networking, interactive)
         return
     end
 
+    local handled = require("bookorbit_reading_exchange").run(self)
+    if handled then self.pull_timestamp = now; return end
+    if not ReadingContinuity.canSync(self) then return end
     local digest = self:getDocumentDigest()
     if not digest then return end
 

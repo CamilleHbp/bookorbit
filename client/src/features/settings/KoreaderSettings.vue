@@ -46,16 +46,21 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { useKoreaderSync } from '@/features/koreader/composables/useKoreaderSync'
 import { useGlobalSearch } from '@/features/book/composables/useGlobalSearch'
 import { SECRET_INPUT_ATTRS } from '@/lib/secret-input'
+import { usePermissions } from '@/features/auth/composables/usePermissions'
+import KoreaderCopiesPanel from '@/features/koreader/components/KoreaderCopiesPanel.vue'
 
 const { t } = useI18n()
 const props = withDefaults(defineProps<{ embedded?: boolean }>(), {
   embedded: false,
 })
-type Tab = 'settings' | 'file-naming'
+const { hasPermission } = usePermissions()
+const canViewCopies = computed(() => hasPermission('koreader_sync'))
+type Tab = 'settings' | 'file-naming' | 'copies'
 const route = props.embedded ? null : useRoute()
 const router = props.embedded ? null : useRouter()
 
 function normalizeTab(value: unknown): Tab {
+  if (value === 'copies' && canViewCopies.value) return 'copies'
   return value === 'file-naming' ? 'file-naming' : 'settings'
 }
 
@@ -71,6 +76,7 @@ const tabs = computed(() => [
     label: t('settings.reader.koreader.tabs.fileNaming'),
     controls: 'koreader-file-naming-panel',
   },
+  ...(canViewCopies.value ? [{ id: 'copies' as const, label: t('koreaderCopies.title'), controls: 'koreader-copies-panel' }] : []),
 ])
 
 if (route && router) {
@@ -90,11 +96,11 @@ if (route && router) {
 }
 
 function selectTab(tab: Tab): void {
-  activeTab.value = tab
+  activeTab.value = normalizeTab(tab)
   if (route && router) {
     void router.replace({
       name: 'settings-koreader',
-      query: { ...route.query, tab },
+      query: { ...route.query, tab: activeTab.value },
     })
   }
 }
@@ -1740,5 +1746,8 @@ async function handleDownloadPlugin() {
 
   <div v-if="!props.embedded" id="koreader-file-naming-panel" v-show="activeTab === 'file-naming'" aria-labelledby="koreader-file-naming-tab">
     <KoreaderFileNamingSettings :devices="syncStatus?.sweeps ?? []" />
+  </div>
+  <div v-if="!props.embedded && canViewCopies && activeTab === 'copies'" id="koreader-copies-panel" aria-labelledby="koreader-copies-tab">
+    <KoreaderCopiesPanel />
   </div>
 </template>

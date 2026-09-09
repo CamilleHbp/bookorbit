@@ -1,3 +1,5 @@
+import { AnnotationAnchorService } from './annotation-anchor.service';
+import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
@@ -82,9 +84,12 @@ async function makeService() {
   const conversionService = {
     ensureCfiPositionsForBook: vi.fn().mockResolvedValue(0),
   };
+  const revisions = { requireRevisions: vi.fn().mockResolvedValue(undefined) };
   const module = await Test.createTestingModule({
     providers: [
       AnnotationService,
+      AnnotationAnchorService,
+      { provide: RevisionCatalogService, useValue: revisions },
       { provide: AnnotationRepository, useValue: annotationRepo },
       { provide: BookService, useValue: bookService },
       { provide: AchievementEventsService, useValue: achievementEvents },
@@ -94,6 +99,7 @@ async function makeService() {
   const service = module.get(AnnotationService);
   return {
     service,
+    revisions,
     annotationRepo,
     bookService,
     conversionService,
@@ -162,6 +168,62 @@ describe('AnnotationService', () => {
   });
 
   describe('createAnnotation', () => {
+    const sourceAnchor = {
+      schemaVersion: 1 as const,
+      bookId: 5,
+      bookFileId: 50,
+      revision: '0c5ef3ed-6d35-4a0a-9fd7-72c2670e2d22',
+      nativeLocator: { kind: 'cfi' as const, value: 'epubcfi(/6/4!/4/2/1:0)' },
+      chapterIndex: 0,
+      chapterFraction: 0.2,
+      bookFraction: 0.1,
+      quote: 'selected text',
+    };
+    it('preserves the original anchor after checking its logical file revision', async () => {
+      const { service, annotationRepo, revisions } = await makeService();
+      annotationRepo.create.mockResolvedValue(makeAnnotationRow({ sourceAnchor }));
+      const result = await service.createAnnotation(5, makeUser(), {
+        cfi: sourceAnchor.nativeLocator.value,
+        text: 'selected text',
+        bookFileId: 50,
+        sourceAnchor,
+      });
+      expect(revisions.requireRevisions).toHaveBeenCalledWith(50, [sourceAnchor.revision]);
+      expect(annotationRepo.create).toHaveBeenCalledWith(expect.objectContaining({ sourceAnchor, userId: 1 }));
+      expect(result.sourceAnchor).toEqual(sourceAnchor);
+    });
+    it.each([
+      { bookId: 6 },
+      { bookFileId: 51 },
+      { schemaVersion: undefined },
+      { nativeLocator: { kind: 'cfi' as const, value: 'another-location' } },
+      { revision: 'unidentified' },
+    ])('rejects a source anchor with inconsistent identity %j', async (change) => {
+      const { service, annotationRepo } = await makeService();
+      await expect(
+        service.createAnnotation(5, makeUser(), {
+          cfi: sourceAnchor.nativeLocator.value,
+          text: 'selected text',
+          bookFileId: 50,
+          sourceAnchor: { ...sourceAnchor, ...change },
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(annotationRepo.create).not.toHaveBeenCalled();
+    });
+    it('does not persist a revision owned by a different logical file', async () => {
+      const { service, annotationRepo, revisions } = await makeService();
+      revisions.requireRevisions.mockRejectedValue(new NotFoundException());
+      await expect(
+        service.createAnnotation(5, makeUser(), {
+          cfi: sourceAnchor.nativeLocator.value,
+          text: 'selected text',
+          bookFileId: 50,
+          sourceAnchor,
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(annotationRepo.create).not.toHaveBeenCalled();
+    });
+
     it('creates annotation with provided values', async () => {
       const { service, annotationRepo } = await makeService();
       const row = makeAnnotationRow({

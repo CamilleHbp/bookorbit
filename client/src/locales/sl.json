@@ -6494,6 +6494,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "Poskusi znova",
     "pdf": {
       "openError": "Tega dokumenta PDF ni mogoče odpreti",

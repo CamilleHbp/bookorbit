@@ -497,5 +497,15 @@ assertEqual(http_client:getProxy(), nil,
     "G_reader_settings proxy is ignored when disabled")
 
 G_reader_settings = nil
+local compatible_payload
+function client:request(_, _, payload)
+    compatible_payload = payload
+    return {}
+end
+local source = { revision = "original" }
+local annotation_books = { { hash = "copy", annotations = { { datetime = "2026-01-01 00:00:00", sourceAnchor = source } } } }
+client:uploadAnnotations(annotation_books)
+assertEqual(compatible_payload.books[1].annotations[1].sourceAnchor, nil, "deprecated uploads retain legacy request fields")
+assertEqual(annotation_books[1].annotations[1].sourceAnchor, source, "legacy upload projection preserves the local anchor")
 
 print("bookorbit_api_test.lua: ok")

@@ -23,8 +23,8 @@ package.loaded["dump"] = function(value)
     return serialize(value)
 end
 package.loaded["ffi/util"] = {
-    fsyncOpenedFile = function() end,
-    fsyncDirectory = function() end,
+    fsyncOpenedFile = function() return true end,
+    fsyncDirectory = function() return true end,
 }
 package.loaded["libs/libkoreader-lfs"] = {
     attributes = function(path, attribute)
@@ -68,6 +68,37 @@ state.global.marker = "second"
 state:flush()
 assert(loadfile(state_path)().global.marker == "second", "new generation is published")
 assert(loadfile(state_path .. ".old")().global.marker == "first", "previous generation is retained")
+
+local Manager = require("bookorbit_state_manager")
+assert(Manager.reserveInventorySequence() == 1)
+assert(loadfile(state_path)().global.copyInventorySequence == 1)
+assert(Manager.reserveInventorySequence(50) == 50)
+assert(loadfile(state_path)().global.copyInventorySequence == 50)
+local rename = os.rename
+os.rename = function(from, to)
+    if from == state_path .. ".bookorbit.tmp" then return nil, "publication failed" end
+    return rename(from, to)
+end
+assert(Manager.reserveInventorySequence() == nil, "failed persistence cannot reserve a network sequence")
+os.rename = rename
+assert(loadfile(state_path)().global.copyInventorySequence == 50)
+local next_sequence = assert(Manager.reserveInventorySequence())
+assert(next_sequence > 50 and loadfile(state_path)().global.copyInventorySequence == next_sequence)
+
+local sync = package.loaded["ffi/util"]
+sync.fsyncOpenedFile = function() return false, "disk sync failed" end
+assert(Manager.reserveInventorySequence() == nil, "false fsync cannot acknowledge durable state")
+assert(loadfile(state_path)().global.copyInventorySequence == next_sequence)
+sync.fsyncOpenedFile = function() return true end
+sync.fsyncDirectory = function() return false, "directory sync failed" end
+assert(Manager.reserveInventorySequence() == nil, "failed directory sync cannot acknowledge publication")
+sync.fsyncDirectory = function() return true end
+local recovered = assert(Manager.reserveInventorySequence())
+assert(recovered > next_sequence and loadfile(state_path)().global.copyInventorySequence == recovered)
+assert(Manager.reserveReadingSequence(100) == 100, "migrate the prior canonical sequence without reuse")
+assert(loadfile(state_path)().global.readingDeviceSequence == 100)
+assert(Manager.reserveReadingSequence() == 101)
+assert(Manager.reserveReadingSequence(9007199254740992) == nil, "reject inexact counters")
 
 os.execute("rm -rf '" .. temp_root .. "'")
 

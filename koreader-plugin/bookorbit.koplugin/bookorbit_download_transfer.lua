@@ -114,6 +114,12 @@ function Transfer.run(opts)
     if not Transfer.isInsideRoot(root, opts.destination) then
         return nil, "unsafe_destination"
     end
+    local destination = opts.destination:lower()
+    if (destination:match("%.epub$") or destination:match("%.kepub$"))
+        and lfs.attributes(opts.destination, "mode") == "file" and require("bookorbit_revision_capabilities").delivery >= 1 then
+        if not opts.replace then return nil, "revision_delivery_required" end
+        return opts.replace()
+    end
     local dir = Transfer.ensureTempDir(root)
     if not dir then return nil, "temp_dir_failed" end
 

@@ -9,11 +9,13 @@ import { ComicMetadataRepository } from './comic-metadata.repository';
 import { CoverSlotReconciler } from './cover-slot-reconciler.service';
 import { MetadataExtractionService } from './metadata-extraction.service';
 import { MetadataEventsService } from './metadata-events.service';
+import { ManagedMetadataService } from './managed-metadata.service';
+import { ManagedTagService } from './managed-tag.service';
 import { MetadataService } from './metadata.service';
 
 @Module({
   imports: [BookMetadataLockModule, BookCoverStoreModule, EmbeddingModule, MetadataScoreModule, NarratorModule],
-  providers: [MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository, CoverSlotReconciler],
-  exports: [MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository, CoverSlotReconciler],
+  providers: [ManagedMetadataService, ManagedTagService, MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository, CoverSlotReconciler],
+  exports: [ManagedMetadataService, ManagedTagService, MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository, CoverSlotReconciler],
 })
 export class MetadataModule {}

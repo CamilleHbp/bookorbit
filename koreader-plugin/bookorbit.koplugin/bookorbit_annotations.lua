@@ -19,11 +19,13 @@ Apply modes:
 ]]
 
 local DocSettings = require("docsettings")
+local AnnotationGuard = require("bookorbit_annotation_guard")
 local Event = require("ui/event")
 local UIManager = require("ui/uimanager")
 local logger = require("logger")
 local md5 = require("ffi/sha2").md5
 local util = require("util")
+local AnchorText = require("bookorbit_anchor_text")
 
 local BookOrbitSidecar = require("bookorbit_sidecar")
 
@@ -99,7 +101,8 @@ end
 
 local function normalizeText(text)
     if type(text) ~= "string" then return "" end
-    return util.trim(text:gsub("%s+", " "))
+    local normalized = AnchorText.normalize(text, 16384)
+    return normalized and normalized.text or ""
 end
 
 local ackApplied
@@ -237,6 +240,9 @@ function IdentityIndex:find(entry)
 end
 
 local function applyIdentityFields(annotation, entry)
+    if not annotation.bookorbit_source_anchor and type(entry.sourceAnchor) == "table" then
+        annotation.bookorbit_source_anchor = entry.sourceAnchor
+    end
     if type(entry.datetime) == "string" and entry.datetime ~= "" then
         annotation.datetime = entry.datetime
     end
@@ -260,45 +266,32 @@ local function verifyRange(document, pos0, pos1, text)
     local ok1, in1 = pcall(document.isXPointerInDocument, document, pos1)
     if not (ok0 and in0 and ok1 and in1) then return false end
     local wanted = normalizeText(text)
-    if wanted == "" then return true end
+    if wanted == "" then return false end
     local ok, extracted = pcall(document.getTextFromXPointers, document, pos0, pos1)
     return ok and type(extracted) == "string" and normalizeText(extracted) == wanted
 end
 
--- Re-anchors an entry by searching its highlighted text, picking the hit
--- nearest to the page the broken xpointer pointed at (when derivable).
 local function repairRange(document, entry)
     local needle = type(entry.text) == "string" and util.trim(entry.text) or ""
     if needle == "" or not document.findAllText then return nil end
-
-    local page_hint
-    if type(entry.pos0) == "string" then
-        local ok, page = pcall(document.getPageFromXPointer, document, entry.pos0)
-        if ok and type(page) == "number" then page_hint = page end
-    end
-
-    local ok, hits = pcall(document.findAllText, document, needle, true, 0, 20, false)
+    local ok, hits = pcall(document.findAllText, document, needle, true, 0, 2, false)
     pcall(document.clearSelection, document)
-    if not ok or type(hits) ~= "table" or #hits == 0 then return nil end
+    if not ok or type(hits) ~= "table" or #hits ~= 1 then return nil end
+    local hit = hits[1]
+    if verifyRange(document, hit.start, hit["end"], entry.text) then return hit.start, hit["end"] end
+end
 
-    local best = hits[1]
-    if page_hint and #hits > 1 then
-        local best_distance = math.huge
-        for _, hit in ipairs(hits) do
-            local okp, page = pcall(document.getPageFromXPointer, document, hit.start)
-            if okp and type(page) == "number" then
-                local distance = math.abs(page - page_hint)
-                if distance < best_distance then
-                    best_distance = distance
-                    best = hit
-                end
-            end
-        end
+local function resolveSourceAnchor(ui, entry)
+    if type(entry.sourceAnchor) ~= "table" or type(entry.text) ~= "string" or #entry.text > 16384 then return nil end
+    local selection = AnchorText.normalize(entry.text)
+    if not selection or selection.text == "" then return nil end
+    local ok, resolved = pcall(require("bookorbit_native_anchor").resolveAnnotation, ui, {
+        anchor = entry.sourceAnchor,
+        selection = selection.text,
+    }, { seconds = 0.1 })
+    if ok and resolved and verifyRange(ui.document, resolved.pos0, resolved.pos1, entry.text) then
+        return resolved.pos0, resolved.pos1
     end
-    if verifyRange(document, best.start, best["end"], entry.text) then
-        return best.start, best["end"]
-    end
-    return nil
 end
 
 ackApplied = function(entry, opts)
@@ -337,21 +330,34 @@ function BookOrbitAnnotations.applyLive(ui, to_apply)
     for _, entry in ipairs(to_apply.add or {}) do
         local existing_index, existing_annotation = lookup:find(entry)
         if existing_index then
-            local previous_datetime, previous_range = lookup:identityOf(existing_annotation)
-            applyIdentityFields(existing_annotation, entry)
-            lookup:noteMutated(existing_annotation, previous_datetime, previous_range)
-            ui:handleEvent(Event:new("AnnotationsModified", { existing_annotation, index_modified = existing_index }))
-            touched = touched + 1
-            table.insert(applied, ackExisting(entry, existing_annotation, true))
+            local pos0, pos1 = existing_annotation.pos0, existing_annotation.pos1
+            if entry.sourceAnchor then pos0, pos1 = resolveSourceAnchor(ui, entry) end
+            if not verifyRange(document, pos0, pos1, entry.text) then
+                table.insert(applied, ackApplied(entry, { failed = true }))
+            else
+                local previous_datetime, previous_range = lookup:identityOf(existing_annotation)
+                local corrected = pos0 ~= existing_annotation.pos0 or pos1 ~= existing_annotation.pos1
+                existing_annotation.pos0, existing_annotation.pos1, existing_annotation.page = pos0, pos1, pos0
+                if corrected then existing_annotation.pageno = document:getPageFromXPointer(pos0) end
+                applyIdentityFields(existing_annotation, entry)
+                lookup:noteMutated(existing_annotation, previous_datetime, previous_range)
+                ui:handleEvent(Event:new("AnnotationsModified", { existing_annotation, index_modified = existing_index }))
+                touched = touched + 1
+                local acknowledgement = ackExisting(entry, existing_annotation, true)
+                acknowledgement.corrected = corrected
+                table.insert(applied, acknowledgement)
+            end
         elseif entry.posFormat ~= "xpointer" or not ui.rolling then
             -- PDF adds from the web are out of scope; never expected here.
             table.insert(applied, ackApplied(entry, { failed = true }))
         else
             local pos0, pos1 = entry.pos0, entry.pos1
-            local verified = verifyRange(document, pos0, pos1, entry.text)
+            local verified = entry.sourceAnchor == nil and verifyRange(document, pos0, pos1, entry.text)
             local corrected = false
             if not verified then
-                local repaired0, repaired1 = repairRange(document, entry)
+                local repaired0, repaired1
+                if entry.sourceAnchor then repaired0, repaired1 = resolveSourceAnchor(ui, entry)
+                else repaired0, repaired1 = repairRange(document, entry) end
                 if repaired0 then
                     pos0, pos1 = repaired0, repaired1
                     verified = true
@@ -363,6 +369,7 @@ function BookOrbitAnnotations.applyLive(ui, to_apply)
                 table.insert(applied, ackApplied(entry, { failed = true }))
             else
                 local item = {
+                    bookorbit_source_anchor = entry.sourceAnchor,
                     datetime = entry.datetime,
                     datetime_updated = entry.datetimeUpdated,
                     drawer = entry.drawer,
@@ -429,6 +436,21 @@ function BookOrbitAnnotations.applyLive(ui, to_apply)
     if touched > 0 then
         UIManager:setDirty("all", "ui")
     end
+    local continuity = ui.bookorbit and ui.bookorbit.reading_continuity
+    local installed_sha = continuity and continuity.ready and continuity.sha256
+    if installed_sha then
+        local revisions = {}
+        for _, entry in ipairs(to_apply.add or {}) do
+            if entry.positionSha256 == installed_sha then revisions[entry.serverId] = entry end
+        end
+        for _, acknowledgement in ipairs(applied) do
+            local entry = revisions[acknowledgement.serverId]
+            if entry then
+                acknowledgement.positionSha256 = installed_sha
+                acknowledgement.positionRevisionId = entry.positionRevisionId
+            end
+        end
+    end
     return applied, deleted, touched, deleted_touched
 end
 
@@ -443,7 +465,7 @@ function BookOrbitAnnotations.applySidecar(file, to_apply)
     local deleted_touched = 0
 
     for _, entry in ipairs(to_apply.add or {}) do
-        if entry.posFormat ~= "xpointer" then
+        if entry.posFormat ~= "xpointer" or entry.sourceAnchor ~= nil then
             table.insert(applied, ackApplied(entry, { failed = true }))
         else
             local existing_index, existing = lookup:find(entry)
@@ -534,8 +556,20 @@ Returns a result table { uploaded, applied, deleted, failed, had_errors } or
 nil, err for auth/network level failures.
 ]]
 function BookOrbitAnnotations.exchangeBook(opts)
+    if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
     local book = opts.state:getBook(opts.digest)
     if not book then return nil, "unmatched" end
+
+    local has_anchors = false
+    for _, annotation in ipairs(opts.annotations) do
+        if annotation.sourceAnchor then has_anchors = true; break end
+    end
+    local anchors_supported = false
+    if has_anchors and opts.client.annotationAnchorSupport then
+        anchors_supported = opts.client:annotationAnchorSupport()
+        if anchors_supported == nil then return nil, "network" end
+    end
+    local anchor_backfill = anchors_supported and (book.annotation_anchor_signature == nil or book.annotation_anchor_signature ~= opts.ann_signature)
 
     local keys = BookOrbitAnnotations.collectKeys(opts.annotations)
     local keys_complete = #keys <= MAX_KEYS_PER_BOOK
@@ -546,8 +580,12 @@ function BookOrbitAnnotations.exchangeBook(opts)
     local delta = {}
     for _, annotation in ipairs(opts.annotations) do
         local effective = annotation.datetimeUpdated or annotation.datetime
-        if effective > watermark then
-            table.insert(delta, annotation)
+        if effective > watermark or (anchor_backfill and annotation.sourceAnchor) then
+            local fields = {}
+            for key, value in pairs(annotation) do
+                if key ~= "sourceAnchor" or anchors_supported then fields[key] = value end
+            end
+            table.insert(delta, fields)
         end
     end
 
@@ -560,6 +598,7 @@ function BookOrbitAnnotations.exchangeBook(opts)
     local cursor = 1
 
     repeat
+        if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
         local chunk = {}
         while cursor <= #delta and #chunk < UPLOAD_CHUNK do
             table.insert(chunk, delta[cursor])
@@ -573,6 +612,7 @@ function BookOrbitAnnotations.exchangeBook(opts)
                 changes = chunk,
             },
         })
+        if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
         if not body then
             if err == 401 or err == 403 then return nil, "auth" end
             if err == 404 then return nil, "unsupported_server" end
@@ -589,12 +629,18 @@ function BookOrbitAnnotations.exchangeBook(opts)
             end
         end
         response = body.results and body.results[1] or nil
+        if type(response) ~= "table" or type(response.toApply) ~= "table"
+            or response.hash and response.hash ~= opts.digest then
+            result.had_errors, upload_failed = true, true
+            break
+        end
         result.uploaded = result.uploaded + #chunk
         first_request = false
     until cursor > #delta
 
     if not upload_failed then
         BookOrbitAnnotations.advanceWatermark(book, opts.ann_max_datetime, device_now)
+        if anchors_supported then book.annotation_anchor_signature = opts.ann_signature end
     end
 
     -- Recorded only when the complete key set went out and nothing was left
@@ -621,6 +667,7 @@ function BookOrbitAnnotations.exchangeBook(opts)
     local rounds = 0
     local pull_complete = true
     while response and hasPending(response.toApply) do
+        if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
         if rounds >= MAX_PULL_ROUNDS then
             pull_complete = false
             break

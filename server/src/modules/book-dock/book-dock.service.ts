@@ -421,7 +421,7 @@ export class BookDockService {
 
   private async findFileForUser(id: number, userId: number, canManageAll: boolean): Promise<BookDockFileRow> {
     const row = await this.repo.findById(id);
-    if (!row) throw new NotFoundException('Book Dock file not found');
+    if (!row || row.ingestionMode === 'managed') throw new NotFoundException('Book Dock file not found');
     if (!canManageAll && row.uploadedBy !== userId) {
       throw new ForbiddenException('You do not have access to this Book Dock file');
     }

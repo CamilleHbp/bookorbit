@@ -13,6 +13,7 @@ import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { NotificationGateway } from './notification.gateway';
 import { NotificationRepository } from './notification.repository';
 import type { NewNotification } from '../../db/schema';
+import type { DatabaseTransaction } from '../../db/transaction';
 
 export type NotificationScope =
   | { kind: 'library'; libraryId: number }
@@ -61,6 +62,27 @@ export class NotificationService {
     private readonly repo: NotificationRepository,
     private readonly gateway: NotificationGateway,
   ) {}
+
+  async persistUserNotification(payload: Omit<NotifyPayload, 'scope'> & { userId: number }, tx: DatabaseTransaction) {
+    const settings = await this.repo.userSettingsInTransaction(payload.userId, tx);
+    if (!settings || !this.isEnabled(settings, payload.type)) return null;
+    const row = await this.repo.insertInTransaction(
+      {
+        userId: payload.userId,
+        type: payload.type,
+        title: payload.title,
+        message: payload.message ?? null,
+        actionUrl: payload.actionUrl ?? null,
+        meta: payload.meta ?? null,
+      },
+      tx,
+    );
+    return { userId: row.userId, item: this.toItem(row) };
+  }
+
+  emitPersisted(notification: { userId: number; item: NotificationItem }): void {
+    this.gateway.emitNew(notification.userId, notification.item);
+  }
 
   async notify(payload: NotifyPayload): Promise<void> {
     if (!APP_FEATURES.podcasts && PODCAST_NOTIFICATION_TYPES.has(payload.type)) return;

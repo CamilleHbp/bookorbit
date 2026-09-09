@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
+import { BookRevisionService } from '../book-revision/book-revision.service';
 import {
   authors,
   bookAuthors,
@@ -30,7 +31,10 @@ type MoveBookToLibraryResult = Pick<typeof books.$inferSelect, 'id' | 'libraryId
 
 @Injectable()
 export class ScannerRepository {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    private readonly revisions: BookRevisionService,
+  ) {}
 
   // ── Scan Jobs ──────────────────────────────────────────────────────────────
 
@@ -277,6 +281,9 @@ export class ScannerRepository {
   }
 
   async updateBookFile(id: number, data: Partial<typeof bookFiles.$inferInsert>) {
+    if (data.ino !== undefined || data.sizeBytes !== undefined || data.mtime !== undefined || data.absolutePath !== undefined) {
+      return this.revisions.observeFile(id, data);
+    }
     const [file] = await this.db
       .update(bookFiles)
       .set({ ...data, updatedAt: new Date() })

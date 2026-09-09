@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-import { type AnnotationPosition } from '../../db/schema';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { PositionConverterService } from '../position-converter/position-converter.service';
 import { AnnotationPositionRepository } from './annotation-position.repository';
@@ -11,7 +10,7 @@ const EVENT = 'annotation.cfi_backfill';
 /**
  * Lazily converts device xpointer positions to CFIs so the web reader can draw
  * them. Runs bounded batches on reader load; rows whose conversion failed are
- * retried only after a converter upgrade (converterVersion sweep).
+ * retried after a converter upgrade or a file revision change.
  */
 @Injectable()
 export class AnnotationConversionService {
@@ -39,6 +38,7 @@ export class AnnotationConversionService {
           text: candidate.text || null,
         });
         const chapterIndex = outcome.chapterIndex ?? null;
+        const identity = { revisionId: candidate.revisionId, sha256: candidate.sha256 };
         if (outcome.status === 'failed' || !outcome.cfi) {
           failed += 1;
           await this.annotationSync.upsertGeneratedPosition({
@@ -50,7 +50,7 @@ export class AnnotationConversionService {
             pos1: null,
             status: 'failed',
             converterVersion: this.positionConverter.version,
-            extras: { chapterIndex, reason: outcome.reason },
+            extras: { ...identity, chapterIndex, reason: outcome.reason },
           });
         } else {
           converted += 1;
@@ -63,7 +63,7 @@ export class AnnotationConversionService {
             pos1: null,
             status: outcome.status,
             converterVersion: this.positionConverter.version,
-            extras: { chapterIndex },
+            extras: { ...identity, chapterIndex },
           });
         }
       }
@@ -85,35 +85,18 @@ export class AnnotationConversionService {
     userId: number,
     bookId: number,
     limit: number,
-  ): Promise<{ annotationId: number; text: string; pos0: string; pos1: string | null; bookFileId: number }[]> {
-    const xpointerRows = await this.positionRepo.findXPointerRowsForBook(userId, bookId);
-
-    const usable = xpointerRows.filter((row) => row.pos0 != null && row.bookFileId != null && row.status !== 'failed');
-    if (usable.length === 0) return [];
-
-    const cfiRows = await this.annotationSync.findPositions(
-      usable.map((row) => row.annotationId),
-      ['cfi'],
-    );
-    const cfiByAnnotation = new Map<number, AnnotationPosition>();
-    for (const row of cfiRows) cfiByAnnotation.set(row.annotationId, row);
-
-    const version = this.positionConverter.version;
-    const needsConversion = (cfi: AnnotationPosition | undefined): boolean => {
-      if (!cfi) return true;
-      if (cfi.status === 'pending') return true;
-      return cfi.converterVersion != null && cfi.converterVersion < version;
-    };
-
-    return usable
-      .filter((row) => needsConversion(cfiByAnnotation.get(row.annotationId)))
-      .slice(0, limit)
-      .map((row) => ({
-        annotationId: row.annotationId,
-        text: row.text,
-        pos0: row.pos0!,
-        pos1: row.pos1,
-        bookFileId: row.bookFileId!,
-      }));
+  ): Promise<
+    { annotationId: number; text: string; pos0: string; pos1: string | null; bookFileId: number; revisionId: string | null; sha256: string | null }[]
+  > {
+    const candidates = await this.positionRepo.findCfiConversionCandidates(userId, bookId, this.positionConverter.version, limit);
+    return candidates.map((row) => ({
+      revisionId: row.revisionId,
+      sha256: row.sha256,
+      annotationId: row.annotationId,
+      text: row.text,
+      pos0: row.pos0!,
+      pos1: row.pos1,
+      bookFileId: row.bookFileId!,
+    }));
   }
 }

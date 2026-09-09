@@ -179,6 +179,7 @@ local function run(opts)
         snap = {
             digest = "abcdef",
             file = "/books/a.epub",
+            expected_book_file_id = opts.expected_book_file_id,
             stats_ids = { 42 },
             stats_identity_repaired = opts.stats_identity_repaired == true,
             stats_row_ambiguous = opts.stats_row_ambiguous == true,
@@ -208,7 +209,7 @@ local function run(opts)
         on_finish = function(err) finished = err or true end,
     })
     scheduler:drain()
-    assertEqual(finished, true, "the sync completes")
+    assertEqual(finished, opts.expected_error or true, "the sync completes")
     return table.concat(calls, ","), table.concat(acknowledged, ",")
 end
 
@@ -284,5 +285,8 @@ requests = run{
 }
 assertEqual(last_match_candidates.abcdef.book_file_id, 7,
     "an established row-specific target is reused for collision revalidation")
+requests, acks = run{ expected_book_file_id = 99, expected_error = "unmatched" }
+assertEqual(requests, "", "delivery must not upload reading data against another file's cached hash mapping")
+assertEqual(acks, "", "a conflicting file identity must not acknowledge reading uploads")
 
 print("bookorbit_book_sync_fast_path_test.lua: ok")

@@ -8,6 +8,7 @@ matter which path uploaded them.
 ]]
 
 local DocSettings = require("docsettings")
+local AnnotationGuard = require("bookorbit_annotation_guard")
 local BookList = require("ui/widget/booklist")
 local lfs = require("libs/libkoreader-lfs")
 
@@ -69,6 +70,10 @@ local function entryHash(entry)
     local pos0 = entry.pos0 or ""
     local key = entry.datetime .. "|" .. #pos0 .. "|" .. pos0:sub(1, 24) .. "|" .. pos0:sub(-24)
         .. "|" .. (entry.datetimeUpdated or "")
+    if entry.sourceAnchor then
+        key = key .. "|anchor:" .. tostring(entry.sourceAnchor.revision)
+            .. ":" .. tostring(entry.sourceAnchor.bookId) .. ":" .. tostring(entry.sourceAnchor.bookFileId)
+    end
     local hash = 5381
     for index = 1, #key do
         hash = (hash * 33 + key:byte(index)) % 4294967296
@@ -90,6 +95,8 @@ function BookOrbitSidecar.normalizeAnnotations(raw)
             if pos0 then
                 local pos1 = serializePos(a.pos1)
                 local entry = {
+                    sourceAnchor = type(a.bookorbit_source_anchor) == "table" and a.bookorbit_source_anchor.bookId
+                        and a.bookorbit_source_anchor.bookFileId and a.bookorbit_source_anchor or nil,
                     datetime = a.datetime,
                     datetimeUpdated = isDeviceDatetime(a.datetime_updated) and a.datetime_updated or nil,
                     drawer = a.drawer,
@@ -341,10 +348,11 @@ function BookOrbitSidecar.applyServerStateSidecar(file, state)
     return touched
 end
 
-function BookOrbitSidecar.extract(file)
-    if not DocSettings:hasSidecarFile(file) then return nil end
+function BookOrbitSidecar.extract(file, doc_settings)
+    if not doc_settings and not DocSettings:hasSidecarFile(file) then return nil end
 
-    local doc_settings = DocSettings:open(file)
+    doc_settings = doc_settings or DocSettings:open(file)
+    if AnnotationGuard.pending(doc_settings) then return nil, "annotation_restoration_pending" end
     local summary = BookOrbitSidecar.normalizeSummary(doc_settings:readSetting("summary"))
     local raw_annotations = doc_settings:readSetting("annotations")
     local annotations, max_datetime, signature = BookOrbitSidecar.normalizeAnnotations(raw_annotations)

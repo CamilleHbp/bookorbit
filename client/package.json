@@ -93,7 +93,8 @@
     "vue-i18n": "^11.4.12",
     "vue-router": "^5.3.1",
     "vue-sonner": "^2.0.9",
-    "vue-virtual-scroller": "^3.0.5"
+    "vue-virtual-scroller": "^3.0.5",
+    "@noble/hashes": "1.8.0"
   },
   "devDependencies": {
     "@intlify/message-compiler": "^11.4.12",
@@ -122,7 +123,8 @@
     "vite": "^8.3.1",
     "vite-plugin-vue-devtools": "^8.2.1",
     "vitest": "^5.0.2",
-    "vue-tsc": "^3.3.11"
+    "vue-tsc": "^3.3.11",
+    "fake-indexeddb": "^6.2.5"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

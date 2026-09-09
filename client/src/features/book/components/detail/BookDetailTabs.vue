@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, inject, ref } from 'vue'
+import { BOOK_STORY_ADMIN_KEY } from '@/features/fanfiction/composables/useBookStory'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { normalizeBookDetailTab, type BookDetailTab } from '@/features/book/lib/book-detail-tabs'
@@ -10,6 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
+const canManageStory = inject(BOOK_STORY_ADMIN_KEY, ref(false))
 
 const activeTab = computed(() => normalizeBookDetailTab(route.query.tab))
 
@@ -21,6 +23,7 @@ const tabs = computed<{ label: string; tab: BookDetailTab }[]>(() => {
   result.push({ label: t('book.detail.tabs.files'), tab: 'files' })
   result.push({ label: t('book.detail.tabs.readingLog'), tab: 'reading-log' })
   result.push({ label: t('book.detail.tabs.highlights'), tab: 'highlights' })
+  if (canManageStory.value) result.push({ label: t('fanfiction.storyUpdates'), tab: 'story-updates' })
   return result
 })
 

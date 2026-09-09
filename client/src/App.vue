@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { toast } from 'vue-sonner'
 import { INIT_OPTIONS_KEY, THEME_KEY } from 'vue-echarts'
 import { APP_FEATURES } from '@bookorbit/types'
 import { useChangePasswordDialog } from '@/composables/useChangePasswordDialog'
@@ -23,6 +25,7 @@ import { usePodcastEvents } from '@/features/podcast/composables/usePodcastEvent
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { resolveRouteViewKey } from '@/router/view-key'
+import { useReadingOutboxRecovery } from '@/features/reader/shared/composables/useReadingOutboxRecovery'
 import LegalNotices from '@/components/legal/LegalNotices.vue'
 
 // Bottom-edge media and download surfaces publish their measured heights, so the toaster clears
@@ -44,6 +47,13 @@ const themeStore = useThemeStore()
 
 const route = useRoute()
 const { user } = useAuth()
+const { t } = useI18n()
+const readingRecovery = useReadingOutboxRecovery(computed(() => user.value?.id ?? null))
+watch(readingRecovery.error, (message) => {
+  if (message)
+    toast.error(message, { id: 'reading-recovery', duration: Infinity, action: { label: t('common.retry'), onClick: readingRecovery.retry } })
+  else toast.dismiss('reading-recovery')
+})
 const { popupOpen, evaluate, syncPopup } = useWhatsNew()
 const podcastPlayer = APP_FEATURES.podcasts ? usePodcastPlayer() : null
 const podcastDownloads = APP_FEATURES.podcasts ? usePodcastDownloadBatches() : null

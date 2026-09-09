@@ -18,6 +18,7 @@ import {
   type ValidatorConstraintInterface,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ReadingAnchorDto } from '../../../common/dto/reading-anchor.dto';
 
 import { ANNOTATION_STYLES } from '../annotation.constants';
 
@@ -81,6 +82,11 @@ class PdfRequiresBookFileConstraint implements ValidatorConstraintInterface {
 }
 
 export class CreateAnnotationDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ReadingAnchorDto)
+  sourceAnchor?: ReadingAnchorDto;
+
   @IsOptional()
   @IsString()
   @IsNotEmpty()

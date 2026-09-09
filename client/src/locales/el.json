@@ -6010,6 +6010,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "Επανάληψη",
     "pdf": {
       "openError": "Αδυναμία ανοίγματος αυτού του PDF",

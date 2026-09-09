@@ -85,6 +85,8 @@ export class KoboDownloadService {
           settings.forceEnableHyphenation,
           audioless !== null,
           reply,
+          userId,
+          file.absolutePath,
           audioless?.cleanup,
         );
       }
@@ -143,6 +145,8 @@ export class KoboDownloadService {
     hyphenate: boolean,
     audioless: boolean,
     reply: FastifyReply,
+    userId: number,
+    originalPath: string,
     cleanup?: () => Promise<void>,
   ) {
     const start = Date.now();
@@ -155,6 +159,12 @@ export class KoboDownloadService {
         `[kobo.download] [fail] bookId=${bookId} fileId=${fileId} durationMs=${Date.now() - start} errorClass=${error.constructor.name} error="${sanitizeLogValue(error.message)}" - kepub conversion failed, falling back to epub`,
       );
     }
+    await this.bookAccessService.assertBookAccessible(userId, bookId);
+    const current = await this.db.query.bookFiles.findFirst({
+      where: and(eq(schema.bookFiles.id, fileId), eq(schema.bookFiles.bookId, bookId), eq(schema.bookFiles.absolutePath, originalPath)),
+      columns: { id: true },
+    });
+    if (!current) throw new NotFoundException('Book file changed during conversion; request the download again');
 
     // Whichever file is actually sent owns the cleanup, so a temp rebuild is never removed while
     // the response is still reading it.

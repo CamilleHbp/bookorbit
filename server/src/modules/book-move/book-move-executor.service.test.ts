@@ -72,7 +72,9 @@ beforeEach(async () => {
   applyBookMove = vi.fn<(input: unknown) => Promise<ApplyMoveResult>>().mockResolvedValue({ moved: true, mergedBookId: null });
   const repo = { applyBookMove } as unknown as BookMoveRepository;
   coverStore = { removeCoverDirectory: vi.fn<(bookId: number) => Promise<void>>().mockResolvedValue(undefined) };
-  executor = new BookMoveExecutorService(repo, new FileLockService(), registry, coverStore as never);
+  executor = new BookMoveExecutorService(repo, new FileLockService(), registry, coverStore as never, {
+    withRelocation: vi.fn(async (_ids: number[], run: () => Promise<unknown>) => run()),
+  } as never);
 });
 
 afterEach(async () => {

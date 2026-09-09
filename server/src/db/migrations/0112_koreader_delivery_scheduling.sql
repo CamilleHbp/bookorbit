@@ -1,0 +1,2 @@
+ALTER TABLE "koreader_installed_copies" ADD COLUMN "delivery_check_after" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+CREATE INDEX "koreader_copies_delivery_check_idx" ON "koreader_installed_copies" USING btree ("delivery_check_after","id");
