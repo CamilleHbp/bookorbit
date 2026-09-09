@@ -175,7 +175,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
                 'replacement_upload_missing',
               ].includes(code)
             ? 'review_required'
-            : job.attempts < 3
+            : job.attempts < 3 && !['download_limit', 'response_too_large', 'source_policy_blocked', 'invalid_epub'].includes(code)
               ? 'queued'
               : 'failed',
         null,

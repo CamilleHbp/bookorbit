@@ -1,19 +1,19 @@
-from safe_transport import PolicyError
+from safe_transport import ConfigurationError
 
 
 def apply_tag_rules(story, rules):
     if not isinstance(rules, list) or len(rules) > 100:
-        raise PolicyError('Invalid tag rules')
+        raise ConfigurationError('Invalid tag rules')
     replacements = {}
     for rule in rules:
         if not isinstance(rule, dict) or set(rule) != {'remoteTag', 'targetTag'}:
-            raise PolicyError('Invalid tag rule')
+            raise ConfigurationError('Invalid tag rule')
         for value in rule.values():
             if not isinstance(value, str) or not value.strip() or len(value) > 500:
-                raise PolicyError('Invalid tag rule value')
+                raise ConfigurationError('Invalid tag rule value')
         key = rule['remoteTag'].strip().lower()
         if key in replacements:
-            raise PolicyError('Duplicate remote tag rule')
+            raise ConfigurationError('Duplicate remote tag rule')
         replacements[key] = rule['targetTag'].strip()
     original = story.getSubjectTags
 

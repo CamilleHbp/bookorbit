@@ -21,7 +21,7 @@ export const dbConfig = registerAs('db', () => ({
 export const fanficfareConfig = registerAs('fanficfare', () => ({
   encryptionKey: process.env.FANFICFARE_ENCRYPTION_KEY?.trim() || undefined,
   python: process.env.FANFICFARE_PYTHON?.trim() || process.env.KOBO_CLOUDSCRAPER_PYTHON?.trim() || resolve('.venv/kobo-cloudscraper/bin/python'),
-  timeoutMs: 600_000,
+  timeoutMs: 1_800_000,
   maxWorkers: 2,
 }));
 
