@@ -80,7 +80,13 @@ RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh /app/bin/
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -q -T 4 -O /dev/null "http://127.0.0.1:${PORT:-3000}/api/v1/health"
+  CMD host="$(printf '%s' "${HOST:-}" | tr -d '[:space:]')"; \
+      case "$host" in \
+        ''|0.0.0.0) host=127.0.0.1 ;; \
+        ::) host='[::1]' ;; \
+        *:*) host="[$host]" ;; \
+      esac; \
+      wget -q -T 4 -O /dev/null "http://${host}:${PORT:-3000}/api/v1/health"
 
 ENTRYPOINT ["/sbin/tini", "-s", "--"]
 CMD ["sh", "/app/entrypoint.sh"]
