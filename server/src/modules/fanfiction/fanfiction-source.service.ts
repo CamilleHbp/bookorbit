@@ -3,7 +3,7 @@ import { and, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { resolveUploadPath, type FanfictionPreview, type FanfictionSource } from '@bookorbit/types';
+import { resolveUploadPath, type FanfictionPreview, type FanfictionSource, type FanfictionExistingStoryConflict } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { buildPatternTokens } from '../../common/utils/pattern-tokens.utils';
 import { DB } from '../../db';
@@ -43,6 +43,18 @@ export class FanfictionSourceService {
 
   async create(libraryId: number, dto: ImportFanfictionDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
+    const canonicalKey = createHash('sha256').update(this.canonicalUrl(dto.url)).digest('hex');
+    const [existing] = await this.db
+      .select({ id: sources.id, title: sources.title, bookFileId: sources.bookFileId })
+      .from(sources)
+      .where(and(eq(sources.libraryId, libraryId), eq(sources.canonicalKey, canonicalKey)))
+      .limit(1);
+    if (existing?.bookFileId)
+      throw new ConflictException({
+        message: 'This story is already in your library',
+        errorCode: 'story_exists',
+        errorMeta: { id: existing.id, title: existing.title },
+      } satisfies FanfictionExistingStoryConflict & { message: string });
     const { library } = await this.libraries.importDestination(libraryId, dto.folderId);
     this.validator.validateFormat('story.epub', library.allowedFormats);
     return this.jobs.importStory(libraryId, dto, user);

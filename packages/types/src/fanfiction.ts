@@ -96,6 +96,7 @@ export interface FanfictionJob {
   cancellationRequested: boolean;
   result: {
     progress?: FanfictionImportProgress;
+    existingStory?: FanfictionExistingStory;
     preview?: FanfictionPreview;
     replacement?: FanfictionReplacementReview;
     urls?: string[];
@@ -113,6 +114,16 @@ export interface FanfictionJob {
 }
 
 export type FanfictionSourceState = "pending" | "active" | "paused" | "review_required" | "configuration_blocked" | "unlinked";
+
+export interface FanfictionExistingStory {
+  id: string;
+  title: string;
+}
+
+export interface FanfictionExistingStoryConflict {
+  errorCode: "story_exists";
+  errorMeta: FanfictionExistingStory;
+}
 
 export interface FanfictionDiscoveryProgress {
   cutoffFileId: number;

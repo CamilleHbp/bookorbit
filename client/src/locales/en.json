@@ -10374,7 +10374,11 @@
     "automaticProfile": "Automatic",
     "importStories": "Import stories",
     "allowAdultStories": "I am an adult. Allow adult stories.",
-    "configureSource": "Sign in or configure source"
+    "configureSource": "Sign in or configure source",
+    "existingStoryTitle": "Story already exists",
+    "existingStoryDescription": "“{title}” is already in this library. Update the existing story?",
+    "updateStory": "Update story",
+    "existingStoryPosition": "Story {current} of {total}"
   },
   "koreaderCopies": {
     "title": "Device copies",

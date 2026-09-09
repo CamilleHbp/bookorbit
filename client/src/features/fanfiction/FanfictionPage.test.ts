@@ -37,11 +37,47 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await router.push(path)
     await router.isReady()
     wrapper = mount(FanfictionPage, {
-      global: { plugins: [router], stubs: { SourceProfileEditor: true, SourceProfiles: true, ExistingStories: true } },
+      global: {
+        plugins: [router],
+        stubs: { DialogPortal: { template: '<div><slot /></div>' }, SourceProfileEditor: true, SourceProfiles: true, ExistingStories: true },
+      },
     })
     await flushPromises()
     return router
   }
+
+  it('shows one duplicate at a time with Next and Previous controls', async () => {
+    await open('/fanfiction?tab=add')
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      if (String(url).includes('profile-match')) return new Response(JSON.stringify({ profile: null }))
+      if (String(url).endsWith('/sources') && options?.method === 'POST') {
+        const id = JSON.parse(options.body as string)
+          .url.split('/')
+          .at(-1)
+        return new Response(JSON.stringify({ errorCode: 'story_exists', errorMeta: { id, title: `Existing ${id}` } }), { status: 409 })
+      }
+      return new Response(JSON.stringify({ items: [], nextCursor: null }))
+    })
+    await wrapper!.get('textarea').setValue('https://archiveofourown.org/works/1\nhttps://archiveofourown.org/works/2')
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Import stories')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper!.get('[role="dialog"]').text()).toContain('Existing 1')
+    expect(wrapper!.get('[role="dialog"]').text()).toContain('Story 1 of 2')
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Next')!
+      .trigger('click')
+    expect(wrapper!.get('[role="dialog"]').text()).toContain('Existing 2')
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Previous')!
+      .trigger('click')
+    expect(wrapper!.get('[role="dialog"]').text()).toContain('Existing 1')
+    expect(wrapper!.findAll('article')).toHaveLength(0)
+  })
 
   it('renders Profiles exclusively and exposes the active destination', async () => {
     await open('/fanfiction?tab=profiles')

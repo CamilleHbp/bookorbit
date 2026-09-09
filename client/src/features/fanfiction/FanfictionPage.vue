@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ImportProgress from './components/ImportProgress.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { BookOpen, Plus, Settings, RefreshCw } from '@lucide/vue'
@@ -41,7 +42,6 @@ const {
   activity,
   activityCursor,
   moreActivity,
-  candidates,
   urls,
   search,
   state,
@@ -57,6 +57,16 @@ const {
   moreSources,
   moreJobs,
   importStories,
+  existingCandidate,
+  existingStoryPosition,
+  existingStoryCount,
+  hasPreviousExistingStory,
+  hasNextExistingStory,
+  previousExistingStory,
+  nextExistingStory,
+  visibleCandidates,
+  cancelExistingStory,
+  updateExistingStory,
   retryImport,
   useSavedProfile,
   cancelJob,
@@ -83,12 +93,12 @@ const navigation = computed(() => [
 ])
 const { sourceSettings, detectedSite, selectedProfile, addSource, editSource } = useInlineSourceSettings(libraryId, profiles, profileId, urls)
 const preferences = reactive(useFanfictionPreferences())
-const configuring = ref<(typeof candidates.value)[number] | null>(null)
+const configuring = ref<(typeof page.candidates.value)[number] | null>(null)
 function handleAddSource() {
   configuring.value = null
   addSource()
 }
-async function configureImport(candidate: (typeof candidates.value)[number]) {
+async function configureImport(candidate: (typeof page.candidates.value)[number]) {
   configuring.value = candidate
   const profile = profiles.value.find((item) => item.id === candidate.resolvedProfileId)
   if (profile) await sourceSettings.editProfile(profile)
@@ -101,7 +111,7 @@ async function handleProfileSaved(profile: FanfictionProfileSummary) {
   if (candidate) await retryImport(candidate, profile)
   else useSavedProfile(profile)
 }
-async function allowAdultImport(candidate: (typeof candidates.value)[number]) {
+async function allowAdultImport(candidate: (typeof page.candidates.value)[number]) {
   if (await preferences.allowAdult()) await retryImport(candidate)
 }
 function handleRefresh() {
@@ -333,7 +343,33 @@ onMounted(() => {
         <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null" @click="importStories">{{
           t('fanfiction.importStories')
         }}</Button>
-        <article v-for="candidate in candidates" :key="candidate.previewKey" class="border-border bg-card space-y-2 rounded-lg border p-4">
+        <ConfirmDialog
+          :open="!!existingCandidate"
+          :title="t('fanfiction.existingStoryTitle')"
+          :description="t('fanfiction.existingStoryDescription', { title: existingCandidate?.existingStory?.title ?? '' })"
+          :confirm-label="t('fanfiction.updateStory')"
+          :busy="busy"
+          :destructive="false"
+          :confirm-disabled="!canManage"
+          @confirm="updateExistingStory"
+          @cancel="cancelExistingStory"
+        >
+          <div v-if="existingStoryCount > 1" class="mt-4 space-y-2">
+            <p class="text-muted-foreground text-sm" aria-live="polite">
+              {{ t('fanfiction.existingStoryPosition', { current: existingStoryPosition + 1, total: existingStoryCount }) }}
+            </p>
+            <div class="flex gap-2">
+              <Button variant="outline" :disabled="busy || !hasPreviousExistingStory" @click="previousExistingStory">
+                {{ t('common.previous') }}
+              </Button>
+              <Button variant="outline" :disabled="busy || !hasNextExistingStory" @click="nextExistingStory">
+                {{ t('common.next') }}
+              </Button>
+            </div>
+          </div>
+          <p v-if="error" role="alert" class="text-destructive mt-2 text-sm">{{ error }}</p>
+        </ConfirmDialog>
+        <article v-for="candidate in visibleCandidates" :key="candidate.previewKey" class="border-border bg-card space-y-2 rounded-lg border p-4">
           <p class="min-w-0 break-words font-medium">{{ candidate.preview?.title || candidate.url }}</p>
           <p v-if="candidate.preview" class="text-muted-foreground text-sm">
             {{ candidate.preview.authors.join(', ') }} · {{ t('fanfiction.chapterCount', { count: candidate.preview.chapterCount }) }} ·

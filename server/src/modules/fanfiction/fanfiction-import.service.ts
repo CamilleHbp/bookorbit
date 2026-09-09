@@ -38,7 +38,12 @@ export class FanfictionImportService {
     const resumed = await this.sources.resume(job, user);
     const { source, owned } = resumed ?? (await this.sources.reserve(job, await this.runtime.preview(job.url, document, signal, saveCookies), user));
     if (!owned)
-      return { sourceId: source.id, ...(source.bookId && source.bookFileId ? { bookId: source.bookId, bookFileId: source.bookFileId } : {}) };
+      return {
+        sourceId: source.id,
+        ...(source.bookId && source.bookFileId
+          ? { bookId: source.bookId, bookFileId: source.bookFileId, existingStory: { id: source.id, title: source.title } }
+          : {}),
+      };
     const input = {
       operationId: source.importOperationId,
       metadataSourceKey: `fanfiction:${source.id}`,

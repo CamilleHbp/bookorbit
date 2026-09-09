@@ -1,5 +1,6 @@
 import { computed, onScopeDispose, ref } from 'vue'
 import type {
+  FanfictionExistingStory,
   FanfictionFolderPage,
   FanfictionJob,
   FanfictionJobPage,
@@ -17,6 +18,8 @@ import { api } from '@/lib/api'
 import { useFanfictionPagination } from './useFanfictionPagination'
 
 interface Candidate {
+  existingStory?: FanfictionExistingStory
+  updateKey?: string
   url: string
   profileId: string
   destination?: { folderId: number; intervalMinutes: number | null }
@@ -26,6 +29,12 @@ interface Candidate {
   selected: boolean
   job: FanfictionJob | null
   preview: FanfictionPreview | null
+}
+
+class ExistingStoryError extends Error {
+  constructor(readonly story: FanfictionExistingStory) {
+    super('This story is already in your library')
+  }
 }
 
 export function useFanfiction() {
@@ -45,6 +54,14 @@ export function useFanfiction() {
   const activity = ref<FanfictionActivity[]>([])
   const activityCursor = ref<string | null>(null)
   const candidates = ref<Candidate[]>([])
+  const existingStoryIndex = ref(0)
+  const existingCandidates = computed(() => candidates.value.filter((candidate) => candidate.existingStory))
+  const existingStoryPosition = computed(() => Math.min(existingStoryIndex.value, Math.max(0, existingCandidates.value.length - 1)))
+  const existingCandidate = computed(() => existingCandidates.value[existingStoryPosition.value])
+  const existingStoryCount = computed(() => existingCandidates.value.length)
+  const hasPreviousExistingStory = computed(() => existingStoryPosition.value > 0)
+  const hasNextExistingStory = computed(() => existingStoryPosition.value + 1 < existingStoryCount.value)
+  const visibleCandidates = computed(() => candidates.value.filter((candidate) => !candidate.existingStory))
   const urls = ref('')
   const search = ref('')
   const state = ref('')
@@ -85,6 +102,13 @@ export function useFanfiction() {
       body === undefined ? undefined : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
     )
     const result = await response.json().catch(() => ({}))
+    if (
+      response.status === 409 &&
+      result.errorCode === 'story_exists' &&
+      typeof result.errorMeta?.id === 'string' &&
+      typeof result.errorMeta?.title === 'string'
+    )
+      throw new ExistingStoryError(result.errorMeta)
     if (!response.ok) throw new Error(typeof result.message === 'string' ? result.message : `HTTP ${response.status}`)
     return result as T
   }
@@ -178,6 +202,7 @@ export function useFanfiction() {
     appliedSearch.value = search.value
     appliedState.value = state.value
     candidates.value = []
+    existingStoryIndex.value = 0
     sourceJobs.value = {}
     sourceErrors.value = {}
     checkingSourceId.value = null
@@ -280,14 +305,24 @@ export function useFanfiction() {
       }
     }
     if (!currentScope(current)) return
-    const job = await request<FanfictionJob>(`${path}/sources`, {
-      url: candidate.url,
-      ...candidate.destination,
-      idempotencyKey: candidate.importKey,
-      ...(candidate.resolvedProfileId ? { profileId: candidate.resolvedProfileId } : {}),
-    })
+    let job: FanfictionJob
+    try {
+      job = await request<FanfictionJob>(`${path}/sources`, {
+        url: candidate.url,
+        ...candidate.destination,
+        idempotencyKey: candidate.importKey,
+        ...(candidate.resolvedProfileId ? { profileId: candidate.resolvedProfileId } : {}),
+      })
+    } catch (failure) {
+      if (failure instanceof ExistingStoryError) {
+        if (currentScope(current)) candidate.existingStory = failure.story
+        return
+      }
+      throw failure
+    }
     if (!currentScope(current)) return
     candidate.job = job
+    candidate.existingStory = job.result?.existingStory
     candidate.selected = false
     schedulePoll(current)
   }
@@ -329,13 +364,60 @@ export function useFanfiction() {
       )
       for (const candidate of candidates.value) {
         if (!currentScope(current)) break
-        if (candidate.job) continue
+        if (candidate.job || candidate.existingStory) continue
         await submitImport(candidate, current, path)
       }
     })
   }
+  function cancelExistingStory() {
+    if (busy.value) return
+    error.value = ''
+    const candidate = existingCandidate.value
+    candidates.value = candidates.value.filter((item) => item !== candidate)
+    existingStoryIndex.value = existingStoryPosition.value
+  }
+  function previousExistingStory() {
+    if (!busy.value && hasPreviousExistingStory.value) {
+      error.value = ''
+      existingStoryIndex.value = existingStoryPosition.value - 1
+    }
+  }
+  function nextExistingStory() {
+    if (!busy.value && hasNextExistingStory.value) {
+      error.value = ''
+      existingStoryIndex.value = existingStoryPosition.value + 1
+    }
+  }
+  async function updateExistingStory() {
+    const candidate = existingCandidate.value
+    if (busy.value || !candidate?.existingStory) return
+    const story = candidate.existingStory
+    candidate.updateKey ??= crypto.randomUUID()
+    await perform(async (current, path) => {
+      const job = await request<FanfictionJob>(`${path}/sources/${story.id}/check`, {
+        kind: 'update',
+        idempotencyKey: candidate.updateKey,
+      })
+      if (!currentScope(current)) return
+      candidate.job = job
+      candidate.existingStory = undefined
+      existingStoryIndex.value = existingStoryPosition.value
+      sourceJobs.value[story.id] = job
+      schedulePoll(current)
+    })
+  }
   async function retryImport(candidate: Candidate, profile?: FanfictionProfileSummary) {
     if (busy.value || !candidate.job || !['configuration_blocked', 'failed', 'cancelled'].includes(candidate.job.state)) return
+    if (candidate.job.kind !== 'import') {
+      const jobId = candidate.job.id
+      await perform(async (current, path) => {
+        const job = await request<FanfictionJob>(`${path}/jobs/${jobId}/retry`, {})
+        if (!currentScope(current)) return
+        candidate.job = job
+        schedulePoll(current)
+      })
+      return
+    }
     candidate.importKey = crypto.randomUUID()
     candidate.job = null
     if (profile) {
@@ -498,6 +580,7 @@ export function useFanfiction() {
             const updated = candidate.job && byId.get(candidate.job.id)
             if (updated) {
               candidate.job = updated
+              candidate.existingStory = updated.result?.existingStory
               candidate.preview = updated.result?.preview ?? candidate.preview
             }
           }
@@ -572,6 +655,16 @@ export function useFanfiction() {
     moreSources,
     moreJobs,
     importStories,
+    existingCandidate,
+    existingStoryPosition,
+    existingStoryCount,
+    hasPreviousExistingStory,
+    hasNextExistingStory,
+    previousExistingStory,
+    nextExistingStory,
+    visibleCandidates,
+    cancelExistingStory,
+    updateExistingStory,
     retryImport,
     previewStories,
     useSavedProfile,
