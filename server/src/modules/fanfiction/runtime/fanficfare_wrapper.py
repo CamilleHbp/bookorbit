@@ -135,7 +135,8 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     configuration = make_configuration(url, ini, transport)
     adapter = adapters.getAdapter(configuration, url)
     report_progress({'stage': 'metadata'})
-    story = adapter.getStoryMetadataOnly(get_cover=False)
+    # FanFicFare caches metadata, so the writer cannot fetch a skipped cover later.
+    story = adapter.getStoryMetadataOnly(get_cover=operation in ('download', 'update', 'refresh'))
     apply_tag_rules(story, request.get('tagRules', []))
     preview = story_preview(adapter, story)
     canonical = preview['canonicalUrl']
