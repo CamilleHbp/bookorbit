@@ -108,7 +108,7 @@ def make_configuration(url, ini, transport):
     configuration = ControlledConfiguration(adapters.getConfigSectionsFor(url), 'epub')
     with (Path(fanficfare.__file__).parent / 'defaults.ini').open(encoding='utf-8') as defaults:
         configuration.read_file(defaults)
-    configuration.read_file(io.StringIO('[fiction.live]\ndedup_img_files: true\ninclude_appendices: true\nlegend_spoilers: true\n'))
+    configuration.read_file(io.StringIO('[defaults]\ninclude_images: true\n[fiction.live]\ndedup_img_files: true\ninclude_appendices: true\nlegend_spoilers: true\nshow_nsfw_cover_images: true\n'))
     configuration.read_file(io.StringIO(validate_ini(ini)))
     if not configuration.has_section('overrides'):
         configuration.add_section('overrides')

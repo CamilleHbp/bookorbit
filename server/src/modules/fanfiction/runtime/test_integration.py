@@ -12,6 +12,64 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_source_covers_are_embedded_on_download_update_and_refresh(self):
+        import base64
+        from fanficfare.adapters.adapter_test1 import TestSiteAdapter
+        from safe_transport import SafeTransport
+        image = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=')
+        extract = TestSiteAdapter.doExtractChapterUrlsAndMetadata
+        fetched = []
+
+        def metadata(adapter, get_cover=True):
+            extract(adapter, get_cover=get_cover)
+            if get_cover:
+                adapter.setCoverImage(adapter.url, 'https://test1.com/cover.png')
+
+        def request(_transport, method, url, parameters=None, headers=None):
+            self.assertEqual(url, 'https://test1.com/cover.png')
+            fetched.append(url)
+            return 200, image, url
+
+        original = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory, patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'), patch.object(TestSiteAdapter, 'doExtractChapterUrlsAndMetadata', metadata), patch.object(SafeTransport, 'request', request):
+            try:
+                os.chdir(directory)
+                payload = {'url': 'https://test1.com/?sid=1', 'configuration': ''}
+                run({**payload, 'operation': 'preview'})
+                self.assertEqual(fetched, [])
+                for operation in ['download', 'update', 'refresh']:
+                    with self.subTest(operation=operation):
+                        run({**payload, 'operation': operation})
+                        with ZipFile('output.epub') as archive:
+                            opf = next(name for name in archive.namelist() if name.endswith('.opf'))
+                            self.assertIn(b'name="cover"', archive.read(opf))
+                            self.assertTrue(any(archive.read(name) == image for name in archive.namelist()))
+                        Path('output.epub').replace('input.epub')
+                self.assertEqual(len(fetched), 3)
+            finally:
+                os.chdir(original)
+
+    def test_fictionlive_covers_default_to_enabled_and_respect_profile_settings(self):
+        from controlled_config import make_configuration
+        from fanficfare.adapters.adapter_fictionlive import FictionLiveAdapter
+        from safe_transport import SafeTransport
+        url = 'https://fiction.live/stories/Example/17CharacterIDhere/home'
+        data = {'t': 'Example', 'cht': 1700000000000, 'rt': 1690000000000,
+                'contentRating': 'teen', 'u': [{'n': 'Writer', '_id': 'writer-id'}],
+                'i': ['https://example.org/cover.png'], 'nsfwCover': True}
+        configuration = make_configuration(url, '', SafeTransport([]))
+        self.assertEqual(configuration.getConfig('include_images'), 'true')
+        adapter = FictionLiveAdapter(configuration, url)
+        with patch.object(adapter, 'setCoverImage') as cover:
+            adapter.extract_metadata(data, True)
+            cover.assert_called_once_with(adapter.url, data['i'][0])
+        configuration = make_configuration(url, '[defaults]\ninclude_images: false\n[fiction.live]\nshow_nsfw_cover_images: false\n', SafeTransport([]))
+        self.assertFalse(configuration.getConfig('include_images'))
+        adapter = FictionLiveAdapter(configuration, url)
+        with patch.object(adapter, 'setCoverImage') as cover:
+            adapter.extract_metadata(data, True)
+            cover.assert_not_called()
+
     def test_uses_raw_chapter_and_word_counts_instead_of_formatted_metadata(self):
         from fanficfare.adapters.adapter_test1 import TestSiteAdapter
         original = TestSiteAdapter.getStoryMetadataOnly

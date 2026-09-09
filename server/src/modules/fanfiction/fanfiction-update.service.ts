@@ -11,6 +11,7 @@ import { RevisionPublicationService } from '../book-revision/revision-publicatio
 import type { RevisionPublicationAuthority } from '../book-revision/revision-publication-authority';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionSourceService } from './fanfiction-source.service';
+import { MetadataService } from '../metadata/metadata.service';
 
 import type { FanfictionCookieSink } from './fanfiction-cookies';
 
@@ -26,6 +27,7 @@ export class FanfictionUpdateService {
     private readonly downloads: RevisionDownloadService,
     private readonly publications: RevisionPublicationService,
     private readonly manifests: EpubManifestService,
+    private readonly metadata: MetadataService,
   ) {}
 
   async run(
@@ -50,6 +52,10 @@ export class FanfictionUpdateService {
       },
     };
     const finish = async (revisionId: string, noChange: boolean, preview?: FanfictionPreview) => {
+      await access();
+      const file = await this.catalog.fileLocation(fileId, source.libraryId);
+      if (file.bookId !== source.bookId) throw new ConflictException('The managed book identity changed');
+      await this.metadata.refreshCoverForBook(file.bookId, file.absolutePath, 'epub');
       await access();
       return this.sources.completeUpdate(job, { sourceId: source.id, bookId: source.bookId!, bookFileId: fileId, revisionId, noChange }, preview);
     };
