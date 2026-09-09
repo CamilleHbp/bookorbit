@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { RouterLink } from 'vue-router'
 import { CircleAlert, CircleCheck, LoaderCircle } from '@lucide/vue'
 import type { FanfictionJob } from '@bookorbit/types'
 
@@ -39,6 +40,12 @@ const lastStage = computed(() =>
 
 <template>
   <div class="space-y-2">
+    <RouterLink
+      v-if="job.result?.metadataReview && job.result.bookId"
+      :to="{ name: 'book-detail', params: { bookId: job.result.bookId }, query: { tab: 'story-updates' } }"
+      class="text-primary block font-medium underline"
+      >{{ t('fanfiction.metadataReview.title') }}</RouterLink
+    >
     <div class="flex items-center gap-2 text-sm" role="status" aria-live="polite">
       <LoaderCircle v-if="active" class="text-primary size-4 shrink-0 motion-safe:animate-spin" aria-hidden="true" />
       <CircleCheck v-else-if="succeeded" class="text-primary size-4 shrink-0" aria-hidden="true" />

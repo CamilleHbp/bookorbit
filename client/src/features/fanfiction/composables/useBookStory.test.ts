@@ -39,6 +39,51 @@ describe('book story administration', () => {
       return response({ items: [{ revision: 'previous', canRollback: true }], currentRevisionId: 'current', nextCursor: null })
     return response({ items: [], nextCursor: null })
   }
+  it('recovers metadata review after reopening and submits explicit merge choices', async () => {
+    const review = {
+      current: { title: 'Story', description: '', authors: [], tags: ['Custom'] },
+      incoming: { title: 'Story', description: '', authors: [], tags: ['Incoming'] },
+      fields: ['tags'],
+      lockedFields: [],
+      fingerprint: 'fingerprint',
+      previousState: 'active',
+    }
+    let resolved = false
+    mockApi.mockImplementation((url, options) => {
+      const path = String(url)
+      if (path.endsWith('/metadata-review')) {
+        if (options?.method === 'POST') {
+          resolved = true
+          return Promise.resolve(response({ resolved: true }))
+        }
+        return Promise.resolve(response({ jobId: 'update-job', review }))
+      }
+      if (path.includes('/sources?') && !resolved)
+        return Promise.resolve(
+          response({ items: [{ ...source, state: 'review_required', attentionCode: 'metadata_review_required' }], nextCursor: null }),
+        )
+      return Promise.resolve(pages(path))
+    })
+    const updated = vi.fn()
+    const model = scope.run(() => useBookStory(7, 5, true, updated))!
+    await flush()
+    expect(model.metadataReview.value?.review.fields).toEqual(['tags'])
+    expect(model.canUpdate.value).toBe(false)
+    expect(model.canReplace.value).toBe(false)
+    model.metadataChoices.value.tags = 'merge'
+    await model.resolveMetadata()
+    const call = mockApi.mock.calls.find(([url, options]) => String(url).endsWith('/metadata-review') && options?.method === 'POST')!
+    expect(JSON.parse(call[1]!.body as string)).toEqual({
+      jobId: 'update-job',
+      fingerprint: 'fingerprint',
+      title: 'keep',
+      description: 'keep',
+      authors: 'keep',
+      tags: 'merge',
+    })
+    expect(model.metadataReview.value).toBeNull()
+    expect(updated).toHaveBeenCalledWith(7)
+  })
   it('uploads multipart bytes with stable request identity after an uncertain response', async () => {
     mockApi.mockImplementation((url) => Promise.resolve(pages(String(url))))
     const model = scope.run(() => useBookStory(7, 5, true))!

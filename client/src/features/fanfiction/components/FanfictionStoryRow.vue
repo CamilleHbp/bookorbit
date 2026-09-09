@@ -92,8 +92,10 @@ function handlePause() {
             <DropdownMenuItem v-if="source.bookId" as-child>
               <RouterLink :to="details">{{ t('fanfiction.storyUpdates') }}</RouterLink>
             </DropdownMenuItem>
-            <DropdownMenuItem @select="handleRefresh">{{ t('fanfiction.refreshChapters') }}</DropdownMenuItem>
-            <DropdownMenuItem @select="handlePause">{{
+            <DropdownMenuItem v-if="source.attentionCode !== 'metadata_review_required'" @select="handleRefresh">{{
+              t('fanfiction.refreshChapters')
+            }}</DropdownMenuItem>
+            <DropdownMenuItem v-if="source.attentionCode !== 'metadata_review_required'" @select="handlePause">{{
               source.state === 'paused' ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates')
             }}</DropdownMenuItem>
           </DropdownMenuContent>
@@ -110,7 +112,9 @@ function handlePause() {
       <ImportProgress v-else-if="job" :job="job" />
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Button v-if="needsAttention && source.bookId" variant="outline" as-child
-          ><RouterLink :to="details">{{ t('fanfiction.reviewStory') }}</RouterLink></Button
+          ><RouterLink :to="details">{{
+            t(source.attentionCode === 'metadata_review_required' ? 'fanfiction.metadataReview.title' : 'fanfiction.reviewStory')
+          }}</RouterLink></Button
         >
         <Button v-else-if="needsAttention" variant="outline" as-child
           ><RouterLink :to="{ name: 'settings-fanfiction' }">{{ t('fanfiction.configureSource') }}</RouterLink></Button

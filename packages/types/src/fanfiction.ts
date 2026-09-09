@@ -106,6 +106,7 @@ export interface FanfictionJob {
     existingStory?: FanfictionExistingStory;
     preview?: FanfictionPreview;
     replacement?: FanfictionReplacementReview;
+    metadataReview?: FanfictionMetadataReview;
     urls?: string[];
     sourceId?: string;
     bookId?: number;
@@ -283,4 +284,27 @@ export interface FanfictionReplacementReview {
   previousChapterCount: number;
   chapterCount: number;
   identityMatches: boolean;
+}
+
+export type FanfictionMetadataField = "title" | "description" | "authors" | "tags";
+export type FanfictionMetadataValues = Pick<FanfictionPreview, FanfictionMetadataField>;
+export interface FanfictionMetadataReview {
+  current: FanfictionMetadataValues;
+  incoming: FanfictionMetadataValues;
+  fields: FanfictionMetadataField[];
+  lockedFields: string[];
+  fingerprint: string;
+  previousState: "active" | "paused";
+}
+export interface FanfictionMetadataReviewView {
+  jobId: string;
+  review: FanfictionMetadataReview;
+}
+export interface FanfictionMetadataResolution {
+  jobId: string;
+  fingerprint: string;
+  title: "keep" | "incoming";
+  description: "keep" | "incoming";
+  authors: "keep" | "incoming";
+  tags: "keep" | "merge";
 }

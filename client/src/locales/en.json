@@ -10238,7 +10238,8 @@
       "replacement_revision_changed": "This story has changed. Upload the EPUB again.",
       "replacement_upload_missing": "This upload is no longer available. Upload the EPUB again.",
       "adult_confirmation_required": "Confirm you are an adult in source settings, then retry.",
-      "access_denied": "The website blocked access. Try again later or upload an EPUB."
+      "access_denied": "The website blocked access. Try again later or upload an EPUB.",
+      "metadata_review_required": "Review the incoming story metadata."
     },
     "title": "Fanfiction",
     "pageNumber": "Page {page}",
@@ -10417,7 +10418,24 @@
     "addTagRule": "Add tag rule",
     "removeTagRule": "Remove tag rule",
     "duplicateTagRule": "Use each remote tag only once.",
-    "invalidTagRule": "Enter a remote tag and a BookOrbit tag for every rule (up to 500 characters each)."
+    "invalidTagRule": "Enter a remote tag and a BookOrbit tag for every rule (up to 500 characters each).",
+    "metadataReview": {
+      "title": "Review story metadata",
+      "help": "Choose which values to keep. Save your choices before updating this story again.",
+      "current": "In your library",
+      "incoming": "From the story",
+      "empty": "Empty",
+      "keep": "Keep library value",
+      "merge": "Merge tags",
+      "useIncoming": "Use incoming value",
+      "locked": "This field is locked. Its library value will be kept.",
+      "fields": {
+        "title": "Title",
+        "description": "Description",
+        "authors": "Authors",
+        "tags": "Tags"
+      }
+    }
   },
   "koreaderCopies": {
     "title": "Device copies",
