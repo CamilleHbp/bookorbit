@@ -122,38 +122,44 @@ describe('Fanfiction queued execution', () => {
       }
     },
   );
-  it.each(['adult_confirmation_required', 'access_denied', 'authentication_required'])(
-    'pauses a preview requiring %s for user action',
-    async (code) => {
-      const job = { id: 'job', kind: 'preview', libraryId: 5, userId: 7, tokenVersion: 1, attempts: 1 };
-      const jobs = { claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null), finish: vi.fn().mockResolvedValue(true) };
-      const module = await Test.createTestingModule({
-        providers: [
-          FanfictionWorkerService,
-          { provide: FanfictionJobService, useValue: jobs },
-          { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
-          { provide: FanficfareRuntimeService, useValue: { preview: vi.fn().mockRejectedValue(new BadRequestException({ errorCode: code })) } },
-          { provide: UserService, useValue: { findByIdWithPermissions: vi.fn().mockResolvedValue({ id: 7, tokenVersion: 1 }) } },
-          ...[
-            FanfictionProfileService,
-            FanfictionImportService,
-            FanfictionUpdateService,
-            FanfictionRollbackService,
-            FanfictionDiscoveryService,
-            FanfictionAdoptionService,
-            FanfictionReplacementService,
-            FanfictionSourceBatchService,
-          ].map((provide) => ({ provide, useValue: {} })),
-        ],
-      }).compile();
-      const worker = module.get(FanfictionWorkerService);
-      try {
-        await worker.tick();
-        await vi.waitFor(() => expect(jobs.finish).toHaveBeenCalledWith(job, 'configuration_blocked', null, code));
-      } finally {
-        await worker.onModuleDestroy();
-        await module.close();
-      }
-    },
-  );
+  it.each([
+    'adult_confirmation_required',
+    'access_denied',
+    'authentication_required',
+    'download_limit',
+    'response_too_large',
+    'source_policy_blocked',
+    'invalid_epub',
+  ])('stops a preview requiring %s without repeating an unchanged request', async (code) => {
+    const job = { id: 'job', kind: 'preview', libraryId: 5, userId: 7, tokenVersion: 1, attempts: 1 };
+    const jobs = { claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null), finish: vi.fn().mockResolvedValue(true) };
+    const module = await Test.createTestingModule({
+      providers: [
+        FanfictionWorkerService,
+        { provide: FanfictionJobService, useValue: jobs },
+        { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
+        { provide: FanficfareRuntimeService, useValue: { preview: vi.fn().mockRejectedValue(new BadRequestException({ errorCode: code })) } },
+        { provide: UserService, useValue: { findByIdWithPermissions: vi.fn().mockResolvedValue({ id: 7, tokenVersion: 1 }) } },
+        ...[
+          FanfictionProfileService,
+          FanfictionImportService,
+          FanfictionUpdateService,
+          FanfictionRollbackService,
+          FanfictionDiscoveryService,
+          FanfictionAdoptionService,
+          FanfictionReplacementService,
+          FanfictionSourceBatchService,
+        ].map((provide) => ({ provide, useValue: {} })),
+      ],
+    }).compile();
+    const worker = module.get(FanfictionWorkerService);
+    try {
+      await worker.tick();
+      const state = ['adult_confirmation_required', 'access_denied', 'authentication_required'].includes(code) ? 'configuration_blocked' : 'failed';
+      await vi.waitFor(() => expect(jobs.finish).toHaveBeenCalledWith(job, state, null, code));
+    } finally {
+      await worker.onModuleDestroy();
+      await module.close();
+    }
+  });
 });

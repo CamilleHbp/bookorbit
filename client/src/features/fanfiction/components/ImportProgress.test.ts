@@ -18,6 +18,21 @@ const job = (overrides: Partial<FanfictionJob> = {}): FanfictionJob => ({
   ...overrides,
 })
 describe('import progress', () => {
+  it.each([
+    ['download_limit', 'This story exceeds the download limit'],
+    ['response_too_large', 'A chapter or image is too large'],
+    ['download_timeout', 'The story took too long'],
+    ['source_policy_blocked', 'A source request was blocked for safety'],
+    ['invalid_epub', 'The downloaded EPUB could not be safely opened'],
+  ])('explains %s without blaming source settings', (errorCode, message) => {
+    const wrapper = mount(ImportProgress, {
+      props: { job: job({ state: 'failed', errorCode, result: { progress: { stage: 'downloading', completedChapters: 17, totalChapters: 219 } } }) },
+    })
+    expect(wrapper.get('[role="alert"]').text()).toContain(message)
+    expect(wrapper.text()).toContain('17 of 219 chapters downloaded')
+    expect(wrapper.text()).not.toContain('Check your source settings')
+    wrapper.unmount()
+  })
   it('shows actual chapter counts and accessible download progress', () => {
     const wrapper = mount(ImportProgress, { props: { job: job() } })
     expect(wrapper.text()).toContain('12 of 40 chapters downloaded')

@@ -8,7 +8,7 @@ import unittest
 import urllib.request
 from unittest.mock import patch
 
-from safe_transport import PolicyError, SafeTransport, public_addresses, validate_url
+from safe_transport import PolicyError, DownloadLimitError, DownloadTimeoutError, ResponseLimitError, SafeTransport, public_addresses, validate_url
 
 
 class TransportPolicyTest(unittest.TestCase):
@@ -80,19 +80,28 @@ class HttpResponseTest(unittest.TestCase):
 
     def test_expansion_limit_is_applied_before_allocating_unbounded_output(self):
         compressed = gzip.compress(b'x' * (128 * 1024))
-        with patch('safe_transport.MAX_RESPONSE_BYTES', 1024), self.assertRaisesRegex(PolicyError, 'Expanded'):
+        with patch('safe_transport.MAX_RESPONSE_BYTES', 1024), self.assertRaisesRegex(ResponseLimitError, 'Expanded'):
             self.request(FakeResponse(compressed, 'gzip', chunk_size=65536))
 
     def test_total_decoded_budget_applies_across_requests(self):
         transport = SafeTransport(max_bytes=1500)
         compressed = gzip.compress(b'x' * 1000)
         self.request(FakeResponse(compressed, 'gzip'), transport)
-        with self.assertRaisesRegex(PolicyError, 'Expanded'):
+        with self.assertRaisesRegex(DownloadLimitError, 'Expanded'):
             self.request(FakeResponse(compressed, 'gzip'), transport)
 
     def test_wire_budget_is_independent_of_expanded_budget(self):
-        with self.assertRaisesRegex(PolicyError, 'Download limit'):
+        with self.assertRaisesRegex(DownloadLimitError, 'Download limit'):
             self.request(FakeResponse(b'x' * 101), SafeTransport(max_bytes=100))
+
+    def test_exhausted_budget_cannot_be_ignored_by_image_error_handling(self):
+        transport = SafeTransport(max_bytes=100)
+        with self.assertRaises(DownloadLimitError):
+            self.request(FakeResponse(b'x' * 101), transport)
+        with patch('safe_transport.PinnedConnection') as connection, self.assertRaises(DownloadLimitError):
+            transport.request('GET', 'https://example.org/next-chapter')
+        connection.assert_not_called()
+        self.assertIsInstance(transport.failure, DownloadLimitError)
 
     def test_malformed_truncated_and_trailing_compressed_data_are_rejected(self):
         compressed = gzip.compress(b'A complete chapter')
@@ -113,7 +122,7 @@ class HttpResponseTest(unittest.TestCase):
             transport.deadline = 0
             return read(size)
         response.read = expire
-        with self.assertRaisesRegex(PolicyError, 'Download limit'):
+        with self.assertRaisesRegex(DownloadTimeoutError, 'Download deadline'):
             self.request(response, transport)
 
     def test_unsafe_redirect_is_rejected_before_fetching_it(self):

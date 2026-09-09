@@ -13,10 +13,13 @@ from safe_transport import PolicyError
 
 class ConfigurationTest(unittest.TestCase):
     def test_source_covers_are_embedded_on_download_update_and_refresh(self):
-        import base64
+        from io import BytesIO
+        from PIL import Image
         from fanficfare.adapters.adapter_test1 import TestSiteAdapter
         from safe_transport import SafeTransport
-        image = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=')
+        image_buffer = BytesIO()
+        Image.new('LA', (120, 160), (128, 255)).save(image_buffer, 'PNG')
+        image = image_buffer.getvalue()
         extract = TestSiteAdapter.doExtractChapterUrlsAndMetadata
         fetched = []
 
@@ -43,7 +46,9 @@ class ConfigurationTest(unittest.TestCase):
                         with ZipFile('output.epub') as archive:
                             opf = next(name for name in archive.namelist() if name.endswith('.opf'))
                             self.assertIn(b'name="cover"', archive.read(opf))
-                            self.assertTrue(any(archive.read(name) == image for name in archive.namelist()))
+                            cover = next(name for name in archive.namelist() if '/cover.' in name)
+                            with Image.open(BytesIO(archive.read(cover))) as embedded:
+                                self.assertEqual(embedded.size, (120, 160))
                         Path('output.epub').replace('input.epub')
                 self.assertEqual(len(fetched), 3)
             finally:
@@ -112,7 +117,64 @@ class ConfigurationTest(unittest.TestCase):
         self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/private', 403, 'secret response')), 'access_denied')
         for status in [429, 500, 503]:
             self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/story', status, 'server error')), 'source_failed')
-        self.assertEqual(failure_code(PolicyError('Unsafe setting')), 'configuration_blocked')
+        from safe_transport import ConfigurationError, DownloadLimitError, ResponseLimitError, DownloadTimeoutError
+        self.assertEqual(failure_code(ConfigurationError('Unsafe setting')), 'configuration_blocked')
+        self.assertEqual(failure_code(PolicyError('Unsafe destination')), 'source_policy_blocked')
+        self.assertEqual(failure_code(ValueError('Invalid source content')), 'source_failed')
+        self.assertEqual(failure_code(DownloadLimitError('Expanded download limit exceeded')), 'download_limit')
+        self.assertEqual(failure_code(ResponseLimitError('Expanded HTTP response limit exceeded')), 'response_too_large')
+        self.assertEqual(failure_code(DownloadTimeoutError('Download deadline exceeded')), 'download_timeout')
+
+    def test_large_illustrations_are_resized_before_epub_storage(self):
+        from io import BytesIO
+        from PIL import Image
+        from image_processing import install_image_processing
+        from fanficfare import story
+        install_image_processing()
+        source = BytesIO()
+        Image.effect_noise((2400, 3000), 100).convert('RGB').save(source, 'PNG')
+        data, extension, mime = story.convert_image('https://example.org/image.png', source.getvalue(), [580, 725], False, True, 'jpg')
+        with Image.open(BytesIO(data)) as image:
+            self.assertEqual(image.size, (580, 725))
+        self.assertEqual((extension, mime), ('jpg', 'image/jpeg'))
+        self.assertLess(len(data), len(source.getvalue()) // 10)
+
+    def test_invalid_ini_syntax_is_a_settings_error(self):
+        from safe_transport import ConfigurationError
+        with self.assertRaises(ConfigurationError):
+            validate_ini('invalid configuration')
+
+    def test_failure_protocol_keeps_diagnostics_without_exposing_configuration(self):
+        import json
+        import subprocess
+        import sys
+        response = subprocess.run(
+            [sys.executable, '-I', str(Path(__file__).with_name('fanficfare_wrapper.py'))],
+            input=json.dumps({'operation': 'validate', 'configuration': '[defaults]\npassword: private-secret\ninvalid-line'}),
+            text=True, capture_output=True, check=True,
+        )
+        result = json.loads(response.stdout)
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['code'], 'configuration_blocked')
+        self.assertEqual(result['errorClass'], 'ConfigurationError')
+        self.assertIn('controlled_config.py:', result['errorLocation'])
+        self.assertNotIn('private-secret', response.stdout + response.stderr)
+
+    def test_budget_failure_in_final_image_prevents_publishing_a_partial_epub(self):
+        from fanficfare.adapters.adapter_test1 import TestSiteAdapter
+        from safe_transport import SafeTransport, DownloadLimitError
+        from unittest.mock import Mock
+        transport = SafeTransport()
+        def write_story(**kwargs):
+            transport.failure = DownloadLimitError('Expanded download limit exceeded')
+        original = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory, patch('fanficfare_wrapper.SafeTransport', return_value=transport), patch('fanficfare.writers.getWriter', return_value=Mock(writeStory=write_story)), patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'):
+            try:
+                os.chdir(directory)
+                with self.assertRaises(DownloadLimitError):
+                    run({'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\n'})
+            finally:
+                os.chdir(original)
 
     def test_fictionlive_mature_story_requires_confirmation_not_a_password(self):
         from fanficfare.adapters.adapter_fictionlive import FictionLiveAdapter

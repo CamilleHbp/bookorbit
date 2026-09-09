@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import type {
   FanficfareRuntimeHealth,
@@ -26,10 +26,11 @@ type RuntimeRequest = {
   edits?: { section?: string; username?: string; password?: string; isAdult?: boolean };
   redact?: boolean;
 };
-type RuntimeResponse = { ok: true; result: unknown; cookies?: unknown } | { ok: false; code: string; errorClass: string };
+type RuntimeResponse = { ok: true; result: unknown; cookies?: unknown } | { ok: false; code: string; errorClass: string; errorLocation?: string };
 
 @Injectable()
 export class FanficfareRuntimeService {
+  private readonly logger = new Logger(FanficfareRuntimeService.name);
   private active = 0;
 
   constructor(
@@ -160,6 +161,7 @@ export class FanficfareRuntimeService {
     const input = JSON.stringify(request);
     if (Buffer.byteLength(input) > 512 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
     this.active++;
+    const startedAt = Date.now();
     const progress = new FanfictionRuntimeProgress(reportProgress);
     try {
       const response = await new Promise<Extract<RuntimeResponse, { ok: true }>>((resolve, reject) => {
@@ -210,8 +212,13 @@ export class FanficfareRuntimeService {
             );
           try {
             const response = JSON.parse(Buffer.concat(chunks).toString('utf8')) as RuntimeResponse;
-            if (response.ok !== true)
+            if (response.ok !== true) {
+              const diagnostic = (value: unknown) => (typeof value === 'string' ? value.replace(/[^a-zA-Z0-9_.:]/g, '').slice(0, 160) : 'unknown');
+              this.logger.warn(
+                `[fanfiction.runtime] [fail] operation=${request.operation} durationMs=${Date.now() - startedAt} errorClass=${diagnostic(response.errorClass)} errorCode=${diagnostic(response.code)} location=${diagnostic(response.errorLocation)} - story operation failed`,
+              );
               return reject(new BadRequestException({ message: 'FanFicFare could not complete the operation', errorCode: response.code }));
+            }
             resolve(response);
           } catch {
             reject(new ServiceUnavailableException('Invalid FanFicFare runtime response'));

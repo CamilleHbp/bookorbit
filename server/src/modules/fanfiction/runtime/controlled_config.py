@@ -2,7 +2,7 @@ import configparser
 import io
 from pathlib import Path
 
-from safe_transport import PolicyError
+from safe_transport import ConfigurationError, PolicyError
 
 SAFE_OPTIONS = frozenset('''
 username password is_adult user_agent include_images include_titlepage include_tocpage
@@ -29,10 +29,10 @@ def merge_configuration(previous, incoming=None, edits=None, redact=False):
             parser.set(section, 'password', old.get(section, 'password', fallback=''))
     if edits is not None:
         if not isinstance(edits, dict) or set(edits) - {'section', 'username', 'password', 'isAdult'}:
-            raise PolicyError('Invalid structured configuration edit')
+            raise ConfigurationError('Invalid structured configuration edit')
         section = edits.get('section', 'defaults')
         if not isinstance(section, str) or not section or len(section) > 255 or any(c in section for c in '\r\n[]'):
-            raise PolicyError('Invalid configuration section')
+            raise ConfigurationError('Invalid configuration section')
         if not parser.has_section(section):
             parser.add_section(section)
         for field, option in [('username', 'username'), ('password', 'password'), ('isAdult', 'is_adult')]:
@@ -41,10 +41,10 @@ def merge_configuration(previous, incoming=None, edits=None, redact=False):
             value = edits[field]
             if field == 'isAdult':
                 if not isinstance(value, bool):
-                    raise PolicyError('Invalid adult-content preference')
+                    raise ConfigurationError('Invalid adult-content preference')
                 value = 'true' if value else 'false'
             if not isinstance(value, str) or len(value) > 4096 or '\n' in value or '\r' in value:
-                raise PolicyError('Invalid configuration value')
+                raise ConfigurationError('Invalid configuration value')
             parser.set(section, option, value)
     if redact:
         for section in parser.sections():
@@ -57,17 +57,20 @@ def merge_configuration(previous, incoming=None, edits=None, redact=False):
 
 def validate_ini(text):
     if not isinstance(text, str) or len(text.encode('utf-8')) > 65536:
-        raise PolicyError('Configuration limit exceeded')
+        raise ConfigurationError('Configuration limit exceeded')
     parser = configparser.ConfigParser(interpolation=None, strict=True)
-    parser.read_string(text)
+    try:
+        parser.read_string(text)
+    except configparser.Error as error:
+        raise ConfigurationError('Invalid configuration syntax') from error
     if parser.defaults() or len(parser.sections()) > 100:
-        raise PolicyError('Use explicit configuration sections')
+        raise ConfigurationError('Use explicit configuration sections')
     for section in parser.sections():
         if len(section) > 4096:
-            raise PolicyError('Invalid configuration section')
+            raise ConfigurationError('Invalid configuration section')
         for option, value in parser.items(section, raw=True):
             if option not in SAFE_OPTIONS or len(value) > 16384:
-                raise PolicyError('Unsupported advanced configuration option: ' + option)
+                raise ConfigurationError('Unsupported advanced configuration option: ' + option)
     return text
 
 
