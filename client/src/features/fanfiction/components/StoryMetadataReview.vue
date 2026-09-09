@@ -1,11 +1,33 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { FanfictionMetadataReview, FanfictionMetadataResolution } from '@bookorbit/types'
+import { computed } from 'vue'
+import type { FanfictionMetadataReview, FanfictionMetadataChoices } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 
-defineProps<{ review: FanfictionMetadataReview; busy: boolean }>()
-const choices = defineModel<Pick<FanfictionMetadataResolution, 'title' | 'description' | 'authors' | 'tags'>>({ required: true })
-const emit = defineEmits<{ save: [] }>()
+const props = defineProps<{ review: FanfictionMetadataReview; busy: boolean }>()
+const choices = defineModel<FanfictionMetadataChoices>({ required: true })
+const emit = defineEmits<{ save: []; later: []; discard: [] }>()
+const tagOptions = computed(() => [...new Set([...(props.review.tags?.managed ?? []), ...props.review.incoming.tags])].sort())
+const finalTags = computed(() =>
+  [
+    ...new Set([
+      ...(props.review.tags?.custom ?? []),
+      ...(choices.value.tags === 'keep'
+        ? (props.review.tags?.managed ?? props.review.current.tags)
+        : choices.value.tags === 'select'
+          ? (choices.value.selectedTags ?? [])
+          : tagOptions.value),
+    ]),
+  ].sort(),
+)
+const handleLater = () => emit('later')
+const handleDiscard = () => emit('discard')
+function toggleTag(tag: string) {
+  const selected = new Set(choices.value.selectedTags ?? props.review.incoming.tags)
+  if (selected.has(tag)) selected.delete(tag)
+  else selected.add(tag)
+  choices.value = { ...choices.value, tags: 'select', selectedTags: [...selected] }
+}
 const { t } = useI18n()
 function display(value: string | string[]) {
   return Array.isArray(value) ? value.join(', ') : value
@@ -18,7 +40,9 @@ function handleSave() {
 <template>
   <form class="border-primary bg-card space-y-4 rounded-xl border p-4" @submit.prevent="handleSave">
     <h2 class="text-lg font-semibold">{{ t('fanfiction.metadataReview.title') }}</h2>
-    <p class="text-muted-foreground text-sm">{{ t('fanfiction.metadataReview.help') }}</p>
+    <p class="text-muted-foreground text-sm">
+      {{ t(review.beforeUpdate ? 'fanfiction.metadataReview.beforeHelp' : 'fanfiction.metadataReview.help') }}
+    </p>
     <fieldset v-for="field in review.fields" :key="field" class="border-border space-y-3 border-t pt-3">
       <legend class="font-medium">{{ t(`fanfiction.metadataReview.fields.${field}`) }}</legend>
       <div class="grid gap-3 text-sm sm:grid-cols-2">
@@ -35,7 +59,30 @@ function handleSave() {
           </p>
         </div>
       </div>
+      <template v-if="field === 'tags' && review.tags">
+        <p class="text-sm">
+          {{ t('fanfiction.metadataReview.customTags') }}: {{ review.tags.custom.join(', ') || t('fanfiction.metadataReview.empty') }}
+        </p>
+        <div class="max-h-64 overflow-auto space-y-2">
+          <label v-for="tag in tagOptions" :key="tag" class="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              :checked="(choices.selectedTags ?? review.incoming.tags).includes(tag)"
+              :disabled="busy || review.lockedFields.includes('tags')"
+              @change="toggleTag(tag)"
+            />
+            <span>{{ tag }}</span
+            ><span class="text-muted-foreground" v-if="review.tags.added.includes(tag)">{{ t('fanfiction.metadataReview.added') }}</span
+            ><span class="text-muted-foreground" v-else-if="review.tags.removed.includes(tag)">{{ t('fanfiction.metadataReview.removed') }}</span>
+          </label>
+        </div>
+        <p class="text-sm">
+          <strong>{{ t('fanfiction.metadataReview.result') }}</strong
+          >: {{ finalTags.join(', ') || t('fanfiction.metadataReview.empty') }}
+        </p>
+      </template>
       <select
+        v-else
         v-model="choices[field]"
         :disabled="busy || review.lockedFields.includes(field)"
         :aria-label="t(`fanfiction.metadataReview.fields.${field}`)"
@@ -47,6 +94,14 @@ function handleSave() {
       </select>
       <p v-if="review.lockedFields.includes(field)" class="text-muted-foreground text-sm">{{ t('fanfiction.metadataReview.locked') }}</p>
     </fieldset>
-    <Button type="submit" :disabled="busy">{{ t('common.save') }}</Button>
+    <div class="flex flex-wrap gap-2">
+      <Button type="submit" :disabled="busy">{{ t(review.beforeUpdate ? 'fanfiction.metadataReview.apply' : 'common.save') }}</Button>
+      <Button v-if="review.beforeUpdate" type="button" variant="outline" :disabled="busy" @click="handleLater">{{
+        t('fanfiction.metadataReview.later')
+      }}</Button>
+      <Button v-if="review.beforeUpdate" type="button" variant="ghost" :disabled="busy" @click="handleDiscard">{{
+        t('fanfiction.metadataReview.discard')
+      }}</Button>
+    </div>
   </form>
 </template>

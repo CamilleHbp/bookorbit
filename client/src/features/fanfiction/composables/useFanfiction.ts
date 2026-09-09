@@ -44,10 +44,14 @@ class MetadataReviewRequiredError extends Error {
   }
 }
 
-export function useFanfiction(onMetadataReview?: (bookId: number) => Promise<unknown>) {
+export function useFanfiction(
+  onMetadataReview?: (bookId: number) => Promise<unknown>,
+  reviewSource?: () => string | undefined,
+  initialLibraryId?: number,
+) {
   const libraries = ref<FanfictionLibraryPage['items']>([])
   const libraryCursor = ref<number | null>(null)
-  const libraryId = ref<number | null>(null)
+  const libraryId = ref<number | null>(initialLibraryId ?? null)
   const folders = ref<FanfictionFolderPage['items']>([])
   const folderCursor = ref<number | null>(null)
   const folderId = ref<number | null>(null)
@@ -64,14 +68,23 @@ export function useFanfiction(onMetadataReview?: (bookId: number) => Promise<unk
   const importBatchTotal = ref(0)
   const importBatchStarted = computed(() => importBatchTotal.value > 0)
   const importBatchActive = computed(() => candidates.value.some((candidate) => candidate.job && ['queued', 'running'].includes(candidate.job.state)))
-  const importBatchPending = computed(() => candidates.value.some((candidate) => !candidate.job && !candidate.existingStory))
+  const importBatchPending = computed(() =>
+    candidates.value.some(
+      (candidate) =>
+        (!candidate.job ||
+          (candidate.job.result?.importReview && !candidate.job.result.importReview.approved && candidate.job.state !== 'cancelled')) &&
+        !candidate.existingStory,
+    ),
+  )
   const importBatchFinished = computed(
     () => importBatchStarted.value && !busy.value && !importBatchActive.value && !importBatchPending.value && !existingStoryCount.value,
   )
   const importBatchCompleted = computed(
     () =>
       importBatchTotal.value -
-      candidates.value.filter((candidate) => candidate.existingStory || !candidate.job || ['queued', 'running'].includes(candidate.job.state)).length,
+      candidates.value.filter(
+        (candidate) => candidate.existingStory || !candidate.job || ['queued', 'running', 'review_required'].includes(candidate.job.state),
+      ).length,
   )
   const importBatchNeedsAttention = computed(() =>
     candidates.value.some((candidate) => candidate.job && ['failed', 'configuration_blocked', 'review_required'].includes(candidate.job.state)),
@@ -174,7 +187,9 @@ export function useFanfiction(onMetadataReview?: (bookId: number) => Promise<unk
   }
   async function loadJobs(current: number, path: string, cursor: string | null) {
     const requestId = ++jobRequest
-    const page = await request<FanfictionJobPage>(`${path}/jobs?limit=50${cursor ? `&cursor=${cursor}` : ''}`)
+    const page = await request<FanfictionJobPage>(
+      `${path}/jobs?limit=50${reviewSource?.() ? `&sourceId=${encodeURIComponent(reviewSource()!)}` : ''}${cursor ? `&cursor=${cursor}` : ''}`,
+    )
     if (!currentScope(current) || requestId !== jobRequest) return
     jobs.value = page.items
     jobCursor.value = page.nextCursor
@@ -208,7 +223,7 @@ export function useFanfiction(onMetadataReview?: (bookId: number) => Promise<unk
   const previousActivity = () => navigatePage('activity', 'previous')
   async function loadLibraries() {
     if (busy.value) return
-    let selected = false
+    let selected = libraries.value.length === 0 && libraryId.value !== null
     await perform(async (current) => {
       const page = await request<FanfictionLibraryPage>(
         `/api/v1/fanfiction/libraries?limit=50${libraryCursor.value ? `&cursor=${libraryCursor.value}` : ''}`,
@@ -344,14 +359,19 @@ export function useFanfiction(onMetadataReview?: (bookId: number) => Promise<unk
       })
     } catch (failure) {
       if (failure instanceof ExistingStoryError) {
-        if (currentScope(current)) candidate.existingStory = failure.story
+        if (currentScope(current)) {
+          candidate.existingStory = failure.story
+          await continueExisting(candidate, current, path)
+        }
         return
       }
       throw failure
     }
     if (!currentScope(current)) return
+    if (job.result?.existingImportId) job = await request<FanfictionJob>(`${path}/jobs/${job.result.existingImportId}`)
     candidate.job = job
     candidate.existingStory = job.result?.existingStory
+    if (candidate.existingStory) await continueExisting(candidate, current, path)
     candidate.selected = false
     schedulePoll(current)
   }
@@ -429,27 +449,43 @@ export function useFanfiction(onMetadataReview?: (bookId: number) => Promise<unk
       existingStoryIndex.value = existingStoryPosition.value + 1
     }
   }
-  async function updateExistingStory() {
-    const candidate = existingCandidate.value
-    if (busy.value || !candidate?.existingStory) return
+  async function continueExisting(candidate: Candidate, current: number, path: string) {
     const story = candidate.existingStory
-    if (story.attentionCode === 'metadata_review_required' && story.bookId && onMetadataReview) {
-      await perform(async () => onMetadataReview(story.bookId!))
+    if (!story || !currentScope(current)) return
+    if (story.attentionCode === 'metadata_review_required' && story.bookId) {
+      if (candidates.value.length === 1 && onMetadataReview) await onMetadataReview(story.bookId)
       return
     }
     candidate.updateKey ??= crypto.randomUUID()
-    await perform(async (current, path) => {
-      const job = await request<FanfictionJob>(`${path}/sources/${story.id}/check`, {
-        kind: 'update',
-        idempotencyKey: candidate.updateKey,
-      })
+    try {
+      const job = await request<FanfictionJob>(`${path}/sources/${story.id}/check`, { kind: 'update', idempotencyKey: candidate.updateKey })
       if (!currentScope(current)) return
       candidate.job = job
       candidate.existingStory = undefined
-      existingStoryIndex.value = existingStoryPosition.value
       sourceJobs.value[story.id] = job
       schedulePoll(current)
-    })
+    } catch (failure) {
+      if (failure instanceof MetadataReviewRequiredError && currentScope(current)) {
+        candidate.existingStory = { ...story, bookId: failure.review.bookId, attentionCode: 'metadata_review_required' }
+        if (candidates.value.length === 1 && onMetadataReview) await onMetadataReview(failure.review.bookId)
+        return
+      }
+      throw failure
+    }
+  }
+  async function updateExistingStory() {
+    const candidate = existingCandidate.value
+    if (busy.value || !candidate?.existingStory) return
+    if (candidate.existingStory.attentionCode === 'metadata_review_required' && candidate.existingStory.bookId && onMetadataReview) {
+      await onMetadataReview(candidate.existingStory.bookId)
+      return
+    }
+    await perform((current, path) => continueExisting(candidate, current, path))
+  }
+  function acceptImportReview(job: FanfictionJob) {
+    jobs.value = jobs.value.map((existing) => (existing.id === job.id ? job : existing))
+    for (const candidate of candidates.value) if (candidate.job?.id === job.id) candidate.job = job
+    schedulePoll(generation)
   }
   async function retryImport(candidate: Candidate, profile?: FanfictionProfileSummary) {
     if (busy.value || !candidate.job || !['configuration_blocked', 'failed', 'cancelled'].includes(candidate.job.state)) return
@@ -625,8 +661,11 @@ export function useFanfiction(onMetadataReview?: (bookId: number) => Promise<unk
           for (const candidate of candidates.value) {
             const updated = candidate.job && byId.get(candidate.job.id)
             if (updated) {
-              candidate.job = updated
+              candidate.job = updated.result?.existingImportId
+                ? await request<FanfictionJob>(`${path}/jobs/${updated.result.existingImportId}`)
+                : updated
               candidate.existingStory = updated.result?.existingStory
+              if (candidate.existingStory) await continueExisting(candidate, current, path)
               candidate.preview = updated.result?.preview ?? candidate.preview
             }
           }
@@ -720,6 +759,7 @@ export function useFanfiction(onMetadataReview?: (bookId: number) => Promise<unk
     cancelExistingStory,
     updateExistingStory,
     retryImport,
+    acceptImportReview,
     previewStories,
     useSavedProfile,
     importSelected,

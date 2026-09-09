@@ -1,3 +1,4 @@
+import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
 import { BookDockManagedUploadService } from '../src/modules/book-dock/book-dock-managed-upload.service';
 import { RevisionFileService } from '../src/modules/book-revision/revision-file.service';
 import { FanfictionReplacementService } from '../src/modules/fanfiction/fanfiction-replacement.service';
@@ -138,6 +139,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     user = { ...created, permissions: [], contentFilters: {} } as RequestUser;
     module = await Test.createTestingModule({
       providers: [
+        FanfictionReviewService,
         FanfictionUpdateService,
         FanfictionReplacementService,
         BookDockManagedUploadService,
@@ -429,75 +431,178 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     );
     expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.libraryId, libraryId))).toHaveLength(1);
     expect(await jobs.finish(retry, 'succeeded', result)).toBe(true);
-    const pending = await sources.metadataReview(libraryId, source.id, user);
-    expect(pending?.review.fields).toContain('tags');
-    await sources.resolveMetadata(
-      libraryId,
-      source.id,
-      { jobId: retry.id, fingerprint: pending!.review.fingerprint, title: 'keep', description: 'keep', authors: 'keep', tags: 'merge' },
-      user,
-    );
     expect(await sources.metadataReview(libraryId, source.id, user)).toBeNull();
-  }, 30_000);
-  it('reviews tag-only updates, rejects stale or locked choices, and preserves custom tags when merging', async () => {
-    await epub(output, 'Original passage');
-    const [custom] = await db
-      .insert(schema.tags)
-      .values({ name: `custom-${randomUUID()}` })
-      .returning();
-    await db.insert(schema.bookTags).values({ bookId: source.bookId!, tagId: custom.id });
+  }, 180_000);
+  it.each([false, true])(
+    'stages metadata and file changes before approval, including metadata-only=%s',
+    async (metadataOnly) => {
+      if (metadataOnly) await epub(output, 'Original passage');
+      const original = await readFile(target);
+      const initialRevision = (await module.get(RevisionCatalogService).current(fileId, libraryId)).id;
+      const [custom] = await db
+        .insert(schema.tags)
+        .values({ name: `custom-${randomUUID()}` })
+        .returning();
+      await db.insert(schema.bookTags).values({ bookId: source.bookId!, tagId: custom.id });
+      const incoming = { ...preview, tags: ['New incoming tag'] };
+      runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) => consume(output, incoming));
+      const cover = vi.spyOn(module.get(MetadataService), 'refreshCoverForBook');
+      const job = await claim();
+      const result = await run(job);
+      expect(result?.metadataReview?.beforeUpdate).toBe(true);
+      await jobs.finish(job, 'review_required', result, 'metadata_review_required');
+      expect(await readFile(target)).toEqual(original);
+      expect((await module.get(RevisionCatalogService).current(fileId, libraryId)).id).toBe(initialRevision);
+      expect(cover).not.toHaveBeenCalled();
+      await module.get(FanfictionRecoveryService).recover();
+      expect(await readFile(target)).toEqual(original);
+      const pending = (await sources.metadataReview(libraryId, source.id, user))!;
+      expect(pending.review.tags?.custom).toContain(custom.name);
+      expect(pending.review.fields).toEqual(['tags']);
+      const choices = {
+        jobId: job.id,
+        fingerprint: pending.review.fingerprint,
+        title: 'keep' as const,
+        description: 'keep' as const,
+        authors: 'keep' as const,
+        tags: 'select' as const,
+        selectedTags: ['New incoming tag'],
+      };
+      await module.get(FanfictionReviewService).decide(libraryId, source.id, choices, user, 'later');
+      expect((await sources.metadataReview(libraryId, source.id, user))?.review.choices?.selectedTags).toEqual(['New incoming tag']);
+      await expect(jobs.retry(libraryId, job.id, user)).rejects.toThrow('Review or discard');
+      await expect(sources.metadataReview(libraryId + 100000, source.id, user)).rejects.toThrow();
+      await expect(sources.resolveMetadata(libraryId, source.id, { ...choices, fingerprint: 'stale' }, user)).rejects.toThrow('changed');
+      await sources.resolveMetadata(libraryId, source.id, choices, user);
+      expect(await readFile(target)).toEqual(original);
+      const approved = (await jobs.claim())!;
+      const installed = await run(approved);
+      await jobs.finish(approved, metadataOnly ? 'no_change' : 'succeeded', installed);
+      expect(runtime.update).toHaveBeenCalledTimes(1);
+      expect(cover).toHaveBeenCalledTimes(1);
+      expect(await readFile(target)).toEqual(metadataOnly ? original : await readFile(output));
+      const tags = await db
+        .select({ name: schema.tags.name })
+        .from(schema.bookTags)
+        .innerJoin(schema.tags, eq(schema.tags.id, schema.bookTags.tagId))
+        .where(eq(schema.bookTags.bookId, source.bookId!));
+      expect(tags.map((row) => row.name).sort()).toEqual([custom.name, 'New incoming tag'].sort());
+      expect(await sources.metadataReview(libraryId, source.id, user)).toBeNull();
+      expect(await sources.get(libraryId, source.id, user)).toMatchObject({ state: 'active', attentionCode: null });
+    },
+    180_000,
+  );
+
+  it('discards staged updates without changing the file or metadata', async () => {
+    const original = await readFile(target);
     const incoming = { ...preview, tags: ['New incoming tag'] };
-    await db
-      .update(schema.bookMetadata)
-      .set({ lockedFields: ['tags'] })
-      .where(eq(schema.bookMetadata.bookId, source.bookId!));
     runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) => consume(output, incoming));
     const job = await claim();
     const result = await run(job);
-    expect(result?.noChange).toBe(true);
-    await jobs.finish(job, 'no_change', result);
-    let pending = (await sources.metadataReview(libraryId, source.id, user))!;
-    expect(pending.review.fields).toEqual(['tags']);
-    expect(pending.review.lockedFields).toContain('tags');
-    const choices = {
-      jobId: job.id,
-      fingerprint: pending.review.fingerprint,
-      title: 'keep' as const,
-      description: 'keep' as const,
-      authors: 'keep' as const,
-      tags: 'merge' as const,
-    };
-    await expect(sources.resolveMetadata(libraryId, source.id, choices, user)).rejects.toThrow('Unlock');
-    await expect(sources.check(libraryId, source.id, 'update', randomUUID(), user)).rejects.toBeInstanceOf(ConflictException);
-    await expect(sources.metadataReview(libraryId + 100000, source.id, user)).rejects.toThrow();
-    await db.update(schema.bookMetadata).set({ lockedFields: [] }).where(eq(schema.bookMetadata.bookId, source.bookId!));
-    await expect(sources.resolveMetadata(libraryId, source.id, choices, user)).rejects.toThrow('metadata changed');
-    pending = (await sources.metadataReview(libraryId, source.id, user))!;
-    await sources.resolveMetadata(libraryId, source.id, { ...choices, fingerprint: pending.review.fingerprint }, user);
+    await jobs.finish(job, 'review_required', result, 'metadata_review_required');
+    const pending = (await sources.metadataReview(libraryId, source.id, user))!;
+    await module
+      .get(FanfictionReviewService)
+      .decide(
+        libraryId,
+        source.id,
+        { jobId: job.id, fingerprint: pending.review.fingerprint, title: 'keep', description: 'keep', authors: 'keep', tags: 'keep' },
+        user,
+        'discard',
+      );
+    await module.get(FanfictionRecoveryService).recover();
+    expect(await readFile(target)).toEqual(original);
+    expect((await jobs.get(libraryId, job.id, user)).state).toBe('cancelled');
+    expect(await sources.metadataReview(libraryId, source.id, user)).toBeNull();
+    expect(await sources.get(libraryId, source.id, user)).toMatchObject({ state: 'active', attentionCode: null });
+    const [publication] = await db.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.ownerKey, job.id));
+    expect(publication.state).toBe('failed');
+  }, 180_000);
+
+  it('resumes a legacy metadata-only review through approval without fetching again', async () => {
+    await epub(output, 'Original passage');
+    const original = await readFile(target);
+    const incoming = { ...preview, tags: ['Reviewed legacy tag'] };
+    runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) => consume(output, incoming));
+    const job = await claim();
+    const staged = (await run(job))!;
+    const legacy = { ...staged, noChange: true, revisionId: (await module.get(RevisionCatalogService).current(fileId, libraryId)).id };
+    delete legacy.preparedUpdate;
+    delete legacy.metadataReview!.beforeUpdate;
+    await jobs.finish(job, 'no_change', legacy, 'metadata_review_required');
+    await db
+      .update(schema.fanfictionSources)
+      .set({ state: 'review_required', attentionCode: 'metadata_review_required' })
+      .where(eq(schema.fanfictionSources.id, source.id));
+    const pending = (await sources.metadataReview(libraryId, source.id, user))!;
+    expect(pending.review.beforeUpdate).toBe(true);
+    await sources.resolveMetadata(
+      libraryId,
+      source.id,
+      {
+        jobId: job.id,
+        fingerprint: pending.review.fingerprint,
+        title: 'keep',
+        description: 'keep',
+        authors: 'keep',
+        tags: 'select',
+        selectedTags: ['Reviewed legacy tag'],
+      },
+      user,
+    );
+    const approved = (await jobs.claim())!;
+    const result = await run(approved);
+    await jobs.finish(approved, 'no_change', result);
+    expect(runtime.update).toHaveBeenCalledTimes(1);
+    expect(await readFile(target)).toEqual(original);
+    expect(await sources.metadataReview(libraryId, source.id, user)).toBeNull();
+    expect(
+      (
+        await db
+          .select({ name: schema.tags.name })
+          .from(schema.bookTags)
+          .innerJoin(schema.tags, eq(schema.tags.id, schema.bookTags.tagId))
+          .where(eq(schema.bookTags.bookId, source.bookId!))
+      ).map((tag) => tag.name),
+    ).toEqual(['Reviewed legacy tag']);
+  }, 180_000);
+
+  it('recovers an approved update without losing the chosen tags or creating another review', async () => {
+    const incoming = { ...preview, tags: ['Approved tag'] };
+    runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) => consume(output, incoming));
+    const job = await claim();
+    const result = await run(job);
+    await jobs.finish(job, 'review_required', result, 'metadata_review_required');
+    const review = (await sources.metadataReview(libraryId, source.id, user))!;
+    await sources.resolveMetadata(
+      libraryId,
+      source.id,
+      {
+        jobId: job.id,
+        fingerprint: review.review.fingerprint,
+        title: 'keep',
+        description: 'keep',
+        authors: 'keep',
+        tags: 'select',
+        selectedTags: ['Approved tag'],
+      },
+      user,
+    );
+    const approved = (await jobs.claim())!;
+    vi.spyOn(sources, 'completeUpdate').mockRejectedValueOnce(new ConflictException('Completion interrupted'));
+    await expect(run(approved)).rejects.toThrow('Completion interrupted');
+    await jobs.finish(approved, 'cancelled');
+    await module.get(FanfictionRecoveryService).recover();
+    expect((await jobs.get(libraryId, job.id, user)).state).toBe('succeeded');
+    expect(await sources.metadataReview(libraryId, source.id, user)).toBeNull();
     const tags = await db
       .select({ name: schema.tags.name })
       .from(schema.bookTags)
       .innerJoin(schema.tags, eq(schema.tags.id, schema.bookTags.tagId))
       .where(eq(schema.bookTags.bookId, source.bookId!));
-    expect(tags.map(({ name }) => name)).toEqual(expect.arrayContaining(['Source tag', 'New incoming tag', custom.name]));
-    expect(await sources.get(libraryId, source.id, user)).toMatchObject({ state: 'active', attentionCode: null });
-    runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) => consume(output, incoming));
-    const next = await claim();
-    expect((await run(next))?.metadataReview).toBeUndefined();
-  }, 60_000);
-
-  it('retains the incoming review after cancellation interrupts metadata completion', async () => {
-    const incoming = { ...preview, tags: ['New incoming tag'] };
-    runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) => consume(output, incoming));
-    const job = await claim();
-    vi.spyOn(sources, 'completeUpdate').mockRejectedValueOnce(new ConflictException('Completion interrupted'));
-    await expect(run(job)).rejects.toThrow('Completion interrupted');
-    await jobs.cancel(libraryId, job.id, user);
-    await module.get(FanfictionRecoveryService).recover();
-    const pending = (await sources.metadataReview(libraryId, source.id, user))!;
-    expect(pending.review.fields).toEqual(['tags']);
-    expect(pending.review.previousState).toBe('paused');
-  }, 60_000);
+    expect(tags.map((row) => row.name)).toEqual(['Approved tag']);
+    expect(runtime.update).toHaveBeenCalledTimes(1);
+  }, 180_000);
 
   it('holds source metadata completion until its durable publication can be recovered', async () => {
     const job = await claim('refresh');

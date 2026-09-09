@@ -13,6 +13,10 @@ const {
   metadataReview,
   metadataChoices,
   resolveMetadata,
+  deferMetadata,
+  discardMetadata,
+  reviewDeferred,
+  resumeMetadataReview,
   visible,
   loading,
   error,
@@ -78,7 +82,16 @@ onMounted(() => {
       <RouterLink :to="{ name: 'fanfiction' }" class="text-primary underline">{{ t('fanfiction.title') }}</RouterLink>
     </div>
     <template v-if="allowed && source">
-      <StoryMetadataReview v-if="metadataReview" v-model="metadataChoices" :review="metadataReview.review" :busy="busy" @save="resolveMetadata" />
+      <Button v-if="metadataReview && reviewDeferred" @click="resumeMetadataReview">{{ t('fanfiction.metadataReview.title') }}</Button>
+      <StoryMetadataReview
+        v-else-if="metadataReview"
+        v-model="metadataChoices"
+        :review="metadataReview.review"
+        :busy="busy"
+        @save="resolveMetadata"
+        @later="deferMetadata"
+        @discard="discardMetadata"
+      />
       <select
         v-if="sources.length > 1"
         v-model="sourceId"

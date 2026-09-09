@@ -9,6 +9,7 @@ import type {
   FanfictionSourcePage,
   FanfictionMetadataReviewView,
   FanfictionMetadataResolution,
+  FanfictionMetadataChoices,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
 
@@ -54,7 +55,7 @@ export function useBookStory(
   const currentRevisionId = ref<string | null>(null)
   const job = ref<FanfictionJob | null>(null)
   const metadataReview = ref<FanfictionMetadataReviewView | null>(null)
-  const metadataChoices = ref<Pick<FanfictionMetadataResolution, 'title' | 'description' | 'authors' | 'tags'>>({
+  const metadataChoices = ref<FanfictionMetadataChoices>({
     title: 'keep',
     description: 'keep',
     authors: 'keep',
@@ -155,24 +156,48 @@ export function useBookStory(
   async function loadMetadataReview(id: number) {
     metadataReview.value = null
     const current = source.value
-    if (current?.attentionCode !== 'metadata_review_required') return
+    if (!current?.attentionCode) return
     const result = await request<FanfictionMetadataReviewView | null>(`${base.value}/sources/${current.id}/metadata-review`)
     if (!valid(id) || source.value?.id !== current.id) return
     metadataReview.value = result
-    metadataChoices.value = { title: 'keep', description: 'keep', authors: 'keep', tags: 'keep' }
+    metadataChoices.value = result?.review.choices ?? {
+      title: 'keep',
+      description: 'keep',
+      authors: 'keep',
+      tags: result?.review.tags ? 'select' : 'keep',
+      ...(result?.review.tags ? { selectedTags: result.review.incoming.tags } : {}),
+    }
+    reviewDeferred.value = false
   }
-  async function resolveMetadata() {
+  const reviewDeferred = ref(false)
+  const resumeMetadataReview = () => {
+    reviewDeferred.value = false
+  }
+  const resolveMetadata = () => decideMetadata('apply')
+  const deferMetadata = () => decideMetadata('later')
+  const discardMetadata = () => decideMetadata('discard')
+  async function decideMetadata(action: 'apply' | 'later' | 'discard') {
     if (busy.value || !metadataReview.value || !source.value) return
     await perform(async (id) => {
       const review = metadataReview.value!
       const current = source.value!
-      await request(`${base.value}/sources/${current.id}/metadata-review`, {
-        jobId: review.jobId,
-        fingerprint: review.review.fingerprint,
-        ...metadataChoices.value,
-      } satisfies FanfictionMetadataResolution)
+      const result = await request<FanfictionJob | { resolved: true }>(
+        `${base.value}/sources/${current.id}/metadata-review${action === 'apply' ? '' : `/${action}`}`,
+        {
+          jobId: review.jobId,
+          fingerprint: review.review.fingerprint,
+          ...metadataChoices.value,
+        } satisfies FanfictionMetadataResolution,
+      )
       if (!valid(id) || source.value?.id !== current.id) return
-      if (job.value?.result) delete job.value.result.metadataReview
+      if (action === 'later') {
+        reviewDeferred.value = true
+        return
+      }
+      if ('id' in result) {
+        job.value = result
+        poll(id)
+      } else if (job.value?.result) delete job.value.result.metadataReview
       await loadSources(id)
       if (valid(id)) await onBookUpdated?.(toValue(bookId))
     })
@@ -462,6 +487,10 @@ export function useBookStory(
     metadataReview,
     metadataChoices,
     resolveMetadata,
+    deferMetadata,
+    discardMetadata,
+    reviewDeferred,
+    resumeMetadataReview,
     allowed,
     visible,
     loading,

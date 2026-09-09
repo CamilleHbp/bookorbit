@@ -400,6 +400,7 @@ export class RevisionPublicationService {
       const installed = await requireInspectedFile(journal.targetPath, journal.nextSha256);
       await this.authorize(journal, tx, authority);
       await this.commitRevision(tx, journal, installed);
+      await authority?.commit?.(tx);
     });
   }
 

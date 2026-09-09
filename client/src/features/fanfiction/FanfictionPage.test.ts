@@ -49,7 +49,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     return router
   }
 
-  it('shows one duplicate at a time with Next and Previous controls', async () => {
+  it('keeps multiple pending reviews accessible without a confirmation modal', async () => {
     await open('/fanfiction?tab=add')
     vi.mocked(api).mockImplementation(async (url, options) => {
       if (String(url).includes('profile-match')) return new Response(JSON.stringify({ profile: null }))
@@ -57,7 +57,13 @@ describe('Fanfiction navigation and story hierarchy', () => {
         const id = JSON.parse(options.body as string)
           .url.split('/')
           .at(-1)
-        return new Response(JSON.stringify({ errorCode: 'story_exists', errorMeta: { id, title: `Existing ${id}` } }), { status: 409 })
+        return new Response(
+          JSON.stringify({
+            errorCode: 'story_exists',
+            errorMeta: { id, title: `Existing ${id}`, bookId: Number(id), attentionCode: 'metadata_review_required' },
+          }),
+          { status: 409 },
+        )
       }
       return new Response(JSON.stringify({ items: [], nextCursor: null }))
     })
@@ -67,18 +73,18 @@ describe('Fanfiction navigation and story hierarchy', () => {
       .find((button) => button.text() === 'Import stories')!
       .trigger('click')
     await flushPromises()
-    expect(wrapper!.get('[role="dialog"]').text()).toContain('Existing 1')
-    expect(wrapper!.get('[role="dialog"]').text()).toContain('Story 1 of 2')
+    expect(wrapper!.text()).toContain('Existing 1')
+    expect(wrapper!.text()).toContain('Story 1 of 2')
     await wrapper!
       .findAll('button')
       .find((button) => button.text() === 'Next')!
       .trigger('click')
-    expect(wrapper!.get('[role="dialog"]').text()).toContain('Existing 2')
+    expect(wrapper!.text()).toContain('Existing 2')
     await wrapper!
       .findAll('button')
       .find((button) => button.text() === 'Previous')!
       .trigger('click')
-    expect(wrapper!.get('[role="dialog"]').text()).toContain('Existing 1')
+    expect(wrapper!.text()).toContain('Existing 1')
     expect(wrapper!.findAll('article')).toHaveLength(0)
   })
 
@@ -105,13 +111,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await wrapper!.get('textarea').setValue('https://fiction.live/stories/Humanitas/x9YLdZ9X7cZAPehkZ')
     await wrapper!.get('form').trigger('submit')
     await flushPromises()
-    const label = scenario === 'update-race' ? 'Update story' : 'Review story metadata'
-    await wrapper!
-      .get('[role="dialog"]')
-      .findAll('button')
-      .find((button) => button.text() === label)!
-      .trigger('click')
-    await flushPromises()
+    expect(wrapper!.find('[role="dialog"]').exists()).toBe(false)
     expect(router.currentRoute.value.fullPath).toBe('/book/1968?tab=story-updates')
     expect(wrapper!.text()).not.toContain('Story source changed or requires attention')
     expect(vi.mocked(api).mock.calls.filter(([url]) => String(url).endsWith('/check'))).toHaveLength(scenario === 'update-race' ? 1 : 0)

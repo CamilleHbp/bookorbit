@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Permission } from '@bookorbit/types';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -14,12 +14,16 @@ import {
 } from './dto/fanfiction-source.dto';
 import { FanfictionSourceService } from './fanfiction-source.service';
 import { FanfictionLibrariesDto } from './dto/fanfiction-profile.dto';
+import { FanfictionReviewService } from './fanfiction-review.service';
 
 @Controller('libraries/:libraryId/fanfiction/sources')
 @RequirePermission(Permission.ManageLibraries)
 @RequireLibraryAccess('owner')
 export class FanfictionSourceController {
-  constructor(private readonly sources: FanfictionSourceService) {}
+  constructor(
+    private readonly sources: FanfictionSourceService,
+    private readonly reviews: FanfictionReviewService,
+  ) {}
 
   @Post()
   @HttpCode(202)
@@ -69,6 +73,18 @@ export class FanfictionSourceController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.sources.resolveMetadata(libraryId, id, dto, user);
+  }
+
+  @Post(':sourceId/metadata-review/:action')
+  reviewAction(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('sourceId', ParseUUIDPipe) id: string,
+    @Param('action') action: string,
+    @Body() dto: ResolveFanfictionMetadataDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    if (action !== 'later' && action !== 'discard') throw new BadRequestException('Invalid review action');
+    return this.reviews.decide(libraryId, id, dto, user, action);
   }
 
   @Post(':sourceId/check')

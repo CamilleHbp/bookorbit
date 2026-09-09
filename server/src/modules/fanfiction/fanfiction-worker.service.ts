@@ -102,7 +102,9 @@ export class FanfictionWorkerService implements OnModuleDestroy {
         return current;
       };
       const { document, saveCookies } =
-        job.profileId && !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind)
+        job.profileId &&
+        !job.result?.preparedUpdate?.approved &&
+        !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind)
           ? await this.profiles.session(job.libraryId, job.profileId, user, authorizeCookies)
           : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
       const result: FanfictionJob['result'] =
@@ -131,14 +133,20 @@ export class FanfictionWorkerService implements OnModuleDestroy {
                       : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
       await this.authorized(job);
       const continuation = result?.discovery?.finished === false || result?.selection?.finished === false;
-      const needsReview = (result?.selection?.failed ?? 0) > 0;
+      const storyReview =
+        result?.metadataReview && !result.preparedUpdate?.approved
+          ? 'metadata_review_required'
+          : result?.importReview && !result.importReview.approved
+            ? 'import_review_required'
+            : null;
+      const needsReview = !!storyReview || (result?.selection?.failed ?? 0) > 0;
       const committed = continuation
         ? await this.jobs.yieldBatch(job, result)
         : await this.jobs.finish(
             job,
             needsReview ? 'review_required' : result?.noChange ? 'no_change' : 'succeeded',
             result,
-            needsReview ? (job.kind === 'source_batch' ? 'source_batch_review_required' : 'discovery_review_required') : null,
+            needsReview ? (storyReview ?? (job.kind === 'source_batch' ? 'source_batch_review_required' : 'discovery_review_required')) : null,
           );
       this.logger.log(
         `[fanfiction.job] [end] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} committed=${committed} - job completed`,
@@ -160,6 +168,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
           ? 'configuration_blocked'
           : [
                 'review_required',
+                'metadata_review_required',
                 'replacement_identity_mismatch',
                 'replacement_chapter_reduction',
                 'replacement_revision_changed',

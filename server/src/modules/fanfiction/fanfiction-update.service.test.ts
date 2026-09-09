@@ -1,3 +1,4 @@
+import { FanfictionReviewService } from './fanfiction-review.service';
 import { Test } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
@@ -21,6 +22,7 @@ describe('fanfiction update covers', () => {
     };
     const module = await Test.createTestingModule({
       providers: [
+        { provide: FanfictionReviewService, useValue: { decide: vi.fn(), importDecision: vi.fn() } },
         FanfictionUpdateService,
         { provide: MetadataService, useValue: metadata },
         { provide: FanfictionSourceService, useValue: sources },

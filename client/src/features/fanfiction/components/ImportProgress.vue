@@ -10,7 +10,8 @@ const { t, te } = useI18n()
 const progress = computed(() => props.job.result?.progress)
 const active = computed(() => ['queued', 'running'].includes(props.job.state))
 const succeeded = computed(() => ['succeeded', 'no_change'].includes(props.job.state))
-const failed = computed(() => ['failed', 'configuration_blocked', 'review_required'].includes(props.job.state))
+const reviewing = computed(() => props.job.state === 'review_required' && !!(props.job.result?.metadataReview || props.job.result?.importReview))
+const failed = computed(() => !reviewing.value && ['failed', 'configuration_blocked', 'review_required'].includes(props.job.state))
 const status = computed(() => {
   if (props.job.cancellationRequested && active.value) return t('fanfiction.progress.cancelling')
   if (props.job.state === 'queued' && props.job.attempts > 0) return t('fanfiction.progress.retrying')
@@ -31,7 +32,7 @@ const percentage = computed(() => {
 const barStyle = computed(() => ({ width: percentage.value === undefined ? '35%' : `${percentage.value}%` }))
 const errorText = computed(() => {
   const key = `fanfiction.errors.${props.job.errorCode}`
-  return props.job.errorCode ? t(te(key) ? key : 'fanfiction.errors.runtime_failed') : ''
+  return !reviewing.value && props.job.errorCode ? t(te(key) ? key : 'fanfiction.errors.runtime_failed') : ''
 })
 const lastStage = computed(() =>
   failed.value && progress.value ? t('fanfiction.progress.failedDuring', { stage: t(`fanfiction.progress.${progress.value.stage}`) }) : '',

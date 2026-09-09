@@ -179,7 +179,10 @@ describe('managed Fanfiction page requests', () => {
         ({
           ok: false,
           status: 409,
-          json: async () => ({ errorCode: 'story_exists', errorMeta: { id: String(++id), title: `Story ${id}` } }),
+          json: async () => ({
+            errorCode: 'story_exists',
+            errorMeta: { id: String(++id), title: `Story ${id}`, bookId: id, attentionCode: 'metadata_review_required' },
+          }),
         }) as Response,
     )
     await state.importStories()
@@ -199,7 +202,7 @@ describe('managed Fanfiction page requests', () => {
     expect(mockApi).toHaveBeenCalledTimes(3)
   })
 
-  it('shows only confirmation for a duplicate, continues new imports, and cancels without updating', async () => {
+  it('prepares duplicate updates while continuing new imports', async () => {
     const state = create()
     state.libraryId.value = 5
     state.folderId.value = 8
@@ -214,16 +217,13 @@ describe('managed Fanfiction page requests', () => {
       .mockResolvedValue(response({ id: 'new-job', kind: 'import', state: 'queued' }))
     await state.importStories()
     expect(state.error.value).toBe('')
-    expect(state.existingCandidate.value?.existingStory?.id).toBe('existing')
-    expect(state.visibleCandidates.value).toHaveLength(1)
-    expect(mockApi).toHaveBeenCalledTimes(2)
-    state.cancelExistingStory()
     expect(state.existingCandidate.value).toBeUndefined()
-    expect(state.candidates.value).toHaveLength(1)
-    expect(mockApi).toHaveBeenCalledTimes(2)
+    expect(state.visibleCandidates.value).toHaveLength(2)
+    expect(mockApi).toHaveBeenCalledTimes(3)
+    expect(String(mockApi.mock.calls[1]?.[0])).toContain('/sources/existing/check')
   })
 
-  it('moves a duplicate discovered by a running job into the modal when polling completes', async () => {
+  it('prepares an update when a running import resolves to an existing story', async () => {
     const state = create()
     state.libraryId.value = 5
     state.folderId.value = 8
@@ -232,26 +232,28 @@ describe('managed Fanfiction page requests', () => {
     mockApi.mockResolvedValueOnce(response({ id: 'import-job', kind: 'import', state: 'queued' }))
     await state.importStories()
     mockApi.mockImplementation(async (url) =>
-      response({
-        items: String(url).endsWith('/jobs/status')
-          ? [
-              {
-                id: 'import-job',
-                kind: 'import',
-                state: 'succeeded',
-                result: { existingStory: { id: 'existing', title: 'A story' } },
-              },
-            ]
-          : [],
-        nextCursor: null,
-      }),
+      String(url).endsWith('/check')
+        ? response({ id: 'update-job', kind: 'update', state: 'queued' })
+        : response({
+            items: String(url).endsWith('/jobs/status')
+              ? [
+                  {
+                    id: 'import-job',
+                    kind: 'import',
+                    state: 'succeeded',
+                    result: { existingStory: { id: 'existing', title: 'A story' } },
+                  },
+                ]
+              : [],
+            nextCursor: null,
+          }),
     )
     await vi.advanceTimersByTimeAsync(2000)
-    expect(state.existingCandidate.value?.existingStory?.id).toBe('existing')
-    expect(state.visibleCandidates.value).toHaveLength(0)
+    expect(state.existingCandidate.value).toBeUndefined()
+    expect(state.visibleCandidates.value[0]?.job?.kind).toBe('update')
   })
 
-  it('requires confirmation for resolved aliases and retains it after an uncertain update response', async () => {
+  it('retains stable update identity when automatic alias continuation loses its response', async () => {
     const state = create()
     state.libraryId.value = 5
     state.folderId.value = 8
@@ -265,10 +267,9 @@ describe('managed Fanfiction page requests', () => {
         result: { existingStory: { id: 'existing', title: 'A story' } },
       }),
     )
+    mockApi.mockRejectedValueOnce(new Error('Disconnected'))
     await state.importStories()
     expect(state.visibleCandidates.value).toHaveLength(0)
-    mockApi.mockRejectedValueOnce(new Error('Disconnected'))
-    await state.updateExistingStory()
     expect(state.existingCandidate.value).toBeDefined()
     mockApi.mockResolvedValueOnce(response({ id: 'update-job', kind: 'update', state: 'queued' }))
     await state.updateExistingStory()

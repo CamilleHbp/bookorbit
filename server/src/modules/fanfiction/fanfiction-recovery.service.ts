@@ -1,3 +1,6 @@
+import { FanfictionReviewService } from './fanfiction-review.service';
+import { MetadataService } from '../metadata/metadata.service';
+import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -23,6 +26,9 @@ export class FanfictionRecoveryService {
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly revisions: RevisionInterruptionService,
     private readonly metadata: ManagedMetadataService,
+    private readonly reviews: FanfictionReviewService,
+    private readonly covers: MetadataService,
+    private readonly catalog: RevisionCatalogService,
   ) {}
 
   @Interval(5000)
@@ -50,6 +56,7 @@ export class FanfictionRecoveryService {
       for (const row of pending) {
         const owner = byId.get(row.ownerKey!);
         const hasReceipt = row.state === 'cleanup_complete' && owner?.result?.revisionId === row.nextRevisionId;
+        if (owner?.result?.metadataReview?.beforeUpdate && !owner.cancellationRequested && !owner.result.preparedUpdate?.approved) continue;
         if (owner && !hasReceipt && !owner.cancellationRequested && ['queued', 'running'].includes(owner.state)) continue;
         if (!started) {
           started = true;
@@ -67,10 +74,19 @@ export class FanfictionRecoveryService {
           } else {
             const revisionId = await this.revisions.settle(row.id, row.libraryId, {
               ownerKey: row.ownerKey!,
+              commit: async (tx) => {
+                const job = await this.lockOwner(tx, row.ownerKey!, row.libraryId);
+                if (job?.result?.preparedUpdate) await this.reviews.apply(tx, job, job.result.bookId!);
+              },
               authorize: async (tx) => {
                 await this.requireInterrupted(tx, row.ownerKey!, row.libraryId);
               },
             });
+            if (revisionId && owner?.result?.preparedUpdate?.approved) {
+              const file = await this.catalog.fileLocation(row.bookFileId, row.libraryId);
+              if (file.bookId !== owner.result.bookId) throw new ConflictException('The reviewed book changed before recovery');
+              await this.covers.refreshCoverForBook(file.bookId, file.absolutePath, 'epub');
+            }
             await this.db.transaction(async (tx) => {
               const current = await this.requireInterrupted(tx, row.ownerKey!, row.libraryId);
               if (current && revisionId) await this.recordPublished(tx, current, revisionId, row.bookFileId);
@@ -106,7 +122,11 @@ export class FanfictionRecoveryService {
 
   private async requireInterrupted(tx: DatabaseTransaction, id: string, libraryId: number) {
     const job = await this.lockOwner(tx, id, libraryId);
-    if (job && !job.cancellationRequested && ['queued', 'running'].includes(job.state))
+    if (
+      job &&
+      !job.cancellationRequested &&
+      (['queued', 'running'].includes(job.state) || (job.result?.metadataReview?.beforeUpdate && !job.result.preparedUpdate?.approved))
+    )
       throw new ConflictException('Publication owner resumed before recovery');
     return job;
   }
@@ -121,10 +141,11 @@ export class FanfictionRecoveryService {
           .where(and(eq(sources.id, job.sourceId), eq(sources.libraryId, job.libraryId), eq(sources.bookFileId, bookFileId)))
           .for('update')
       : [];
+    if (source && job.result?.preparedUpdate) job.result = await this.reviews.apply(tx, job, source.bookId!);
     if (source && !job.result?.revisionId) {
       if (source.version === job.sourceVersion && source.state !== 'unlinked') {
         const preview = job.result?.preview;
-        if (preview && source.bookId && job.kind !== 'rollback') {
+        if (!job.result?.preparedUpdate && preview && source.bookId && job.kind !== 'rollback') {
           const snapshot = await this.metadata.snapshot(tx, source.bookId, job.libraryId);
           const fields = changedStoryMetadata(snapshot.current, preview);
           if (fields.length) job.result = { ...job.result, metadataReview: { ...snapshot, incoming: preview, fields, previousState: 'paused' } };

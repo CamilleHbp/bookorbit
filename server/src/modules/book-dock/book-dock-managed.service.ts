@@ -1,3 +1,5 @@
+import type { FanfictionMetadataValues } from '@bookorbit/types';
+import { ManagedMetadataService } from '../metadata/managed-metadata.service';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { and, eq } from 'drizzle-orm';
@@ -24,6 +26,7 @@ export interface ManagedDockImport {
   sourcePath: string;
   relativePath: string;
   metadataSourceKey?: string;
+  finalMetadata?: FanfictionMetadataValues;
 }
 
 export type AuthorizeManagedImport = (transaction: DatabaseTransaction) => Promise<void>;
@@ -41,6 +44,7 @@ export class BookDockManagedService {
     private readonly manifests: EpubManifestService,
     private readonly processor: UploadProcessorService,
     private readonly metadata: MetadataService,
+    private readonly managedMetadata: ManagedMetadataService,
     private readonly validator: UploadValidatorService,
   ) {}
 
@@ -241,6 +245,8 @@ export class BookDockManagedService {
         if (row.metadataSourceKey)
           await this.metadata.extractAndSave(row.bookId, row.destinationPath, 'epub', { key: row.metadataSourceKey, libraryId: row.libraryId });
         else await this.metadata.extractAndSave(row.bookId, row.destinationPath, 'epub');
+        if (input.finalMetadata && row.metadataSourceKey)
+          await this.managedMetadata.apply(tx, row.bookId, { key: row.metadataSourceKey, libraryId: row.libraryId }, input.finalMetadata);
         state = 'metadata_committed';
       } else if (state === 'metadata_committed') {
         await this.cleanup(row);

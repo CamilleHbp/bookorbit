@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import type { FanfictionImportRequest, FanfictionSourceState, FanfictionMetadataResolution } from '@bookorbit/types';
 import { PreviewFanfictionDto } from './fanfiction-profile.dto';
 
@@ -25,7 +25,19 @@ export class ResolveFanfictionMetadataDto implements FanfictionMetadataResolutio
   @IsIn(['keep', 'incoming']) title!: 'keep' | 'incoming';
   @IsIn(['keep', 'incoming']) description!: 'keep' | 'incoming';
   @IsIn(['keep', 'incoming']) authors!: 'keep' | 'incoming';
-  @IsIn(['keep', 'merge']) tags!: 'keep' | 'merge';
+  @IsIn(['keep', 'merge', 'select']) tags!: 'keep' | 'merge' | 'select';
+  @IsOptional() @IsArray() @ArrayMaxSize(1000) @IsString({ each: true }) @MaxLength(500, { each: true }) selectedTags?: string[];
+}
+
+export class StoryMetadataValuesDto {
+  @IsString() @MinLength(1) @MaxLength(500) title!: string;
+  @IsString() @MaxLength(262144) description!: string;
+  @IsArray() @ArrayMaxSize(100) @IsString({ each: true }) @MaxLength(500, { each: true }) authors!: string[];
+  @IsArray() @ArrayMaxSize(1000) @IsString({ each: true }) @MaxLength(500, { each: true }) tags!: string[];
+}
+export class ImportStoryReviewDto {
+  @IsIn(['apply', 'later', 'discard']) action!: 'apply' | 'later' | 'discard';
+  @IsOptional() @ValidateNested() @Type(() => StoryMetadataValuesDto) values?: StoryMetadataValuesDto;
 }
 
 export class ListFanfictionSourcesDto {

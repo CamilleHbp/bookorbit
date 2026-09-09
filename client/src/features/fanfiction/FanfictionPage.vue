@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import ImportProgress from './components/ImportProgress.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import StoryImportReview from './components/StoryImportReview.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { BookOpen, Plus, Settings, RefreshCw } from '@lucide/vue'
@@ -25,7 +25,22 @@ const { t } = useI18n()
 const { hasPermission } = usePermissions()
 const canManage = computed(() => hasPermission(Permission.ManageLibraries))
 const router = useRouter()
-const page = useFanfiction((bookId) => router.push({ name: 'book-detail', params: { bookId }, query: { tab: 'story-updates' } }))
+const requestedLibraryId = Number(router.currentRoute.value.query.libraryId)
+const reviewSource = () =>
+  typeof router.currentRoute.value.query.sourceId === 'string' && /^[0-9a-f-]{36}$/i.test(router.currentRoute.value.query.sourceId)
+    ? router.currentRoute.value.query.sourceId
+    : undefined
+const page = useFanfiction(
+  (bookId) => router.push({ name: 'book-detail', params: { bookId }, query: { tab: 'story-updates' } }),
+  reviewSource,
+  Number.isSafeInteger(requestedLibraryId) && requestedLibraryId > 0 ? requestedLibraryId : undefined,
+)
+watch(
+  () => router.currentRoute.value.query.sourceId,
+  () => {
+    if (page.libraryId.value) void page.refresh()
+  },
+)
 const {
   libraries,
   libraryCursor,
@@ -76,6 +91,7 @@ const {
   cancelExistingStory,
   updateExistingStory,
   retryImport,
+  acceptImportReview,
   useSavedProfile,
   cancelJob,
   retryJob,
@@ -391,21 +407,12 @@ onMounted(() => {
         <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
         <SourceProfileEditor :settings="sourceSettings" compact @saved="handleProfileSaved" />
         <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
-        <ConfirmDialog
-          :open="!!existingCandidate"
-          :title="t(existingNeedsReview ? 'fanfiction.metadataReview.title' : 'fanfiction.existingStoryTitle')"
-          :description="
-            existingNeedsReview
-              ? t('fanfiction.metadataReview.help')
-              : t('fanfiction.existingStoryDescription', { title: existingCandidate?.existingStory?.title ?? '' })
-          "
-          :confirm-label="t(existingNeedsReview ? 'fanfiction.metadataReview.title' : 'fanfiction.updateStory')"
-          :busy="busy"
-          :destructive="false"
-          :confirm-disabled="!canManage"
-          @confirm="updateExistingStory"
-          @cancel="cancelExistingStory"
-        >
+        <section v-if="existingCandidate" class="border-border rounded-lg border p-4 space-y-3">
+          <p class="font-medium">{{ existingCandidate.existingStory?.title }}</p>
+          <Button :disabled="busy || !canManage" @click="updateExistingStory">{{
+            t(existingNeedsReview ? 'fanfiction.metadataReview.title' : 'fanfiction.updateStory')
+          }}</Button>
+          <Button variant="outline" :disabled="busy" @click="cancelExistingStory">{{ t('common.cancel') }}</Button>
           <div v-if="existingStoryCount > 1" class="mt-4 space-y-2">
             <p class="text-muted-foreground text-sm" aria-live="polite">
               {{ t('fanfiction.existingStoryPosition', { current: existingStoryPosition + 1, total: existingStoryCount }) }}
@@ -420,7 +427,7 @@ onMounted(() => {
             </div>
           </div>
           <p v-if="error" role="alert" class="text-destructive mt-2 text-sm">{{ error }}</p>
-        </ConfirmDialog>
+        </section>
         <article v-for="candidate in visibleCandidates" :key="candidate.previewKey" class="border-border bg-card space-y-2 rounded-lg border p-4">
           <p class="min-w-0 break-words font-medium">{{ candidate.preview?.title || candidate.url }}</p>
           <p v-if="candidate.preview" class="text-muted-foreground text-sm">
@@ -429,7 +436,13 @@ onMounted(() => {
             <span v-if="candidate.preview.wordCount != null"> · {{ t('fanfiction.wordCount', { count: candidate.preview.wordCount }) }}</span>
           </p>
           <p v-if="candidate.preview" class="break-all text-sm text-muted-foreground">{{ candidate.url }}</p>
-          <ImportProgress v-if="candidate.job" :job="candidate.job" />
+          <StoryImportReview
+            v-if="candidate.job?.state === 'review_required' && candidate.job.result?.importReview"
+            :job="candidate.job"
+            :disabled="!canManage"
+            @updated="acceptImportReview"
+          />
+          <ImportProgress v-else-if="candidate.job" :job="candidate.job" />
           <p v-else role="status" class="text-sm text-muted-foreground">{{ t('fanfiction.importBatch.pending') }}</p>
           <Button
             v-if="candidate.job && ['queued', 'running'].includes(candidate.job.state)"
@@ -495,6 +508,9 @@ onMounted(() => {
           @next="moreActivity"
         />
         <h2 class="text-lg font-medium">{{ t('fanfiction.operations') }}</h2>
+        <RouterLink v-if="reviewSource()" :to="{ name: 'fanfiction', query: { tab: 'activity' } }" class="text-primary underline">{{
+          t('fanfiction.metadataReview.allActivity')
+        }}</RouterLink>
         <p v-if="!jobs.length" class="text-muted-foreground text-sm">{{ t('fanfiction.noActivity') }}</p>
         <article
           v-for="job in jobs"
@@ -504,7 +520,13 @@ onMounted(() => {
           <div class="min-w-0 flex-1">
             <p class="break-words text-sm">{{ job.url }}</p>
             <p class="text-muted-foreground text-sm">{{ t(`fanfiction.kinds.${job.kind}`) }} · {{ dateLabel(job.updatedAt) }}</p>
-            <ImportProgress :job="job" class="mt-3" />
+            <StoryImportReview
+              v-if="job.state === 'review_required' && job.result?.importReview"
+              :job="job"
+              :disabled="!canManage"
+              @updated="acceptImportReview"
+            />
+            <ImportProgress v-else :job="job" class="mt-3" />
             <RouterLink
               v-if="job.result?.bookId"
               :to="{ name: 'book-detail', params: { bookId: job.result.bookId } }"
@@ -523,7 +545,12 @@ onMounted(() => {
             >{{ t('fanfiction.cancel') }}</Button
           >
           <Button
-            v-else-if="job.errorCode !== 'profile_deleted' && ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)"
+            v-else-if="
+              !job.result?.metadataReview &&
+              !job.result?.importReview &&
+              job.errorCode !== 'profile_deleted' &&
+              ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)
+            "
             variant="outline"
             :disabled="busy"
             @click="retryJob(job)"
