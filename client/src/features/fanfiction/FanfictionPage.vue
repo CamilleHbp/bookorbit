@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ImportProgress from './components/ImportProgress.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { BookOpen, Plus, Settings, RefreshCw } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
@@ -57,6 +57,13 @@ const {
   moreSources,
   moreJobs,
   importStories,
+  importBatchStarted,
+  importBatchPending,
+  importBatchFinished,
+  importBatchTotal,
+  importBatchCompleted,
+  importBatchNeedsAttention,
+  startAnotherImportBatch,
   existingCandidate,
   existingStoryPosition,
   existingStoryCount,
@@ -81,6 +88,23 @@ const {
   sourceErrors,
   checkingSourceId,
 } = page
+const importHeading = ref<HTMLElement | null>(null)
+const urlInput = ref<HTMLTextAreaElement | null>(null)
+const importBatchTitle = computed(() => {
+  if (importBatchFinished.value) return t(importBatchNeedsAttention.value ? 'fanfiction.importBatch.attention' : 'fanfiction.importBatch.finished')
+  return t('fanfiction.importBatch.title')
+})
+watch(importBatchStarted, async (started) => {
+  if (started) {
+    await nextTick()
+    importHeading.value?.focus()
+  }
+})
+async function handleAnotherBatch() {
+  startAnotherImportBatch()
+  await nextTick()
+  urlInput.value?.focus()
+}
 const { destination, showStories, showAdd, applyFilters, clearFilters, filtered } = useFanfictionNavigation(page)
 const sourcePagination = reactive(page.sourcePagination)
 const jobPagination = reactive(page.jobPagination)
@@ -174,7 +198,9 @@ onMounted(() => {
         <Button variant="ghost" class="size-11" as-child
           ><RouterLink :to="{ name: 'settings-fanfiction' }" :aria-label="t('fanfiction.settingsTitle')"><Settings aria-hidden="true" /></RouterLink
         ></Button>
-        <Button :disabled="libraryId === null" @click="showAdd"><Plus aria-hidden="true" />{{ t('fanfiction.addStories') }}</Button>
+        <Button v-if="tab !== 'add'" :disabled="libraryId === null" @click="showAdd"
+          ><Plus aria-hidden="true" />{{ t('fanfiction.addStories') }}</Button
+        >
       </div>
     </header>
     <div class="flex flex-wrap items-end gap-2">
@@ -287,62 +313,82 @@ onMounted(() => {
         />
       </section>
       <section v-else-if="tab === 'add'" class="space-y-4">
-        <header class="space-y-1">
-          <h2 class="text-lg font-medium">{{ t('fanfiction.addStories') }}</h2>
+        <header v-if="importBatchStarted" class="space-y-3 rounded-lg border border-border bg-card p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 ref="importHeading" tabindex="-1" class="text-lg font-medium focus:outline-none">{{ importBatchTitle }}</h2>
+            <Button v-if="importBatchFinished" :disabled="sourceSettings.busy || sourceSettings.showEditor" @click="handleAnotherBatch">
+              <Plus aria-hidden="true" />{{ t('fanfiction.importBatch.another') }}
+            </Button>
+          </div>
+          <p role="status" class="text-sm text-muted-foreground">
+            {{ t('fanfiction.importBatch.progress', { completed: importBatchCompleted, total: importBatchTotal }) }}
+          </p>
+          <progress class="block h-2 w-full accent-primary" :value="importBatchCompleted" :max="importBatchTotal" :aria-label="importBatchTitle" />
+          <Button v-if="importBatchPending && !busy" variant="outline" @click="importStories">{{ t('fanfiction.importBatch.resume') }}</Button>
         </header>
-        <label class="block space-y-1 text-sm"
-          >{{ t('fanfiction.storyUrls')
-          }}<textarea
-            v-model="urls"
-            :disabled="busy"
-            rows="5"
-            maxlength="65536"
-            class="border-input bg-background block w-full rounded-md border p-3"
-            :placeholder="t('fanfiction.urlsHelp')"
-          />
-        </label>
+        <form v-else class="space-y-4" @submit.prevent="importStories">
+          <h2 class="text-lg font-medium">{{ t('fanfiction.addStories') }}</h2>
+          <label class="block space-y-1 text-sm"
+            >{{ t('fanfiction.storyUrls')
+            }}<textarea
+              ref="urlInput"
+              v-model="urls"
+              :disabled="busy"
+              rows="5"
+              maxlength="65536"
+              class="border-input bg-background block w-full rounded-md border p-3"
+              :placeholder="t('fanfiction.urlsHelp')"
+            />
+          </label>
 
-        <p v-if="detectedSite" class="text-sm text-muted-foreground">{{ detectedSite.name }}</p>
-        <details class="space-y-3 rounded-lg border border-border p-3">
-          <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.importOptions') }}</summary>
-          <div class="grid gap-4 pt-3 sm:grid-cols-2">
-            <label class="space-y-1 text-sm"
-              >{{ t('fanfiction.folder') }}
-              <select v-model="folderId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
-                <option v-for="folder in folders" :key="folder.id" :value="folder.id">{{ folder.path }}</option>
-              </select>
-            </label>
-            <label class="space-y-1 text-sm"
-              >{{ t('fanfiction.profile') }}
-              <select v-model="profileId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
-                <option value="">{{ t('fanfiction.automaticProfile') }}</option>
-                <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
-              </select>
-            </label>
-            <label class="space-y-1 text-sm"
-              >{{ t('fanfiction.schedule') }}
-              <select v-model="schedule" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
-                <option value="1440">{{ t('fanfiction.daily') }}</option>
-                <option value="60">{{ t('fanfiction.hourly') }}</option>
-                <option value="manual">{{ t('fanfiction.manualOnly') }}</option>
-              </select>
-            </label>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <Button v-if="folderCursor !== null" variant="outline" :disabled="busy" @click="moreFolders">{{ t('fanfiction.moreFolders') }}</Button>
-            <Button v-if="profileCursor" variant="outline" :disabled="busy" @click="moreProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
-            <Button variant="outline" :disabled="busy || sourceSettings.busy" @click="handleAddSource">{{ t('fanfiction.addProfile') }}</Button>
-            <Button v-if="selectedProfile" variant="outline" :disabled="busy || sourceSettings.busy" @click="editSource">{{
-              t('fanfiction.editSource')
-            }}</Button>
-          </div>
-        </details>
+          <p v-if="detectedSite" class="text-sm text-muted-foreground">{{ detectedSite.name }}</p>
+          <details class="space-y-3 rounded-lg border border-border p-3">
+            <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.importOptions') }}</summary>
+            <div class="grid gap-4 pt-3 sm:grid-cols-2">
+              <label class="space-y-1 text-sm"
+                >{{ t('fanfiction.folder') }}
+                <select v-model="folderId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
+                  <option v-for="folder in folders" :key="folder.id" :value="folder.id">{{ folder.path }}</option>
+                </select>
+              </label>
+              <label class="space-y-1 text-sm"
+                >{{ t('fanfiction.profile') }}
+                <select v-model="profileId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
+                  <option value="">{{ t('fanfiction.automaticProfile') }}</option>
+                  <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+                </select>
+              </label>
+              <label class="space-y-1 text-sm"
+                >{{ t('fanfiction.schedule') }}
+                <select v-model="schedule" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
+                  <option value="1440">{{ t('fanfiction.daily') }}</option>
+                  <option value="60">{{ t('fanfiction.hourly') }}</option>
+                  <option value="manual">{{ t('fanfiction.manualOnly') }}</option>
+                </select>
+              </label>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <Button type="button" v-if="folderCursor !== null" variant="outline" :disabled="busy" @click="moreFolders">{{
+                t('fanfiction.moreFolders')
+              }}</Button>
+              <Button type="button" v-if="profileCursor" variant="outline" :disabled="busy" @click="moreProfiles">{{
+                t('fanfiction.moreProfiles')
+              }}</Button>
+              <Button type="button" variant="outline" :disabled="busy || sourceSettings.busy" @click="handleAddSource">{{
+                t('fanfiction.addProfile')
+              }}</Button>
+              <Button type="button" v-if="selectedProfile" variant="outline" :disabled="busy || sourceSettings.busy" @click="editSource">{{
+                t('fanfiction.editSource')
+              }}</Button>
+            </div>
+          </details>
+          <Button type="submit" :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null">{{
+            t('fanfiction.importStories')
+          }}</Button>
+        </form>
         <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
         <SourceProfileEditor :settings="sourceSettings" compact @saved="handleProfileSaved" />
         <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
-        <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null" @click="importStories">{{
-          t('fanfiction.importStories')
-        }}</Button>
         <ConfirmDialog
           :open="!!existingCandidate"
           :title="t('fanfiction.existingStoryTitle')"
@@ -376,7 +422,9 @@ onMounted(() => {
             {{ candidate.preview.status }}
             <span v-if="candidate.preview.wordCount != null"> · {{ t('fanfiction.wordCount', { count: candidate.preview.wordCount }) }}</span>
           </p>
+          <p v-if="candidate.preview" class="break-all text-sm text-muted-foreground">{{ candidate.url }}</p>
           <ImportProgress v-if="candidate.job" :job="candidate.job" />
+          <p v-else role="status" class="text-sm text-muted-foreground">{{ t('fanfiction.importBatch.pending') }}</p>
           <Button
             v-if="candidate.job && ['queued', 'running'].includes(candidate.job.state)"
             variant="outline"
@@ -406,6 +454,11 @@ onMounted(() => {
             >{{ t('fanfiction.openBook') }}</RouterLink
           >
         </article>
+        <div v-if="importBatchFinished && visibleCandidates.length > 3" class="flex justify-end">
+          <Button :disabled="sourceSettings.busy || sourceSettings.showEditor" @click="handleAnotherBatch"
+            ><Plus aria-hidden="true" />{{ t('fanfiction.importBatch.another') }}</Button
+          >
+        </div>
       </section>
       <ExistingStories
         v-else-if="tab === 'discovery'"

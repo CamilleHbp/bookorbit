@@ -73,6 +73,38 @@ describe('managed Fanfiction page requests', () => {
     expect(state.sourcePagination.number.value).toBe(1)
   })
 
+  it('resumes a partially submitted batch without bringing back skipped duplicates', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    state.folderId.value = 8
+    state.profileId.value = 'profile'
+    state.urls.value = 'https://archiveofourown.org/works/1\nhttps://archiveofourown.org/works/2'
+    mockApi
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ errorCode: 'story_exists', errorMeta: { id: '1', title: 'Existing' } }),
+      } as Response)
+      .mockRejectedValueOnce(new Error('Offline'))
+    await state.importStories()
+    state.cancelExistingStory()
+    expect(state.importBatchCompleted.value).toBe(1)
+    expect(state.importBatchFinished.value).toBe(false)
+    state.startAnotherImportBatch()
+    expect(state.importBatchStarted.value).toBe(true)
+    mockApi.mockResolvedValueOnce(response({ id: 'import-2', kind: 'import', state: 'succeeded' }))
+    await state.importStories()
+    expect(mockApi).toHaveBeenCalledTimes(3)
+    expect(JSON.parse(mockApi.mock.calls[2]![1]!.body as string).url).toBe('https://archiveofourown.org/works/2')
+    expect(state.importBatchCompleted.value).toBe(2)
+    expect(state.importBatchFinished.value).toBe(true)
+    state.startAnotherImportBatch()
+    expect(state.importBatchStarted.value).toBe(false)
+    expect(state.urls.value).toBe('')
+    expect(state.profileId.value).toBe('profile')
+    expect(state.folderId.value).toBe(8)
+  })
+
   it('loads more library choices without changing the selected library or clearing imports', async () => {
     const state = create()
     state.libraryId.value = 5

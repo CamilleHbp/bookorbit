@@ -22,7 +22,9 @@ describe('Fanfiction navigation and story hierarchy', () => {
   })
   afterEach(() => {
     wrapper?.unmount()
+    document.body.innerHTML = ''
     vi.clearAllMocks()
+    vi.useRealTimers()
   })
 
   async function open(path = '/fanfiction') {
@@ -37,6 +39,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await router.push(path)
     await router.isReady()
     wrapper = mount(FanfictionPage, {
+      attachTo: document.body,
       global: {
         plugins: [router],
         stubs: { DialogPortal: { template: '<div><slot /></div>' }, SourceProfileEditor: true, SourceProfiles: true, ExistingStories: true },
@@ -77,6 +80,101 @@ describe('Fanfiction navigation and story hierarchy', () => {
       .trigger('click')
     expect(wrapper!.get('[role="dialog"]').text()).toContain('Existing 1')
     expect(wrapper!.findAll('article')).toHaveLength(0)
+  })
+
+  it('keeps invalid input editable', async () => {
+    await open('/fanfiction?tab=add')
+    expect(wrapper!.findAll('details button').every((button) => button.attributes('type') === 'button')).toBe(true)
+    await wrapper!.get('textarea').setValue('not a URL')
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper!.get('textarea').element).toHaveProperty('value', 'not a URL')
+    expect(wrapper!.text()).toContain('Each story needs a valid HTTPS URL.')
+    expect(wrapper!.text()).not.toContain('Import another batch')
+  })
+
+  it('replaces the form with progress, retains options for another batch, and focuses the URLs', async () => {
+    vi.useFakeTimers()
+    await open('/fanfiction?tab=add')
+    const job = { id: 'import-1', kind: 'import', state: 'running', attempts: 1, result: null }
+    vi.mocked(api).mockImplementation(async (url) => {
+      if (String(url).includes('profile-match')) return new Response(JSON.stringify({ profile: null }))
+      if (String(url).endsWith('/sources')) return new Response(JSON.stringify(job))
+      if (String(url).endsWith('/jobs/status')) return new Response(JSON.stringify({ items: [job] }))
+      return new Response(JSON.stringify({ items: [], nextCursor: null }))
+    })
+    await wrapper!.findAll('details select')[2]!.setValue('manual')
+    await wrapper!.get('textarea').setValue('https://archiveofourown.org/works/1')
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper!.find('textarea').exists()).toBe(false)
+    expect(wrapper!.find('details').exists()).toBe(false)
+    expect(wrapper!.text()).toContain('0 of 1 stories processed')
+    expect(wrapper!.text()).toContain('https://archiveofourown.org/works/1')
+    expect(wrapper!.text()).not.toContain('Import another batch')
+    job.state = 'succeeded'
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(wrapper!.text()).toContain('Batch finished')
+    expect(wrapper!.text()).toContain('1 of 1 stories processed')
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Import another batch')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper!.get('textarea').element).toHaveProperty('value', '')
+    expect(document.activeElement).toBe(wrapper!.get('textarea').element)
+    expect(wrapper!.findAll('details select')[2]!.element).toHaveProperty('value', 'manual')
+    expect(wrapper!.findAll('article')).toHaveLength(0)
+  })
+
+  it('keeps interrupted submissions recoverable without restoring the form', async () => {
+    await open('/fanfiction?tab=add')
+    vi.mocked(api).mockRejectedValue(new Error('Offline'))
+    await wrapper!.get('textarea').setValue('https://archiveofourown.org/works/1')
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper!.find('textarea').exists()).toBe(false)
+    expect(wrapper!.text()).toContain('Offline')
+    expect(wrapper!.text()).toContain('Waiting to submit')
+    expect(wrapper!.text()).not.toContain('Import another batch')
+    vi.mocked(api).mockImplementation(
+      async (url) =>
+        new Response(
+          JSON.stringify(
+            String(url).includes('profile-match')
+              ? { profile: null }
+              : { id: 'import-1', kind: 'import', state: 'failed', attempts: 1, result: null },
+          ),
+        ),
+    )
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Retry remaining stories')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('Batch finished with errors')
+    expect(wrapper!.text()).toContain('Import another batch')
+    expect(wrapper!.findAll('button').some((button) => button.text() === 'Retry')).toBe(true)
+  })
+
+  it('offers another batch above and below longer results, including cancelled stories', async () => {
+    await open('/fanfiction?tab=add')
+    vi.mocked(api).mockImplementation(
+      async (url) =>
+        new Response(
+          JSON.stringify(
+            String(url).includes('profile-match')
+              ? { profile: null }
+              : { id: String(url), kind: 'import', state: 'cancelled', attempts: 1, result: null },
+          ),
+        ),
+    )
+    await wrapper!.get('textarea').setValue([1, 2, 3, 4].map((id) => `https://archiveofourown.org/works/${id}`).join('\n'))
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper!.findAll('article')).toHaveLength(4)
+    expect(wrapper!.findAll('button').filter((button) => button.text() === 'Import another batch')).toHaveLength(2)
   })
 
   it('renders Profiles exclusively and exposes the active destination', async () => {

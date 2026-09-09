@@ -54,6 +54,21 @@ export function useFanfiction() {
   const activity = ref<FanfictionActivity[]>([])
   const activityCursor = ref<string | null>(null)
   const candidates = ref<Candidate[]>([])
+  const importBatchTotal = ref(0)
+  const importBatchStarted = computed(() => importBatchTotal.value > 0)
+  const importBatchActive = computed(() => candidates.value.some((candidate) => candidate.job && ['queued', 'running'].includes(candidate.job.state)))
+  const importBatchPending = computed(() => candidates.value.some((candidate) => !candidate.job && !candidate.existingStory))
+  const importBatchFinished = computed(
+    () => importBatchStarted.value && !busy.value && !importBatchActive.value && !importBatchPending.value && !existingStoryCount.value,
+  )
+  const importBatchCompleted = computed(
+    () =>
+      importBatchTotal.value -
+      candidates.value.filter((candidate) => candidate.existingStory || !candidate.job || ['queued', 'running'].includes(candidate.job.state)).length,
+  )
+  const importBatchNeedsAttention = computed(() =>
+    candidates.value.some((candidate) => candidate.job && ['failed', 'configuration_blocked', 'review_required'].includes(candidate.job.state)),
+  )
   const existingStoryIndex = ref(0)
   const existingCandidates = computed(() => candidates.value.filter((candidate) => candidate.existingStory))
   const existingStoryPosition = computed(() => Math.min(existingStoryIndex.value, Math.max(0, existingCandidates.value.length - 1)))
@@ -202,6 +217,7 @@ export function useFanfiction() {
     appliedSearch.value = search.value
     appliedState.value = state.value
     candidates.value = []
+    importBatchTotal.value = 0
     existingStoryIndex.value = 0
     sourceJobs.value = {}
     sourceErrors.value = {}
@@ -326,6 +342,15 @@ export function useFanfiction() {
     candidate.selected = false
     schedulePoll(current)
   }
+  function startAnotherImportBatch() {
+    if (!importBatchFinished.value) return
+    candidates.value = []
+    importBatchTotal.value = 0
+    existingStoryIndex.value = 0
+    urls.value = ''
+    error.value = ''
+  }
+
   async function importStories() {
     if (busy.value || folderId.value === null) return
     await perform(async (current, path) => {
@@ -349,19 +374,22 @@ export function useFanfiction() {
         })
       )
         throw new Error('Each story needs a valid HTTPS URL.')
-      const prior = new Map(candidates.value.map((row) => [row.url, row]))
-      candidates.value = lines.map(
-        (url) =>
-          prior.get(url) ?? {
-            url,
-            profileId: profileId.value,
-            previewKey: crypto.randomUUID(),
-            importKey: crypto.randomUUID(),
-            selected: true,
-            job: null,
-            preview: null,
-          },
-      )
+      if (!importBatchStarted.value) {
+        const prior = new Map(candidates.value.map((row) => [row.url, row]))
+        candidates.value = lines.map(
+          (url) =>
+            prior.get(url) ?? {
+              url,
+              profileId: profileId.value,
+              previewKey: crypto.randomUUID(),
+              importKey: crypto.randomUUID(),
+              selected: true,
+              job: null,
+              preview: null,
+            },
+        )
+        importBatchTotal.value = candidates.value.length
+      }
       for (const candidate of candidates.value) {
         if (!currentScope(current)) break
         if (candidate.job || candidate.existingStory) continue
@@ -655,6 +683,14 @@ export function useFanfiction() {
     moreSources,
     moreJobs,
     importStories,
+    importBatchStarted,
+    importBatchActive,
+    importBatchPending,
+    importBatchFinished,
+    importBatchTotal,
+    importBatchCompleted,
+    importBatchNeedsAttention,
+    startAnotherImportBatch,
     existingCandidate,
     existingStoryPosition,
     existingStoryCount,

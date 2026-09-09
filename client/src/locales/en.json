@@ -10373,6 +10373,15 @@
     "importOptions": "Import options",
     "automaticProfile": "Automatic",
     "importStories": "Import stories",
+    "importBatch": {
+      "title": "Import progress",
+      "finished": "Batch finished",
+      "attention": "Batch finished with errors",
+      "another": "Import another batch",
+      "progress": "{completed} of {total} stories processed",
+      "resume": "Retry remaining stories",
+      "pending": "Waiting to submit"
+    },
     "allowAdultStories": "I am an adult. Allow adult stories.",
     "configureSource": "Sign in or configure source",
     "existingStoryTitle": "Story already exists",
