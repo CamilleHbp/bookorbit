@@ -9,10 +9,12 @@ import logging
 import os
 import resource
 import time
+import traceback
 
 from tag_rules import apply_tag_rules
 from controlled_config import make_configuration, merge_configuration, validate_ini
 from epub_policy import validate_epub
+from image_processing import install_image_processing
 from safe_transport import PolicyError, SafeTransport, install_network_guard, validate_url
 
 VERSION = '4.61.0'
@@ -56,7 +58,7 @@ def recognize_urls(urls):
 
 
 def limits():
-    resource.setrlimit(resource.RLIMIT_CPU, (120, 120))
+    resource.setrlimit(resource.RLIMIT_CPU, (600, 600))
     resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024 * 1024, 256 * 1024 * 1024))
     resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
     if sys.platform == 'linux':
@@ -110,6 +112,7 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     actual = importlib.metadata.version('FanFicFare')
     if actual != VERSION:
         raise PolicyError('Pinned FanFicFare runtime version does not match')
+    install_image_processing()
     from fanficfare import adapters, writers
     operation = request.get('operation')
     if operation == 'health':
@@ -162,6 +165,8 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
         progress.total = chapter_count
         report_progress({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
         writers.getWriter('epub', configuration, adapter).writeStory(outstream=output, notification=progress.chapters)
+        if transport.failure is not None:
+            raise transport.failure
         output.flush()
         os.fsync(output.fileno())
     report_progress({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
@@ -185,7 +190,11 @@ def failure_code(error):
     if type(error).__name__ == 'FailedToLogin' or (
             type(error).__name__ == 'HTTPErrorFFF' and getattr(error, 'status_code', None) == 401):
         return 'authentication_required'
-    return 'configuration_blocked' if isinstance(error, (PolicyError, ValueError)) else 'source_failed'
+    if type(error).__name__ == 'PersonalIniFailed':
+        return 'configuration_blocked'
+    if isinstance(error, TimeoutError):
+        return 'download_timeout'
+    return error.code if isinstance(error, PolicyError) else 'source_failed'
 
 
 def main():
@@ -206,7 +215,10 @@ def main():
     except Exception as error:
         name = type(error).__name__
         code = failure_code(error)
-        result = {'ok': False, 'code': code, 'errorClass': name}
+        frames = traceback.extract_tb(error.__traceback__)
+        location = f'{Path(frames[-1].filename).name}:{frames[-1].lineno}:{frames[-1].name}' if frames else ''
+        # Exception messages can contain credentials, source content or private URLs.
+        result = {'ok': False, 'code': code, 'errorClass': name, 'errorLocation': location}
     encoded = json.dumps(result, ensure_ascii=True)
     if len(encoded) > 1024 * 1024:
         encoded = '{"ok":false,"code":"output_limit","errorClass":"PolicyError"}'

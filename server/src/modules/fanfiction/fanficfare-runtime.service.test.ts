@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Logger } from '@nestjs/common';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 
@@ -26,6 +27,7 @@ vi.mock('node:child_process', async () => {
 
 const cookie = { name: 'session', value: 'private-renewal', domain: 'example.org', path: '/', secure: true, hostOnly: true };
 describe('private FanFicFare runtime session output', () => {
+  afterEach(() => vi.restoreAllMocks());
   let service: FanficfareRuntimeService;
   beforeEach(async () => {
     const module = await Test.createTestingModule({
@@ -66,5 +68,24 @@ describe('private FanFicFare runtime session output', () => {
     await expect(service.execute({ operation: 'preview' }, '/unused', undefined, saveCookies)).rejects.toThrow('could not complete');
     await expect(service.execute({ operation: 'preview' }, '/unused', AbortSignal.abort(), saveCookies)).rejects.toThrow('cancelled');
     expect(saveCookies).not.toHaveBeenCalled();
+  });
+  it('preserves the actual failure code and logs bounded diagnostics without private output', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    output.response = {
+      ok: false,
+      code: 'download_limit',
+      errorClass: 'DownloadLimitError',
+      errorLocation: 'safe_transport.py:240:read_body\n',
+      message: 'private-secret',
+      cookies: [cookie],
+    };
+    await expect(service.execute({ operation: 'download' }, '/unused')).rejects.toMatchObject({
+      response: { errorCode: 'download_limit' },
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('errorClass=DownloadLimitError errorCode=download_limit location=safe_transport.py:240:read_body'),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('private-secret');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('private-renewal');
   });
 });

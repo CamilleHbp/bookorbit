@@ -25,7 +25,7 @@ async function hasCloudscraper(): Promise<boolean> {
   try {
     await runCommand(PYTHON_BIN, [
       '-c',
-      'import cloudscraper, importlib.metadata; assert getattr(cloudscraper, "__version__", "") == "3.0.0"; assert importlib.metadata.version("FanFicFare") == "4.61.0"',
+      'import cloudscraper, importlib.metadata, PIL.Image; assert getattr(cloudscraper, "__version__", "") == "3.0.0"; assert importlib.metadata.version("FanFicFare") == "4.61.0"; assert importlib.metadata.version("Pillow") == "12.3.0"',
     ]);
     return true;
   } catch {
@@ -63,7 +63,7 @@ async function run(): Promise<void> {
   ]);
 
   if (!(await hasCloudscraper())) {
-    throw new Error('Kobo cloudscraper setup completed, but cloudscraper 3.0.0 could not be imported');
+    throw new Error('Python runtime setup completed, but the pinned dependencies could not be imported');
   }
 }
 

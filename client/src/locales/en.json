@@ -10205,6 +10205,10 @@
     "errors": {
       "profile_deleted": "This profile was deleted. Start again with another profile or Public access.",
       "configuration_blocked": "Check your source settings, then retry.",
+      "download_limit": "This story exceeds the download limit. Try without images, or upload an EPUB.",
+      "response_too_large": "A chapter or image is too large to download. Try without images, or upload an EPUB.",
+      "source_policy_blocked": "A source request was blocked for safety. Contact your administrator, or upload an EPUB.",
+      "invalid_epub": "The downloaded EPUB could not be safely opened. Try uploading another EPUB.",
       "destination_profile_required": "This story moved to another library. Choose source settings in Story updates to resume updates.",
       "authentication_required": "Sign-in failed. Update your login details or cookies in source settings, then retry.",
       "access_revoked": "Library administration access was revoked.",

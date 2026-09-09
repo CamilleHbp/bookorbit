@@ -16,7 +16,27 @@ MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 class PolicyError(Exception):
-    pass
+    code = 'source_policy_blocked'
+
+
+class ConfigurationError(PolicyError):
+    code = 'configuration_blocked'
+
+
+class DownloadLimitError(PolicyError):
+    code = 'download_limit'
+
+
+class ResponseLimitError(PolicyError):
+    code = 'response_too_large'
+
+
+class DownloadTimeoutError(PolicyError):
+    code = 'download_timeout'
+
+
+class SourceResponseError(PolicyError):
+    code = 'source_failed'
 
 
 _connecting = contextvars.ContextVar('bookorbit_connecting', default=False)
@@ -85,11 +105,14 @@ class PinnedConnection(http.client.HTTPSConnection):
 
 
 class SafeTransport:
-    def __init__(self, max_bytes=128 * 1024 * 1024, max_requests=10_000, timeout=600):
+    # Original illustrations can be much larger than their resized EPUB copies.
+    # Keep the per-response, process-memory and EPUB limits independent.
+    def __init__(self, max_bytes=2 * 1024 * 1024 * 1024, max_requests=10_000, timeout=1800):
         self.remaining_bytes = max_bytes
         self.remaining_decoded_bytes = max_bytes
         self.remaining_requests = max_requests
         self.deadline = time.monotonic() + timeout
+        self.failure = None
         self.cookies = http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(
             strict_ns_domain=http.cookiejar.DefaultCookiePolicy.DomainStrictNonDomain))
         self.context = ssl.create_default_context()
@@ -130,6 +153,16 @@ class SafeTransport:
         return result
 
     def request(self, method, url, parameters=None, headers=None):
+        if self.failure is not None:
+            raise self.failure
+        try:
+            return self._request(method, url, parameters, headers)
+        except (DownloadLimitError, DownloadTimeoutError) as error:
+            # FanFicFare catches image errors. A spent job budget must still stop publication.
+            self.failure = error
+            raise
+
+    def _request(self, method, url, parameters=None, headers=None):
         if method not in ('GET', 'POST'):
             raise PolicyError('Unsupported request method')
         body = None
@@ -139,8 +172,10 @@ class SafeTransport:
                 raise PolicyError('Request body limit exceeded')
         for _ in range(6):
             parsed, hostname = validate_url(url)
-            if self.remaining_requests <= 0 or time.monotonic() >= self.deadline:
-                raise PolicyError('Request budget exceeded')
+            if time.monotonic() >= self.deadline:
+                raise DownloadTimeoutError('Download deadline exceeded')
+            if self.remaining_requests <= 0:
+                raise DownloadLimitError('Request budget exceeded')
             self.remaining_requests -= 1
             safe_headers = {'User-Agent': 'BookOrbit/FanFicFare', 'Accept-Encoding': 'gzip, deflate'}
             for name, value in (headers or {}).items():
@@ -174,7 +209,7 @@ class SafeTransport:
     def read_body(self, response):
         encoding = response.getheader('Content-Encoding', 'identity').strip().lower()
         if encoding not in ('identity', 'gzip', 'deflate'):
-            raise PolicyError('Unsupported HTTP content encoding')
+            raise SourceResponseError('Unsupported HTTP content encoding')
         decoder = None if encoding == 'identity' else zlib.decompressobj(
             zlib.MAX_WBITS + 16 if encoding == 'gzip' else zlib.MAX_WBITS)
         content_buffer = bytearray()
@@ -182,30 +217,34 @@ class SafeTransport:
         expanded = 0
         while True:
             if time.monotonic() >= self.deadline:
-                raise PolicyError('Download deadline exceeded')
+                raise DownloadTimeoutError('Download deadline exceeded')
             chunk = response.read(min(64 * 1024, self.remaining_bytes + 1))
             if time.monotonic() >= self.deadline:
-                raise PolicyError('Download limit exceeded')
+                raise DownloadTimeoutError('Download deadline exceeded')
             if not chunk:
                 break
             received += len(chunk)
             self.remaining_bytes -= len(chunk)
-            if self.remaining_bytes < 0 or received > MAX_RESPONSE_BYTES:
-                raise PolicyError('Download limit exceeded')
+            if self.remaining_bytes < 0:
+                raise DownloadLimitError('Download limit exceeded')
+            if received > MAX_RESPONSE_BYTES:
+                raise ResponseLimitError('HTTP response limit exceeded')
             allowance = min(MAX_RESPONSE_BYTES - expanded, self.remaining_decoded_bytes)
             try:
                 content = decoder.decompress(chunk, allowance + 1) if decoder else chunk
             except zlib.error as error:
-                raise PolicyError('Invalid compressed HTTP response') from error
+                raise SourceResponseError('Invalid compressed HTTP response') from error
             if time.monotonic() >= self.deadline:
-                raise PolicyError('Download deadline exceeded')
+                raise DownloadTimeoutError('Download deadline exceeded')
+            if len(content) > self.remaining_decoded_bytes:
+                raise DownloadLimitError('Expanded download limit exceeded')
             if len(content) > allowance:
-                raise PolicyError('Expanded HTTP response limit exceeded')
+                raise ResponseLimitError('Expanded HTTP response limit exceeded')
             if decoder and decoder.unused_data:
-                raise PolicyError('Unexpected data after compressed HTTP response')
+                raise SourceResponseError('Unexpected data after compressed HTTP response')
             self.remaining_decoded_bytes -= len(content)
             expanded += len(content)
             content_buffer.extend(content)
         if decoder and not decoder.eof:
-            raise PolicyError('Incomplete compressed HTTP response')
+            raise SourceResponseError('Incomplete compressed HTTP response')
         return bytes(content_buffer)
