@@ -10,6 +10,7 @@ import {
   ListFanfictionSourcesDto,
   UpdateFanfictionSourceDto,
   RollbackFanfictionSourceDto,
+  ResolveFanfictionMetadataDto,
 } from './dto/fanfiction-source.dto';
 import { FanfictionSourceService } from './fanfiction-source.service';
 import { FanfictionLibrariesDto } from './dto/fanfiction-profile.dto';
@@ -49,6 +50,25 @@ export class FanfictionSourceController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.sources.update(libraryId, id, dto, user);
+  }
+
+  @Get(':sourceId/metadata-review')
+  metadataReview(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('sourceId', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.sources.metadataReview(libraryId, id, user);
+  }
+
+  @Post(':sourceId/metadata-review')
+  resolveMetadata(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('sourceId', ParseUUIDPipe) id: string,
+    @Body() dto: ResolveFanfictionMetadataDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.sources.resolveMetadata(libraryId, id, dto, user);
   }
 
   @Post(':sourceId/check')

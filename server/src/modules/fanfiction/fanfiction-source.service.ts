@@ -21,6 +21,8 @@ import { RevisionCatalogService } from '../book-revision/revision-catalog.servic
 import { ManagedTagService } from '../metadata/managed-tag.service';
 import { recordFanfictionActivity } from './fanfiction-activity';
 import { validateFanfictionPreview } from './fanfiction-preview';
+import { changedStoryMetadata } from './fanfiction-metadata-review';
+import type { FanfictionMetadataReviewView, FanfictionMetadataResolution } from '@bookorbit/types';
 
 const sources = schema.fanfictionSources;
 type Job = typeof schema.fanfictionJobs.$inferSelect;
@@ -58,6 +60,100 @@ export class FanfictionSourceService {
     const { library } = await this.libraries.importDestination(libraryId, dto.folderId);
     this.validator.validateFormat('story.epub', library.allowedFormats);
     return this.jobs.importStory(libraryId, dto, user);
+  }
+
+  async metadataReview(libraryId: number, id: string, user: RequestUser): Promise<FanfictionMetadataReviewView | null> {
+    await this.access.administer(user, libraryId);
+    const source = await this.find(libraryId, id);
+    if (source.attentionCode !== 'metadata_review_required' || source.state === 'unlinked') return null;
+    return this.db.transaction(async (tx) => {
+      const [job] = await tx
+        .select({ id: schema.fanfictionJobs.id, result: schema.fanfictionJobs.result })
+        .from(schema.fanfictionJobs)
+        .where(
+          and(
+            eq(schema.fanfictionJobs.sourceId, id),
+            eq(schema.fanfictionJobs.libraryId, libraryId),
+            sql`${schema.fanfictionJobs.result}->'metadataReview' is not null`,
+          ),
+        )
+        .orderBy(desc(schema.fanfictionJobs.createdAt), desc(schema.fanfictionJobs.id))
+        .limit(1);
+      if (!job?.result?.metadataReview || !source.bookId) return null;
+      const snapshot = await this.managedMetadata.snapshot(tx, source.bookId, libraryId);
+      return { jobId: job.id, review: { ...job.result.metadataReview, ...snapshot } };
+    });
+  }
+
+  async resolveMetadata(libraryId: number, id: string, dto: FanfictionMetadataResolution, user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    const startedAt = Date.now();
+    this.logger.log(`[fanfiction.metadata_review] [start] libraryId=${libraryId} sourceId=${id} jobId=${dto.jobId} - resolving story metadata`);
+    return this.db
+      .transaction(async (tx) => {
+        const [job] = await tx
+          .select()
+          .from(schema.fanfictionJobs)
+          .where(and(eq(schema.fanfictionJobs.id, dto.jobId), eq(schema.fanfictionJobs.sourceId, id), eq(schema.fanfictionJobs.libraryId, libraryId)))
+          .for('update');
+        const review = job?.result?.metadataReview;
+        if (!review || !['succeeded', 'no_change', 'cancelled'].includes(job.state))
+          throw new ConflictException('Refresh the metadata review before saving');
+        if (!job.result?.bookFileId || !job.result.revisionId) throw new ConflictException('The review has no installed story');
+        const file = await this.catalog.lockCurrent(tx, job.result.bookFileId, libraryId, job.result.revisionId);
+        const [source] = await tx
+          .select()
+          .from(sources)
+          .where(and(eq(sources.id, id), eq(sources.libraryId, libraryId)))
+          .for('update');
+        if (
+          !source ||
+          source.state !== 'review_required' ||
+          source.attentionCode !== 'metadata_review_required' ||
+          source.bookId !== file.bookId ||
+          source.bookFileId !== job.result.bookFileId
+        )
+          throw new ConflictException('The story source changed; reload it before editing');
+        const snapshot = await this.managedMetadata.snapshot(tx, file.bookId, libraryId);
+        if (snapshot.fingerprint !== dto.fingerprint) throw new ConflictException('Book metadata changed; refresh the review before saving');
+        const fields = review.fields.filter((field) => dto[field] !== 'keep');
+        if (fields.some((field) => snapshot.lockedFields.includes(field)))
+          throw new ConflictException('Unlock the selected metadata fields before saving');
+        const incoming = { ...review.incoming, tags: [...new Set([...snapshot.current.tags, ...review.incoming.tags])] };
+        await this.managedMetadata.apply(tx, file.bookId, { key: `fanfiction:${id}`, libraryId }, incoming, fields);
+        const result = { ...job.result };
+        delete result.metadataReview;
+        await tx
+          .update(schema.fanfictionJobs)
+          .set({ result, updatedAt: sql`now()` })
+          .where(eq(schema.fanfictionJobs.id, job.id));
+        await tx
+          .update(sources)
+          .set({
+            state: review.previousState,
+            attentionCode: null,
+            nextCheckAt:
+              review.previousState === 'active' && source.intervalMinutes !== null
+                ? sql`now() + (${source.intervalMinutes} * interval '1 minute')`
+                : null,
+            version: sql`${sources.version} + 1`,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(sources.id, id));
+        return { resolved: true };
+      })
+      .then((result) => {
+        this.logger.log(
+          `[fanfiction.metadata_review] [end] libraryId=${libraryId} sourceId=${id} jobId=${dto.jobId} durationMs=${Date.now() - startedAt} resolved=true - story metadata reviewed`,
+        );
+        return result;
+      })
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `[fanfiction.metadata_review] [fail] libraryId=${libraryId} sourceId=${id} jobId=${dto.jobId} durationMs=${Date.now() - startedAt} errorClass=MetadataReviewError error="metadata review rejected" - story metadata could not be reviewed`,
+        );
+        throw error;
+      });
   }
 
   async check(libraryId: number, id: string, kind: 'update' | 'refresh', idempotencyKey: string, user: RequestUser) {
@@ -126,8 +222,37 @@ export class FanfictionSourceService {
       const file = await this.catalog.lockCurrent(tx, result.bookFileId, job.libraryId, result.revisionId);
       const source = await this.assertUpdatable(job, tx);
       if (source.bookFileId !== result.bookFileId || source.bookId !== file.bookId) throw new ConflictException('The managed book identity changed');
-      if (preview && source.bookId)
-        await this.managedMetadata.apply(tx, source.bookId, { key: `fanfiction:${source.id}`, libraryId: job.libraryId }, preview);
+      if (preview && source.bookId) {
+        const snapshot = await this.managedMetadata.snapshot(tx, source.bookId, job.libraryId);
+        const [previous] = await tx
+          .select({ result: schema.fanfictionJobs.result })
+          .from(schema.fanfictionJobs)
+          .where(
+            and(
+              eq(schema.fanfictionJobs.sourceId, source.id),
+              eq(schema.fanfictionJobs.libraryId, job.libraryId),
+              sql`${schema.fanfictionJobs.id} <> ${job.id}`,
+              sql`${schema.fanfictionJobs.result}->>'revisionId' is not null`,
+            ),
+          )
+          .orderBy(desc(schema.fanfictionJobs.createdAt), desc(schema.fanfictionJobs.id))
+          .limit(1);
+        const fields = changedStoryMetadata(snapshot.current, preview, previous?.result?.preview);
+        result = {
+          ...result,
+          preview,
+          ...(fields.length
+            ? {
+                metadataReview: {
+                  ...snapshot,
+                  incoming: { title: preview.title, description: preview.description, authors: preview.authors, tags: preview.tags },
+                  fields,
+                  previousState: source.state === 'paused' ? 'paused' : 'active',
+                },
+              }
+            : {}),
+        };
+      }
       await tx
         .update(sources)
         .set({
@@ -148,11 +273,16 @@ export class FanfictionSourceService {
                 state: 'paused' as const,
               }
             : {}),
-          attentionCode: job.kind === 'replacement' && source.attentionCode === 'destination_profile_required' ? source.attentionCode : null,
+          ...(result.metadataReview ? { state: 'review_required' as const } : {}),
+          attentionCode: result.metadataReview
+            ? 'metadata_review_required'
+            : job.kind === 'replacement' && source.attentionCode === 'destination_profile_required'
+              ? source.attentionCode
+              : null,
           lastCheckedAt: job.kind === 'replacement' ? source.lastCheckedAt : sql`now()`,
           ...(!result.noChange ? { lastUpdatedAt: sql`now()` } : {}),
           nextCheckAt:
-            job.kind === 'replacement'
+            job.kind === 'replacement' || result.metadataReview
               ? null
               : sql`case when ${sources.state} <> 'active' or ${sources.intervalMinutes} is null then null else now() + (${sources.intervalMinutes} * interval '1 minute') end`,
           updatedAt: sql`now()`,
@@ -160,14 +290,15 @@ export class FanfictionSourceService {
         })
         .where(and(eq(sources.id, job.sourceId!), eq(sources.libraryId, job.libraryId)));
       await tx.update(schema.fanfictionJobs).set({ result }).where(eq(schema.fanfictionJobs.id, job.id));
-      if (!result.noChange)
+      if (!result.noChange || result.metadataReview)
         await recordFanfictionActivity(tx, {
           libraryId: job.libraryId,
           userId: job.userId,
           sourceId: source.id,
           jobId: job.id,
           eventKey: `${job.id}:updated`,
-          kind: 'updated',
+          kind: result.metadataReview ? 'attention' : 'updated',
+          errorCode: result.metadataReview ? 'metadata_review_required' : null,
           title: preview?.title ?? source.title,
           bookId: source.bookId,
           revisionId: result.revisionId,
@@ -244,6 +375,8 @@ export class FanfictionSourceService {
     await this.access.administer(user, libraryId);
     if (dto.profileId) await this.profiles.document(libraryId, dto.profileId, user);
     const previous = await this.find(libraryId, id);
+    if (previous.attentionCode === 'metadata_review_required' && dto.state && dto.state !== 'unlinked')
+      throw new ConflictException('Review story metadata before resuming updates');
     const state = dto.state ?? previous.state;
     const needsProfile = previous.attentionCode === 'destination_profile_required';
     if (needsProfile && state === 'active' && dto.profileId === undefined)
