@@ -41,7 +41,11 @@ export class FanfictionImportService {
       return {
         sourceId: source.id,
         ...(source.bookId && source.bookFileId
-          ? { bookId: source.bookId, bookFileId: source.bookFileId, existingStory: { id: source.id, title: source.title } }
+          ? {
+              bookId: source.bookId,
+              bookFileId: source.bookFileId,
+              existingStory: { id: source.id, title: source.title, bookId: source.bookId, attentionCode: source.attentionCode },
+            }
           : {}),
       };
     const input = {
