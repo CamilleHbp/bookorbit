@@ -1,5 +1,6 @@
+import type { ReadingAnchor } from '@bookorbit/types';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, exists, getTableColumns, inArray, isNotNull, isNull, notExists, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, getTableColumns, gte, inArray, isNotNull, isNull, not, notExists, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { DB } from '../../db';
@@ -17,6 +18,7 @@ import {
   NewAnnotationSyncState,
 } from '../../db/schema';
 import type { AnnotationPositionFormat, AnnotationSyncSource } from './annotation.constants';
+import { staleGeneratedPositionForFile } from './annotation-position-revision';
 
 type Db = NodePgDatabase<typeof schema>;
 export type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -30,6 +32,13 @@ export interface CanonicalWithPosition {
 @Injectable()
 export class AnnotationSyncRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
+
+  async attachSourceAnchor(annotationId: number, userId: number, sourceAnchor: ReadingAnchor, tx: DbTx): Promise<void> {
+    await tx
+      .update(annotations)
+      .set({ sourceAnchor })
+      .where(and(eq(annotations.id, annotationId), eq(annotations.userId, userId), isNull(annotations.sourceAnchor)));
+  }
 
   transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
     return this.db.transaction(fn);
@@ -84,12 +93,13 @@ export class AnnotationSyncRepository {
     return row ?? null;
   }
 
-  async findAnnotationById(annotationId: number, userId: number, ex: Executor = this.db): Promise<AnnotationRow | null> {
-    const [row] = await ex
+  async findAnnotationById(annotationId: number, userId: number, ex: Executor = this.db, lock = false): Promise<AnnotationRow | null> {
+    const query = ex
       .select()
       .from(annotations)
       .where(and(eq(annotations.id, annotationId), eq(annotations.userId, userId)))
       .limit(1);
+    const [row] = await (lock ? query.for('update') : query);
     return row ?? null;
   }
 
@@ -233,6 +243,7 @@ export class AnnotationSyncRepository {
     bookId: number,
     limit: number,
     requiredPositionFormats?: AnnotationPositionFormat[],
+    converterVersion?: number,
   ): Promise<AnnotationRow[]> {
     return this.db
       .select(getTableColumns(annotations))
@@ -242,6 +253,22 @@ export class AnnotationSyncRepository {
           eq(annotations.userId, userId),
           eq(annotations.bookId, bookId),
           isNull(annotations.deletedAt),
+          source === 'koreader' && converterVersion != null
+            ? notExists(
+                this.db
+                  .select({ one: sql`1` })
+                  .from(annotationPositions)
+                  .where(
+                    and(
+                      eq(annotationPositions.annotationId, annotations.id),
+                      eq(annotationPositions.format, 'xpointer'),
+                      eq(annotationPositions.status, 'failed'),
+                      gte(annotationPositions.converterVersion, converterVersion),
+                      not(staleGeneratedPositionForFile(annotationPositions)!),
+                    ),
+                  ),
+              )
+            : undefined,
           notExists(
             this.db
               .select({ one: sql`1` })
@@ -438,6 +465,27 @@ export class AnnotationSyncRepository {
       .select()
       .from(annotationPositions)
       .where(and(inArray(annotationPositions.annotationId, annotationIds), inArray(annotationPositions.format, formats)));
+  }
+
+  async findPositionFileIdentity(userId: number, bookId: number, bookFileId: number, ex: Executor = this.db, lock = false) {
+    const query = ex
+      .select({ revisionId: schema.bookFiles.currentRevisionId, sha256: schema.bookFiles.sha256 })
+      .from(schema.bookFiles)
+      .where(
+        and(
+          eq(schema.bookFiles.id, bookFileId),
+          eq(schema.bookFiles.bookId, bookId),
+          exists(
+            this.db
+              .select({ one: sql`1` })
+              .from(annotations)
+              .where(and(eq(annotations.userId, userId), eq(annotations.bookId, bookId), isNull(annotations.deletedAt))),
+          ),
+        ),
+      )
+      .limit(1);
+    const [file] = await (lock ? query.for('share') : query);
+    return file ?? null;
   }
 
   async findActiveByBook(userId: number, bookId: number, ex: Executor = this.db): Promise<AnnotationRow[]> {

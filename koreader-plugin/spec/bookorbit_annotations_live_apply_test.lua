@@ -120,4 +120,61 @@ assertEqual(handled_event.payload[1], ui.annotation.annotations[1], "event point
 assertEqual(handled_event.payload.nb_highlights_added, 1, "event increments highlight count")
 assertEqual(handled_event.payload.index_modified, 1, "event carries inserted index")
 
+local entry = {
+    serverId = 50, version = 1, datetime = "2026-07-09 09:10:11", text = "fresh web highlight",
+    posFormat = "xpointer", pos0 = "/old", pos1 = "/old.end",
+}
+ui.document.isXPointerInDocument = function(_, xp) return xp ~= "/old" end
+ui.document.findAllText = function()
+    return { { start = "/first", ["end"] = "/first.end" }, { start = "/second", ["end"] = "/second.end" } }
+end
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].status, "failed", "ambiguous repair must not choose the nearest repeated passage")
+assertEqual(#ui.annotation.annotations, 1, "ambiguous repair does not insert a highlight")
+
+ui.document.isXPointerInDocument = function() return true end
+entry.sourceAnchor = { revision = "original", quote = "fresh web highlight", bookFraction = 0.2 }
+package.loaded.bookorbit_native_anchor = { resolveAnnotation = function() return nil end }
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].status, "failed", "an unresolved source anchor must not fall back to a reused native range")
+package.loaded.bookorbit_native_anchor.resolveAnnotation = function(_, record)
+    assertEqual(record.anchor, entry.sourceAnchor, "original source anchor reaches the native resolver")
+    assertEqual(record.selection, entry.text, "full selection reaches the native resolver")
+    return { pos0 = "/mapped", pos1 = "/mapped.end", page = "/mapped" }
+end
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].status, "applied", "verified source anchor can be installed")
+assertEqual(applied[1].corrected, true, "mapped native range is acknowledged as corrected")
+assertEqual(ui.annotation.annotations[2].bookorbit_source_anchor, entry.sourceAnchor, "original source anchor remains on the local annotation")
+
+ui.document.getTextFromXPointers = function() return "unrelated installed text" end
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].status, "failed", "redelivery must verify the existing native range")
+assertEqual(applied[1].verified, false, "redelivery cannot falsely confirm restoration")
+
+ui.document.getTextFromXPointers = function() return "fresh web highlight" end
+entry.sourceAnchor, entry.text, entry.datetime, entry.pos0 = nil, "fresh\194\160web highlight", "2099-01-02 00:00:00", "/unicode"
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].verified, true, "annotation verification uses shared Unicode whitespace normalization")
+entry.text, entry.datetime, entry.pos0 = "", "2099-01-03 00:00:00", "/empty"
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].verified, false, "empty text cannot establish a verified annotation range")
+
+ui.bookorbit = { reading_continuity = { ready = true, sha256 = string.rep("a", 64) } }
+entry.positionSha256, entry.positionRevisionId = string.rep("a", 64), "current-revision"
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].positionSha256, entry.positionSha256, "acknowledgement identifies the installed bytes")
+assertEqual(applied[1].positionRevisionId, entry.positionRevisionId, "acknowledgement echoes the matching server revision")
+ui.bookorbit.reading_continuity.sha256 = string.rep("b", 64)
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].positionSha256, nil, "a different installed copy cannot verify the server projection")
+assertEqual(applied[1].positionRevisionId, nil, "a different installed copy cannot claim the server revision")
+ui.bookorbit.reading_continuity.sha256, ui.bookorbit.reading_continuity.ready = string.rep("a", 64), false
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].positionSha256, nil, "unfinished restoration cannot provide revision evidence")
+ui.bookorbit.reading_continuity.ready = true
+entry.positionSha256, entry.positionRevisionId = nil, nil
+applied = BookOrbitAnnotations.applyLive(ui, { add = { entry } })
+assertEqual(applied[1].positionSha256, nil, "legacy servers receive the legacy acknowledgement shape")
+
 print("bookorbit_annotations_live_apply_test.lua: ok")

@@ -1,0 +1,1 @@
+ALTER TABLE "annotations" ADD COLUMN "source_anchor" jsonb;

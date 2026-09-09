@@ -325,7 +325,7 @@ export class BookDockIngestService implements OnApplicationBootstrap, OnModuleDe
     }
 
     const row = await this.repo.findById(fileId);
-    if (!row || row.status === 'error') return;
+    if (!row || row.status === 'error' || row.ingestionMode === 'managed') return;
 
     const meta = row.embeddedMetadata;
     const params = {

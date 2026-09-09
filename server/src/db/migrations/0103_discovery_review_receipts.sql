@@ -1,0 +1,3 @@
+ALTER TABLE "fanfiction_discovery_candidates" ADD COLUMN "review_job_id" uuid;--> statement-breakpoint
+ALTER TABLE "fanfiction_discovery_candidates" ADD CONSTRAINT "fanfiction_discovery_candidates_review_job_id_fanfiction_jobs_id_fk" FOREIGN KEY ("review_job_id") REFERENCES "public"."fanfiction_jobs"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "fanfiction_candidates_review_job_idx" ON "fanfiction_discovery_candidates" USING btree ("review_job_id","state","id");

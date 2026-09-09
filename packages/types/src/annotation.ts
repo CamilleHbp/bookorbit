@@ -1,3 +1,5 @@
+import type { ReadingAnchor } from "./book-revision";
+
 export type AnnotationPositionStatus = "exact" | "repaired" | "failed" | "pending";
 
 export const KOBO_HIGHLIGHT_COLORS = [
@@ -82,7 +84,19 @@ export interface AnnotationPdfPosition {
   rects: AnnotationRect[];
 }
 
+export interface EpubAnnotationInput {
+  cfi: string;
+  bookFileId?: number;
+  text: string;
+  color?: string;
+  style?: string;
+  note?: string | null;
+  chapterTitle?: string | null;
+  sourceAnchor?: ReadingAnchor;
+}
+
 export interface AnnotationItem {
+  sourceAnchor?: ReadingAnchor | null;
   id: number;
   bookId: number;
   cfi: string | null;
@@ -257,4 +271,8 @@ export interface AnnotationSyncDetail {
   version: number;
   positions: AnnotationPositionInfo[];
   devices: AnnotationDeviceSyncInfo[];
+}
+export interface AnnotationPositionRevision {
+  positionRevisionId?: string;
+  positionSha256?: string;
 }

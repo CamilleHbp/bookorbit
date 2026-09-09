@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readdir, readFile, stat } from 'fs/promises';
+import { readdir, readFile } from 'fs/promises';
 import { basename, extname, join } from 'path';
 
 import type { BookFileWriteDisabledReason, BookFileWriteField, BookFileWriteStatus, BookFormat, WriteResult } from '@bookorbit/types';
@@ -9,7 +9,8 @@ import { bookCoverDirPath, findPreferredBookCoverFileName } from '../../common/b
 import { SelfWriteRegistry } from '../../common/services/self-write-registry.service';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { NotificationService } from '../notification/notification.service';
-import { computeFileHash } from '../scanner/lib/hash';
+import { RevisionFileService } from '../book-revision/revision-file.service';
+import { RevisionMetadataService } from '../book-revision/revision-metadata.service';
 import {
   AUDIO_WRITE_FORMATS,
   FORMAT_AZW,
@@ -69,6 +70,8 @@ export class FileWriteService implements OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly notificationService: NotificationService,
     private readonly selfWriteRegistry: SelfWriteRegistry,
+    private readonly revisionFiles: RevisionFileService,
+    private readonly metadataRevisions: RevisionMetadataService,
   ) {
     this.appDataPath = this.config.get<string>('storage.appDataPath')!;
     this.debounceMs = resolvePositiveInteger(this.config.get('fileWrite.debounceMs'), DEFAULT_WRITE_DEBOUNCE_MS);
@@ -352,11 +355,13 @@ export class FileWriteService implements OnModuleDestroy {
       await this.fileWriteRepo.recordHashHistory(file.id, file.fileHash, 'file_write');
     }
 
+    const journaled = format === FORMAT_EPUB && !dryRun;
     let result: WriteResult;
     try {
-      result = await this.lockService.withLock(file.absolutePath, () =>
-        writer.write(file.absolutePath, payload, { fieldMask: createBookWriteFieldMask(), dryRun, ...audioWriteContext }),
-      );
+      const write = (path: string) => writer.write(path, payload, { fieldMask: createBookWriteFieldMask(), dryRun, ...audioWriteContext });
+      result = journaled
+        ? await this.metadataRevisions.rewriteWithinBookOperation(bookId, file, write)
+        : await this.lockService.withLock(file.absolutePath, () => write(file.absolutePath));
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       result = { status: 'failed', fieldsWritten: [], durationMs: 0, reason };
@@ -366,7 +371,7 @@ export class FileWriteService implements OnModuleDestroy {
       return result;
     }
 
-    if (result.status === 'success') {
+    if (result.status === 'success' && !journaled) {
       const stateRefreshed = await this.updateTargetFileState(bookId, file);
       if (!stateRefreshed) {
         const reason = 'post-write file state refresh failed';
@@ -462,22 +467,16 @@ export class FileWriteService implements OnModuleDestroy {
   }
 
   private async updateTargetFileState(bookId: number, file: FileWriteTarget): Promise<boolean> {
-    const newHash = await computeFileHash(file.absolutePath).catch((err: unknown) => {
-      this.logger.warn(
-        `[file_write.hash_update] [fail] bookId=${bookId} bookFileId=${file.id} errorClass=${err instanceof Error ? err.constructor.name : 'Unknown'} error="${sanitizeErrorMessage(err instanceof Error ? err.message : String(err))}" - post-write hash recompute failed`,
-      );
-      return null;
-    });
-
     let lastError: unknown;
     for (let attempt = 1; attempt <= FILE_STATE_REFRESH_ATTEMPTS; attempt++) {
       try {
-        const stats = await stat(file.absolutePath, { bigint: true });
+        const inspected = await this.revisionFiles.require(file.absolutePath);
+        await this.revisionFiles.verifyUnchanged(file.absolutePath, inspected);
         await this.fileWriteRepo.updateFileStateAfterMetadataWrite(bookId, file.id, file.fileHash ?? null, {
-          ...(newHash ? { fileHash: newHash } : {}),
-          mtime: stats.mtime,
-          sizeBytes: Number(stats.size),
-          ino: stats.ino,
+          fileHash: inspected.fileHash,
+          mtime: inspected.mtime,
+          sizeBytes: inspected.sizeBytes,
+          ino: inspected.ino,
         });
         return true;
       } catch (err) {

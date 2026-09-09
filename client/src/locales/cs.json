@@ -5737,6 +5737,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "Opakovat",
     "pdf": {
       "openError": "Nelze otevřít tento PDF",

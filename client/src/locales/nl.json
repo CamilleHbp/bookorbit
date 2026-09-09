@@ -5386,6 +5386,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "Opnieuw proberen",
     "pdf": {
       "openError": "Deze PDF kan niet worden geopend",

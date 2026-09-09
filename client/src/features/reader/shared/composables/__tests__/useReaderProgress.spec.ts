@@ -74,6 +74,31 @@ describe('useReaderProgress', () => {
     }
   }
 
+  it('keeps restored positions visible without submitting them as reading activity', async () => {
+    vi.useFakeTimers()
+    try {
+      const progress = useReaderProgress(1, 1, elapsedMinutes)
+      progress.onRelocate(makeDetail({ fraction: 0.2 }))
+      progress.onRelocate(makeDetail({ fraction: 0.7, restoration: true }))
+      await vi.advanceTimersByTimeAsync(2500)
+      await progress.save()
+      expect(progress.percentage.value).toBe(70)
+      expect(apiMock).not.toHaveBeenCalled()
+      progress.onRelocate(makeDetail({ fraction: 0.71 }))
+      await vi.advanceTimersByTimeAsync(2500)
+      expect(apiMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('allows an explicit start-reading action after restoration', async () => {
+    const progress = useReaderProgress(1, 1, elapsedMinutes)
+    progress.onRelocate(makeDetail({ restoration: true }))
+    await progress.save({ deliberate: true })
+    expect(apiMock).toHaveBeenCalledTimes(1)
+  })
+
   it('populates all refs from a full relocate detail', () => {
     const progress = useReaderProgress(1, 1, elapsedMinutes)
     progress.onRelocate(makeDetail())

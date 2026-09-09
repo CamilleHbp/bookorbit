@@ -80,6 +80,8 @@ export const bookFiles = pgTable(
     sizeBytes: bigint('size_bytes', { mode: 'number' }),
     mtime: timestamp('mtime', { withTimezone: true }),
     fileHash: varchar('file_hash', { length: 32 }),
+    sha256: varchar('sha256', { length: 64 }),
+    currentRevisionId: varchar('current_revision_id', { length: 36 }),
     format: varchar('format', { length: 20 }),
     role: varchar('role', { length: 20 }).notNull().default('content'),
     sortOrder: integer('sort_order'),

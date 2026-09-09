@@ -1,3 +1,4 @@
+local ReadingContinuity = require("bookorbit_reading_continuity")
 --[[--
 BookOrbit Sync plugin.
 
@@ -65,6 +66,7 @@ local LAST_ERROR_LABELS = {
     body_too_large = _("request too large"),
     background_request_interrupted = _("background request interrupted"),
     partial_failure = _("partial sync failure"),
+    annotation_restoration_pending = _("highlights and bookmarks are waiting for verified positions in this version"),
     outbox_persistence = _("lifecycle sync could not be saved"),
 }
 
@@ -137,6 +139,11 @@ function BookOrbit:init()
 
     self.settings = G_reader_settings:readSetting("bookorbit", self.default_settings)
     self.device_id = G_reader_settings:readSetting("device_id")
+    if not self.device_id then
+        self.device_id = require("random").uuid(true):lower()
+        G_reader_settings:saveSetting("device_id", self.device_id)
+        G_reader_settings:flush()
+    end
 
     -- Detect settings from the old bookorbit-koplugin, which used the same
     -- "bookorbit" key but a different structure. Reset behavior keys to
@@ -189,6 +196,7 @@ function BookOrbit:init()
     self:onStart()
     UIManager:scheduleIn(5, function()
         self:requestLifecycleOutboxDrain("startup")
+        require("bookorbit_delivery").request(self, "startup")
         self:requestUpdateCheck(false, "startup")
     end)
 end
@@ -450,6 +458,7 @@ function BookOrbit:requestLifecycleOutboxDrain(source, interactive)
                         done()
                         if complete and not err then
                             self:requestLifecycleOutboxDrain("recovery")
+                            require("bookorbit_delivery").request(self, "uploads_complete")
                         end
                     end
 
@@ -884,7 +893,21 @@ function BookOrbit:onDispatcherRegisterActions()
         { category = "none", event = "BookOrbitOpenDashboard", title = _("BookOrbit: open dashboard"), general = true, separator = true })
 end
 
+function BookOrbit:onDocSettingsLoad()
+    ReadingContinuity.begin(self)
+end
+
 function BookOrbit:onReaderReady()
+    self:registerEvents()
+    ReadingContinuity.ready(self, function() self:onReaderReadyAfterRestoration() end)
+end
+
+function BookOrbit:onReaderReadyAfterRestoration()
+    require("bookorbit_delivery").reportRestoration(self)
+    if self.settings.auto_sync and self:isLoggedIn() then
+        self:requestProgressPull(false, false, "reading_restored")
+    end
+    if not ReadingContinuity.canSync(self) then return end
     -- Primed here so the close and suspend handlers, which are on a hard
     -- latency budget, never open statistics.sqlite3 to learn the row ids.
     -- Only those handlers consume it, and they run only while logged in.
@@ -1046,7 +1069,7 @@ function BookOrbit:exchangeAnnotationsForOpenBook(reason, retry_count)
     elseif result then
         summary = BookOrbitHighlightSummary.add(summary, result)
     elseif err then
-        summary.skipped = err == "unmatched" and 1 or 0
+        summary.skipped = (err == "unmatched" or err == "annotation_restoration_pending") and 1 or 0
         summary.failed = (err == "network" or err == "unsupported_server") and 1 or 0
         error_code = err
         if err ~= "unmatched" and err ~= "unsupported_server" and err ~= "network" then
@@ -1170,6 +1193,7 @@ end
 -- Events
 
 function BookOrbit:_onCloseDocument()
+    ReadingContinuity.close(self)
     logger.dbg("BookOrbit: onCloseDocument")
     self.onResume = nil
     self.onSuspend = nil
@@ -1177,7 +1201,7 @@ function BookOrbit:_onCloseDocument()
     self.periodic_push_scheduled = false
     self:deferAutomaticUpdateCheck()
 
-    if not self:isLoggedIn() then return end
+    if not self:isLoggedIn() or not self.settings.auto_sync then return end
 
     -- Snapshot now: reader objects die after this handler returns. ReaderUI
     -- already flushed the sidecar and statistics before broadcasting
@@ -1186,10 +1210,13 @@ function BookOrbit:_onCloseDocument()
     if not snap then return end
     if not self:enqueueLifecycleSnapshot(snap, "close") then return end
     self:requestLifecycleOutboxDrain("close")
+    require("bookorbit_delivery").request(self, "close")
 end
 
 function BookOrbit:_onPageUpdate(page)
     if page == nil then return end
+    ReadingContinuity.page(self, page)
+    if ReadingContinuity.isRestoring(self) then return end
     if self.last_page ~= page then
         self.last_page = page
         self.last_page_turn_timestamp = os.time()
@@ -1215,12 +1242,13 @@ function BookOrbit:_onResume()
 end
 
 function BookOrbit:_onSuspend()
+    ReadingContinuity.suspend(self)
     logger.dbg("BookOrbit: onSuspend")
     UIManager:unschedule(self.periodic_push_task)
     self.periodic_push_scheduled = false
     self:deferAutomaticUpdateCheck()
 
-    if not self:isLoggedIn() then return end
+    if not self:isLoggedIn() or not self.settings.auto_sync then return end
     local snap = BookOrbitBookSync.capture(self)
     if not snap then return end
     if not self:enqueueLifecycleSnapshot(snap, "suspend") then return end
@@ -1232,6 +1260,7 @@ function BookOrbit:_onNetworkConnected()
     UIManager:scheduleIn(0.5, function()
         if self:shouldSkipAutoSyncOffline("network_connected") then return end
         self:requestLifecycleOutboxDrain("network_connected")
+        require("bookorbit_delivery").request(self, "network_connected")
         self:requestProgressPull(false, false, "network_connected")
         self:requestUpdateCheck(false, "network_connected")
     end)
@@ -1292,17 +1321,15 @@ function BookOrbit:onBookOrbitToggleAutoSync(toggle, from_menu)
 end
 
 function BookOrbit:registerEvents()
+    self.onCloseDocument = self._onCloseDocument
+    self.onSuspend = self._onSuspend
     self.onPageUpdate = self._onPageUpdate
     if self.settings.auto_sync then
-        self.onCloseDocument = self._onCloseDocument
         self.onResume = self._onResume
-        self.onSuspend = self._onSuspend
         self.onNetworkConnected = self._onNetworkConnected
         self.onNetworkDisconnecting = self._onNetworkDisconnecting
     else
-        self.onCloseDocument = nil
         self.onResume = nil
-        self.onSuspend = nil
         self.onNetworkConnected = nil
         self.onNetworkDisconnecting = nil
     end

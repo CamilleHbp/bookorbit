@@ -1,3 +1,5 @@
+import { FanfictionLocationModule } from '../fanfiction/fanfiction-location.module';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
 import { Module, forwardRef } from '@nestjs/common';
 
 import { SelfWriteRegistryModule } from '../../common/self-write-registry.module';
@@ -13,7 +15,16 @@ import { BookMoveRepository } from './book-move.repository';
 import { BookMoveService } from './book-move.service';
 
 @Module({
-  imports: [BookModule, ScannerModule, FileWriteModule, AppSettingsModule, SelfWriteRegistryModule, forwardRef(() => NotificationModule)],
+  imports: [
+    FanfictionLocationModule,
+    BookRevisionModule,
+    BookModule,
+    ScannerModule,
+    FileWriteModule,
+    AppSettingsModule,
+    SelfWriteRegistryModule,
+    forwardRef(() => NotificationModule),
+  ],
   controllers: [BookMoveController],
   providers: [BookMoveService, BookMovePlannerService, BookMoveExecutorService, BookMoveRepository],
   exports: [BookMoveService],

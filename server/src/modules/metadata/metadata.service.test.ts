@@ -219,6 +219,7 @@ describe('MetadataService', () => {
         isFieldLocked: ReturnType<typeof vi.fn>;
         filterAutomatedBookUpdate: ReturnType<typeof vi.fn>;
       };
+      managedTags?: { sync: ReturnType<typeof vi.fn> };
       embedder?: { embedBook: ReturnType<typeof vi.fn> } | null;
       seriesExpectedCount?: { record: ReturnType<typeof vi.fn> };
     },
@@ -234,6 +235,7 @@ describe('MetadataService', () => {
         isFieldLocked: vi.fn().mockResolvedValue(false),
         filterAutomatedBookUpdate: vi.fn().mockImplementation((_bookId: number, dto: unknown) => Promise.resolve({ dto, skippedFields: [] })),
       }) as never,
+      (overrides?.managedTags ?? { sync: vi.fn().mockResolvedValue(undefined) }) as never,
       (overrides?.embedder ?? embedder) as never,
       metadataEvents as never,
       undefined,
@@ -1158,6 +1160,26 @@ describe('MetadataService', () => {
     ]);
   });
 
+  it('attributes tags to the managed source during initial EPUB metadata extraction', async () => {
+    const { db } = makeDb();
+    const managedTags = { sync: vi.fn().mockResolvedValue(undefined) };
+    const service = makeService(db, undefined, { managedTags });
+    const replaceTags = vi.spyOn(service, 'replaceTags');
+    await service['persistBookMetadata'](
+      19,
+      {
+        title: 'Managed story',
+        authors: [],
+        genres: [],
+        tags: ['Source tag'],
+      } as never,
+      'epub',
+      { key: 'fanfiction:source', libraryId: 5 },
+    );
+    expect(managedTags.sync).toHaveBeenCalledWith(db, 19, { key: 'fanfiction:source', libraryId: 5 }, ['Source tag']);
+    expect(replaceTags).not.toHaveBeenCalled();
+  });
+
   it('replaceTags runs in transaction and normalizes unique names', async () => {
     const { db, transaction } = makeDb();
     const service = makeService(db);
@@ -1780,6 +1802,7 @@ describe('MetadataService', () => {
     const bookTagLinks: Array<{ bookId: number; tagId: number }> = [];
 
     const executor = {
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
       delete: vi.fn((table: unknown) => {
         if (table === bookGenres) return { where: genreDeleteWhere };
         if (table === bookTags) return { where: tagDeleteWhere };

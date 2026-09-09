@@ -331,6 +331,13 @@ end
 -- that was already finishing.
 function BookOrbitApi:downloadBlocking(path, local_path, opts)
     opts = opts or {}
+    if opts.method and opts.method ~= "GET" and opts.method ~= "POST" then return nil, "invalid_download_method" end
+    local request_body
+    if opts.method == "POST" then
+        local encoded
+        encoded, request_body = pcall(rapidjson.encode, opts.body)
+        if not encoded or type(request_body) ~= "string" or #request_body > MAX_BODY_BYTES then return nil, "invalid_download_body" end
+    end
     local temp_path = opts.temp_path or (local_path .. ".part")
     local max_bytes = opts.max_bytes or TransferPolicy.maxBytes(opts.expected_bytes)
     local progress_cb = opts.progress_cb
@@ -386,7 +393,7 @@ function BookOrbitApi:downloadBlocking(path, local_path, opts)
 
         local request = {
             url = current_url,
-            method = "GET",
+            method = opts.method or "GET",
             sink = sink,
             redirect = false,
             headers = {
@@ -396,6 +403,11 @@ function BookOrbitApi:downloadBlocking(path, local_path, opts)
                 ["x-auth-key"] = self.userkey,
             },
         }
+        if request_body then
+            request.source = ltn12.source.string(request_body)
+            request.headers["content-type"] = "application/json"
+            request.headers["content-length"] = tostring(#request_body)
+        end
 
         socketutil:set_timeout(
             opts.block_timeout or socketutil.FILE_BLOCK_TIMEOUT,
@@ -411,6 +423,7 @@ function BookOrbitApi:downloadBlocking(path, local_path, opts)
         if code == 301 or code == 302 or code == 303 or code == 307 or code == 308 then
             pcall(function() out:close() end)
             util.removeFile(temp_path)
+            if request_body then return nil, "unsafe_redirect" end
             if redirect_count >= MAX_DOWNLOAD_REDIRECTS then
                 return nil, "too_many_redirects"
             end
@@ -561,7 +574,23 @@ end
 
 -- Deprecated one-way upload, kept as fallback for pre-0.4 servers.
 function BookOrbitApi:uploadAnnotations(books)
-    return self:request("POST", "/koreader/plugin/annotations", self:withDevice({ books = books }))
+    local compatible = {}
+    for _, book in ipairs(books) do
+        local copy = {}
+        for key, value in pairs(book) do copy[key] = value end
+        copy.annotations = {}
+        for _, annotation in ipairs(book.annotations or {}) do
+            local fields = {}
+            for key, value in pairs(annotation) do if key ~= "sourceAnchor" then fields[key] = value end end
+            copy.annotations[#copy.annotations + 1] = fields
+        end
+        compatible[#compatible + 1] = copy
+    end
+    return self:request("POST", "/koreader/plugin/annotations", self:withDevice({ books = compatible }))
+end
+
+function BookOrbitApi:annotationAnchorSupport()
+    return require("bookorbit_capabilities").supports(self, "annotationAnchorsV1")
 end
 
 function BookOrbitApi:exchangeAnnotations(books)

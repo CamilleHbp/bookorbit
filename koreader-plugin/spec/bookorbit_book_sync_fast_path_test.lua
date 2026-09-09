@@ -129,6 +129,7 @@ local function run(opts)
         snap = {
             digest = "abcdef",
             file = "/books/a.epub",
+            expected_book_file_id = opts.expected_book_file_id,
             stats_ids = { 42 },
             annotations = {},
             ann_count = 0,
@@ -155,7 +156,7 @@ local function run(opts)
         on_finish = function(err) finished = err or true end,
     })
     scheduler:drain()
-    assertEqual(finished, true, "the sync completes")
+    assertEqual(finished, opts.expected_error or true, "the sync completes")
     return table.concat(calls, ","), table.concat(acknowledged, ",")
 end
 
@@ -187,5 +188,9 @@ requests = run{}
 assertEqual(requests, "state,progress",
     "a locally changed state uploads without forcing a pull")
 state_payload = nil
+
+requests, acks = run{ expected_book_file_id = 99, expected_error = "unmatched" }
+assertEqual(requests, "", "delivery must not upload reading data against another file's cached hash mapping")
+assertEqual(acks, "", "a conflicting file identity must not acknowledge reading uploads")
 
 print("bookorbit_book_sync_fast_path_test.lua: ok")

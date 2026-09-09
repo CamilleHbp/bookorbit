@@ -117,6 +117,7 @@ describe('FileRenameService', () => {
       notificationService as never,
       config,
       selfWriteRegistry,
+      { withRelocation: vi.fn(async (_ids: number[], run: () => Promise<unknown>) => run()) } as never,
     );
 
     return { service, renameRepo, lockService, appSettings, notificationService, selfWriteRegistry };

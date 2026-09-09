@@ -291,4 +291,15 @@ assertEqual(body.ok, true, "unwrapped request falls back safely")
 assertEqual(subprocess_calls, 3, "unwrapped request does not start subprocess")
 assertEqual(request_ran_in_subprocess, false, "unwrapped fallback runs in current process")
 
+local compatible_payload
+function client:request(_, _, payload)
+    compatible_payload = payload
+    return {}
+end
+local source = { revision = "original" }
+local annotation_books = { { hash = "copy", annotations = { { datetime = "2026-01-01 00:00:00", sourceAnchor = source } } } }
+client:uploadAnnotations(annotation_books)
+assertEqual(compatible_payload.books[1].annotations[1].sourceAnchor, nil, "deprecated uploads retain legacy request fields")
+assertEqual(annotation_books[1].annotations[1].sourceAnchor, source, "legacy upload projection preserves the local anchor")
+
 print("bookorbit_api_test.lua: ok")

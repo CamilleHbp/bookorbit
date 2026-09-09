@@ -323,7 +323,7 @@ describe('BookDockRepository', () => {
     expect(selectBuilder.where).toHaveBeenCalledWith(
       expect.objectContaining({
         op: 'and',
-        clauses: [expect.objectContaining({ op: 'inArray' })],
+        clauses: [expect.objectContaining({ op: 'inArray' }), expect.objectContaining({ op: 'eq', right: 'standard' })],
       }),
     );
   });

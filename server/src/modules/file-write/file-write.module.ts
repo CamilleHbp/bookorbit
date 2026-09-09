@@ -1,10 +1,13 @@
+import { FanfictionLocationModule } from '../fanfiction/fanfiction-location.module';
 import { Module, forwardRef } from '@nestjs/common';
 
+import { KoboFileStateModule } from '../kobo/kobo-file-state.module';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
 import { SelfWriteRegistryModule } from '../../common/self-write-registry.module';
 import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { NotificationModule } from '../notification/notification.module';
 import { BulkRenameRepository } from './bulk-rename.repository';
-import { FileLockService } from './file-lock.service';
+import { FileLockModule } from '../../common/file-lock.module';
 import { FileRenameRepository } from './file-rename.repository';
 import { FileRenameService } from './file-rename.service';
 import { FileWriteRepository } from './file-write.repository';
@@ -21,13 +24,20 @@ import { PdfFormatWriter } from './formats/pdf/pdf-format-writer';
 import { FORMAT_WRITERS } from './interfaces/format-writer.interface';
 
 @Module({
-  imports: [forwardRef(() => NotificationModule), AppSettingsModule, SelfWriteRegistryModule],
+  imports: [
+    FanfictionLocationModule,
+    KoboFileStateModule,
+    BookRevisionModule,
+    forwardRef(() => NotificationModule),
+    AppSettingsModule,
+    SelfWriteRegistryModule,
+    FileLockModule,
+  ],
   providers: [
     FileWriteService,
     FileWriteRepository,
     FileRenameRepository,
     FileRenameService,
-    FileLockService,
     BulkRenameRepository,
     AudioMetadataEmbedder,
     EpubFormatWriter,
@@ -75,6 +85,6 @@ import { FORMAT_WRITERS } from './interfaces/format-writer.interface';
     },
     FormatWriterRegistry,
   ],
-  exports: [FileWriteService, FileWriteRepository, FileRenameService, FileRenameRepository, BulkRenameRepository, FileLockService],
+  exports: [FileWriteService, FileWriteRepository, FileRenameService, FileRenameRepository, BulkRenameRepository, FileLockModule],
 })
 export class FileWriteModule {}

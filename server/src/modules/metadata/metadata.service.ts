@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { mkdir, readdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
@@ -39,6 +39,7 @@ import { parseAudioDuration, probeAudioChapters } from './extractors/audio.extra
 import type { ParsedBookData } from './extractors/format-extractor.interface';
 import { generateThumbnail, imageExt } from './lib/cover';
 import { METADATA_AUDIO_FORMATS, MetadataExtractionService } from './metadata-extraction.service';
+import { ManagedTagService, type ManagedTagSource } from './managed-tag.service';
 import { MetadataEventsService, METADATA_AUTHORS_REPLACED } from './metadata-events.service';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -76,6 +77,7 @@ export class MetadataService {
     private readonly narratorService: NarratorService,
     private readonly comicMetadataRepository: ComicMetadataRepository,
     private readonly bookMetadataLockService: BookMetadataLockService,
+    private readonly managedTags: ManagedTagService,
     @Optional() private readonly embedder: BookEmbedderService,
     @Optional() private readonly metadataEvents?: MetadataEventsService,
     @Optional() private readonly seriesIdentity?: SeriesIdentityService,
@@ -87,11 +89,11 @@ export class MetadataService {
 
   // ── Public API ───────────────────────────────────────────────────────────────
 
-  async extractAndSave(bookId: number, absolutePath: string, format: string): Promise<void> {
-    await this.extractAndSaveIfAvailable(bookId, absolutePath, format);
+  async extractAndSave(bookId: number, absolutePath: string, format: string, tagSource?: ManagedTagSource): Promise<void> {
+    await this.extractAndSaveIfAvailable(bookId, absolutePath, format, tagSource);
   }
 
-  async extractAndSaveIfAvailable(bookId: number, absolutePath: string, format: string): Promise<boolean> {
+  async extractAndSaveIfAvailable(bookId: number, absolutePath: string, format: string, tagSource?: ManagedTagSource): Promise<boolean> {
     const event = 'metadata.extract_and_save';
     const startedAt = Date.now();
     this.logger.debug(`[${event}] [start] bookId=${bookId} format=${format} - metadata extraction started`);
@@ -113,7 +115,7 @@ export class MetadataService {
       }
 
       await Promise.all([
-        this.persistMetadata(bookId, data, format),
+        this.persistMetadata(bookId, data, format, tagSource),
         data.cover ? this.persistCover(bookId, data.cover, true) : Promise.resolve(),
         this.persistFixedLayout(bookId, absolutePath, data.isFixedLayout),
       ]);
@@ -609,8 +611,11 @@ export class MetadataService {
   }
 
   private async replaceTagsInExecutor(executor: RelationMutationExecutor, bookId: number, uniqueTags: string[]): Promise<void> {
-    await executor.delete(bookTags).where(eq(bookTags.bookId, bookId));
-    if (uniqueTags.length === 0) return;
+    await executor.execute(sql`select ${bookMetadata.bookId} from ${bookMetadata} where ${bookMetadata.bookId} = ${bookId} for update`);
+    if (uniqueTags.length === 0) {
+      await executor.delete(bookTags).where(eq(bookTags.bookId, bookId));
+      return;
+    }
 
     const tagByName = new Map<string, { id: number }>();
     const insertedTags = await executor
@@ -636,18 +641,25 @@ export class MetadataService {
       return [{ bookId, tagId: match.id }];
     });
 
-    if (links.length > 0) {
-      await executor.insert(bookTags).values(links).onConflictDoNothing();
-    }
+    await executor.delete(bookTags).where(
+      and(
+        eq(bookTags.bookId, bookId),
+        notInArray(
+          bookTags.tagId,
+          links.map((link) => link.tagId),
+        ),
+      ),
+    );
+    if (links.length > 0) await executor.insert(bookTags).values(links).onConflictDoNothing();
   }
 
   // ── Persistence ──────────────────────────────────────────────────────────────
 
-  private async persistMetadata(bookId: number, data: ParsedBookData, format: string): Promise<void> {
+  private async persistMetadata(bookId: number, data: ParsedBookData, format: string, tagSource?: ManagedTagSource): Promise<void> {
     if (isAudioFormat(format)) {
       await this.persistAudioMetadata(bookId, data);
     } else {
-      await this.persistBookMetadata(bookId, data, format);
+      await this.persistBookMetadata(bookId, data, format, tagSource);
     }
     this.embedder?.embedBook(bookId).catch((error: Error) => {
       this.logger.warn(
@@ -726,7 +738,7 @@ export class MetadataService {
     this.logger.debug(`[metadata.persist_audio] [end] bookId=${bookId} title="${sanitizeLogValue(data.title ?? '')}" - audio metadata persisted`);
   }
 
-  private async persistBookMetadata(bookId: number, data: ParsedBookData, format: string): Promise<void> {
+  private async persistBookMetadata(bookId: number, data: ParsedBookData, format: string, tagSource?: ManagedTagSource): Promise<void> {
     const { dto: filtered } = await this.bookMetadataLockService.filterAutomatedBookUpdate(bookId, {
       title: data.title,
       subtitle: data.subtitle,
@@ -818,7 +830,8 @@ export class MetadataService {
       await this.replaceGenres(bookId, filtered.genres);
     }
     if (filtered.tags !== undefined) {
-      await this.replaceTags(bookId, filtered.tags);
+      if (tagSource) await this.db.transaction((tx) => this.managedTags.sync(tx, bookId, tagSource, filtered.tags!));
+      else await this.replaceTags(bookId, filtered.tags);
     }
 
     if (filtered.comicMetadata) {

@@ -10,6 +10,7 @@ const SERVER_ROOT = process.cwd();
 const VENV_DIR = join(SERVER_ROOT, '.venv', 'kobo-cloudscraper');
 const PYTHON_BIN = process.platform === 'win32' ? join(VENV_DIR, 'Scripts', 'python.exe') : join(VENV_DIR, 'bin', 'python');
 const REQUIREMENTS_PATH = join(SERVER_ROOT, 'requirements', 'kobo-cloudscraper.txt');
+const FANFICFARE_REQUIREMENTS_PATH = join(SERVER_ROOT, 'requirements', 'fanficfare.txt');
 
 async function runCommand(command: string, args: string[]): Promise<void> {
   await execFile(command, args, {
@@ -22,7 +23,10 @@ async function hasCloudscraper(): Promise<boolean> {
   if (!existsSync(PYTHON_BIN)) return false;
 
   try {
-    await runCommand(PYTHON_BIN, ['-c', 'import cloudscraper; assert getattr(cloudscraper, "__version__", "") == "3.0.0"']);
+    await runCommand(PYTHON_BIN, [
+      '-c',
+      'import cloudscraper, importlib.metadata; assert getattr(cloudscraper, "__version__", "") == "3.0.0"; assert importlib.metadata.version("FanFicFare") == "4.61.0"',
+    ]);
     return true;
   } catch {
     return false;
@@ -45,8 +49,18 @@ async function run(): Promise<void> {
     return;
   }
 
-  await createVenv();
-  await runCommand(PYTHON_BIN, ['-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', '-r', REQUIREMENTS_PATH]);
+  if (!existsSync(PYTHON_BIN)) await createVenv();
+  await runCommand(PYTHON_BIN, [
+    '-m',
+    'pip',
+    'install',
+    '--disable-pip-version-check',
+    '--quiet',
+    '-r',
+    REQUIREMENTS_PATH,
+    '-r',
+    FANFICFARE_REQUIREMENTS_PATH,
+  ]);
 
   if (!(await hasCloudscraper())) {
     throw new Error('Kobo cloudscraper setup completed, but cloudscraper 3.0.0 could not be imported');

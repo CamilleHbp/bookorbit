@@ -610,6 +610,244 @@
       "when": 1788884825211,
       "tag": "0086_add_annotation_source_created_at",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1788884826211,
+      "tag": "0087_book_file_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1788884827211,
+      "tag": "0088_revision_manifests",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1788884828211,
+      "tag": "0089_revision_publication_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1788884829211,
+      "tag": "0090_canonical_reading_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1788884830211,
+      "tag": "0091_reading_event_file_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1788884831211,
+      "tag": "0092_fanfiction_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1788884832211,
+      "tag": "0093_fanfiction_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1788884833211,
+      "tag": "0094_managed_dock_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1788884834211,
+      "tag": "0095_fanfiction_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1788884835211,
+      "tag": "0096_publication_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1788884836211,
+      "tag": "0097_fanfiction_update_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1788884837211,
+      "tag": "0098_fanfiction_activity_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1788884838211,
+      "tag": "0099_fanfiction_activity_retry",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1788884839211,
+      "tag": "0100_managed_story_rollback",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1788884840211,
+      "tag": "0101_interrupted_revision_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1788884841211,
+      "tag": "0102_story_discovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1788884842211,
+      "tag": "0103_discovery_review_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1788884843211,
+      "tag": "0104_discovery_job_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1788884844211,
+      "tag": "0105_metadata_revision_publication",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1788884845211,
+      "tag": "0106_revision_publication_file_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1788884846211,
+      "tag": "0107_koreader_installed_copies",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1788884847211,
+      "tag": "0108_koreader_copy_device_pagination",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1788884848211,
+      "tag": "0109_koreader_delivery_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1788884849211,
+      "tag": "0110_koreader_delivery_pagination",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1788884850211,
+      "tag": "0111_koreader_restoration_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1788884851211,
+      "tag": "0112_koreader_delivery_scheduling",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1788884852211,
+      "tag": "0113_fanfiction_cookie_renewal",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1788884853211,
+      "tag": "0114_managed_story_tags",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1788884854211,
+      "tag": "0115_source_batch_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1788884855211,
+      "tag": "0116_source_batch_cursor_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1788884856211,
+      "tag": "0117_managed_epub_replacement",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1788884857211,
+      "tag": "0118_uploaded_replacement_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1788884858211,
+      "tag": "0119_replacement_hash_alias",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1788884859211,
+      "tag": "0120_annotation-source-anchor",
+      "breakpoints": true
     }
   ]
 }
