@@ -18,6 +18,7 @@ import { COVER_ASPECT_RATIO_KEY, DEFAULT_COVER_ASPECT_RATIO } from '../lib/cover
 import { useDisplaySettings } from '@/composables/useDisplaySettings'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSafeHtml } from '@/features/book/composables/useSafeHtml'
+import { useCoverReveal } from '@/features/book/composables/useCoverReveal'
 import BookCoverArtwork from './BookCoverArtwork.vue'
 import BookCoverSurface from './BookCoverSurface.vue'
 import { useI18n } from 'vue-i18n'
@@ -58,8 +59,15 @@ watch(
   { immediate: true },
 )
 
+const { coverRevealed, canRevealCover, toggleCoverReveal } = useCoverReveal(
+  computed(() => props.bookId ?? undefined),
+  computed(() => detail.value?.sensitiveCover),
+  computed(() => props.open),
+)
 const { coverUrl } = useCoverVersions()
-const coverSrc = computed(() => (detail.value ? coverUrl(detail.value.id, 'cover', detail.value.updatedAt ?? detail.value.addedAt) : null))
+const coverSrc = computed(() =>
+  detail.value ? coverUrl(detail.value.id, 'cover', detail.value.updatedAt ?? detail.value.addedAt, coverRevealed.value) : null,
+)
 
 const coverSeed = computed(() => (detail.value ? (detail.value.title ?? detail.value.folderPath.split('/').pop() ?? String(detail.value.id)) : ''))
 const coverPlaceholderTitle = computed(() => (detail.value ? (detail.value.title ?? detail.value.folderPath.split('/').pop() ?? null) : null))
@@ -200,31 +208,42 @@ function handleDelete() {
 
             <div v-else-if="detail" class="flex gap-4 items-start">
               <!-- Cover -->
-              <BookCoverSurface
-                size="mini"
-                class="book-cover-surface--spine-fitted w-24 shrink-0 rounded overflow-hidden relative"
-                :disable-spine="isPrimaryAudio"
-                :is-comic="isPrimaryComic"
-                :class="detail.coverSource && !coverFailed ? 'cursor-zoom-in' : ''"
-                :style="{ aspectRatio: quickViewCoverAspectRatio }"
-                @click="handleCoverClick"
-              >
-                <BookCoverArtwork
-                  :src="coverSrc"
-                  :has-cover="detail.coverSource !== null"
-                  :title="coverPlaceholderTitle"
-                  :author-line="authorLine"
-                  :is-audio="isPrimaryAudio"
-                  :seed="coverSeed"
-                  :alt="detail.title ?? ''"
-                  :frame-aspect-ratio="quickViewCoverAspectRatio"
-                  loading="eager"
-                  :spine="!isPrimaryAudio"
+              <div class="w-24 shrink-0">
+                <BookCoverSurface
+                  size="mini"
+                  class="book-cover-surface--spine-fitted w-24 shrink-0 rounded overflow-hidden relative"
+                  :disable-spine="isPrimaryAudio"
                   :is-comic="isPrimaryComic"
-                  @load="handleCoverLoad"
-                  @error="handleCoverError"
-                />
-              </BookCoverSurface>
+                  :class="detail.coverSource && !coverFailed ? 'cursor-zoom-in' : ''"
+                  :style="{ aspectRatio: quickViewCoverAspectRatio }"
+                  @click="handleCoverClick"
+                >
+                  <BookCoverArtwork
+                    :src="coverSrc"
+                    :has-cover="detail.coverSource !== null"
+                    :title="coverPlaceholderTitle"
+                    :author-line="authorLine"
+                    :is-audio="isPrimaryAudio"
+                    :seed="coverSeed"
+                    :alt="detail.title ?? ''"
+                    :frame-aspect-ratio="quickViewCoverAspectRatio"
+                    loading="eager"
+                    :spine="!isPrimaryAudio"
+                    :is-comic="isPrimaryComic"
+                    @load="handleCoverLoad"
+                    @error="handleCoverError"
+                  />
+                </BookCoverSurface>
+                <button
+                  v-if="canRevealCover"
+                  type="button"
+                  class="mt-2 rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground hover:bg-muted"
+                  :aria-pressed="coverRevealed"
+                  @click.stop="toggleCoverReveal"
+                >
+                  {{ coverRevealed ? t('book.sensitiveCover.hide') : t('book.sensitiveCover.reveal') }}
+                </button>
+              </div>
 
               <!-- Info -->
               <div class="flex-1 min-w-0 pr-2">

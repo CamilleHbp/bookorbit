@@ -56,6 +56,7 @@ function makeBook(overrides = {}) {
     personalNote: null,
     personalNoteUpdatedAt: null,
     communityRatings: [],
+    sensitiveCover: false,
     coverSource: null,
     hardcoverEditionId: null,
     providerIds: {},

@@ -9,14 +9,26 @@ import { useCoverEditor } from '../../../composables/useCoverEditor'
 import { useCoverVersions } from '../../../composables/useCoverVersions'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { COVER_ASPECT_RATIO_KEY, DEFAULT_COVER_ASPECT_RATIO } from '../../../lib/cover-aspect-ratio'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import { useSensitiveCoverSetting } from '@/features/book/composables/useSensitiveCoverSetting'
+import { useCoverReveal } from '@/features/book/composables/useCoverReveal'
 import BookCoverPlaceholder from '@/features/book/components/BookCoverPlaceholder.vue'
 import CoverSearchDrawer from './CoverSearchDrawer.vue'
 
 const props = defineProps<{ book: BookDetail; locked?: boolean; disabled?: boolean }>()
-const emit = defineEmits<{ coverChanged: ['extracted' | 'custom' | null]; toggleLock: [] }>()
+const emit = defineEmits<{ coverChanged: ['extracted' | 'custom' | null]; toggleLock: []; sensitiveCoverChanged: [boolean] }>()
 
 const { t } = useI18n()
 
+const { sensitiveCover, savingSensitiveCover, saveSensitiveCover } = useSensitiveCoverSetting(computed(() => props.book))
+const { coverRevealed, canRevealCover, toggleCoverReveal } = useCoverReveal(
+  computed(() => props.book.id),
+  sensitiveCover,
+)
+async function handleSensitiveCoverChange(value: boolean) {
+  if (props.disabled || !hasPermission('library_edit_metadata')) return
+  if (await saveSensitiveCover(value)) emit('sensitiveCoverChanged', value)
+}
 const bookIdRef = computed(() => props.book.id)
 const { uploading, error, previewSrc, pendingFile, pendingUrl, selectFile, setUrl, clearPending, confirm, revert } = useCoverEditor(bookIdRef)
 
@@ -43,7 +55,9 @@ const isSearchOpen = ref(false)
 
 let debounceTimer: ReturnType<typeof setTimeout>
 
-const activeSrc = computed(() => previewSrc.value ?? coverUrl(props.book.id, 'cover', props.book.updatedAt ?? props.book.addedAt))
+const activeSrc = computed(
+  () => previewSrc.value ?? coverUrl(props.book.id, 'cover', props.book.updatedAt ?? props.book.addedAt, coverRevealed.value),
+)
 const hasPending = computed(() => !!pendingFile.value || !!pendingUrl.value)
 const controlsDisabled = computed(() => Boolean(props.locked || props.disabled))
 const primaryFile = computed(() => props.book.files.find((f) => f.role === 'primary') ?? props.book.files[0] ?? null)
@@ -200,6 +214,27 @@ onUnmounted(() => clearTimeout(debounceTimer))
 
       <!-- Controls follow the space assigned by the parent layout, not the viewport width. -->
       <div class="flex min-w-0 flex-1 flex-col gap-3">
+        <button
+          v-if="canRevealCover"
+          type="button"
+          class="mt-2 rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground hover:bg-muted"
+          :aria-pressed="coverRevealed"
+          @click.stop="toggleCoverReveal"
+        >
+          {{ coverRevealed ? t('book.sensitiveCover.hide') : t('book.sensitiveCover.reveal') }}
+        </button>
+        <div v-if="hasPermission('library_edit_metadata')" class="flex items-center justify-between gap-3">
+          <div>
+            <label :for="`sensitive-cover-${book.id}`" class="text-xs font-medium">{{ t('book.sensitiveCover.label') }}</label>
+            <p class="text-xs text-muted-foreground">{{ t('book.sensitiveCover.hint') }}</p>
+          </div>
+          <ToggleSwitch
+            :id="`sensitive-cover-${book.id}`"
+            :model-value="sensitiveCover"
+            :disabled="disabled || savingSensitiveCover"
+            @update:model-value="handleSensitiveCoverChange"
+          />
+        </div>
         <!-- Mode toggle -->
         <div class="flex gap-1 p-0.5 rounded-lg bg-muted">
           <button

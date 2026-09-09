@@ -74,6 +74,7 @@ const validDisplayPreferences: DisplayPreferences = {
   authorCoverShape: 'circle',
   authorRowDensity: 'comfortable',
   authorCoverFallback: false,
+  hideSensitiveCovers: false,
   tableZebraStriping: false,
   tableDensity: 'comfortable',
   bookSpineOverlay: 'subtle',
@@ -469,6 +470,18 @@ describe('UserPreferencesService', () => {
       service.upsertDisplayPreferences(11, { ...validDisplayPreferences, showJumpRails: 'yes' } as unknown as Record<string, unknown>),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(repo.upsert).not.toHaveBeenCalled();
+  });
+
+  it('defaults a missing sensitive cover preference and validates its type', async () => {
+    const { hideSensitiveCovers, ...olderPreferences } = validDisplayPreferences;
+    void hideSensitiveCovers;
+    await service.upsertDisplayPreferences(11, olderPreferences);
+    expect(repo.upsert).toHaveBeenCalledWith(11, 'display', expect.objectContaining({ hideSensitiveCovers: false }));
+    await expect(service.upsertDisplayPreferences(11, { ...validDisplayPreferences, hideSensitiveCovers: 'true' })).rejects.toThrow(
+      BadRequestException,
+    );
+    await service.upsertDisplayPreferences(11, { ...validDisplayPreferences, hideSensitiveCovers: true });
+    expect(repo.upsert).toHaveBeenLastCalledWith(11, 'display', expect.objectContaining({ hideSensitiveCovers: true }));
   });
 
   it('upsertDisplayPreferences accepts and persists author display preferences', async () => {

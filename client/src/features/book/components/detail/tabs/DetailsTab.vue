@@ -59,6 +59,7 @@ import { useKoreaderBookProgress } from '@/features/koreader/composables/useKore
 import { RATING_STARS, getRatingStarClass } from '@/features/book/lib/rating-stars'
 import { formatCommunityRatingValue } from '@/features/book/lib/community-rating'
 import BookCoverSurface from '@/features/book/components/BookCoverSurface.vue'
+import { useCoverReveal } from '@/features/book/composables/useCoverReveal'
 import { useDisplaySettings } from '@/composables/useDisplaySettings'
 import HardcoverBookSyncGridItem from '@/features/hardcover/components/HardcoverBookSyncGridItem.vue'
 import StorygraphBookSyncGridItem from '@/features/storygraph/components/StorygraphBookSyncGridItem.vue'
@@ -268,8 +269,12 @@ const {
 const coverSeed = computed(() => props.book.title ?? props.book.folderPath.split('/').pop() ?? String(props.book.id))
 const coverPlaceholderTitle = computed(() => props.book.title ?? props.book.folderPath.split('/').pop() ?? null)
 const hasCover = computed(() => props.book.coverSource !== null)
+const { coverRevealed, canRevealCover, toggleCoverReveal } = useCoverReveal(
+  computed(() => props.book.id),
+  computed(() => props.book.sensitiveCover),
+)
 const { coverUrl } = useCoverVersions()
-const coverSrc = computed(() => coverUrl(props.book.id, 'cover', props.book.updatedAt ?? props.book.addedAt))
+const coverSrc = computed(() => coverUrl(props.book.id, 'cover', props.book.updatedAt ?? props.book.addedAt, coverRevealed.value))
 
 watch(coverSrc, () => {
   coverLoaded.value = false
@@ -1254,6 +1259,15 @@ watch(
                 @error="handleCoverError"
               />
             </BookCoverSurface>
+            <button
+              v-if="canRevealCover"
+              type="button"
+              class="mt-2 rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground hover:bg-muted"
+              :aria-pressed="coverRevealed"
+              @click.stop="toggleCoverReveal"
+            >
+              {{ coverRevealed ? t('book.sensitiveCover.hide') : t('book.sensitiveCover.reveal') }}
+            </button>
           </div>
         </div>
 

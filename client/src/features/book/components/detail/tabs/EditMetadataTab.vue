@@ -61,6 +61,7 @@ const emit = defineEmits<{
   saved: [BookDetail]
   locksChanged: [BookMetadataLockField[]]
   coverChanged: ['extracted' | 'custom' | null]
+  sensitiveCoverChanged: [boolean]
   fileRenamed: []
 }>()
 
@@ -831,6 +832,10 @@ async function handleUnlockAll() {
   await unlockAll(props.book.id)
 }
 
+function handleSensitiveCoverChanged(sensitiveCover: boolean) {
+  emit('sensitiveCoverChanged', sensitiveCover)
+}
+
 function handleCoverChanged(source: 'extracted' | 'custom' | null) {
   emit('coverChanged', source)
 }
@@ -1030,6 +1035,7 @@ function handleCoverChanged(source: 'extracted' | 'custom' | null) {
               :locked="isLocked('cover')"
               :disabled="formDisabled"
               @cover-changed="handleCoverChanged"
+              @sensitive-cover-changed="handleSensitiveCoverChanged"
               @toggle-lock="handleCoverLockToggle"
             />
             <MetadataSourceCard :book="props.book" class="hidden @min-[60rem]/edit:flex @min-[60rem]/edit:flex-1" />

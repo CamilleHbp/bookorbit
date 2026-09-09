@@ -848,6 +848,13 @@
       "when": 1788884859211,
       "tag": "0120_annotation-source-anchor",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1788971512048,
+      "tag": "0121_sensitive-covers",
+      "breakpoints": true
     }
   ]
 }

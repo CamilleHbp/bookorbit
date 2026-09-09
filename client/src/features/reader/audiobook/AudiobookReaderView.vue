@@ -27,6 +27,7 @@ import {
   X,
 } from '@lucide/vue'
 import type { AudiobookChapter, BookDetail, BookDetailFile } from '@bookorbit/types'
+import { useCoverVersions } from '@/features/book/composables/useCoverVersions'
 import { api } from '@/lib/api'
 import BookCoverPlaceholder from '@/features/book/components/BookCoverPlaceholder.vue'
 import { bookCoverPalette } from '@/features/book/lib/book-cover'
@@ -38,6 +39,8 @@ import { useReadingSession } from '../shared/composables/useReadingSession'
 import { useFullscreen } from '../shared/composables/useFullscreen'
 
 const { t } = useI18n()
+
+const { coverUrl } = useCoverVersions()
 
 const props = defineProps<{ bookId: number; fileId: number; peekMode?: boolean }>()
 const route = useRoute()
@@ -724,7 +727,7 @@ onMounted(async () => {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: displayTitle.value,
         artist: detailRes.authors.map((a: { name: string }) => a.name).join(', '),
-        artwork: detailRes.coverSource ? [{ src: `/api/v1/books/${props.bookId}/cover`, sizes: '512x512', type: 'image/jpeg' }] : [],
+        artwork: detailRes.coverSource ? [{ src: coverUrl(Number(props.bookId), 'cover'), sizes: '512x512', type: 'image/jpeg' }] : [],
       })
       navigator.mediaSession.setActionHandler('play', togglePlay)
       navigator.mediaSession.setActionHandler('pause', togglePlay)
@@ -771,7 +774,7 @@ onMounted(async () => {
       <div
         v-if="detail?.coverSource"
         class="absolute inset-0 scale-110"
-        :style="{ backgroundImage: `url(/api/v1/books/${props.bookId}/cover)`, backgroundSize: 'cover', backgroundPosition: 'center' }"
+        :style="{ backgroundImage: `url(${coverUrl(Number(props.bookId), 'cover')})`, backgroundSize: 'cover', backgroundPosition: 'center' }"
       />
       <div v-else class="absolute inset-0" :style="{ background: coverPalette.gradient }" />
       <div class="absolute inset-0 backdrop-blur-3xl bg-black/60" />
@@ -847,13 +850,13 @@ onMounted(async () => {
               :class="isPlaying ? 'opacity-50' : 'opacity-15'"
               :style="
                 detail.coverSource
-                  ? { backgroundImage: `url(/api/v1/books/${props.bookId}/cover)`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                  ? { backgroundImage: `url(${coverUrl(Number(props.bookId), 'cover')})`, backgroundSize: 'cover', backgroundPosition: 'center' }
                   : { background: coverPalette.gradient }
               "
             />
             <!-- Cover -->
             <div class="absolute inset-0 rounded-2xl overflow-hidden ring-1 ring-white/10 shadow-2xl">
-              <img v-if="detail.coverSource" :src="`/api/v1/books/${props.bookId}/cover`" class="w-full h-full object-cover" :alt="displayTitle" />
+              <img v-if="detail.coverSource" :src="coverUrl(Number(props.bookId), 'cover')" class="w-full h-full object-cover" :alt="displayTitle" />
               <BookCoverPlaceholder
                 v-else
                 :title="detail.title"
