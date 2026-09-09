@@ -1437,6 +1437,15 @@ export class BookRepository {
       .orderBy(collections.name);
   }
 
+  async isSensitiveCover(bookId: number): Promise<boolean> {
+    const [book] = await this.db.select({ sensitiveCover: books.sensitiveCover }).from(books).where(eq(books.id, bookId)).limit(1);
+    return book?.sensitiveCover === true;
+  }
+
+  async updateSensitiveCover(bookId: number, sensitiveCover: boolean): Promise<void> {
+    await this.db.update(books).set({ sensitiveCover }).where(eq(books.id, bookId));
+  }
+
   async findLibraryIdByBookId(bookId: number): Promise<number | null> {
     const [row] = await this.db.select({ libraryId: books.libraryId }).from(books).where(eq(books.id, bookId)).limit(1);
     return row?.libraryId ?? null;

@@ -106,6 +106,8 @@ function makeMetadataFetchDiagnostics(overrides: Partial<MetadataFetchDiagnostic
 
 function makeService(overrides: { bookMetadataLockService?: unknown } = {}) {
   const bookRepo = {
+    isSensitiveCover: vi.fn(),
+    updateSensitiveCover: vi.fn(),
     findCards: vi.fn(),
     countWhere: vi.fn(),
     findPatternMetadataByBookIds: vi.fn(),
@@ -5277,5 +5279,23 @@ describe('BookService', () => {
       expect(bookRepo.findFilesForBook).not.toHaveBeenCalled();
       expect(bookRepo.updateBookPrimaryFile).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('sensitive cover access', () => {
+  it('checks library access before reading or updating the flag', async () => {
+    const { service, bookRepo, libraryService } = makeService();
+    bookRepo.findLibraryIdByBookId.mockResolvedValue(4);
+    libraryService.verifyUserAccess.mockRejectedValue(new ForbiddenException());
+    await expect(service.updateSensitiveCover(7, true, makeUser())).rejects.toThrow(ForbiddenException);
+    await expect(service.shouldHideSensitiveCover(7, makeUser())).rejects.toThrow(ForbiddenException);
+    expect(bookRepo.updateSensitiveCover).not.toHaveBeenCalled();
+    expect(bookRepo.isSensitiveCover).not.toHaveBeenCalled();
+  });
+  it('persists the flag for an accessible book', async () => {
+    const { service, bookRepo } = makeService();
+    vi.spyOn(service, 'verifyBookAccess').mockResolvedValue();
+    await service.updateSensitiveCover(7, true, makeUser());
+    expect(bookRepo.updateSensitiveCover).toHaveBeenCalledWith(7, true);
   });
 });

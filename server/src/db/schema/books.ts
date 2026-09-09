@@ -29,6 +29,7 @@ export const books = pgTable(
       .notNull()
       .references(() => libraryFolders.id, { onDelete: 'cascade' }),
     primaryFileId: integer('primary_file_id').references(() => bookFiles.id, { onDelete: 'set null' }),
+    sensitiveCover: boolean('sensitive_cover').notNull().default(false),
     primaryAuthorSortName: varchar('primary_author_sort_name', { length: 500 }),
     folderPath: varchar('folder_path', { length: 4096 }).notNull(),
     status: varchar('status', { length: 20 }).notNull().default('present'),

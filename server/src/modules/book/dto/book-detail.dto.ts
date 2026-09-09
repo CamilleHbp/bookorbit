@@ -55,6 +55,7 @@ export class BookDetailDto {
   personalNote: string | null;
   personalNoteUpdatedAt: Date | null;
   communityRatings: BookCommunityRating[];
+  sensitiveCover: boolean;
   coverSource: 'extracted' | 'custom' | null;
   hardcoverEditionId: string | null;
   providerIds: ProviderIds;

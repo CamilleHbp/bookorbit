@@ -126,6 +126,11 @@ function onLocksChanged(lockedFields: BookMetadataLockField[]) {
   if (detail.value) detail.value.lockedFields = lockedFields
 }
 
+function onSensitiveCoverChanged(sensitiveCover: boolean) {
+  // Preserve unsaved metadata edits while updating this independently saved flag.
+  if (detail.value) detail.value.sensitiveCover = sensitiveCover
+}
+
 function onCoverChanged(source: 'extracted' | 'custom' | null) {
   if (detail.value) detail.value = { ...detail.value, coverSource: source }
 }
@@ -148,6 +153,7 @@ function onCoverChanged(source: 'extracted' | 'custom' | null) {
             @saved="onMetadataSaved"
             @locks-changed="onLocksChanged"
             @cover-changed="onCoverChanged"
+            @sensitive-cover-changed="onSensitiveCoverChanged"
           />
           <FilesTab v-else-if="tab === 'files'" :book="detail" @refetch="fetch(detail.id)" />
           <ReadingLogTab v-else-if="tab === 'reading-log'" :book="detail" @saved="onMetadataSaved" />
