@@ -104,9 +104,22 @@ export interface FanfictionJob {
   result: {
     progress?: FanfictionImportProgress;
     existingStory?: FanfictionExistingStory;
+    existingImportId?: string;
     preview?: FanfictionPreview;
     replacement?: FanfictionReplacementReview;
     metadataReview?: FanfictionMetadataReview;
+    preparedUpdate?: {
+      noChange: boolean;
+      previousState: "active" | "paused";
+      values: FanfictionMetadataValues;
+      fields: FanfictionMetadataField[];
+      fingerprint: string;
+      approved: boolean;
+      metadataApplied?: boolean;
+      baseline?: FanfictionMetadataValues;
+    };
+    importReview?: { preview: FanfictionPreview; values: FanfictionMetadataValues; approved: boolean };
+    reviewDiscarded?: boolean;
     urls?: string[];
     sourceId?: string;
     bookId?: number;
@@ -302,7 +315,11 @@ export interface FanfictionMetadataReview {
   lockedFields: string[];
   fingerprint: string;
   previousState: "active" | "paused";
+  beforeUpdate?: boolean;
+  tags?: { custom: string[]; managed: string[]; added: string[]; removed: string[] };
+  choices?: FanfictionMetadataChoices;
 }
+export type FanfictionMetadataChoices = Pick<FanfictionMetadataResolution, "title" | "description" | "authors" | "tags" | "selectedTags">;
 export interface FanfictionMetadataReviewView {
   jobId: string;
   review: FanfictionMetadataReview;
@@ -313,5 +330,11 @@ export interface FanfictionMetadataResolution {
   title: "keep" | "incoming";
   description: "keep" | "incoming";
   authors: "keep" | "incoming";
-  tags: "keep" | "merge";
+  tags: "keep" | "merge" | "select";
+  selectedTags?: string[];
+}
+
+export interface FanfictionImportReviewRequest {
+  action: "apply" | "later" | "discard";
+  values?: FanfictionMetadataValues;
 }

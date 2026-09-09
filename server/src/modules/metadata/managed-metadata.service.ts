@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { FanfictionPreview, FanfictionMetadataField, FanfictionMetadataValues } from '@bookorbit/types';
 import { createHash } from 'node:crypto';
 import type { DatabaseTransaction } from '../../db/transaction';
-import { authors, bookAuthors, bookMetadata, books, bookTags, tags } from '../../db/schema';
+import { authors, bookAuthors, bookMetadata, books, bookTags, bookTagSources, tags } from '../../db/schema';
 import { normalizeMetadataText, normalizeMetadataTextKey } from '../../common/utils/metadata-text-normalize.utils';
 import { ManagedTagService, type ManagedTagSource } from './managed-tag.service';
 import { BookMetadataLockService } from '../book-metadata-lock/book-metadata-lock.service';
@@ -18,7 +18,7 @@ export class ManagedMetadataService {
     private readonly locks: BookMetadataLockService,
   ) {}
 
-  async snapshot(tx: DatabaseTransaction, bookId: number, libraryId: number) {
+  async snapshot(tx: DatabaseTransaction, bookId: number, libraryId: number, sourceKey?: string) {
     const [row] = await tx
       .select({ title: bookMetadata.title, description: bookMetadata.description, lockedFields: bookMetadata.lockedFields })
       .from(bookMetadata)
@@ -48,8 +48,30 @@ export class ManagedMetadataService {
       tags: tagRows.map(({ name }) => name),
     };
     const lockedFields = [...(row.lockedFields ?? [])].sort();
-    const fingerprint = createHash('sha256').update(JSON.stringify({ current, lockedFields })).digest('hex');
-    return { current, lockedFields, fingerprint };
+    const managed = sourceKey
+      ? await tx
+          .select({ name: tags.name })
+          .from(bookTagSources)
+          .innerJoin(tags, eq(tags.id, bookTagSources.tagId))
+          .where(and(eq(bookTagSources.bookId, bookId), eq(bookTagSources.sourceKey, sourceKey)))
+          .orderBy(asc(tags.name))
+          .limit(1001)
+      : [];
+    if (managed.length > 1000) throw new BadRequestException('Book metadata exceeds the supported review limits');
+    const managedTags = managed.map((row) => row.name);
+    const customRows = sourceKey
+      ? await tx
+          .select({ name: tags.name })
+          .from(bookTags)
+          .innerJoin(tags, eq(tags.id, bookTags.tagId))
+          .where(and(eq(bookTags.bookId, bookId), eq(bookTags.managedOnly, false)))
+          .limit(1000)
+      : [];
+    const customTags = [...new Set([...current.tags.filter((tag) => !managedTags.includes(tag)), ...customRows.map((row) => row.name)])].sort();
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify({ current, lockedFields, ...(sourceKey ? { managedTags, customTags } : {}) }))
+      .digest('hex');
+    return { current, lockedFields, fingerprint, managedTags, customTags };
   }
 
   async apply(

@@ -322,6 +322,11 @@ export class FanfictionJobService {
         .for('update');
       if (!job) throw new NotFoundException('Fanfiction job not found in this library');
       if (['queued', 'running', 'succeeded', 'no_change'].includes(job.state)) return this.view(job);
+      if (
+        (job.result?.metadataReview?.beforeUpdate || job.result?.importReview) &&
+        !(job.result.preparedUpdate?.approved || job.result.importReview?.approved)
+      )
+        throw new ConflictException('Review or discard this proposal before continuing');
       if (job.errorCode === 'profile_deleted')
         throw new ConflictException('This profile was deleted. Start again with another profile or Public access.');
       if (job.sourceId) {

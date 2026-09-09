@@ -36,10 +36,14 @@ export class FanfictionImportService {
   ): Promise<FanfictionJob['result']> {
     await reportProgress({ stage: 'metadata' });
     const resumed = await this.sources.resume(job, user);
-    const { source, owned } = resumed ?? (await this.sources.reserve(job, await this.runtime.preview(job.url, document, signal, saveCookies), user));
+    const preview = job.result?.importReview?.preview ?? (resumed ? null : await this.runtime.preview(job.url, document, signal, saveCookies));
+    const { source, owned } = resumed ?? (await this.sources.reserve(job, preview!, user));
+    if (!owned && source.bookId && source.bookFileId && job.sourceId === source.id && job.result?.importReview?.approved)
+      return { sourceId: source.id, bookId: source.bookId, bookFileId: source.bookFileId, preview: job.result.importReview.preview };
     if (!owned)
       return {
         sourceId: source.id,
+        ...(!source.bookFileId ? { existingImportId: await this.sources.pendingImport(job.libraryId, source.id) } : {}),
         ...(source.bookId && source.bookFileId
           ? {
               bookId: source.bookId,
@@ -48,8 +52,21 @@ export class FanfictionImportService {
             }
           : {}),
       };
+    if (!job.result?.importReview?.approved) {
+      const incoming = preview ?? (await this.runtime.preview(source.canonicalUrl, document, signal, saveCookies));
+      return {
+        sourceId: source.id,
+        preview: incoming,
+        importReview: {
+          preview: incoming,
+          values: { title: incoming.title, description: incoming.description, authors: incoming.authors, tags: incoming.tags },
+          approved: false,
+        },
+      };
+    }
     const input = {
       operationId: source.importOperationId,
+      finalMetadata: job.result.importReview.values,
       metadataSourceKey: `fanfiction:${source.id}`,
       libraryId: source.libraryId,
       folderId: source.folderId!,
@@ -71,7 +88,7 @@ export class FanfictionImportService {
       await this.revisions.observeFile(installed.bookFileId, {});
       await authorize();
       await this.sources.completeImport(job, source.id, installed);
-      return { sourceId: source.id, bookId: installed.bookId, bookFileId: installed.bookFileId };
+      return { sourceId: source.id, bookId: installed.bookId, bookFileId: installed.bookFileId, preview: job.result!.importReview!.preview };
     };
     if (await this.dock.isPrepared(input, authorizeImport)) return install('');
     const effective =

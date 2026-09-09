@@ -21,7 +21,7 @@ import { RevisionCatalogService } from '../book-revision/revision-catalog.servic
 import { ManagedTagService } from '../metadata/managed-tag.service';
 import { recordFanfictionActivity } from './fanfiction-activity';
 import { validateFanfictionPreview } from './fanfiction-preview';
-import { changedStoryMetadata } from './fanfiction-metadata-review';
+import { FanfictionReviewService } from './fanfiction-review.service';
 import type { FanfictionMetadataReviewView, FanfictionMetadataResolution } from '@bookorbit/types';
 
 const sources = schema.fanfictionSources;
@@ -41,6 +41,7 @@ export class FanfictionSourceService {
     private readonly managedTags: ManagedTagService,
     private readonly managedMetadata: ManagedMetadataService,
     private readonly catalog: RevisionCatalogService,
+    private readonly reviews: FanfictionReviewService,
   ) {}
 
   async create(libraryId: number, dto: ImportFanfictionDto, user: RequestUser) {
@@ -57,6 +58,10 @@ export class FanfictionSourceService {
         errorCode: 'story_exists',
         errorMeta: { id: existing.id, title: existing.title, bookId: existing.bookId ?? undefined, attentionCode: existing.attentionCode },
       } satisfies FanfictionExistingStoryConflict & { message: string });
+    if (existing?.attentionCode === 'import_review_required') {
+      const pending = await this.pendingImport(libraryId, existing.id);
+      if (pending) return this.jobs.get(libraryId, pending, user);
+    }
     const { library } = await this.libraries.importDestination(libraryId, dto.folderId);
     this.validator.validateFormat('story.epub', library.allowedFormats);
     return this.jobs.importStory(libraryId, dto, user);
@@ -65,10 +70,10 @@ export class FanfictionSourceService {
   async metadataReview(libraryId: number, id: string, user: RequestUser): Promise<FanfictionMetadataReviewView | null> {
     await this.access.administer(user, libraryId);
     const source = await this.find(libraryId, id);
-    if (source.attentionCode !== 'metadata_review_required' || source.state === 'unlinked') return null;
+    if (!source.attentionCode || source.state === 'unlinked') return null;
     return this.db.transaction(async (tx) => {
       const [job] = await tx
-        .select({ id: schema.fanfictionJobs.id, result: schema.fanfictionJobs.result })
+        .select({ id: schema.fanfictionJobs.id, result: schema.fanfictionJobs.result, state: schema.fanfictionJobs.state })
         .from(schema.fanfictionJobs)
         .where(
           and(
@@ -78,14 +83,43 @@ export class FanfictionSourceService {
           ),
         )
         .orderBy(desc(schema.fanfictionJobs.createdAt), desc(schema.fanfictionJobs.id))
-        .limit(1);
+        .limit(1)
+        .for('update');
       if (!job?.result?.metadataReview || !source.bookId) return null;
-      const snapshot = await this.managedMetadata.snapshot(tx, source.bookId, libraryId);
+      if (!job.result.metadataReview.beforeUpdate && job.result.noChange && job.result.revisionId)
+        return this.reviews.upgradeUnchangedReview(tx, job, source);
+      if (job.result.metadataReview.beforeUpdate && ['queued', 'running'].includes(job.state)) return null;
+      if (job.result.metadataReview.beforeUpdate && job.result.preparedUpdate) return this.reviews.refresh(tx, job, source);
+      const snapshot = await this.managedMetadata.snapshot(
+        tx,
+        source.bookId,
+        libraryId,
+        job.result.metadataReview.beforeUpdate ? `fanfiction:${source.id}` : undefined,
+      );
       return { jobId: job.id, review: { ...job.result.metadataReview, ...snapshot } };
     });
   }
 
+  async pendingImport(libraryId: number, sourceId: string) {
+    const [job] = await this.db
+      .select({ id: schema.fanfictionJobs.id })
+      .from(schema.fanfictionJobs)
+      .where(
+        and(
+          eq(schema.fanfictionJobs.libraryId, libraryId),
+          eq(schema.fanfictionJobs.sourceId, sourceId),
+          eq(schema.fanfictionJobs.state, 'review_required'),
+          sql`${schema.fanfictionJobs.result}->'importReview' is not null`,
+        ),
+      )
+      .orderBy(desc(schema.fanfictionJobs.createdAt))
+      .limit(1);
+    return job?.id;
+  }
+
   async resolveMetadata(libraryId: number, id: string, dto: FanfictionMetadataResolution, user: RequestUser) {
+    const pending = await this.metadataReview(libraryId, id, user);
+    if (pending?.review.beforeUpdate) return this.reviews.decide(libraryId, id, dto, user, 'apply');
     await this.access.administer(user, libraryId);
     const startedAt = Date.now();
     this.logger.log(`[fanfiction.metadata_review] [start] libraryId=${libraryId} sourceId=${id} jobId=${dto.jobId} - resolving story metadata`);
@@ -222,37 +256,9 @@ export class FanfictionSourceService {
       const file = await this.catalog.lockCurrent(tx, result.bookFileId, job.libraryId, result.revisionId);
       const source = await this.assertUpdatable(job, tx);
       if (source.bookFileId !== result.bookFileId || source.bookId !== file.bookId) throw new ConflictException('The managed book identity changed');
-      if (preview && source.bookId) {
-        const snapshot = await this.managedMetadata.snapshot(tx, source.bookId, job.libraryId);
-        const [previous] = await tx
-          .select({ result: schema.fanfictionJobs.result })
-          .from(schema.fanfictionJobs)
-          .where(
-            and(
-              eq(schema.fanfictionJobs.sourceId, source.id),
-              eq(schema.fanfictionJobs.libraryId, job.libraryId),
-              sql`${schema.fanfictionJobs.id} <> ${job.id}`,
-              sql`${schema.fanfictionJobs.result}->>'revisionId' is not null`,
-            ),
-          )
-          .orderBy(desc(schema.fanfictionJobs.createdAt), desc(schema.fanfictionJobs.id))
-          .limit(1);
-        const fields = changedStoryMetadata(snapshot.current, preview, previous?.result?.preview);
-        result = {
-          ...result,
-          preview,
-          ...(fields.length
-            ? {
-                metadataReview: {
-                  ...snapshot,
-                  incoming: { title: preview.title, description: preview.description, authors: preview.authors, tags: preview.tags },
-                  fields,
-                  previousState: source.state === 'paused' ? 'paused' : 'active',
-                },
-              }
-            : {}),
-        };
-      }
+      const reviewed = await this.reviews.apply(tx, job, source.bookId!);
+      result = { ...reviewed, ...result, ...(preview ? { preview } : {}) };
+      delete result.metadataReview;
       await tx
         .update(sources)
         .set({
@@ -273,7 +279,7 @@ export class FanfictionSourceService {
                 state: 'paused' as const,
               }
             : {}),
-          ...(result.metadataReview ? { state: 'review_required' as const } : {}),
+          ...(result.preparedUpdate ? { state: result.preparedUpdate.previousState } : {}),
           attentionCode: result.metadataReview
             ? 'metadata_review_required'
             : job.kind === 'replacement' && source.attentionCode === 'destination_profile_required'

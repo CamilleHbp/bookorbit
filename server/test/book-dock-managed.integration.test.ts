@@ -1,3 +1,5 @@
+import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
+import { BookMetadataLockService } from '../src/modules/book-metadata-lock/book-metadata-lock.service';
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -72,11 +74,12 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
       consume(sourcePath, previewFor(url)),
     ),
   };
-  const metadata = { extractAndSave: vi.fn(async () => {}) };
+  const metadata = { extractAndSave: vi.fn(async () => {}), replaceAuthors: vi.fn(async () => {}) };
   const authorize = vi.fn(async () => {});
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation') throw new Error('An isolated validation database is required');
+    if (config.database !== 'bookorbit_revision_validation' && !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? ''))
+      throw new Error('An isolated validation database is required');
     pool = new Pool(config);
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
@@ -108,9 +111,11 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
         RevisionCoordinationService,
         RevisionCatalogService,
         FanfictionImportService,
+        FanfictionReviewService,
         FanfictionSourceService,
         ManagedTagService,
-        { provide: ManagedMetadataService, useValue: {} },
+        ManagedMetadataService,
+        { provide: BookMetadataLockService, useValue: { filterAutomatedBookUpdate: (_id: number, dto: unknown) => Promise.resolve({ dto }) } },
         FanfictionJobService,
         { provide: FanfictionAccessService, useValue: { administer: async () => {} } },
         { provide: FanfictionProfileService, useValue: { document: () => Promise.resolve({ document: { configuration: '', cookies: [] } }) } },
@@ -161,7 +166,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
       archive.append('<html><body><h1>One</h1><p>A story for a durable import.</p></body></html>', { name: 'one.xhtml' });
       void archive.finalize();
     });
-  }, 60_000);
+  }, 180_000);
   afterEach(async () => {
     vi.restoreAllMocks();
     metadata.extractAndSave.mockReset();
@@ -289,9 +294,24 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     await expect(service.ingest(request, authorize)).rejects.toThrow('was deleted');
   });
 
+  async function approveImport() {
+    const job = (await jobs.claim())!;
+    const before = await db.select({ id: schema.books.id }).from(schema.books).where(eq(schema.books.libraryId, libraryId));
+    const result = await imports.run(job, requestUser, { configuration: '', cookies: [] }, authorize, new AbortController().signal);
+    expect(result?.importReview?.approved).toBe(false);
+    expect(runtime.download).not.toHaveBeenCalled();
+    expect(await db.select({ id: schema.books.id }).from(schema.books).where(eq(schema.books.libraryId, libraryId))).toEqual(before);
+    await jobs.finish(job, 'review_required', result, 'import_review_required');
+    const values = { ...result!.importReview!.values, title: 'Reviewed title', tags: ['Reviewed tag'] };
+    await module.get(FanfictionReviewService).importDecision(libraryId, job.id, { action: 'later', values }, requestUser);
+    expect((await jobs.get(libraryId, job.id, requestUser)).result?.importReview?.values.title).toBe('Reviewed title');
+    await module.get(FanfictionReviewService).importDecision(libraryId, job.id, { action: 'apply', values }, requestUser);
+    return (await jobs.claim())!;
+  }
+
   it('connects the durable source job to Book Dock and an initial revision, including a lost completion response', async () => {
     await sources.create(libraryId, { url: 'https://example.org/story/2001', folderId, idempotencyKey: randomUUID() }, requestUser);
-    const first = (await jobs.claim())!;
+    const first = await approveImport();
     const result = await imports.run(
       first,
       requestUser,
@@ -304,6 +324,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     const [tracked] = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, first.id));
     expect(tracked.result?.progress?.stage).toBe('finalizing');
     expect(result?.bookId).toBeGreaterThan(0);
+    expect((await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, result!.bookId!)))[0].title).toBe('Reviewed title');
     const revisions = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.bookFileId, result!.bookFileId!));
     expect(revisions).toHaveLength(1);
     expect(revisions[0]?.reason).toBe('baseline');
@@ -320,14 +341,14 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     expect(runtime.preview).toHaveBeenCalledTimes(1);
     expect(runtime.download).toHaveBeenCalledTimes(1);
     expect(await jobs.finish(retry, 'succeeded', result)).toBe(true);
-  }, 60_000);
+  }, 180_000);
 
   it('resumes an imported EPUB after metadata failure without contacting the source again', async () => {
     runtime.download.mockImplementationOnce(async (url, _document, consume) =>
       consume(sourcePath, { ...previewFor(url), title: 'Final downloaded title', wordCount: 123456, status: 'Completed' }),
     );
     await sources.create(libraryId, { url: 'https://example.org/story/2002', folderId, idempotencyKey: randomUUID() }, requestUser);
-    const first = (await jobs.claim())!;
+    const first = await approveImport();
     metadata.extractAndSave.mockRejectedValueOnce(new ConflictException('Metadata interrupted'));
     await expect(imports.run(first, requestUser, { configuration: '', cookies: [] }, authorize, new AbortController().signal)).rejects.toThrow(
       'Metadata interrupted',
@@ -339,6 +360,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     const retry = (await jobs.claim())!;
     const result = await imports.run(retry, requestUser, { configuration: '', cookies: [] }, authorize, new AbortController().signal);
     expect(result?.bookId).toBeGreaterThan(0);
+    expect((await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, result!.bookId!)))[0].title).toBe('Reviewed title');
     expect(await sources.get(libraryId, result!.sourceId!, requestUser)).toMatchObject({
       title: 'Final downloaded title',
       wordCount: 123456,
@@ -347,5 +369,5 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     expect(runtime.preview).toHaveBeenCalledTimes(1);
     expect(runtime.download).toHaveBeenCalledTimes(1);
     expect(await jobs.finish(retry, 'succeeded', result)).toBe(true);
-  }, 60_000);
+  }, 180_000);
 });
