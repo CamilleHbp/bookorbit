@@ -64,7 +64,7 @@ describe('book story administration', () => {
         )
       return Promise.resolve(pages(path))
     })
-    const updated = vi.fn()
+    const updated = vi.fn<(bookId: number) => void>()
     const model = scope.run(() => useBookStory(7, 5, true, updated))!
     await flush()
     expect(model.metadataReview.value?.review.fields).toEqual(['tags'])
