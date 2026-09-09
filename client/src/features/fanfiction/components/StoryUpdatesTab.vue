@@ -3,12 +3,16 @@ import { computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
+import StoryMetadataReview from './StoryMetadataReview.vue'
 import type { useBookStory } from '../composables/useBookStory'
 
 const props = defineProps<{ state: ReturnType<typeof useBookStory> }>()
 const { t } = useI18n()
 const {
   allowed,
+  metadataReview,
+  metadataChoices,
+  resolveMetadata,
   visible,
   loading,
   error,
@@ -74,6 +78,7 @@ onMounted(() => {
       <RouterLink :to="{ name: 'fanfiction' }" class="text-primary underline">{{ t('fanfiction.title') }}</RouterLink>
     </div>
     <template v-if="allowed && source">
+      <StoryMetadataReview v-if="metadataReview" v-model="metadataChoices" :review="metadataReview.review" :busy="busy" @save="resolveMetadata" />
       <select
         v-if="sources.length > 1"
         v-model="sourceId"
@@ -176,7 +181,7 @@ onMounted(() => {
           <Button v-if="canApproveReplacement" :disabled="updating" @click="approveReplacement">{{ t('fanfiction.replacementApprove') }}</Button>
         </div>
         <Button
-          v-if="!canApproveReplacement && ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)"
+          v-if="!metadataReview && !canApproveReplacement && ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)"
           variant="outline"
           :disabled="updating"
           @click="retryJob"
@@ -200,7 +205,7 @@ onMounted(() => {
             </p>
             <p class="text-muted-foreground">{{ dateLabel(revision.createdAt) }}</p>
           </div>
-          <Button v-if="revision.canRollback" variant="outline" :disabled="updating" @click="rollback(revision)">{{
+          <Button v-if="revision.canRollback" variant="outline" :disabled="updating || !!metadataReview" @click="rollback(revision)">{{
             t('fanfiction.rollback')
           }}</Button>
         </article>

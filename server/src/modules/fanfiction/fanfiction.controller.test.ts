@@ -28,7 +28,16 @@ describe('Fanfiction HTTP contracts', () => {
   const replacements = { upload: vi.fn() };
   const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn(), remove: vi.fn() };
   const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn(), retry: vi.fn(), approveReplacement: vi.fn() };
-  const sources = { create: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), check: vi.fn(), rollback: vi.fn() };
+  const sources = {
+    create: vi.fn(),
+    list: vi.fn(),
+    get: vi.fn(),
+    update: vi.fn(),
+    check: vi.fn(),
+    rollback: vi.fn(),
+    metadataReview: vi.fn(),
+    resolveMetadata: vi.fn(),
+  };
   const discovery = { start: vi.fn(), list: vi.fn() };
   const adoption = { start: vi.fn() };
   const batches = { start: vi.fn(), listFailures: vi.fn() };
@@ -69,6 +78,21 @@ describe('Fanfiction HTTP contracts', () => {
   });
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+  it('validates metadata review choices and forwards the scoped source identity', async () => {
+    const payload = { jobId: uuid, fingerprint: 'a'.repeat(64), title: 'keep', description: 'incoming', authors: 'keep', tags: 'merge' };
+    sources.metadataReview.mockResolvedValue({ jobId: uuid, review: { fields: ['tags'] } });
+    sources.resolveMetadata.mockResolvedValue({ resolved: true });
+    const url = `${base}/sources/${uuid}/metadata-review`;
+    expect((await app.inject({ method: 'GET', url })).json()).toEqual({ jobId: uuid, review: { fields: ['tags'] } });
+    expect(sources.metadataReview).toHaveBeenCalledWith(5, uuid, undefined);
+    expect((await app.inject({ method: 'POST', url, payload })).statusCode).toBe(201);
+    expect(sources.resolveMetadata).toHaveBeenCalledWith(5, uuid, payload, undefined);
+    for (const patch of [{ tags: 'replace' }, { title: 'merge' }, { jobId: 'invalid' }, { extra: true }, { fingerprint: 'a'.repeat(65) }]) {
+      expect((await app.inject({ method: 'POST', url, payload: { ...payload, ...patch } })).statusCode).toBe(400);
+    }
+    expect((await app.inject({ method: 'POST', url, payload: { jobId: uuid } })).statusCode).toBe(400);
+    expect(sources.resolveMetadata).toHaveBeenCalledTimes(1);
   });
   it('deletes a profile with an empty response and rejects invalid identifiers', async () => {
     profiles.remove.mockResolvedValue(undefined);

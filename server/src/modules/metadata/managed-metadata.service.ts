@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, eq } from 'drizzle-orm';
-import type { FanfictionPreview } from '@bookorbit/types';
+import type { FanfictionPreview, FanfictionMetadataField, FanfictionMetadataValues } from '@bookorbit/types';
+import { createHash } from 'node:crypto';
 import type { DatabaseTransaction } from '../../db/transaction';
-import { authors, bookAuthors, bookMetadata, books } from '../../db/schema';
+import { authors, bookAuthors, bookMetadata, books, bookTags, tags } from '../../db/schema';
 import { normalizeMetadataText, normalizeMetadataTextKey } from '../../common/utils/metadata-text-normalize.utils';
 import { ManagedTagService, type ManagedTagSource } from './managed-tag.service';
 import { BookMetadataLockService } from '../book-metadata-lock/book-metadata-lock.service';
@@ -17,11 +18,46 @@ export class ManagedMetadataService {
     private readonly locks: BookMetadataLockService,
   ) {}
 
+  async snapshot(tx: DatabaseTransaction, bookId: number, libraryId: number) {
+    const [row] = await tx
+      .select({ title: bookMetadata.title, description: bookMetadata.description, lockedFields: bookMetadata.lockedFields })
+      .from(bookMetadata)
+      .innerJoin(books, eq(books.id, bookMetadata.bookId))
+      .where(and(eq(bookMetadata.bookId, bookId), eq(books.libraryId, libraryId)))
+      .for('update', { of: bookMetadata });
+    if (!row) throw new NotFoundException('Book metadata not found in this library');
+    const authorRows = await tx
+      .select({ name: authors.name })
+      .from(bookAuthors)
+      .innerJoin(authors, eq(authors.id, bookAuthors.authorId))
+      .where(eq(bookAuthors.bookId, bookId))
+      .orderBy(asc(bookAuthors.displayOrder))
+      .limit(101);
+    const tagRows = await tx
+      .select({ name: tags.name })
+      .from(bookTags)
+      .innerJoin(tags, eq(tags.id, bookTags.tagId))
+      .where(eq(bookTags.bookId, bookId))
+      .orderBy(asc(tags.name))
+      .limit(1001);
+    if (authorRows.length > 100 || tagRows.length > 1000) throw new BadRequestException('Book metadata exceeds the supported review limits');
+    const current: FanfictionMetadataValues = {
+      title: row.title ?? '',
+      description: row.description ?? '',
+      authors: authorRows.map(({ name }) => name),
+      tags: tagRows.map(({ name }) => name),
+    };
+    const lockedFields = [...(row.lockedFields ?? [])].sort();
+    const fingerprint = createHash('sha256').update(JSON.stringify({ current, lockedFields })).digest('hex');
+    return { current, lockedFields, fingerprint };
+  }
+
   async apply(
     tx: DatabaseTransaction,
     bookId: number,
     source: ManagedTagSource,
     preview: Pick<FanfictionPreview, 'title' | 'description' | 'authors' | 'tags'>,
+    fields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags'],
   ) {
     if (
       typeof preview.title !== 'string' ||
@@ -44,7 +80,8 @@ export class ManagedMetadataService {
         .where(and(eq(bookMetadata.bookId, bookId), eq(books.libraryId, source.libraryId)))
         .for('update', { of: bookMetadata });
       if (!current) throw new NotFoundException('Book metadata not found in this library');
-      const { dto: filtered } = await this.locks.filterAutomatedBookUpdate(bookId, preview, tx);
+      const selected = Object.fromEntries(fields.map((field) => [field, preview[field]]));
+      const { dto: filtered } = await this.locks.filterAutomatedBookUpdate(bookId, selected, tx);
       const patch: Partial<typeof bookMetadata.$inferInsert> = {};
       if (filtered.title !== undefined && current.title !== filtered.title) patch.title = filtered.title;
       if (filtered.description !== undefined && current.description !== filtered.description) patch.description = filtered.description;

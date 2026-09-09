@@ -8,6 +8,8 @@ import type { DatabaseTransaction } from '../../db/transaction';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { RevisionInterruptionService } from '../book-revision/revision-interruption.service';
 import { recordFanfictionActivity } from './fanfiction-activity';
+import { ManagedMetadataService } from '../metadata/managed-metadata.service';
+import { changedStoryMetadata } from './fanfiction-metadata-review';
 
 const jobs = schema.fanfictionJobs;
 const sources = schema.fanfictionSources;
@@ -20,6 +22,7 @@ export class FanfictionRecoveryService {
   constructor(
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly revisions: RevisionInterruptionService,
+    private readonly metadata: ManagedMetadataService,
   ) {}
 
   @Interval(5000)
@@ -121,11 +124,17 @@ export class FanfictionRecoveryService {
     if (source && !job.result?.revisionId) {
       if (source.version === job.sourceVersion && source.state !== 'unlinked') {
         const preview = job.result?.preview;
+        if (preview && source.bookId && job.kind !== 'rollback') {
+          const snapshot = await this.metadata.snapshot(tx, source.bookId, job.libraryId);
+          const fields = changedStoryMetadata(snapshot.current, preview);
+          if (fields.length) job.result = { ...job.result, metadataReview: { ...snapshot, incoming: preview, fields, previousState: 'paused' } };
+        }
         const replacement = job.kind === 'replacement' ? job.result?.replacement : undefined;
         await tx
           .update(sources)
           .set({
-            state: 'paused',
+            state: job.result?.metadataReview ? 'review_required' : 'paused',
+            ...(job.result?.metadataReview ? { attentionCode: 'metadata_review_required' } : {}),
             nextCheckAt: null,
             lastUpdatedAt: sql`now()`,
             updatedAt: sql`now()`,
@@ -146,7 +155,8 @@ export class FanfictionRecoveryService {
         sourceId: source.id,
         jobId: job.id,
         eventKey: `${job.id}:${kind}`,
-        kind,
+        kind: job.result?.metadataReview ? 'attention' : kind,
+        errorCode: job.result?.metadataReview ? 'metadata_review_required' : null,
         title: source.title,
         bookId: source.bookId,
         revisionId,

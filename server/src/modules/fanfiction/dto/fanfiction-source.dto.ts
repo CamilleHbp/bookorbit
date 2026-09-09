@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
-import type { FanfictionImportRequest, FanfictionSourceState } from '@bookorbit/types';
+import type { FanfictionImportRequest, FanfictionSourceState, FanfictionMetadataResolution } from '@bookorbit/types';
 import { PreviewFanfictionDto } from './fanfiction-profile.dto';
 
 export class ImportFanfictionDto extends PreviewFanfictionDto implements FanfictionImportRequest {
@@ -17,6 +17,15 @@ export class RollbackFanfictionSourceDto {
   @IsUUID() idempotencyKey!: string;
   @IsUUID() revisionId!: string;
   @IsUUID() expectedRevisionId!: string;
+}
+
+export class ResolveFanfictionMetadataDto implements FanfictionMetadataResolution {
+  @IsUUID() jobId!: string;
+  @IsString() @MaxLength(64) fingerprint!: string;
+  @IsIn(['keep', 'incoming']) title!: 'keep' | 'incoming';
+  @IsIn(['keep', 'incoming']) description!: 'keep' | 'incoming';
+  @IsIn(['keep', 'incoming']) authors!: 'keep' | 'incoming';
+  @IsIn(['keep', 'merge']) tags!: 'keep' | 'merge';
 }
 
 export class ListFanfictionSourcesDto {

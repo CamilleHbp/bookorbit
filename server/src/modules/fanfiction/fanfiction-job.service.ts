@@ -69,6 +69,7 @@ export class FanfictionJobService {
         !current ||
         current.version !== source.version ||
         !current.bookFileId ||
+        current.attentionCode === 'metadata_review_required' ||
         (!['rollback', 'replacement'].includes(kind) && current.attentionCode === 'destination_profile_required') ||
         !(
           ['rollback', 'replacement'].includes(kind) ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']

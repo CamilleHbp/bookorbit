@@ -7,6 +7,8 @@ import type {
   FanfictionProfilePage,
   FanfictionSource,
   FanfictionSourcePage,
+  FanfictionMetadataReviewView,
+  FanfictionMetadataResolution,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
 
@@ -50,10 +52,24 @@ export function useBookStory(
   const revisionCursor = ref<string | null>(null)
   const currentRevisionId = ref<string | null>(null)
   const job = ref<FanfictionJob | null>(null)
+  const metadataReview = ref<FanfictionMetadataReviewView | null>(null)
+  const metadataChoices = ref<Pick<FanfictionMetadataResolution, 'title' | 'description' | 'authors' | 'tags'>>({
+    title: 'keep',
+    description: 'keep',
+    authors: 'keep',
+    tags: 'keep',
+  })
   const busy = ref(false)
   const replacementFile = shallowRef<File | null>(null)
   const replacementKeys = new WeakMap<File, Map<string, string>>()
-  const canReplace = computed(() => allowed.value && !!source.value?.bookFileId && source.value.state !== 'unlinked' && !!currentRevisionId.value)
+  const canReplace = computed(
+    () =>
+      allowed.value &&
+      !!source.value?.bookFileId &&
+      source.value.state !== 'unlinked' &&
+      source.value.attentionCode !== 'metadata_review_required' &&
+      !!currentRevisionId.value,
+  )
   const canApproveReplacement = computed(
     () =>
       job.value?.kind === 'replacement' &&
@@ -119,6 +135,32 @@ export function useBookStory(
     if (!page.items.some((row) => row.id === sourceId.value)) sourceId.value = page.items[0]?.id ?? ''
     profileId.value = source.value?.profileId ?? ''
     interval.value = source.value?.intervalMinutes === null ? 'manual' : String(source.value?.intervalMinutes ?? 1440)
+    await loadMetadataReview(id)
+  }
+  async function loadMetadataReview(id: number) {
+    metadataReview.value = null
+    const current = source.value
+    if (current?.attentionCode !== 'metadata_review_required') return
+    const result = await request<FanfictionMetadataReviewView | null>(`${base.value}/sources/${current.id}/metadata-review`)
+    if (!valid(id) || source.value?.id !== current.id) return
+    metadataReview.value = result
+    metadataChoices.value = { title: 'keep', description: 'keep', authors: 'keep', tags: 'keep' }
+  }
+  async function resolveMetadata() {
+    if (busy.value || !metadataReview.value || !source.value) return
+    await perform(async (id) => {
+      const review = metadataReview.value!
+      const current = source.value!
+      await request(`${base.value}/sources/${current.id}/metadata-review`, {
+        jobId: review.jobId,
+        fingerprint: review.review.fingerprint,
+        ...metadataChoices.value,
+      } satisfies FanfictionMetadataResolution)
+      if (!valid(id) || source.value?.id !== current.id) return
+      if (job.value?.result) delete job.value.result.metadataReview
+      await loadSources(id)
+      if (valid(id)) await onBookUpdated?.(toValue(bookId))
+    })
   }
   async function loadHistory(id: number, cursor?: string) {
     const current = source.value
@@ -169,7 +211,7 @@ export function useBookStory(
     replacementFile.value = null
     clearTimeout(timer)
     await perform(async (id) => {
-      await Promise.all([loadHistory(id), recoverJob(id)])
+      await Promise.all([loadHistory(id), recoverJob(id), loadMetadataReview(id)])
     })
     poll(generation)
   }
@@ -362,6 +404,7 @@ export function useBookStory(
       profiles.value = []
       profileCursor.value = null
       job.value = null
+      metadataReview.value = null
       replacementFile.value = null
       error.value = ''
       loading.value = true
@@ -401,6 +444,9 @@ export function useBookStory(
     window.removeEventListener('offline', resumePolling)
   })
   return {
+    metadataReview,
+    metadataChoices,
+    resolveMetadata,
     allowed,
     visible,
     loading,
