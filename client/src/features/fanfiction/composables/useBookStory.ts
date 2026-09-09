@@ -18,6 +18,7 @@ class StoryRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly errorCode?: string,
   ) {
     super(message)
   }
@@ -107,7 +108,12 @@ export function useBookStory(
         allowed.value = false
         denied.value = true
       }
-      if (!response.ok) throw new StoryRequestError(typeof result.message === 'string' ? result.message : `HTTP ${response.status}`, response.status)
+      if (!response.ok)
+        throw new StoryRequestError(
+          typeof result.message === 'string' ? result.message : `HTTP ${response.status}`,
+          response.status,
+          result.errorCode,
+        )
       return result as T
     } finally {
       clearTimeout(timeout)
@@ -121,6 +127,15 @@ export function useBookStory(
     try {
       await operation(id)
     } catch (failure) {
+      if (valid(id) && failure instanceof StoryRequestError && failure.errorCode === 'metadata_review_required') {
+        try {
+          await loadSources(id)
+          if (metadataReview.value) return
+        } catch (refreshFailure) {
+          if (valid(id)) error.value = refreshFailure instanceof Error ? refreshFailure.message : 'Request failed'
+          return
+        }
+      }
       if (valid(id)) error.value = failure instanceof Error ? failure.message : 'Request failed'
     } finally {
       if (valid(id)) busy.value = false

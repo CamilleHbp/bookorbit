@@ -84,6 +84,28 @@ describe('book story administration', () => {
     expect(model.metadataReview.value).toBeNull()
     expect(updated).toHaveBeenCalledWith(7)
   })
+  it('loads the pending review when a check conflicts with a newly completed update', async () => {
+    let pending = false
+    const review = { jobId: 'review-job', review: { fields: ['tags'], fingerprint: 'fresh' } }
+    mockApi.mockImplementation(async (url) => {
+      const path = String(url)
+      if (path.endsWith('/check')) {
+        pending = true
+        return response({ errorCode: 'metadata_review_required', message: 'Review first' }, 409)
+      }
+      if (path.endsWith('/metadata-review')) return response(review)
+      if (pending && path.includes('/sources?'))
+        return response({ items: [{ ...source, state: 'review_required', attentionCode: 'metadata_review_required' }], nextCursor: null })
+      return pages(path)
+    })
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    await model.checkNow()
+    expect(model.metadataReview.value).toEqual(review)
+    expect(model.error.value).toBe('')
+    expect(model.canUpdate.value).toBe(false)
+  })
+
   it('uploads multipart bytes with stable request identity after an uncertain response', async () => {
     mockApi.mockImplementation((url) => Promise.resolve(pages(String(url))))
     const model = scope.run(() => useBookStory(7, 5, true))!

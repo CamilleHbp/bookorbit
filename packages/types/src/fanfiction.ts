@@ -126,6 +126,13 @@ export type FanfictionSourceState = "pending" | "active" | "paused" | "review_re
 export interface FanfictionExistingStory {
   id: string;
   title: string;
+  bookId?: number;
+  attentionCode?: string | null;
+}
+
+export interface FanfictionMetadataReviewConflict {
+  errorCode: "metadata_review_required";
+  errorMeta: { sourceId: string; bookId: number };
 }
 
 export interface FanfictionExistingStoryConflict {
