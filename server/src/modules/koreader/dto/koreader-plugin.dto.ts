@@ -1,3 +1,4 @@
+import { ReadingAnchorDto } from '../../../common/dto/reading-anchor.dto';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -131,6 +132,11 @@ export class PageStatsUploadDto extends PluginDeviceDto {
 }
 
 export class KoreaderAnnotationDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ReadingAnchorDto)
+  sourceAnchor?: ReadingAnchorDto;
+
   @IsString()
   @Matches(DEVICE_DATETIME)
   datetime!: string;

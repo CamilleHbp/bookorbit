@@ -5970,6 +5970,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "再試行する",
     "pdf": {
       "openError": "このPDFを開くことができません",

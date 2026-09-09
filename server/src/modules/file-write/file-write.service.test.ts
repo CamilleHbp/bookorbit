@@ -10,13 +10,15 @@ import {
 } from '@bookorbit/types';
 import { SelfWriteRegistry } from '../../common/services/self-write-registry.service';
 
-const { computeFileHashMock } = vi.hoisted(() => ({
-  computeFileHashMock: vi.fn(),
-}));
-
-vi.mock('../scanner/lib/hash', () => ({
-  computeFileHash: computeFileHashMock,
-}));
+const revisionFiles = { require: vi.fn(), verifyUnchanged: vi.fn() };
+const metadataRevisions = { rewriteWithinBookOperation: vi.fn() };
+const inspected = (fileHash = 'newhash') => ({
+  fileHash,
+  sha256: 'a'.repeat(64),
+  mtime: POST_WRITE_MTIME,
+  sizeBytes: 57,
+  ino: 9_007_199_254_740_993n,
+});
 
 import { FileWriteService } from './file-write.service';
 import { bookOperationLockKey } from './file-lock.service';
@@ -93,6 +95,8 @@ describe('FileWriteService', () => {
       config,
       notificationService as never,
       selfWriteRegistry,
+      revisionFiles as never,
+      metadataRevisions as never,
     );
 
     return { service, fileWriteRepo, registry, writer, lockService, notificationService, selfWriteRegistry };
@@ -104,8 +108,13 @@ describe('FileWriteService', () => {
     mockReadFile.mockReset();
     mockStat.mockReset();
     mockStat.mockResolvedValue({ mtime: POST_WRITE_MTIME, size: 57n, ino: 9_007_199_254_740_993n } as never);
-    computeFileHashMock.mockReset();
-    computeFileHashMock.mockRejectedValue(new Error('missing file'));
+    revisionFiles.require.mockReset().mockResolvedValue(inspected());
+    revisionFiles.verifyUnchanged.mockReset().mockResolvedValue(undefined);
+    metadataRevisions.rewriteWithinBookOperation
+      .mockReset()
+      .mockImplementation((_bookId: number, target: { absolutePath: string }, write: (path: string) => Promise<unknown>) =>
+        write(target.absolutePath),
+      );
   });
 
   describe('resolveBookFileWriteStatus', () => {
@@ -417,7 +426,13 @@ describe('FileWriteService', () => {
     const result = await service.writeToFile(5, 'auto');
 
     expect(result).toEqual({ status: 'success', fieldsWritten: ['title'], durationMs: 13 });
-    expect(lockService.withLock).toHaveBeenCalledTimes(2);
+    expect(lockService.withLock).toHaveBeenCalledTimes(1);
+    expect(metadataRevisions.rewriteWithinBookOperation).toHaveBeenCalledWith(
+      5,
+      expect.objectContaining({ id: 1, libraryId: 2 }),
+      expect.any(Function),
+    );
+    expect(fileWriteRepo.updateFileStateAfterMetadataWrite).not.toHaveBeenCalled();
     expect(lockService.withLock).toHaveBeenNthCalledWith(1, bookOperationLockKey(5), expect.any(Function));
     expect(writer.write).toHaveBeenCalledWith(
       '/books/lib/book.epub',
@@ -436,8 +451,8 @@ describe('FileWriteService', () => {
 
     fileWriteRepo.findPrimaryFileForBook.mockResolvedValue({
       id: 1,
-      absolutePath: '/books/lib/book.epub',
-      format: 'epub',
+      absolutePath: '/books/lib/book.fb2',
+      format: 'fb2',
       sizeBytes: 40,
       fileHash: 'oldhash',
       libraryId: 2,
@@ -445,7 +460,7 @@ describe('FileWriteService', () => {
     fileWriteRepo.loadPayload.mockResolvedValue({ title: 'Book' });
     fileWriteRepo.findLibraryFileWriteConfig.mockResolvedValue({ ...DEFAULT_LIB_CONFIG, fileWriteWriteCover: false });
     writer.write.mockResolvedValue({ status: 'success', fieldsWritten: ['title'], durationMs: 5 });
-    computeFileHashMock.mockResolvedValue('newhash');
+    revisionFiles.require.mockResolvedValue(inspected());
 
     await expect(service.writeToFile(5, 'auto')).resolves.toEqual({ status: 'success', fieldsWritten: ['title'], durationMs: 5 });
 
@@ -458,12 +473,12 @@ describe('FileWriteService', () => {
     expect(fileWriteRepo.setLastWrittenAt).toHaveBeenCalledWith(5, expect.any(Date));
   });
 
-  it('persists scanner identity fields when hash recomputation fails', async () => {
+  it('never commits scanner stats after failed inspection', async () => {
     const { service, fileWriteRepo, writer } = makeService();
     fileWriteRepo.findPrimaryFileForBook.mockResolvedValue({
       id: 1,
-      absolutePath: '/books/lib/book.epub',
-      format: 'epub',
+      absolutePath: '/books/lib/book.fb2',
+      format: 'fb2',
       sizeBytes: 40,
       fileHash: 'oldhash',
       libraryId: 2,
@@ -472,21 +487,18 @@ describe('FileWriteService', () => {
     fileWriteRepo.findLibraryFileWriteConfig.mockResolvedValue({ ...DEFAULT_LIB_CONFIG, fileWriteWriteCover: false });
     writer.write.mockResolvedValue({ status: 'success', fieldsWritten: ['title'], durationMs: 5 });
 
-    await expect(service.writeToFile(5, 'auto')).resolves.toEqual({ status: 'success', fieldsWritten: ['title'], durationMs: 5 });
-
-    expect(fileWriteRepo.updateFileStateAfterMetadataWrite).toHaveBeenCalledWith(5, 1, 'oldhash', {
-      mtime: POST_WRITE_MTIME,
-      sizeBytes: 57,
-      ino: 9_007_199_254_740_993n,
-    });
+    revisionFiles.require.mockRejectedValue(new Error('file changed during hashing'));
+    await expect(service.writeToFile(5, 'auto')).resolves.toMatchObject({ status: 'failed', reason: 'post-write file state refresh failed' });
+    expect(fileWriteRepo.updateFileStateAfterMetadataWrite).not.toHaveBeenCalled();
+    expect(fileWriteRepo.setLastWrittenAt).not.toHaveBeenCalled();
   });
 
   it('retries transient post-write stat failures before reporting success', async () => {
     const { service, fileWriteRepo, writer } = makeService();
     fileWriteRepo.findPrimaryFileForBook.mockResolvedValue({
       id: 1,
-      absolutePath: '/books/lib/book.epub',
-      format: 'epub',
+      absolutePath: '/books/lib/book.fb2',
+      format: 'fb2',
       sizeBytes: 40,
       fileHash: 'oldhash',
       libraryId: 2,
@@ -494,11 +506,11 @@ describe('FileWriteService', () => {
     fileWriteRepo.loadPayload.mockResolvedValue({ title: 'Book' });
     fileWriteRepo.findLibraryFileWriteConfig.mockResolvedValue({ ...DEFAULT_LIB_CONFIG, fileWriteWriteCover: false });
     writer.write.mockResolvedValue({ status: 'success', fieldsWritten: ['title'], durationMs: 5 });
-    mockStat.mockRejectedValueOnce(new Error('temporary stat failure'));
+    revisionFiles.require.mockRejectedValueOnce(new Error('temporary inspection failure'));
 
     await expect(service.writeToFile(5, 'auto')).resolves.toEqual({ status: 'success', fieldsWritten: ['title'], durationMs: 5 });
 
-    expect(mockStat).toHaveBeenCalledTimes(2);
+    expect(revisionFiles.require).toHaveBeenCalledTimes(2);
     expect(fileWriteRepo.updateFileStateAfterMetadataWrite).toHaveBeenCalledTimes(1);
   });
 
@@ -506,8 +518,8 @@ describe('FileWriteService', () => {
     const { service, fileWriteRepo, writer } = makeService();
     fileWriteRepo.findPrimaryFileForBook.mockResolvedValue({
       id: 1,
-      absolutePath: '/books/lib/book.epub',
-      format: 'epub',
+      absolutePath: '/books/lib/book.fb2',
+      format: 'fb2',
       sizeBytes: 40,
       fileHash: 'oldhash',
       libraryId: 2,
@@ -519,18 +531,18 @@ describe('FileWriteService', () => {
 
     await expect(service.writeToFile(5, 'auto')).resolves.toEqual({ status: 'success', fieldsWritten: ['title'], durationMs: 5 });
 
-    expect(mockStat).toHaveBeenCalledTimes(2);
+    expect(revisionFiles.require).toHaveBeenCalledTimes(2);
     expect(fileWriteRepo.updateFileStateAfterMetadataWrite).toHaveBeenCalledTimes(2);
     expect(fileWriteRepo.setLastWrittenAt).toHaveBeenCalledTimes(1);
   });
 
   it('keeps watcher events deferred through scanner identity persistence', async () => {
     const { service, fileWriteRepo, writer, selfWriteRegistry } = makeService();
-    const path = '/books/lib/book.epub';
+    const path = '/books/lib/book.fb2';
     fileWriteRepo.findPrimaryFileForBook.mockResolvedValue({
       id: 1,
       absolutePath: path,
-      format: 'epub',
+      format: 'fb2',
       sizeBytes: 40,
       fileHash: 'oldhash',
       libraryId: 2,
@@ -555,8 +567,8 @@ describe('FileWriteService', () => {
     const { service, fileWriteRepo, writer, notificationService } = makeService();
     fileWriteRepo.findPrimaryFileForBook.mockResolvedValue({
       id: 1,
-      absolutePath: '/books/lib/book.epub',
-      format: 'epub',
+      absolutePath: '/books/lib/book.fb2',
+      format: 'fb2',
       sizeBytes: 40,
       fileHash: 'oldhash',
       libraryId: 2,
@@ -564,7 +576,7 @@ describe('FileWriteService', () => {
     fileWriteRepo.loadPayload.mockResolvedValue({ title: 'Book' });
     fileWriteRepo.findLibraryFileWriteConfig.mockResolvedValue({ ...DEFAULT_LIB_CONFIG, fileWriteWriteCover: false });
     writer.write.mockResolvedValue({ status: 'success', fieldsWritten: ['title'], durationMs: 5 });
-    mockStat.mockRejectedValue(new Error('stat unavailable'));
+    revisionFiles.require.mockRejectedValue(new Error('inspection unavailable'));
 
     await expect(service.writeToFile(5, 'sync', 3)).resolves.toEqual({
       status: 'failed',
@@ -573,7 +585,7 @@ describe('FileWriteService', () => {
       reason: 'post-write file state refresh failed',
     });
 
-    expect(mockStat).toHaveBeenCalledTimes(3);
+    expect(revisionFiles.require).toHaveBeenCalledTimes(3);
     expect(fileWriteRepo.updateFileStateAfterMetadataWrite).not.toHaveBeenCalled();
     expect(fileWriteRepo.setLastWrittenAt).not.toHaveBeenCalled();
     expect(fileWriteRepo.insertLog).toHaveBeenCalledWith(
@@ -726,7 +738,7 @@ describe('FileWriteService', () => {
     mockReaddir.mockResolvedValue(['cover_custom.jpg'] as never);
     mockReadFile.mockResolvedValue(Buffer.from('cover') as never);
     writer.write.mockResolvedValue({ status: 'success', fieldsWritten: ['coverBytes'], durationMs: 5 });
-    computeFileHashMock.mockResolvedValueOnce('new-m4b').mockResolvedValueOnce('new-mp3');
+    revisionFiles.require.mockResolvedValueOnce(inspected('new-m4b')).mockResolvedValueOnce(inspected('new-mp3'));
 
     const result = await service.writeToFile(20, 'sync', 7);
 
@@ -843,7 +855,7 @@ describe('FileWriteService', () => {
       }
       return Promise.resolve({ status: 'success', fieldsWritten: ['coverBytes'], durationMs: 5 });
     });
-    computeFileHashMock.mockResolvedValue('new-m4b');
+    revisionFiles.require.mockResolvedValue(inspected('new-m4b'));
 
     const result = await service.writeToFile(20, 'sync', 7);
 
@@ -1143,6 +1155,8 @@ describe('FileWriteService', () => {
         { get: vi.fn().mockImplementation((key: string) => (key === 'storage.appDataPath' ? '/books' : undefined)) } as unknown as ConfigService,
         notificationService as never,
         new SelfWriteRegistry(),
+        revisionFiles as never,
+        metadataRevisions as never,
       );
 
       fileWriteRepo.findPrimaryFileForBook.mockResolvedValue({
@@ -1171,6 +1185,8 @@ describe('FileWriteService', () => {
         { get: vi.fn().mockImplementation((key: string) => (key === 'storage.appDataPath' ? '/books' : undefined)) } as unknown as ConfigService,
         notificationService as never,
         new SelfWriteRegistry(),
+        revisionFiles as never,
+        metadataRevisions as never,
       );
 
       fileWriteRepo.findPrimaryFileForBook.mockResolvedValue({

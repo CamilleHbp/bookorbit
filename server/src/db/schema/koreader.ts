@@ -150,7 +150,10 @@ export const bookFileHashHistory = pgTable(
   (t) => [
     uniqueIndex('book_file_hash_history_book_file_id_file_hash_idx').on(t.bookFileId, t.fileHash),
     index('book_file_hash_history_file_hash_idx').on(t.fileHash),
-    check('book_file_hash_history_reason_chk', sql`${t.reason} in ('file_write', 'external_change', 'rescan')`),
+    check(
+      'book_file_hash_history_reason_chk',
+      sql`${t.reason} in ('file_write', 'external_change', 'rescan', 'fanficfare', 'rollback', 'replacement')`,
+    ),
   ],
 );
 

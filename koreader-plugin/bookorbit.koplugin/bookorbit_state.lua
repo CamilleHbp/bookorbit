@@ -195,9 +195,9 @@ function BookOrbitState:flush()
             os.remove(temp)
             error(tostring(flush_err or "state_temp_flush_failed"), 0)
         end
-        local synced, sync_err = pcall(ffiutil.fsyncOpenedFile, out)
+        local sync_ok, synced, sync_err = pcall(ffiutil.fsyncOpenedFile, out)
         local closed, close_err = out:close()
-        if not synced or not closed then
+        if not sync_ok or synced ~= true or not closed then
             os.remove(temp)
             error(tostring(sync_err or close_err or "state_temp_sync_failed"), 0)
         end
@@ -217,7 +217,10 @@ function BookOrbitState:flush()
             os.remove(temp)
             error(tostring(publish_err or "state_publish_failed"), 0)
         end
-        pcall(ffiutil.fsyncDirectory, file)
+        local directory_ok, directory_synced, directory_err = pcall(ffiutil.fsyncDirectory, file)
+        if not directory_ok or directory_synced ~= true then
+            error(tostring(directory_err or "state_directory_sync_failed"), 0)
+        end
     end
     -- bookorbit_state_manager installs this to publish a new generation, so
     -- derived caches invalidate no matter which plugin path wrote.

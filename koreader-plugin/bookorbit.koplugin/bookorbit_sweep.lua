@@ -712,9 +712,10 @@ local function sidecarEntry(ctx, md5)
 
     local sidecar_changed = mtime ~= book.sidecarMtime
     local state_unknown = book.ratingSyncedKnown ~= true or book.reviewSyncedKnown ~= true
-    local extract = nil
+    local extract, extraction_error
     if sidecar_changed or state_unknown then
-        extract = BookOrbitSidecar.extract(book.file)
+        extract, extraction_error = BookOrbitSidecar.extract(book.file)
+        if extraction_error == "annotation_restoration_pending" then return end
     end
 
     if not extract then

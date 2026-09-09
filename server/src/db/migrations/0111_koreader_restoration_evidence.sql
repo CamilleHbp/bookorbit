@@ -1,0 +1,1 @@
+ALTER TABLE "koreader_delivery_jobs" ADD COLUMN "restoration_native_position" varchar(4096);

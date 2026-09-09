@@ -11,6 +11,7 @@ import type {
 
 import { ReadingAttemptRepository } from './reading-attempt.repository';
 import { READING_DATE_ERROR_CODES } from './user-book-status.constants';
+import type { DatabaseTransaction } from '../../db/transaction';
 
 function dateToUtcDate(value: string | null): Date | null {
   return value ? new Date(`${value}T00:00:00.000Z`) : null;
@@ -245,17 +246,25 @@ export class ReadingAttemptService {
     });
   }
 
-  async recordActivity(input: {
-    userId: number;
-    bookId: number;
-    occurredOn: string;
-    origin: Exclude<ReadingAttemptOrigin, 'manual' | 'hardcover' | 'migration'>;
-    progress: number;
-    finishThreshold: number;
-    strongRereadEvidence: boolean;
-    meaningfulActivity: boolean;
-  }): Promise<UserBookStatus | null> {
-    return this.repo.transaction(async (tx) => {
+  async recordActivity(
+    input: {
+      userId: number;
+      bookId: number;
+      occurredOn: string;
+      origin: Exclude<ReadingAttemptOrigin, 'manual' | 'hardcover' | 'migration'>;
+      progress: number;
+      finishThreshold: number;
+      strongRereadEvidence: boolean;
+      meaningfulActivity: boolean;
+      preserveManualStatus?: boolean;
+    },
+    transaction?: DatabaseTransaction,
+  ): Promise<UserBookStatus | null> {
+    const apply = async (tx: DatabaseTransaction): Promise<UserBookStatus | null> => {
+      if (input.preserveManualStatus) {
+        const current = await this.repo.findStatus(tx, input.userId, input.bookId);
+        if (current?.source === 'manual' && current.status !== 'want_to_read') return null;
+      }
       let active: Awaited<ReturnType<ReadingAttemptRepository['findActive']>> | null = await this.repo.findActive(tx, input.userId, input.bookId);
       let latest = active ?? (await this.repo.findLatest(tx, input.userId, input.bookId));
       const hasCompleted = await this.repo.hasCompleted(tx, input.userId, input.bookId);
@@ -320,7 +329,8 @@ export class ReadingAttemptService {
         finishedAt: projectionTarget?.outcome === 'completed' ? (projectionTarget.endedOn ?? null) : null,
         updatedAt: new Date().toISOString(),
       };
-    });
+    };
+    return transaction ? apply(transaction) : this.repo.transaction(apply);
   }
 
   async list(userId: number, bookId: number, page = 1, pageSize = 20): Promise<ReadingAttemptListResponse> {

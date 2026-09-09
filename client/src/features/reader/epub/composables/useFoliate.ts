@@ -3,9 +3,18 @@ import { api, getAccessToken } from '@/lib/api'
 import { useFoliateAnnotations } from './useFoliateAnnotations'
 import { useFoliateSelection } from './useFoliateSelection'
 import { useFoliateInput } from './useFoliateInput'
-import type { EpubBookInfo, EpubReaderSettings } from '@bookorbit/types'
+import type { EpubBookInfo, EpubReaderSettings, EpubReadingRevision, CanonicalReadingState, ReadingAnchor } from '@bookorbit/types'
+import { loadRevisionBook } from './reader-revision-book'
+import { captureAnnotationAnchor, captureNativeAnchor, restoreNativeAnchor, type AnchorView } from './reader-native-anchor'
+import { createAnnotationProjector } from './reader-annotation-projection'
+import { readingCopyIdentity, readingDeviceIdentity } from '../../shared/composables/reading-event-identity'
 
 export interface RelocateDetail {
+  reason?: string
+  readingAnchor?: ReadingAnchor | null
+  readingLibraryId?: number
+  readingResetGeneration?: number
+  restoration?: boolean
   cfi?: string | null
   fraction?: number
   index?: number
@@ -36,6 +45,8 @@ export interface FoliateLocationContext {
 }
 
 export interface EpubOpenOptions {
+  trackReading?: boolean
+  restoreCanonical?: boolean
   fixedLayoutSpread?: EpubReaderSettings['fixedLayoutSpread']
 }
 
@@ -84,6 +95,8 @@ export function useFoliate(
   const viewRef = ref<unknown>(null)
   const bookLanguage = ref<string>('en')
   const isFixedLayout = ref(false)
+  let installedRevision: EpubReadingRevision | null = null
+  let deliberateNavigation = false
 
   let onAnnotationClick: ((cfi: string, popupPosition: { x: number; y: number; showBelow: boolean }) => void) | null = null
 
@@ -119,6 +132,7 @@ export function useFoliate(
 
     let loadTimeoutId: ReturnType<typeof setTimeout> | undefined
     let initialNavigationPending = true
+    let reading: { revision: EpubReadingRevision; state: CanonicalReadingState } | null = null
 
     try {
       await loadScript()
@@ -140,7 +154,7 @@ export function useFoliate(
         clearSearch?: () => void
       }
       view.style.cssText = 'width:100%;height:100%;display:block;'
-      getViewEl()?.destroy?.()
+      closeView()
       el.innerHTML = ''
       el.appendChild(view)
       viewRef.value = view
@@ -218,7 +232,18 @@ export function useFoliate(
             cfi: detail?.cfi ?? null,
           })
         }
-        onRelocate?.(detail)
+        const restoration =
+          initialNavigationPending || (!deliberateNavigation && detail.reason && !['page', 'scroll', 'snap'].includes(detail.reason))
+        deliberateNavigation = false
+        const readingAnchor =
+          reading && !restoration && options?.trackReading !== false ? captureNativeAnchor(view as unknown as AnchorView, reading.revision) : null
+        onRelocate?.({
+          ...detail,
+          restoration: Boolean(restoration),
+          readingAnchor,
+          readingLibraryId: reading?.revision.libraryId,
+          readingResetGeneration: reading?.state.resetGeneration,
+        })
       })
 
       view.addEventListener('error', (e: Event) => {
@@ -239,28 +264,42 @@ export function useFoliate(
       let shouldRestoreByFraction = false
 
       if (format === 'epub') {
-        const infoRes = await api(`/api/v1/epub/${bookId}/info?fileId=${fileId}`)
-        if (!infoRes.ok) throw new Error(`Failed to fetch EPUB info: ${infoRes.status}`)
-        const bookInfo = await infoRes.json()
-        const rawLang = (bookInfo as EpubBookInfo)?.metadata?.language
-        bookLanguage.value = typeof rawLang === 'string' && rawLang ? (rawLang.split('-')[0] ?? 'en').toLowerCase() : 'en'
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const makeStreamingBook = (window as any).makeStreamingBook as
-          | ((
-              id: number,
-              base: string,
-              info: unknown,
-              fetchFile: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
-              bookType: null,
-              fileId: number,
-            ) => Promise<unknown>)
-          | undefined
-        if (!makeStreamingBook) throw new Error('makeStreamingBook not available')
-        const book = await makeStreamingBook(bookId, '/api/v1/epub', bookInfo, makeFoliateFetchFile(), null, fileId)
-        applyEpubOpenOptions(book, options)
-        shouldRestoreByFraction = isFixedLayoutBook(book)
-        isFixedLayout.value = shouldRestoreByFraction
-        await view.open(book as never)
+        const makeRevisionBook = (window as unknown as { makeRevisionBook?: (file: File) => Promise<unknown> }).makeRevisionBook
+        if (makeRevisionBook) {
+          const loaded = await loadRevisionBook(bookId, fileId, options?.trackReading !== false)
+          reading = loaded
+          installedRevision = loaded.revision
+          const book = await makeRevisionBook(loaded.file)
+          const rawLang = (book as { metadata?: { language?: unknown } }).metadata?.language
+          bookLanguage.value = typeof rawLang === 'string' && rawLang ? (rawLang.split('-')[0] ?? 'en').toLowerCase() : 'en'
+          applyEpubOpenOptions(book, options)
+          shouldRestoreByFraction = isFixedLayoutBook(book)
+          isFixedLayout.value = shouldRestoreByFraction
+          await view.open(book as never)
+        } else {
+          const infoRes = await api(`/api/v1/epub/${bookId}/info?fileId=${fileId}`)
+          if (!infoRes.ok) throw new Error(`Failed to fetch EPUB info: ${infoRes.status}`)
+          const bookInfo = await infoRes.json()
+          const rawLang = (bookInfo as EpubBookInfo)?.metadata?.language
+          bookLanguage.value = typeof rawLang === 'string' && rawLang ? (rawLang.split('-')[0] ?? 'en').toLowerCase() : 'en'
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const makeStreamingBook = (window as any).makeStreamingBook as
+            | ((
+                id: number,
+                base: string,
+                info: unknown,
+                fetchFile: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+                bookType: null,
+                fileId: number,
+              ) => Promise<unknown>)
+            | undefined
+          if (!makeStreamingBook) throw new Error('makeStreamingBook not available')
+          const book = await makeStreamingBook(bookId, '/api/v1/epub', bookInfo, makeFoliateFetchFile(), null, fileId)
+          applyEpubOpenOptions(book, options)
+          shouldRestoreByFraction = isFixedLayoutBook(book)
+          isFixedLayout.value = shouldRestoreByFraction
+          await view.open(book as never)
+        }
       } else {
         const mimeType = format === 'pdf' ? 'application/pdf' : 'application/zip'
         const ext = format === 'pdf' ? 'pdf' : format === 'cbz' ? 'cbz' : format
@@ -272,7 +311,19 @@ export function useFoliate(
       }
       if (onApplyStyles) onApplyStyles(view.renderer)
       let didNavigate = false
-      if (cfi && !shouldRestoreByFraction) {
+      if (reading?.state.anchor && options?.restoreCanonical !== false) {
+        const acknowledgement = await restoreNativeAnchor(view as unknown as AnchorView, reading.state.anchor, reading.revision)
+        didNavigate = acknowledgement !== null
+        if (acknowledgement) {
+          const deviceId = await readingDeviceIdentity()
+          await api(`/api/v1/libraries/${reading.revision.libraryId}/files/${fileId}/reading-events/acknowledgements`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId, copyId: readingCopyIdentity(), acknowledgement }),
+          })
+        }
+      }
+      if (!didNavigate && cfi && !reading && !shouldRestoreByFraction) {
         await view
           .goTo(cfi)
           .then((result) => {
@@ -303,6 +354,13 @@ export function useFoliate(
     }
   }
 
+  function closeView() {
+    installedRevision = null
+    const view = getViewEl()
+    if (view?.close) view.close()
+    else view?.destroy?.()
+  }
+
   function getViewEl() {
     return viewRef.value as
       | (ReturnType<typeof document.createElement> & {
@@ -316,6 +374,7 @@ export function useFoliate(
           book?: { toc?: unknown[] }
           renderer?: FoliateRenderer
           destroy?: () => void
+          close?: () => void
         })
       | null
   }
@@ -354,7 +413,7 @@ export function useFoliate(
 
   onUnmounted(() => {
     input.cleanup()
-    getViewEl()?.destroy?.()
+    closeView()
     viewRef.value = null
   })
 
@@ -365,19 +424,38 @@ export function useFoliate(
     bookLanguage,
     isFixedLayout,
     view: viewRef,
+    annotationProjector: () => {
+      const view = getViewEl()
+      return view && installedRevision ? createAnnotationProjector(view as unknown as AnchorView, installedRevision) : null
+    },
+    captureAnnotationAnchor: (cfi: string, text: string) => {
+      const view = getViewEl()
+      return view && installedRevision ? captureAnnotationAnchor(view as unknown as AnchorView, installedRevision, cfi, text) : null
+    },
     open: (bookId: number, fileId: number, format: string, cfi?: string | null, fallbackFraction?: number, options?: EpubOpenOptions) =>
       open(bookId, fileId, format, cfi, fallbackFraction, options),
     prev: () => getViewEl()?.prev?.(),
     next: () => getViewEl()?.next?.(),
-    goTo: (t: string | number) => getViewEl()?.goTo?.(t),
-    goToFraction: (f: number) => getViewEl()?.goToFraction?.(f),
-    goToSection: (i: number) => getViewEl()?.goTo?.(i),
+    goTo: (t: string | number) => {
+      deliberateNavigation = true
+      return getViewEl()?.goTo?.(t)
+    },
+    goToFraction: (f: number) => {
+      deliberateNavigation = true
+      return getViewEl()?.goToFraction?.(f)
+    },
+    goToSection: (i: number) => {
+      deliberateNavigation = true
+      return getViewEl()?.goTo?.(i)
+    },
     getSectionFractions: (): number[] => getViewEl()?.getSectionFractions?.() ?? [],
     getChapters: (): unknown[] => getViewEl()?.book?.toc ?? [],
     getRenderer: (): FoliateRenderer | null => getViewEl()?.renderer ?? null,
     getLocationContext: (target: string): Promise<FoliateLocationContext> => getLocationContext(target),
-    addAnnotation: (cfi: string, color = '#FACC15', style = 'highlight') => annotations.addAnnotation(viewRef.value, cfi, color, style),
-    addAnnotations: (anns: { cfi: string; color: string; style: string }[]) => annotations.addAnnotations(viewRef.value, anns),
+    addAnnotation: (cfi: string, color = '#FACC15', style = 'highlight', text?: string) =>
+      annotations.addAnnotation(viewRef.value, cfi, color, style, text),
+    pendingAnnotationCount: annotations.pendingAnnotationCount,
+    addAnnotations: (anns: { cfi: string; color: string; style: string; text?: string }[]) => annotations.addAnnotations(viewRef.value, anns),
     deleteAnnotation: (cfi: string) => annotations.deleteAnnotation(viewRef.value, cfi),
     redrawAnnotation: (cfi: string, color: string, style: string) => annotations.redrawAnnotation(viewRef.value, cfi, color, style),
     setTextSelectedHandler: selection.setHandler,

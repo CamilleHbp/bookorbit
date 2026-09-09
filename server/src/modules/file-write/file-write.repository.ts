@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, ne } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import type { WriteResult, WriteLogEntry } from '@bookorbit/types';
+import { KoboFileStateService } from '../kobo/kobo-file-state.service';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import {
@@ -29,7 +30,10 @@ type Db = NodePgDatabase<typeof schema>;
 
 @Injectable()
 export class FileWriteRepository {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    private readonly koboFiles: KoboFileStateService,
+  ) {}
 
   async findPrimaryFileForBook(bookId: number) {
     const [row] = await this.db
@@ -133,24 +137,9 @@ export class FileWriteRepository {
       return;
     }
 
-    // Embedding metadata rewrites the file, so its hash moves even though the book itself is
-    // unchanged. Kobo reconcile reads a moved hash as new content and re-delivers the book as a
-    // NewEntitlement, which makes the device discard its on-device annotations. Carrying the new
-    // hash into snapshots that recorded the pre-write one keeps reconcile on the metadata-only
-    // path. The device keeps the bytes it already has; it never receives the rewritten file.
     await this.db.transaction(async (tx) => {
       await updateFile(tx);
-      await tx.execute(sql`
-        UPDATE ${schema.koboSnapshotBooks} AS snapshot
-        SET file_hash = ${fields.fileHash}
-        FROM ${schema.books} AS book
-        WHERE book.id = ${bookId}
-          AND book.primary_file_id = ${bookFileId}
-          AND snapshot.book_id = book.id
-          AND snapshot.pending_delete = false
-          AND snapshot.removed_by_device = false
-          AND snapshot.file_hash IS NOT DISTINCT FROM ${previousFileHash}
-      `);
+      await this.koboFiles.preserveMetadataOnlyCopy(tx, bookId, bookFileId, previousFileHash, fields.fileHash!);
     });
   }
 

@@ -311,6 +311,32 @@ function StateManager.commit(expected_generation, fn)
     return StateManager.mutate(fn)
 end
 
+local function reserveSequence(key, minimum)
+    if active_mutation then return nil, "mutation_in_progress" end
+    local sequence
+    local ok = pcall(StateManager.mutateScoped, { global = true }, function(session)
+        local previous = session.global[key] or 0
+        if type(previous) ~= "number" or previous < 0 or previous >= 9007199254740991 or previous % 1 ~= 0 then
+            error("invalid_device_sequence", 0)
+        end
+        if minimum ~= nil and (type(minimum) ~= "number" or minimum < 0 or minimum > 9007199254740991 or minimum % 1 ~= 0) then
+            error("invalid_device_sequence", 0)
+        end
+        sequence = math.max(previous + 1, minimum or 0)
+        session.global[key] = sequence
+    end)
+    if not ok then return nil, "state_flush_failed" end
+    return sequence
+end
+
+function StateManager.reserveInventorySequence(minimum)
+    return reserveSequence("copyInventorySequence", minimum)
+end
+
+function StateManager.reserveReadingSequence(minimum)
+    return reserveSequence("readingDeviceSequence", minimum)
+end
+
 function StateManager.onDeviceMaps()
     if maps and maps_generation == generation then
         return maps

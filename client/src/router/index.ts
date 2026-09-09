@@ -278,6 +278,12 @@ export const routes: RouteRecordRaw[] = [
 
           // ── Library ────────────────────────────────────────────────────────
           {
+            path: 'fanfiction',
+            name: 'settings-fanfiction',
+            component: () => import('@/features/settings/FanfictionSettings.vue'),
+            meta: { title: () => t('fanfiction.settingsTitle') },
+          },
+          {
             path: 'libraries',
             name: 'settings-libraries',
             component: () => import('@/features/settings/LibrariesSettings.vue'),
@@ -486,6 +492,12 @@ export const routes: RouteRecordRaw[] = [
           { path: 'admin/maintenance', name: 'settings-admin-maintenance', redirect: { name: 'settings-maintenance' } },
           { path: ':pathMatch(.*)*', redirect: { name: 'settings-appearance-theme' } },
         ],
+      },
+      {
+        path: '/fanfiction',
+        name: 'fanfiction',
+        component: () => import('@/features/fanfiction/FanfictionPage.vue'),
+        meta: { title: () => t('fanfiction.title') },
       },
       {
         path: '/book-dock',

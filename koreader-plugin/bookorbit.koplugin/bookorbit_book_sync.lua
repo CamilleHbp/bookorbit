@@ -1,3 +1,4 @@
+local ReadingContinuity = require("bookorbit_reading_continuity")
 --[[--
 Per-book snapshot sync: pushes progress, highlights, status/rating and page
 stats for ONE book, sourced from live memory instead of the sidecar file, so
@@ -67,6 +68,8 @@ end
 -- flush writes pending page stats to statistics.sqlite3, which run() reads
 -- later; the DB outlives the document.
 function BookOrbitBookSync.capture(plugin)
+    ReadingContinuity.capture(plugin)
+    if not ReadingContinuity.canSync(plugin) then return nil end
     local ui = plugin.ui
     if not ui or not ui.document then return nil end
 
@@ -104,14 +107,16 @@ function BookOrbitBookSync.capture(plugin)
     return {
         digest = digest,
         file = file,
+        expected_book_file_id = plugin.reading_continuity and plugin.reading_continuity.record
+            and plugin.reading_continuity.record.anchor.bookFileId or nil,
         title = stats_ambiguous and titleFromFile(file) or (metadata.title or titleFromFile(file)),
         authors = stats_ambiguous and nil or metadata.authors,
         last_open = metadata.last_open or ts,
         metadata_ambiguous = false,
         stats_metadata_ambiguous = stats_ambiguous,
         stats_ids = stats_ids,
-        percentage = plugin:getLastPercent(),
-        progress = plugin:getLastProgress(),
+        percentage = not (plugin.reading_continuity and plugin.reading_continuity.protocol) and plugin:getLastPercent() or nil,
+        progress = not (plugin.reading_continuity and plugin.reading_continuity.protocol) and plugin:getLastProgress() or nil,
         status = summary.status,
         status_modified = summary.status_modified,
         rating = summary.rating,
@@ -273,6 +278,10 @@ end
 local stepMatch, stepStats, stepAnnotations, stepAnnotationsLegacy, stepBookmarks, stepState, stepProgress
 
 stepMatch = function(ctx)
+    local expected = ctx.snap.expected_book_file_id
+    local existing = ctx.state:getBook(ctx.snap.digest)
+    if expected and existing and existing.fileId ~= expected then return finish(ctx, "unmatched") end
+    if expected and not existing then ctx.acknowledged.match = false end
     if ctx.acknowledged.match then
         return step(ctx, stepStats)
     end
@@ -308,6 +317,7 @@ stepMatch = function(ctx)
 
     for _, match in ipairs(body.matches or {}) do
         if match.hash == ctx.snap.digest then
+            if expected and match.bookFileId ~= expected then return finish(ctx, "unmatched") end
             ctx.state:setMatched(match.hash, match.bookFileId, match.bookId, ctx.snap.file)
             if not acknowledge(ctx, "match") then return end
             return step(ctx, stepStats)

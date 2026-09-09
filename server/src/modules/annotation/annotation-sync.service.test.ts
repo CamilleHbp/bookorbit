@@ -1,3 +1,4 @@
+import { AnnotationAnchorService } from './annotation-anchor.service';
 import { Logger } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -100,6 +101,7 @@ function makeRepo(): RepoMock {
     updateState: vi.fn().mockResolvedValue(undefined),
     touchState: vi.fn().mockResolvedValue(undefined),
     createCanonical: vi.fn().mockImplementation((annotation: Record<string, unknown>) => Promise.resolve(makeAnnotationRow(annotation))),
+    attachSourceAnchor: vi.fn().mockResolvedValue(undefined),
     applyContentPatch: vi.fn().mockResolvedValue(2),
     updatePosition: vi.fn().mockResolvedValue(undefined),
     markPositionPending: vi.fn().mockResolvedValue(undefined),
@@ -119,6 +121,7 @@ function makeRepo(): RepoMock {
     findStateByAnnotationAndDevice: vi.fn().mockResolvedValue(null),
     upsertPosition: vi.fn().mockResolvedValue(undefined),
     findPositionsByAnnotationIds: vi.fn().mockResolvedValue([]),
+    findPositionFileIdentity: vi.fn().mockResolvedValue({ revisionId: null, sha256: null }),
     findExternalKeyForAnnotation: vi.fn().mockResolvedValue(null),
     findStatesBySourceForBook: vi.fn().mockResolvedValue([]),
     findBookIdsWithPendingKoboChanges: vi.fn().mockResolvedValue([]),
@@ -126,7 +129,9 @@ function makeRepo(): RepoMock {
 }
 
 function makeService(repo: RepoMock, achievementEvents: AchievementEventsService) {
-  return new AnnotationSyncService(repo as unknown as AnnotationSyncRepository, achievementEvents);
+  return new AnnotationSyncService(repo as unknown as AnnotationSyncRepository, achievementEvents, {
+    validate: vi.fn().mockResolvedValue(undefined),
+  } as unknown as AnnotationAnchorService);
 }
 
 function ingest(service: AnnotationSyncService, annotations: IncomingDeviceAnnotation[]) {
@@ -154,6 +159,43 @@ describe('AnnotationSyncService', () => {
     achievementEvents = new AchievementEventsService();
     emitSpy = vi.spyOn(achievementEvents, 'emit');
     service = makeService(repo, achievementEvents);
+  });
+
+  it('retains a new device annotation source anchor', async () => {
+    const sourceAnchor = {
+      schemaVersion: 1 as const,
+      bookId: BOOK_ID,
+      bookFileId: BOOK_FILE_ID,
+      revision: 'old',
+      chapterIndex: 0,
+      chapterFraction: 0,
+      bookFraction: 0,
+    };
+    await ingest(service, [makeIncoming({ sourceAnchor })]);
+    expect(repo.createCanonical).toHaveBeenCalledWith(expect.objectContaining({ sourceAnchor }), expect.anything(), expect.anything(), TX);
+  });
+
+  it('backfills a missing anchor without a new version or annotation event', async () => {
+    const sourceAnchor = {
+      schemaVersion: 1 as const,
+      bookId: BOOK_ID,
+      bookFileId: BOOK_FILE_ID,
+      revision: 'old',
+      chapterIndex: 0,
+      chapterFraction: 0,
+      bookFraction: 0,
+    };
+    repo.findStateByDeviceKey.mockResolvedValue(makeStateRow());
+    repo.findAnnotationById.mockResolvedValue(makeAnnotationRow());
+    const result = await ingest(service, [makeIncoming({ sourceAnchor })]);
+    expect(repo.attachSourceAnchor).toHaveBeenCalledWith(100, USER_ID, sourceAnchor, TX);
+    expect(repo.applyContentPatch).not.toHaveBeenCalled();
+    expect(emitSpy).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ created: 0, updated: 0, unchanged: 1 });
+    repo.findAnnotationById.mockResolvedValue(makeAnnotationRow({ sourceAnchor }));
+    repo.attachSourceAnchor.mockClear();
+    await ingest(service, [makeIncoming({ sourceAnchor: { ...sourceAnchor, revision: 'projected' } })]);
+    expect(repo.attachSourceAnchor).not.toHaveBeenCalled();
   });
 
   describe('buildAnnotationKey', () => {
@@ -515,7 +557,7 @@ describe('AnnotationSyncService', () => {
       expect(result.adds).toHaveLength(1);
       expect(result.more).toBe(false);
       expect(repo.findEditCandidates).toHaveBeenCalledWith(USER_ID, 'koreader', DEVICE_ID, BOOK_ID, 10);
-      expect(repo.findAddCandidates).toHaveBeenCalledWith(USER_ID, 'koreader', DEVICE_ID, BOOK_ID, 9, ['xpointer', 'cfi']);
+      expect(repo.findAddCandidates).toHaveBeenCalledWith(USER_ID, 'koreader', DEVICE_ID, BOOK_ID, 9, ['xpointer', 'cfi'], undefined);
     });
 
     it('requests KOReader-compatible positions before add pagination', async () => {
@@ -524,16 +566,16 @@ describe('AnnotationSyncService', () => {
         requiredFormats?.includes('cfi') ? [compatible] : Array.from({ length: 101 }, (_, index) => makeAnnotationRow({ id: index + 1 })),
       );
 
-      const result = await service.computePushDown(USER_ID, 'koreader', DEVICE_ID, BOOK_ID, 100);
+      const result = await service.computePushDown(USER_ID, 'koreader', DEVICE_ID, BOOK_ID, 100, 2);
 
       expect(result.adds.map((row) => row.id)).toEqual([500]);
-      expect(repo.findAddCandidates).toHaveBeenCalledWith(USER_ID, 'koreader', DEVICE_ID, BOOK_ID, 101, ['xpointer', 'cfi']);
+      expect(repo.findAddCandidates).toHaveBeenCalledWith(USER_ID, 'koreader', DEVICE_ID, BOOK_ID, 101, ['xpointer', 'cfi'], 2);
     });
 
     it('does not filter Kobo add candidates by KOReader position formats', async () => {
       await service.computePushDown(USER_ID, 'kobo', DEVICE_ID, BOOK_ID, 10);
 
-      expect(repo.findAddCandidates).toHaveBeenCalledWith(USER_ID, 'kobo', DEVICE_ID, BOOK_ID, 11, undefined);
+      expect(repo.findAddCandidates).toHaveBeenCalledWith(USER_ID, 'kobo', DEVICE_ID, BOOK_ID, 11, undefined, undefined);
     });
 
     it('reports more when a category overflows the remaining budget', async () => {
@@ -623,6 +665,7 @@ describe('AnnotationSyncService', () => {
         userId: USER_ID,
         source: 'koreader',
         deviceId: DEVICE_ID,
+        bookId: BOOK_ID,
         bookFileId: BOOK_FILE_ID,
         applied: applied as never,
         deleted,
@@ -675,7 +718,7 @@ describe('AnnotationSyncService', () => {
     });
 
     it('marks the position failed without creating device state on a failed apply', async () => {
-      repo.findAnnotationById.mockResolvedValue(makeAnnotationRow());
+      repo.findAnnotationById.mockResolvedValue(makeAnnotationRow({ version: 3 }));
 
       const result = await ack([{ serverId: 100, version: 3, status: 'failed' }]);
 
@@ -685,12 +728,57 @@ describe('AnnotationSyncService', () => {
     });
 
     it('acks deletions by setting deleteAckedAt', async () => {
+      repo.findAnnotationById.mockResolvedValue(makeAnnotationRow({ deletedAt: new Date() }));
       repo.findStateByAnnotationAndDevice.mockResolvedValue(makeStateRow());
 
       const result = await ack([], [{ serverId: 100, status: 'applied' }]);
 
       expect(result.acked).toBe(1);
       expect(repo.setDeleteAcked).toHaveBeenCalledWith(900, TX);
+    });
+
+    it.each([{}, { positionSha256: 'a'.repeat(64), positionRevisionId: 'old-revision' }])(
+      'keeps unverifiable revision acknowledgements out of the shared position cache: %j',
+      async (evidence) => {
+        repo.findPositionFileIdentity.mockResolvedValue({ revisionId: 'current-revision', sha256: 'b'.repeat(64) });
+        repo.findAnnotationById.mockResolvedValue(makeAnnotationRow({ version: 3 }));
+        await ack([{ serverId: 100, version: 3, status: 'failed', ...evidence }]);
+        await ack([{ serverId: 100, version: 3, status: 'applied', corrected: true, verified: true, pos0: '/older-copy', ...evidence }]);
+        expect(repo.updatePosition).not.toHaveBeenCalled();
+        expect(repo.upsertPosition).not.toHaveBeenCalled();
+        expect(repo.bumpVersion).not.toHaveBeenCalled();
+        expect(repo.insertState).toHaveBeenCalledWith(expect.objectContaining({ lastAppliedVersion: 3 }), TX);
+      },
+    );
+
+    it('binds a current verified correction to the locked file revision', async () => {
+      const identity = { revisionId: 'current-revision', sha256: 'b'.repeat(64) };
+      repo.findPositionFileIdentity.mockResolvedValue(identity);
+      repo.findAnnotationById.mockResolvedValue(makeAnnotationRow({ version: 3 }));
+      await ack([
+        {
+          serverId: 100,
+          version: 3,
+          status: 'applied',
+          corrected: true,
+          verified: true,
+          pos0: '/current-copy',
+          positionRevisionId: identity.revisionId,
+          positionSha256: identity.sha256,
+        },
+      ]);
+      expect(repo.findPositionFileIdentity).toHaveBeenCalledWith(USER_ID, BOOK_ID, BOOK_FILE_ID, TX, true);
+      expect(repo.upsertPosition).toHaveBeenCalledWith(expect.objectContaining({ extras: identity, status: 'repaired' }), TX);
+    });
+
+    it('preserves the device key when an older copy acknowledges a note edit without a locator', async () => {
+      repo.findPositionFileIdentity.mockResolvedValue({ revisionId: 'new-revision', sha256: 'b'.repeat(64) });
+      repo.findAnnotationById.mockResolvedValue(makeAnnotationRow({ version: 3 }));
+      repo.findStateByAnnotationAndDevice.mockResolvedValue(makeStateRow({ externalKey: 'older-copy-key' }));
+      expect(await ack([{ serverId: 100, version: 3, status: 'applied', verified: true }])).toEqual({ acked: 1 });
+      expect(repo.insertState).toHaveBeenCalledWith(expect.objectContaining({ externalKey: 'older-copy-key', lastAppliedVersion: 3 }), TX);
+      expect(repo.findDevicePosition).not.toHaveBeenCalled();
+      expect(repo.updatePosition).not.toHaveBeenCalled();
     });
 
     it('ignores acks for annotations the user does not own', async () => {
@@ -701,6 +789,33 @@ describe('AnnotationSyncService', () => {
       expect(result.acked).toBe(0);
       expect(repo.insertState).not.toHaveBeenCalled();
     });
+
+    it.each([{ bookId: BOOK_ID + 1, version: 3 }, { version: 4 }, { version: 2 }, { version: 3, deletedAt: new Date() }])(
+      'ignores stale and unrelated applied acknowledgements: %j',
+      async (overrides) => {
+        repo.findAnnotationById.mockResolvedValue(makeAnnotationRow(overrides));
+        expect(
+          await ack([
+            { serverId: 100, version: 3, status: 'failed' },
+            { serverId: 100, version: 3, status: 'applied', corrected: true, pos0: '/old' },
+          ]),
+        ).toEqual({ acked: 0 });
+        expect(repo.updatePosition).not.toHaveBeenCalled();
+        expect(repo.upsertPosition).not.toHaveBeenCalled();
+        expect(repo.insertState).not.toHaveBeenCalled();
+        expect(repo.bumpVersion).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([{ bookId: BOOK_ID + 1, deletedAt: new Date() }, { deletedAt: null }])(
+      'ignores unrelated or restored deletion acknowledgements: %j',
+      async (overrides) => {
+        repo.findAnnotationById.mockResolvedValue(makeAnnotationRow(overrides));
+        repo.findStateByAnnotationAndDevice.mockResolvedValue(makeStateRow());
+        expect(await ack([], [{ serverId: 100, status: 'applied' }])).toEqual({ acked: 0 });
+        expect(repo.setDeleteAcked).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('kobo external-key identity', () => {

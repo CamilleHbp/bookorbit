@@ -89,6 +89,19 @@ const envSchema = z.object({
   OIDC_ALLOW_LOCAL_ISSUERS: booleanEnvFlag('OIDC_ALLOW_LOCAL_ISSUERS'),
   CSP_ALLOW_CLOUDFLARE_INSIGHTS: booleanEnvFlag('CSP_ALLOW_CLOUDFLARE_INSIGHTS'),
   SWAGGER_ENABLED: booleanEnvFlag('SWAGGER_ENABLED'),
+  FANFICFARE_PYTHON: z
+    .string()
+    .trim()
+    .refine((value) => value === '' || isAbsolute(value), 'FANFICFARE_PYTHON must be an absolute path')
+    .optional(),
+  FANFICFARE_ENCRYPTION_KEY: z
+    .string()
+    .trim()
+    .refine(
+      (value) => value === '' || (/^[A-Za-z0-9+/]{43}=$/.test(value) && Buffer.from(value, 'base64').toString('base64') === value),
+      'FANFICFARE_ENCRYPTION_KEY must encode exactly 32 bytes as base64',
+    )
+    .optional(),
   KOBO_CLOUDSCRAPER_PYTHON: z
     .string()
     .transform((val) => val.trim())

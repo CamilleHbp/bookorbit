@@ -1,3 +1,4 @@
+import { staleGeneratedPositionForFile } from './annotation-position-revision';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   SQL,
@@ -132,6 +133,7 @@ export class AnnotationRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
 
   private hubColumns() {
+    const stale = staleGeneratedPositionForFile(annotationPositions);
     const jumpFileId = sql<number | null>`coalesce(
       ${annotationPositions.bookFileId},
       (select ap2.book_file_id from annotation_positions ap2 where ap2.annotation_id = ${annotations.id} and ap2.format in ('xpointer', 'pdf') limit 1),
@@ -139,8 +141,8 @@ export class AnnotationRepository {
     )`;
     return {
       ...getTableColumns(annotations),
-      cfi: annotationPositions.pos0,
-      cfiStatus: annotationPositions.status,
+      cfi: sql<string | null>`case when ${stale} then null else ${annotationPositions.pos0} end`,
+      cfiStatus: sql<string | null>`case when ${stale} then 'pending' else ${annotationPositions.status} end`,
       cfiExtras: annotationPositions.extras,
       bookTitle: bookMetadata.title,
       author: sql<
@@ -158,11 +160,12 @@ export class AnnotationRepository {
   }
 
   private selectWithCfi() {
+    const stale = staleGeneratedPositionForFile(annotationPositions);
     return this.db
       .select({
         ...getTableColumns(annotations),
-        cfi: annotationPositions.pos0,
-        cfiStatus: annotationPositions.status,
+        cfi: sql<string | null>`case when ${stale} then null else ${annotationPositions.pos0} end`,
+        cfiStatus: sql<string | null>`case when ${stale} then 'pending' else ${annotationPositions.status} end`,
         cfiExtras: annotationPositions.extras,
         jumpFileId: sql<
           number | null
@@ -288,7 +291,7 @@ export class AnnotationRepository {
         .select({ total: count() })
         .from(annotations)
         .innerJoin(annotationPositions, and(eq(annotationPositions.annotationId, annotations.id), eq(annotationPositions.format, 'cfi')))
-        .where(and(...reviewConditions, sql`${annotationPositions.status} <> 'exact'`)),
+        .where(and(...reviewConditions, or(sql`${annotationPositions.status} <> 'exact'`, staleGeneratedPositionForFile(annotationPositions)))),
     ]);
 
     const agg = aggregateResult[0];
@@ -537,7 +540,12 @@ export class AnnotationRepository {
       .select({ total: count() })
       .from(annotations)
       .innerJoin(annotationPositions, and(eq(annotationPositions.annotationId, annotations.id), eq(annotationPositions.format, 'cfi')))
-      .where(and(...this.buildHubConditions(userId, rest), sql`${annotationPositions.status} <> 'exact'`));
+      .where(
+        and(
+          ...this.buildHubConditions(userId, rest),
+          or(sql`${annotationPositions.status} <> 'exact'`, staleGeneratedPositionForFile(annotationPositions)),
+        ),
+      );
     return Number(row?.total ?? 0);
   }
 
@@ -694,7 +702,7 @@ export class AnnotationRepository {
     // and a join there would multiply the counts it is asked for.
     if (filters.needsReview) {
       conditions.push(
-        sql`exists (select 1 from ${annotationPositions} where ${annotationPositions.annotationId} = ${annotations.id} and ${annotationPositions.format} = 'cfi' and ${annotationPositions.status} <> 'exact')`,
+        sql`exists (select 1 from ${annotationPositions} where ${annotationPositions.annotationId} = ${annotations.id} and ${annotationPositions.format} = 'cfi' and (${annotationPositions.status} <> 'exact' or ${staleGeneratedPositionForFile(annotationPositions)}))`,
       );
     }
     if (filters.dateFrom) conditions.push(gte(highlightedAt(), filters.dateFrom));
@@ -746,7 +754,7 @@ export class AnnotationRepository {
     // multiply every aggregate it is asked for.
     if (filters.needsReview) {
       conditions.push(
-        sql`exists (select 1 from ${annotationPositions} where ${annotationPositions.annotationId} = ${annotations.id} and ${annotationPositions.format} = 'cfi' and ${annotationPositions.status} <> 'exact')`,
+        sql`exists (select 1 from ${annotationPositions} where ${annotationPositions.annotationId} = ${annotations.id} and ${annotationPositions.format} = 'cfi' and (${annotationPositions.status} <> 'exact' or ${staleGeneratedPositionForFile(annotationPositions)}))`,
       );
     }
 

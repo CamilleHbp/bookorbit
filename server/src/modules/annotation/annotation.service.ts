@@ -1,3 +1,4 @@
+import { AnnotationAnchorService } from './annotation-anchor.service';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
@@ -23,6 +24,7 @@ export class AnnotationService {
     private readonly bookService: BookService,
     private readonly achievementEvents: AchievementEventsService,
     private readonly conversionService: AnnotationConversionService,
+    private readonly anchors: AnnotationAnchorService,
   ) {}
 
   async getAnnotations(bookId: number, user: RequestUser): Promise<AnnotationResponseDto[]> {
@@ -90,6 +92,21 @@ export class AnnotationService {
       if (file.bookId !== bookId) throw new BadRequestException('The selected file does not belong to this book');
       if (dto.pdf && file.format?.toLowerCase() !== 'pdf') throw new BadRequestException('PDF annotations require a PDF book file');
     }
+    if (dto.sourceAnchor) {
+      const anchor = dto.sourceAnchor;
+      if (
+        dto.pdf ||
+        !dto.bookFileId ||
+        anchor.schemaVersion !== 1 ||
+        anchor.bookId !== bookId ||
+        anchor.bookFileId !== dto.bookFileId ||
+        anchor.nativeLocator?.kind !== 'cfi' ||
+        anchor.nativeLocator.value !== dto.cfi
+      ) {
+        throw new BadRequestException('Annotation anchor does not match its book file and location');
+      }
+      await this.anchors.validate(bookId, dto.bookFileId, [anchor]);
+    }
     const startedAtMs = Date.now();
     const format = dto.pdf ? 'pdf' : 'cfi';
     this.logger.log(`[annotation.create] [start] bookId=${bookId} userId=${user.id} format=${format} - create annotation started`);
@@ -102,6 +119,7 @@ export class AnnotationService {
         style: dto.style ?? DEFAULT_ANNOTATION_STYLE,
         note: dto.note ?? null,
         chapterTitle: dto.chapterTitle ?? null,
+        ...(dto.sourceAnchor && { sourceAnchor: dto.sourceAnchor }),
       };
       const row = dto.pdf
         ? await this.annotationRepo.createPdf(

@@ -6218,6 +6218,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "Reîncercați",
     "pdf": {
       "openError": "Imposibil de deschis acest PDF",

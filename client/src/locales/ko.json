@@ -7467,6 +7467,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "재시도",
     "pdf": {
       "openError": "이 PDF를 열 수 없음",

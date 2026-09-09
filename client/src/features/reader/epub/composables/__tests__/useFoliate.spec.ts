@@ -46,6 +46,19 @@ describe('useFoliate.open', () => {
   let includeGoToFraction: boolean
   let viewEl: HTMLElement | null
 
+  it('marks initial location changes as restoration until opening finishes', async () => {
+    const relocated = vi.fn<(detail: unknown) => void>()
+    mockGoTo.mockImplementation(async () => {
+      viewEl?.dispatchEvent(new CustomEvent('relocate', { detail: { fraction: 0.4 } }))
+      return { index: 0 }
+    })
+    const reader = useFoliate(() => container, relocated)
+    await reader.open(1, 2, 'epub', 'epubcfi(/6/4)')
+    expect(relocated).toHaveBeenCalledWith(expect.objectContaining({ fraction: 0.4, restoration: true }))
+    viewEl?.dispatchEvent(new CustomEvent('relocate', { detail: { fraction: 0.5 } }))
+    expect(relocated).toHaveBeenLastCalledWith(expect.objectContaining({ fraction: 0.5, restoration: false }))
+  })
+
   beforeEach(() => {
     inputMock.cleanup.mockReset()
     inputMock.attachIframeClicks.mockReset()

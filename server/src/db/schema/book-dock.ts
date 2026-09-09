@@ -1,9 +1,10 @@
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, index, integer, jsonb, pgTable, serial, text, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, check, index, integer, jsonb, pgTable, serial, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import type { BookDockMetadata } from '@bookorbit/types';
 
 import { libraries, libraryFolders } from './libraries';
 import { users } from './auth';
+import { books, bookFiles } from './books';
 
 export const bookDockFiles = pgTable(
   'book_dock_files',
@@ -44,6 +45,7 @@ export const bookDockFiles = pgTable(
      * The dock deliberately does not learn which module, only that it is not its call to make.
      */
     autoFinalizeSuppressed: boolean('auto_finalize_suppressed').notNull().default(false),
+    ingestionMode: varchar('ingestion_mode', { length: 20 }).notNull().default('standard'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
@@ -55,12 +57,38 @@ export const bookDockFiles = pgTable(
     index('book_dock_files_target_library_id_idx').on(t.targetLibraryId),
     index('book_dock_files_uploaded_by_idx').on(t.uploadedBy),
     check('book_dock_files_status_chk', sql`${t.status} in ('pending', 'extracting', 'fetching', 'ready', 'error')`),
+    check('book_dock_files_ingestion_mode_chk', sql`${t.ingestionMode} in ('standard', 'managed')`),
     check('book_dock_files_confidence_range_chk', sql`${t.confidence} is null or (${t.confidence} >= 0 and ${t.confidence} <= 100)`),
   ],
 );
 
 export type BookDockFileRow = typeof bookDockFiles.$inferSelect;
 export type NewBookDockFileRow = typeof bookDockFiles.$inferInsert;
+
+export const bookDockManagedUploads = pgTable(
+  'book_dock_managed_uploads',
+  {
+    id: uuid('id').primaryKey(),
+    dockFileId: integer('dock_file_id').references(() => bookDockFiles.id, { onDelete: 'set null' }),
+    libraryId: integer('library_id').references(() => libraries.id, { onDelete: 'set null' }),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    ownerKey: uuid('owner_key'),
+    state: varchar('state', { length: 20 }).$type<'uploading' | 'ready' | 'claimed'>().notNull().default('uploading'),
+    sha256: varchar('sha256', { length: 64 }),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('book_dock_managed_uploads_expiry_idx').on(t.expiresAt, t.id),
+    index('book_dock_managed_uploads_user_idx').on(t.userId),
+    index('book_dock_managed_uploads_library_idx').on(t.libraryId),
+    index('book_dock_managed_uploads_dock_idx').on(t.dockFileId),
+    check('book_dock_managed_uploads_state_chk', sql`${t.state} in ('uploading', 'ready', 'claimed')`),
+    check('book_dock_managed_uploads_size_chk', sql`${t.sizeBytes} >= 0 and ${t.sizeBytes} <= 134217728`),
+    check('book_dock_managed_uploads_hash_chk', sql`${t.sha256} is null or ${t.sha256} ~ '^[a-f0-9]{64}$'`),
+  ],
+);
 
 /**
  * The files a dock unit is made of, in playback or format order. Holds **every** file including
@@ -92,3 +120,51 @@ export const bookDockUnitFiles = pgTable(
 
 export type BookDockUnitFileRow = typeof bookDockUnitFiles.$inferSelect;
 export type NewBookDockUnitFileRow = typeof bookDockUnitFiles.$inferInsert;
+
+export const bookDockManagedImports = pgTable(
+  'book_dock_managed_imports',
+  {
+    id: uuid('id').primaryKey(),
+    libraryId: integer('library_id')
+      .notNull()
+      .references(() => libraries.id, { onDelete: 'cascade' }),
+    folderId: integer('folder_id')
+      .notNull()
+      .references(() => libraryFolders.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    dockFileId: integer('dock_file_id').notNull().unique(),
+    metadataSourceKey: varchar('metadata_source_key', { length: 100 }),
+    state: varchar('state', { length: 32 })
+      .$type<'reserved' | 'prepared' | 'filesystem_published' | 'database_committed' | 'metadata_committed' | 'cleanup_complete'>()
+      .notNull()
+      .default('reserved'),
+    fileName: text('file_name').notNull(),
+    sourcePath: text('source_path').notNull(),
+    dockPath: text('dock_path').notNull(),
+    libraryRoot: text('library_root').notNull(),
+    destinationPath: text('destination_path').notNull().unique(),
+    bookFolderPath: text('book_folder_path').notNull(),
+    sha256: varchar('sha256', { length: 64 }).notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    bookId: integer('book_id').references(() => books.id, { onDelete: 'set null' }),
+    bookFileId: integer('book_file_id').references(() => bookFiles.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdateFn(() => new Date()),
+  },
+  (t) => [
+    index('book_dock_managed_imports_library_idx').on(t.libraryId, t.id),
+    index('book_dock_managed_imports_folder_idx').on(t.folderId),
+    index('book_dock_managed_imports_user_idx').on(t.userId),
+    index('book_dock_managed_imports_book_idx').on(t.bookId),
+    index('book_dock_managed_imports_file_idx').on(t.bookFileId),
+    check(
+      'book_dock_managed_imports_state_chk',
+      sql`${t.state} in ('reserved', 'prepared', 'filesystem_published', 'database_committed', 'metadata_committed', 'cleanup_complete')`,
+    ),
+  ],
+);

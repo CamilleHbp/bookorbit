@@ -1,7 +1,15 @@
 import { BookRepository } from './book.repository';
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { audiobookProgress, bookMetadata, books, koreaderDeviceProgress, koreaderProgressResets, readingProgress } from '../../db/schema';
+import {
+  audiobookProgress,
+  bookMetadata,
+  books,
+  koreaderDeviceProgress,
+  koreaderProgressResets,
+  readingEventHeads,
+  readingProgress,
+} from '../../db/schema';
 
 function makeSelectChain<T>(terminalMethod: string, terminalResult: T) {
   const chain: Record<string, vi.Mock> = {
@@ -1364,8 +1372,10 @@ describe('BookRepository', () => {
     await repo.clearFileProgress(7, 99);
 
     expect(deleted).toEqual([readingProgress, audiobookProgress, koreaderDeviceProgress, koreaderProgressResets]);
-    expect(inserted).toHaveLength(1);
-    expect(inserted[0]).toEqual({ table: koreaderProgressResets, rows: [{ userId: 7, bookFileId: 99 }] });
+    expect(inserted).toEqual([
+      { table: readingEventHeads, rows: [{ userId: 7, bookFileId: 99, resetGeneration: 1 }] },
+      { table: koreaderProgressResets, rows: [{ userId: 7, bookFileId: 99 }] },
+    ]);
   });
 
   it('leaves the Kobo bookmark alone when the cleared file is not the book primary', async () => {
@@ -1410,6 +1420,13 @@ describe('BookRepository', () => {
 
     expect(deleted).toEqual([readingProgress, audiobookProgress, koreaderDeviceProgress, koreaderProgressResets]);
     expect(inserted).toEqual([
+      {
+        table: readingEventHeads,
+        rows: [
+          { userId: 7, bookFileId: 11, resetGeneration: 1 },
+          { userId: 7, bookFileId: 12, resetGeneration: 1 },
+        ],
+      },
       {
         table: koreaderProgressResets,
         rows: [

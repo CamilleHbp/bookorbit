@@ -245,6 +245,25 @@ assertEqual(exists(final_path), false, "unsafe redirect publishes nothing")
 response.queue = nil
 
 -- Outside a Trapper coroutine nothing forks; the call stays blocking.
+requests = {}
+local leased = api:downloadBlocking("/koreader/plugin/deliveries/job/download", final_path, {
+    temp_path = temp_path, method = "POST", body = { token = "lease-token", fence = 2 }, publish = "parent",
+})
+assertEqual(type(leased), "table", "leased download is staged for parent publication")
+assertEqual(requests[1].method, "POST", "revision download uses the lease endpoint's method")
+assertEqual(requests[1].headers["content-type"], "application/json", "lease proof is sent as JSON")
+assertEqual(requests[1].headers["content-length"], tostring(#requests[1].source), "lease body length matches its bytes")
+os.remove(temp_path)
+requests = {}
+response.queue = { { code = 307, headers = { location = "/another-path" }, chunks = {} } }
+local denied, lease_redirect_err = api:downloadBlocking("/delivery/download", final_path, {
+    temp_path = temp_path, method = "POST", body = { token = "lease-token" },
+})
+assertEqual(denied, nil, "leased downloads reject redirects")
+assertEqual(lease_redirect_err, "unsafe_redirect", "lease proof cannot be redirected")
+assertEqual(#requests, 1, "lease proof reaches only the requested endpoint")
+response.queue = nil
+
 wrapped = false
 forks = 0
 assertEqual(api:canForkSubprocess(), false, "no fork without a Trapper coroutine")

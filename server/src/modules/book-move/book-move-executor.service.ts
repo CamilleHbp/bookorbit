@@ -1,3 +1,4 @@
+import { RevisionCoordinationService } from '../book-revision/revision-coordination.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { dirname, relative } from 'path';
 
@@ -53,10 +54,17 @@ export class BookMoveExecutorService {
     private readonly moveRepo: BookMoveRepository,
     private readonly lockService: FileLockService,
     private readonly selfWriteRegistry: SelfWriteRegistry,
+    private readonly coordination: RevisionCoordinationService,
   ) {}
 
   async execute(input: ExecuteMoveInput): Promise<ExecuteMoveResult> {
-    return this.lockService.withLock(bookOperationLockKey(input.plan.bookId), () => this.executeLocked(input));
+    return this.lockService.withLock(bookOperationLockKey(input.plan.bookId), () =>
+      this.coordination.withRelocation(
+        input.plan.files.map((file) => file.fileId),
+        () => this.executeLocked(input),
+        input.plan.files.map((file) => ({ fileId: file.fileId, bookId: input.plan.bookId, path: file.from })),
+      ),
+    );
   }
 
   private async executeLocked(input: ExecuteMoveInput): Promise<ExecuteMoveResult> {

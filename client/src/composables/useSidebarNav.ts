@@ -1,7 +1,7 @@
 import { computed, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, type RouteLocationNormalizedLoaded, type RouteLocationRaw } from 'vue-router'
-import { BookPlus, Highlighter, LayoutDashboard, Library, PackageOpen, Users, Wrench } from '@lucide/vue'
+import { BookOpen, BookPlus, Highlighter, LayoutDashboard, Library, PackageOpen, Users, Wrench } from '@lucide/vue'
 import { Permission, type BrowseCounts, type SidebarSectionId } from '@bookorbit/types'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useBookDockSummary } from '@/features/book-dock/composables/useBookDockSummary'
@@ -87,6 +87,15 @@ export const SIDEBAR_NAV_REGISTRY: readonly SidebarNavEntry[] = [
     zone: 'primary',
     to: { name: 'dashboard' },
     isActive: (route) => route.name === 'dashboard',
+  },
+  {
+    id: 'fanfiction',
+    labelKey: 'fanfiction.title',
+    icon: BookOpen,
+    zone: 'primary',
+    to: { name: 'fanfiction' },
+    isActive: (route) => route.name === 'fanfiction',
+    permission: Permission.ManageLibraries,
   },
   {
     id: 'book-dock',

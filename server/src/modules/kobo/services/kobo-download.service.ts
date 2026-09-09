@@ -59,7 +59,7 @@ export class KoboDownloadService {
       const limitBytes = settings.kepubConversionLimitMb * 1024 * 1024;
       const withinLimit = !file.sizeBytes || file.sizeBytes <= limitBytes;
       if (settings.convertToKepub && withinLimit) {
-        return this.streamKepub(file.absolutePath, file.fileHash ?? 'nohash', bookId, file.id, settings.forceEnableHyphenation, reply);
+        return this.streamKepub(file.absolutePath, file.fileHash ?? 'nohash', bookId, file.id, settings.forceEnableHyphenation, reply, userId);
       }
     }
 
@@ -78,17 +78,33 @@ export class KoboDownloadService {
     }
   }
 
-  private async streamKepub(sourcePath: string, fileHash: string, bookId: number, fileId: number, hyphenate: boolean, reply: FastifyReply) {
+  private async streamKepub(
+    sourcePath: string,
+    fileHash: string,
+    bookId: number,
+    fileId: number,
+    hyphenate: boolean,
+    reply: FastifyReply,
+    userId: number,
+  ) {
     const start = Date.now();
+    let downloadPath = sourcePath;
+    let format = 'epub';
     try {
-      const cachedPath = await this.kepubConversionService.getKepubPath({ sourcePath, fileHash, bookId, hyphenate });
-      return this.streamFile(cachedPath, fileId, 'kepub.epub', reply);
+      downloadPath = await this.kepubConversionService.getKepubPath({ sourcePath, fileHash, bookId, hyphenate });
+      format = 'kepub.epub';
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       this.logger.warn(
         `[kobo.download] [fail] bookId=${bookId} fileId=${fileId} durationMs=${Date.now() - start} errorClass=${error.constructor.name} error="${sanitizeLogValue(error.message)}" - kepub conversion failed, falling back to epub`,
       );
-      return this.streamFile(sourcePath, fileId, 'epub', reply);
     }
+    await this.bookAccessService.assertBookAccessible(userId, bookId);
+    const current = await this.db.query.bookFiles.findFirst({
+      where: and(eq(schema.bookFiles.id, fileId), eq(schema.bookFiles.bookId, bookId), eq(schema.bookFiles.absolutePath, sourcePath)),
+      columns: { id: true },
+    });
+    if (!current) throw new NotFoundException('Book file changed during conversion; request the download again');
+    return this.streamFile(downloadPath, fileId, format, reply);
   }
 }
