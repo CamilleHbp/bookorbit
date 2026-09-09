@@ -119,9 +119,6 @@ Full documentation is at **[bookorbit.app](https://bookorbit.app/what-is-bookorb
 
 For setting up book requests, see the [book requests guide](docs/BOOK_REQUESTS.md): indexers,
 download clients, path mappings, automation, and the encryption key they all need.
-For a one-time import from Audiobookshelf, see the [Audiobookshelf migration guide](docs/AUDIOBOOKSHELF_MIGRATION.md).
-For a stopped-snapshot import from Calibre-Web Automated, see the
-[Calibre-Web Automated migration guide](docs/CALIBRE_WEB_AUTOMATED_MIGRATION.md).
 For local development, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). To contribute, see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the full workflow: branch naming, test expectations, PR checklist, and commit format.
 
 ## Repository Activity
