@@ -82,6 +82,41 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.findAll('article')).toHaveLength(0)
   })
 
+  it.each(['duplicate', 'resolved-alias', 'update-race'])('opens the metadata review from an existing import (%s)', async (scenario) => {
+    const router = await open('/fanfiction?tab=add')
+    const story = { id: 'existing', title: 'Humanitas', bookId: 1968, attentionCode: 'metadata_review_required' }
+    vi.mocked(api).mockImplementation(async (url) => {
+      const path = String(url)
+      if (path.includes('profile-match')) return new Response(JSON.stringify({ profile: null }))
+      if (path.endsWith('/sources')) {
+        if (scenario === 'resolved-alias')
+          return new Response(JSON.stringify({ id: 'import-job', kind: 'import', state: 'succeeded', result: { existingStory: story } }))
+        return new Response(
+          JSON.stringify({ errorCode: 'story_exists', errorMeta: scenario === 'update-race' ? { id: story.id, title: story.title } : story }),
+          { status: 409 },
+        )
+      }
+      if (path.endsWith('/check'))
+        return new Response(JSON.stringify({ errorCode: 'metadata_review_required', errorMeta: { sourceId: story.id, bookId: 1968 } }), {
+          status: 409,
+        })
+      return new Response(JSON.stringify({ items: [], nextCursor: null }))
+    })
+    await wrapper!.get('textarea').setValue('https://fiction.live/stories/Humanitas/x9YLdZ9X7cZAPehkZ')
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    const label = scenario === 'update-race' ? 'Update story' : 'Review story metadata'
+    await wrapper!
+      .get('[role="dialog"]')
+      .findAll('button')
+      .find((button) => button.text() === label)!
+      .trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/book/1968?tab=story-updates')
+    expect(wrapper!.text()).not.toContain('Story source changed or requires attention')
+    expect(vi.mocked(api).mock.calls.filter(([url]) => String(url).endsWith('/check'))).toHaveLength(scenario === 'update-race' ? 1 : 0)
+  })
+
   it('keeps invalid input editable', async () => {
     await open('/fanfiction?tab=add')
     expect(wrapper!.findAll('details button').every((button) => button.attributes('type') === 'button')).toBe(true)

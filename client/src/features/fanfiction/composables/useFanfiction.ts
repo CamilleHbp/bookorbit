@@ -13,6 +13,7 @@ import type {
   FanfictionSourcePage,
   FanfictionActivity,
   FanfictionActivityPage,
+  FanfictionMetadataReviewConflict,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
 import { useFanfictionPagination } from './useFanfictionPagination'
@@ -37,7 +38,13 @@ class ExistingStoryError extends Error {
   }
 }
 
-export function useFanfiction() {
+class MetadataReviewRequiredError extends Error {
+  constructor(readonly review: FanfictionMetadataReviewConflict['errorMeta']) {
+    super('Review and save the story metadata before updating again.')
+  }
+}
+
+export function useFanfiction(onMetadataReview?: (bookId: number) => Promise<unknown>) {
   const libraries = ref<FanfictionLibraryPage['items']>([])
   const libraryCursor = ref<number | null>(null)
   const libraryId = ref<number | null>(null)
@@ -117,6 +124,8 @@ export function useFanfiction() {
       body === undefined ? undefined : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
     )
     const result = await response.json().catch(() => ({}))
+    if (response.status === 409 && result.errorCode === 'metadata_review_required' && Number.isInteger(result.errorMeta?.bookId))
+      throw new MetadataReviewRequiredError(result.errorMeta)
     if (
       response.status === 409 &&
       result.errorCode === 'story_exists' &&
@@ -134,6 +143,10 @@ export function useFanfiction() {
     try {
       await operation(current, base.value)
     } catch (failure) {
+      if (currentScope(current) && failure instanceof MetadataReviewRequiredError && onMetadataReview) {
+        await onMetadataReview(failure.review.bookId)
+        return
+      }
       if (current === generation && !disposed) error.value = failure instanceof Error ? failure.message : 'Request failed'
     } finally {
       if (current === generation && !disposed) busy.value = false
@@ -420,6 +433,10 @@ export function useFanfiction() {
     const candidate = existingCandidate.value
     if (busy.value || !candidate?.existingStory) return
     const story = candidate.existingStory
+    if (story.attentionCode === 'metadata_review_required' && story.bookId && onMetadataReview) {
+      await perform(async () => onMetadataReview(story.bookId!))
+      return
+    }
     candidate.updateKey ??= crypto.randomUUID()
     await perform(async (current, path) => {
       const job = await request<FanfictionJob>(`${path}/sources/${story.id}/check`, {
@@ -557,7 +574,8 @@ export function useFanfiction() {
         await loadJobs(current, path, jobPage)
         schedulePoll(current)
       } catch (failure) {
-        if (currentScope(current)) sourceErrors.value[source.id] = failure instanceof Error ? failure.message : 'Request failed'
+        if (currentScope(current) && !(failure instanceof MetadataReviewRequiredError))
+          sourceErrors.value[source.id] = failure instanceof Error ? failure.message : 'Request failed'
         throw failure
       } finally {
         if (currentScope(current)) checkingSourceId.value = null

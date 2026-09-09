@@ -47,7 +47,7 @@ export class FanfictionSourceService {
     await this.access.administer(user, libraryId);
     const canonicalKey = createHash('sha256').update(this.canonicalUrl(dto.url)).digest('hex');
     const [existing] = await this.db
-      .select({ id: sources.id, title: sources.title, bookFileId: sources.bookFileId })
+      .select({ id: sources.id, title: sources.title, bookFileId: sources.bookFileId, bookId: sources.bookId, attentionCode: sources.attentionCode })
       .from(sources)
       .where(and(eq(sources.libraryId, libraryId), eq(sources.canonicalKey, canonicalKey)))
       .limit(1);
@@ -55,7 +55,7 @@ export class FanfictionSourceService {
       throw new ConflictException({
         message: 'This story is already in your library',
         errorCode: 'story_exists',
-        errorMeta: { id: existing.id, title: existing.title },
+        errorMeta: { id: existing.id, title: existing.title, bookId: existing.bookId ?? undefined, attentionCode: existing.attentionCode },
       } satisfies FanfictionExistingStoryConflict & { message: string });
     const { library } = await this.libraries.importDestination(libraryId, dto.folderId);
     this.validator.validateFormat('story.epub', library.allowedFormats);

@@ -2,7 +2,7 @@
 import ImportProgress from './components/ImportProgress.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { BookOpen, Plus, Settings, RefreshCw } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
 import FanfictionStoryRow from './components/FanfictionStoryRow.vue'
@@ -24,7 +24,8 @@ import { useFanfiction } from './composables/useFanfiction'
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
 const canManage = computed(() => hasPermission(Permission.ManageLibraries))
-const page = useFanfiction()
+const router = useRouter()
+const page = useFanfiction((bookId) => router.push({ name: 'book-detail', params: { bookId }, query: { tab: 'story-updates' } }))
 const {
   libraries,
   libraryCursor,
@@ -88,6 +89,7 @@ const {
   sourceErrors,
   checkingSourceId,
 } = page
+const existingNeedsReview = computed(() => existingCandidate.value?.existingStory?.attentionCode === 'metadata_review_required')
 const importHeading = ref<HTMLElement | null>(null)
 const urlInput = ref<HTMLTextAreaElement | null>(null)
 const importBatchTitle = computed(() => {
@@ -391,9 +393,13 @@ onMounted(() => {
         <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
         <ConfirmDialog
           :open="!!existingCandidate"
-          :title="t('fanfiction.existingStoryTitle')"
-          :description="t('fanfiction.existingStoryDescription', { title: existingCandidate?.existingStory?.title ?? '' })"
-          :confirm-label="t('fanfiction.updateStory')"
+          :title="t(existingNeedsReview ? 'fanfiction.metadataReview.title' : 'fanfiction.existingStoryTitle')"
+          :description="
+            existingNeedsReview
+              ? t('fanfiction.metadataReview.help')
+              : t('fanfiction.existingStoryDescription', { title: existingCandidate?.existingStory?.title ?? '' })
+          "
+          :confirm-label="t(existingNeedsReview ? 'fanfiction.metadataReview.title' : 'fanfiction.updateStory')"
           :busy="busy"
           :destructive="false"
           :confirm-disabled="!canManage"

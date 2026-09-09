@@ -2,7 +2,13 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, asc, desc, eq, gt, inArray, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
-import type { FanfictionJob, FanfictionJobState, FanfictionImportRequest, FanfictionImportProgress } from '@bookorbit/types';
+import type {
+  FanfictionJob,
+  FanfictionJobState,
+  FanfictionImportRequest,
+  FanfictionImportProgress,
+  FanfictionMetadataReviewConflict,
+} from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
@@ -65,6 +71,12 @@ export class FanfictionJobService {
           throw new ConflictException('Operation identity was reused with different input');
         return this.view(existing);
       }
+      if (current?.attentionCode === 'metadata_review_required' && current.bookId && current.state !== 'unlinked')
+        throw new ConflictException({
+          message: 'Review and save the story metadata before updating again.',
+          errorCode: 'metadata_review_required',
+          errorMeta: { sourceId: current.id, bookId: current.bookId },
+        } satisfies FanfictionMetadataReviewConflict & { message: string });
       if (
         !current ||
         current.version !== source.version ||
