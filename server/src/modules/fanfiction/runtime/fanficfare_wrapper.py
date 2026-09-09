@@ -10,6 +10,7 @@ import os
 import resource
 import time
 
+from tag_rules import apply_tag_rules
 from controlled_config import make_configuration, merge_configuration, validate_ini
 from epub_policy import validate_epub
 from safe_transport import PolicyError, SafeTransport, install_network_guard, validate_url
@@ -135,6 +136,7 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     adapter = adapters.getAdapter(configuration, url)
     report_progress({'stage': 'metadata'})
     story = adapter.getStoryMetadataOnly(get_cover=False)
+    apply_tag_rules(story, request.get('tagRules', []))
     preview = story_preview(adapter, story)
     canonical = preview['canonicalUrl']
     chapter_count = preview['chapterCount']

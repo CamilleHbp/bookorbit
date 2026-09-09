@@ -45,8 +45,14 @@ export interface FanfictionCookie {
   expires?: number;
 }
 
+export interface FanfictionTagRule {
+  remoteTag: string;
+  targetTag: string;
+}
+
 export interface FanfictionProfileDocument {
   configuration: string;
+  tagRules?: FanfictionTagRule[];
   cookies: FanfictionCookie[];
 }
 
@@ -68,6 +74,7 @@ export interface FanfictionProfileSummary {
 
 export interface FanfictionProfileView extends FanfictionProfileSummary {
   configuration: string;
+  tagRules?: FanfictionTagRule[];
   cookieCount: number;
   cookies: FanfictionCookie[];
 }

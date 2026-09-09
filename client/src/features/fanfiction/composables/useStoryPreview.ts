@@ -9,7 +9,7 @@ export function useStoryPreview(preview: FanfictionPreview) {
   const title = ref(preview.title)
   const authors = ref(preview.authors.join('\n'))
   const description = ref(plainDescription)
-  const tags = ref(preview.tags.join('\n'))
+  const tags = ref([...preview.tags])
   const editing = ref(false)
   const entries = (value: string) => [
     ...new Set(
@@ -20,7 +20,7 @@ export function useStoryPreview(preview: FanfictionPreview) {
     ),
   ]
   const parsedAuthors = computed(() => entries(authors.value))
-  const parsedTags = computed(() => entries(tags.value))
+  const parsedTags = computed(() => [...new Set(tags.value.map((tag) => tag.trim()).filter(Boolean))])
   const visibleTags = preview.tags.slice(0, 20)
   const remainingTags = Math.max(0, preview.tags.length - visibleTags.length)
   const valid = computed(
@@ -40,7 +40,7 @@ export function useStoryPreview(preview: FanfictionPreview) {
       ...(title.value.trim() !== preview.title ? { title: title.value.trim() } : {}),
       ...(authors.value !== preview.authors.join('\n') ? { authors: parsedAuthors.value } : {}),
       ...(description.value !== plainDescription ? { description: description.value } : {}),
-      ...(tags.value !== preview.tags.join('\n') ? { tags: parsedTags.value } : {}),
+      ...(JSON.stringify(parsedTags.value) !== JSON.stringify(preview.tags) ? { tags: parsedTags.value } : {}),
     }
   }
   return { title, authors, description, tags, editing, valid, edit, changes, plainDescription, visibleTags, remainingTags }

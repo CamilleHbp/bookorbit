@@ -139,7 +139,7 @@ class ConfigurationTest(unittest.TestCase):
             try:
                 os.chdir(directory)
                 Path('personal.ini').write_text('[defaults]\npre_process_cmd: invalid\noutput_filename: outside.epub\n')
-                request = {'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\n'}
+                request = {'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\nextratags: Remote tag\n', 'tagRules': [{'remoteTag': 'Remote tag', 'targetTag': 'Mapped tag'}]}
                 progress = []
                 result = run(request, report_progress=progress.append)
                 self.assertEqual(progress[0], {'stage': 'metadata'})
@@ -148,11 +148,15 @@ class ConfigurationTest(unittest.TestCase):
                 self.assertEqual(chapters[-1]['completedChapters'], result['preview']['chapterCount'])
                 self.assertEqual([item['stage'] for item in progress[-2:]], ['packaging', 'validating'])
                 self.assertEqual(result['output'], 'output.epub')
+                self.assertIn('Mapped tag', result['preview']['tags'])
+                self.assertNotIn('Remote tag', result['preview']['tags'])
                 self.assertGreater(validate_epub('output.epub'), 2)
                 Path('output.epub').rename('input.epub')
                 with patch.object(TestSiteAdapter, 'getChapterText', side_effect=AssertionError('Existing chapters must be preserved')):
                     result = run({**request, 'operation': 'update'})
                 self.assertEqual(result['output'], 'output.epub')
+                self.assertIn('Mapped tag', result['preview']['tags'])
+                self.assertNotIn('Remote tag', result['preview']['tags'])
                 Path('output.epub').unlink()
                 original_chapter = TestSiteAdapter.getChapterText
                 refreshed = []
@@ -169,6 +173,9 @@ class ConfigurationTest(unittest.TestCase):
                 self.assertEqual(refreshed_result['preview']['title'], 'Refreshed story title')
                 self.assertGreater(len(refreshed), 0)
                 with ZipFile('output.epub') as archive:
+                    opf = next(name for name in archive.namelist() if name.endswith('.opf'))
+                    self.assertIn(b'>Mapped tag<', archive.read(opf))
+                    self.assertNotIn(b'>Remote tag<', archive.read(opf))
                     self.assertTrue(any(b'Refreshed passage.' in archive.read(name) for name in archive.namelist() if name.endswith('.xhtml')))
                 self.assertFalse(Path('outside.epub').exists())
             finally:

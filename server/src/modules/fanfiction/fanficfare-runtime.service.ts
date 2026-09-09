@@ -21,6 +21,7 @@ type RuntimeRequest = {
   url?: string;
   configuration?: string;
   cookies?: FanfictionProfileDocument['cookies'];
+  tagRules?: FanfictionProfileDocument['tagRules'];
   previous?: string;
   edits?: { section?: string; username?: string; password?: string };
   redact?: boolean;

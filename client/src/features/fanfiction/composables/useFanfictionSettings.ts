@@ -8,6 +8,7 @@ import type {
   FanfictionProfileSummary,
   FanfictionProfileView,
   FanfictionCookie,
+  FanfictionTagRule,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
 import { sourcePresets } from '../lib/source-presets'
@@ -28,6 +29,7 @@ export function useFanfictionSettings() {
   const deleting = ref<FanfictionProfileSummary | null>(null)
   const name = ref('')
   const configuration = ref('')
+  const tagRules = ref<FanfictionTagRule[]>([])
   const section = ref('defaults')
   const presetId = ref('')
   const preset = computed(() => sourcePresets.find((item) => item.id === presetId.value))
@@ -202,6 +204,7 @@ export function useFanfictionSettings() {
     editing.value = null
     name.value = ''
     configuration.value = ''
+    tagRules.value = []
     section.value = 'defaults'
     presetId.value = ''
     username.value = ''
@@ -229,6 +232,7 @@ export function useFanfictionSettings() {
       editing.value = view
       name.value = view.name
       configuration.value = view.configuration
+      tagRules.value = structuredClone(view.tagRules ?? [])
       const sections = [...view.configuration.matchAll(/^\[([^\]\r\n]+)\]\s*$/gm)].map((match) => match[1])
       const known = sourcePresets.filter((item) => sections.includes(item.section))
       if (known.length === 1) {
@@ -295,6 +299,7 @@ export function useFanfictionSettings() {
           {
             name: name.value,
             configuration: configuration.value,
+            tagRules: tagRules.value,
             credentials,
             ...(editing.value ? { version: editing.value.version } : {}),
             ...(cookiesChanged.value ? { cookies: cookies.value.map(({ key: _key, ...cookie }) => cookie) } : {}),
@@ -384,6 +389,7 @@ export function useFanfictionSettings() {
     deleteProfile,
     name,
     configuration,
+    tagRules,
     section,
     presetId,
     preset,

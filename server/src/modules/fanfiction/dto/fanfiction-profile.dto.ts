@@ -37,7 +37,13 @@ export class FanfictionCredentialsDto {
   @IsOptional() @IsString() @MaxLength(4096) password?: string;
 }
 
+export class FanfictionTagRuleDto {
+  @IsString() @MinLength(1) @MaxLength(500) @Matches(/\S/) remoteTag!: string;
+  @IsString() @MinLength(1) @MaxLength(500) @Matches(/\S/) targetTag!: string;
+}
+
 export class CreateFanfictionProfileDto {
+  @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => FanfictionTagRuleDto) tagRules?: FanfictionTagRuleDto[];
   @IsString() @MinLength(1) @MaxLength(120) name!: string;
   @IsOptional() @IsString() @MaxLength(65536) configuration?: string;
   @IsOptional() @ValidateNested() @Type(() => FanfictionCredentialsDto) credentials?: FanfictionCredentialsDto;

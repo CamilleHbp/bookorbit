@@ -336,7 +336,7 @@ onMounted(() => {
         <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
         <SourceProfileEditor :settings="sourceSettings" :compact="configuring !== null" @saved="handleProfileSaved" />
         <Button :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null" @click="reviewStories">{{
-          t('fanfiction.previewStory')
+          t('fanfiction.importStories')
         }}</Button>
         <StoryPreviewModal
           v-if="reviewCandidate?.preview"

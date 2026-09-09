@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { toRefs, type UnwrapRef } from 'vue'
+import { ref, toRefs, type UnwrapRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { FanfictionProfileSummary } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import type { useFanfictionSettings } from '../composables/useFanfictionSettings'
+import TagRuleEditor from './TagRuleEditor.vue'
 import { sourcePresets } from '../lib/source-presets'
 const props = defineProps<{ settings: UnwrapRef<ReturnType<typeof useFanfictionSettings>>; compact?: boolean }>()
 const emit = defineEmits<{ saved: [profile: FanfictionProfileSummary] }>()
@@ -13,6 +14,7 @@ const {
   showEditor,
   name,
   configuration,
+  tagRules,
   section,
   username,
   password,
@@ -36,7 +38,9 @@ const {
   applyPreset,
   readSection,
 } = toRefs(props.settings)
+const ruleEditor = ref<InstanceType<typeof TagRuleEditor> | null>(null)
 async function save() {
+  if (ruleEditor.value?.commitPending() === false) return
   const profile = await props.settings.saveProfile()
   if (profile) emit('saved', profile)
 }
@@ -76,6 +80,7 @@ async function save() {
         /></label>
       </div>
       <Button v-if="!preset || preset.login" type="button" variant="outline" @click="clearPassword">{{ t('fanfiction.clearPassword') }}</Button>
+      <TagRuleEditor ref="ruleEditor" v-model="tagRules" :disabled="busy" />
       <details class="space-y-3 rounded-lg border border-border p-3">
         <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.advancedSettings') }}</summary>
         <label class="block space-y-1 text-sm"

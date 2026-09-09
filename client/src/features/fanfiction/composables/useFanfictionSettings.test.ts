@@ -99,7 +99,7 @@ describe('Fanfiction settings API contract', () => {
     await state.saveProfile()
     const [url, options] = mockApi.mock.calls[0]!
     expect(url).toBe('/api/v1/libraries/5/fanfiction/profiles')
-    expect(JSON.parse(options!.body as string)).toEqual({ name: 'AO3', configuration: '[defaults]\ninclude_images: true\n' })
+    expect(JSON.parse(options!.body as string)).toEqual({ name: 'AO3', configuration: '[defaults]\ninclude_images: true\n', tagRules: [] })
     expect(options!.method).toBe('POST')
   })
   it('reuses the durable request identity after an uncertain preview response', async () => {

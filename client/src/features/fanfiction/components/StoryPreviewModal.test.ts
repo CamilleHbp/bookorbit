@@ -1,8 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FanfictionPreview } from '@bookorbit/types'
+import ChipInput from '@/components/ui/ChipInput.vue'
 import StoryPreviewModal from './StoryPreviewModal.vue'
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key, n: (value: number) => String(value) }) }))
 const preview = {
   title: 'A story',
   authors: ['Writer'],
@@ -39,7 +40,8 @@ describe('story preview modal', () => {
     const fields = wrapper.findAll('textarea')
     await fields[0]!.setValue('New writer\nAnother writer')
     await fields[1]!.setValue('My summary')
-    await fields[2]!.setValue('New tag\nNew tag')
+    await wrapper.getComponent(ChipInput).findAll('button')[0]!.trigger('click')
+    await wrapper.getComponent(ChipInput).get('input').setValue('New tag,New tag')
     await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('confirm')).toEqual([
       [{ title: 'Edited story', authors: ['New writer', 'Another writer'], description: 'My summary', tags: ['New tag'] }],

@@ -74,7 +74,13 @@ export class FanfictionProfileService {
   async get(libraryId: number, id: string, user: RequestUser): Promise<FanfictionProfileView> {
     const { row, document } = await this.document(libraryId, id, user);
     const configuration = await this.runtime.mergeConfiguration(document.configuration, undefined, undefined, true);
-    return { ...this.summary(row), configuration, cookieCount: document.cookies.length, cookies: redactFanfictionCookies(document.cookies) };
+    return {
+      ...this.summary(row),
+      configuration,
+      tagRules: document.tagRules ?? [],
+      cookieCount: document.cookies.length,
+      cookies: redactFanfictionCookies(document.cookies),
+    };
   }
 
   async create(libraryId: number, dto: CreateFanfictionProfileDto, user: RequestUser): Promise<FanfictionProfileSummary> {
@@ -85,7 +91,7 @@ export class FanfictionProfileService {
     const document = await this.vault.encrypt(
       libraryId,
       id,
-      this.serialize({ configuration, cookies: mergeFanfictionCookies([], dto.cookies) }),
+      this.serialize({ configuration, tagRules: dto.tagRules ?? [], cookies: mergeFanfictionCookies([], dto.cookies) }),
       !existing,
     );
     await this.access.administer(user, libraryId);
@@ -100,7 +106,11 @@ export class FanfictionProfileService {
     const document = await this.vault.encrypt(
       libraryId,
       id,
-      this.serialize({ configuration, cookies: mergeFanfictionCookies(old.document.cookies, dto.cookies) }),
+      this.serialize({
+        configuration,
+        tagRules: dto.tagRules ?? old.document.tagRules ?? [],
+        cookies: mergeFanfictionCookies(old.document.cookies, dto.cookies),
+      }),
       false,
     );
     await this.access.administer(user, libraryId);
@@ -232,6 +242,12 @@ export class FanfictionProfileService {
   }
 
   private serialize(document: FanfictionProfileDocument) {
+    const keys = new Set<string>();
+    for (const rule of document.tagRules ?? []) {
+      const key = rule.remoteTag.trim().toLowerCase();
+      if (keys.has(key)) throw new BadRequestException('Use each remote tag only once');
+      keys.add(key);
+    }
     const value = JSON.stringify(document);
     // Leave room for the operation and story URL in the bounded runtime request.
     if (Buffer.byteLength(value) > 480 * 1024) throw new BadRequestException('The profile configuration and cookies are too large');
