@@ -116,6 +116,11 @@ function handlePause() {
             t(source.attentionCode === 'metadata_review_required' ? 'fanfiction.metadataReview.title' : 'fanfiction.reviewStory')
           }}</RouterLink></Button
         >
+        <Button v-else-if="source.attentionCode === 'import_review_required'" variant="outline" as-child
+          ><RouterLink :to="{ name: 'fanfiction', query: { tab: 'activity', sourceId: source.id, libraryId: source.libraryId } }">{{
+            t('fanfiction.previewStory')
+          }}</RouterLink></Button
+        >
         <Button v-else-if="needsAttention" variant="outline" as-child
           ><RouterLink :to="{ name: 'settings-fanfiction' }">{{ t('fanfiction.configureSource') }}</RouterLink></Button
         >

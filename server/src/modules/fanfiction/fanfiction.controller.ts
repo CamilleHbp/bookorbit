@@ -18,6 +18,8 @@ import {
 import { FanfictionJobService } from './fanfiction-job.service';
 import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { FanfictionActivityService } from './fanfiction-activity.service';
+import { FanfictionReviewService } from './fanfiction-review.service';
+import { ImportStoryReviewDto } from './dto/fanfiction-source.dto';
 
 @Controller('libraries/:libraryId/fanfiction')
 @RequirePermission(Permission.ManageLibraries)
@@ -29,6 +31,7 @@ export class FanfictionController {
     private readonly profiles: FanfictionProfileService,
     private readonly jobs: FanfictionJobService,
     private readonly activity: FanfictionActivityService,
+    private readonly reviews: FanfictionReviewService,
   ) {}
 
   @Post('previews')
@@ -62,6 +65,16 @@ export class FanfictionController {
   @HttpCode(202)
   cancelJob(@Param('libraryId', ParseIntPipe) libraryId: number, @Param('jobId', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
     return this.jobs.cancel(libraryId, id, user);
+  }
+
+  @Post('jobs/:jobId/import-review')
+  importReview(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('jobId', ParseUUIDPipe) id: string,
+    @Body() dto: ImportStoryReviewDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.reviews.importDecision(libraryId, id, dto, user);
   }
 
   @Get('runtime')

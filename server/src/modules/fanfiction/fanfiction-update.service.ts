@@ -1,3 +1,4 @@
+import { FanfictionReviewService } from './fanfiction-review.service';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
@@ -20,6 +21,7 @@ type Job = typeof schema.fanfictionJobs.$inferSelect;
 @Injectable()
 export class FanfictionUpdateService {
   constructor(
+    private readonly reviews: FanfictionReviewService,
     private readonly runtime: FanficfareRuntimeService,
     private readonly sources: FanfictionSourceService,
     private readonly revisions: BookRevisionService,
@@ -60,8 +62,23 @@ export class FanfictionUpdateService {
       return this.sources.completeUpdate(job, { sourceId: source.id, bookId: source.bookId!, bookFileId: fileId, revisionId, noChange }, preview);
     };
     const owned = await this.publications.ownedPublication(fileId, source.libraryId, authority);
+    if (job.result?.preparedUpdate && job.result.preview && !job.result.revisionId && (job.result.preparedUpdate.noChange || owned)) {
+      job.result = await this.reviews.prepare(job, job.result.preview, job.result.preparedUpdate.noChange, true);
+      if (job.result.metadataReview && !job.result.preparedUpdate?.approved) return job.result;
+      if (job.result.preparedUpdate!.noChange) return finish(job.expectedRevisionId!, true, job.result.preview);
+    }
+    const approvedAuthority = {
+      ...authority,
+      commit: async (tx: Parameters<typeof authority.authorize>[0]) => {
+        await this.reviews.apply(tx, job, source.bookId!);
+      },
+      authorize: async (tx: Parameters<typeof authority.authorize>[0]) => {
+        await authority.authorize(tx);
+        await this.reviews.assertApproved(job, tx);
+      },
+    };
     if (owned) {
-      const installed = await this.publications.resume(owned.id, source.libraryId, authority);
+      const installed = await this.publications.resume(owned.id, source.libraryId, approvedAuthority);
       return finish(installed.revisionId, false, job.result?.preview);
     }
     await access();
@@ -89,11 +106,14 @@ export class FanfictionUpdateService {
           await this.revisions.observeFile(fileId, {});
           if ((await this.catalog.current(fileId, source.libraryId)).id !== expected)
             throw new ConflictException('Installed EPUB changed during update');
+          job.result = await this.reviews.prepare(job, preview, true);
+          if (job.result.metadataReview && !job.result.preparedUpdate?.approved) return job.result;
           return finish(expected, true, preview);
         }
-        await this.sources.stageUpdatePreview(job, preview);
+        job.result = await this.reviews.prepare(job, preview, false);
         const prepared = await this.publications.prepare(fileId, source.libraryId, expected, path, 'fanficfare', authority);
-        const installed = await this.publications.resume(prepared.publicationId, source.libraryId, authority);
+        if (job.result.metadataReview && !job.result.preparedUpdate?.approved) return job.result;
+        const installed = await this.publications.resume(prepared.publicationId, source.libraryId, approvedAuthority);
         return finish(installed.revisionId, false, preview);
       },
       signal,

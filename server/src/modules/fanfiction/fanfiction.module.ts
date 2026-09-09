@@ -1,3 +1,4 @@
+import { FanfictionReviewService } from './fanfiction-review.service';
 import { MetadataModule } from '../metadata/metadata.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -47,6 +48,7 @@ import { FanfictionSourceBatchController } from './fanfiction-source-batch.contr
     NotificationModule,
   ],
   providers: [
+    FanfictionReviewService,
     FanfictionAccessService,
     FanficfareRuntimeService,
     FanfictionVaultService,

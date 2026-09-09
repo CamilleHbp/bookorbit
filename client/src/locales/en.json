@@ -10239,7 +10239,8 @@
       "replacement_upload_missing": "This upload is no longer available. Upload the EPUB again.",
       "adult_confirmation_required": "Confirm you are an adult in source settings, then retry.",
       "access_denied": "The website blocked access. Try again later or upload an EPUB.",
-      "metadata_review_required": "Review the incoming story metadata."
+      "metadata_review_required": "Review the incoming story metadata.",
+      "import_review_required": "Review the story before importing it."
     },
     "title": "Fanfiction",
     "pageNumber": "Page {page}",
@@ -10434,7 +10435,18 @@
         "description": "Description",
         "authors": "Authors",
         "tags": "Tags"
-      }
+      },
+      "beforeHelp": "Review these changes before updating your library. Your current book stays unchanged until you apply the update.",
+      "importHelp": "Check the details before adding this story to your library.",
+      "customTags": "Custom tags kept",
+      "added": "New",
+      "removed": "Removed at source",
+      "result": "Resulting tags",
+      "apply": "Apply update",
+      "later": "Review later",
+      "discard": "Discard update",
+      "discardImport": "Discard import",
+      "allActivity": "Show all activity"
     }
   },
   "koreaderCopies": {

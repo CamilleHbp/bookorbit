@@ -1,3 +1,4 @@
+import { FanfictionReviewService } from './fanfiction-review.service';
 import multipart from '@fastify/multipart';
 import { FanfictionReplacementController } from './fanfiction-replacement.controller';
 import { FanfictionReplacementService } from './fanfiction-replacement.service';
@@ -42,6 +43,7 @@ describe('Fanfiction HTTP contracts', () => {
   const adoption = { start: vi.fn() };
   const batches = { start: vi.fn(), listFailures: vi.fn() };
   const activity = { list: vi.fn() };
+  const reviews = { decide: vi.fn(), importDecision: vi.fn() };
   const uuid = '97e5bb69-36e8-43a2-9e3b-0fb924d1ca2f';
   const base = '/api/v1/libraries/5/fanfiction';
   beforeAll(async () => {
@@ -54,6 +56,7 @@ describe('Fanfiction HTTP contracts', () => {
         FanfictionSourceBatchController,
       ],
       providers: [
+        { provide: FanfictionReviewService, useValue: reviews },
         { provide: FanfictionReplacementService, useValue: replacements },
         { provide: FanfictionProfileService, useValue: profiles },
         { provide: FanfictionJobService, useValue: jobs },
@@ -93,6 +96,33 @@ describe('Fanfiction HTTP contracts', () => {
     }
     expect((await app.inject({ method: 'POST', url, payload: { jobId: uuid } })).statusCode).toBe(400);
     expect(sources.resolveMetadata).toHaveBeenCalledTimes(1);
+  });
+  it('validates editable import reviews and deferred update choices before passing them to the scoped service', async () => {
+    const payload = { action: 'later', values: { title: 'My title', description: '', authors: ['Author'], tags: ['Custom'] } };
+    const url = `${base}/jobs/${uuid}/import-review`;
+    expect((await app.inject({ method: 'POST', url, payload })).statusCode).toBe(201);
+    expect(reviews.importDecision).toHaveBeenCalledWith(5, uuid, payload, undefined);
+    for (const patch of [
+      { action: 'overwrite' },
+      { values: { ...payload.values, title: '' } },
+      { values: { ...payload.values, tags: [42] } },
+      { values: { ...payload.values, extra: true } },
+    ])
+      expect((await app.inject({ method: 'POST', url, payload: { ...payload, ...patch } })).statusCode).toBe(400);
+    const choices = {
+      jobId: uuid,
+      fingerprint: 'a'.repeat(64),
+      title: 'keep',
+      description: 'keep',
+      authors: 'keep',
+      tags: 'select',
+      selectedTags: ['New'],
+    };
+    for (const action of ['later', 'discard']) {
+      expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/metadata-review/${action}`, payload: choices })).statusCode).toBe(201);
+      expect(reviews.decide).toHaveBeenCalledWith(5, uuid, choices, undefined, action);
+    }
+    expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/metadata-review/invalid`, payload: choices })).statusCode).toBe(400);
   });
   it('deletes a profile with an empty response and rejects invalid identifiers', async () => {
     profiles.remove.mockResolvedValue(undefined);
