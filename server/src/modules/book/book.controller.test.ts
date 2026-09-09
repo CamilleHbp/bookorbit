@@ -142,6 +142,8 @@ function makeController() {
     buildMetadataExport: vi.fn(),
     acquireExportSlot: vi.fn().mockReturnValue(vi.fn()),
     getCoverPath: vi.fn(),
+    shouldHideSensitiveCover: vi.fn(),
+    updateSensitiveCover: vi.fn(),
     getThumbnailPath: vi.fn(),
     getFileInfo: vi.fn(),
     resolveDownloadFilename: vi.fn(),
@@ -182,6 +184,40 @@ describe('BookController', () => {
     mockStat.mockReset();
     mockCreateReadStream.mockReset();
     mockCreateReadStream.mockReturnValue({ stream: true } as never);
+  });
+
+  it.each(['getCover', 'getThumbnail'] as const)('masks %s before file access or cache validation', async (method) => {
+    const { controller, bookService } = makeController();
+    const { reply, headers } = makeReply();
+    const user = makeUser();
+    bookService.shouldHideSensitiveCover.mockResolvedValue(true);
+    await controller[method](7, user, reply, '1234', '"1234"', true);
+    expect(bookService.shouldHideSensitiveCover).toHaveBeenCalledWith(7, user);
+    expect(bookService.getCoverPath).not.toHaveBeenCalled();
+    expect(bookService.getThumbnailPath).not.toHaveBeenCalled();
+    expect(mockStat).not.toHaveBeenCalled();
+    expect(reply.type).toHaveBeenCalledWith('image/svg+xml');
+    expect(reply.send).toHaveBeenCalledWith(expect.stringContaining('<svg'));
+    expect(headers['Cache-Control']).toBe('private, no-store');
+  });
+
+  it('does not cache an unmarked cover when filtering is enabled', async () => {
+    const { controller, bookService } = makeController();
+    const { reply, headers } = makeReply();
+    bookService.shouldHideSensitiveCover.mockResolvedValue(false);
+    bookService.getCoverPath.mockResolvedValue('/tmp/cover.jpg');
+    mockStat.mockResolvedValue({ mtimeMs: 1234 } as never);
+    await controller.getCover(7, makeUser(), reply, '1234', undefined, true);
+    expect(headers['Cache-Control']).toBe('private, no-store');
+    expect(reply.type).toHaveBeenCalledWith('image/jpeg');
+  });
+
+  it('does not return a placeholder when book access is denied', async () => {
+    const { controller, bookService } = makeController();
+    const { reply } = makeReply();
+    bookService.shouldHideSensitiveCover.mockRejectedValue(new NotFoundException());
+    await expect(controller.getCover(7, makeUser(), reply, undefined, undefined, true)).rejects.toThrow(NotFoundException);
+    expect(reply.send).not.toHaveBeenCalled();
   });
 
   it('throws NotFoundException when cover is missing', async () => {

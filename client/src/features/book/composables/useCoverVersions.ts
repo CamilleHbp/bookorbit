@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { useDisplaySettings } from '@/composables/useDisplaySettings'
 
 const STORAGE_KEY = 'cover-versions'
 type CoverVersionInput = number | string | Date | null | undefined
@@ -47,6 +48,7 @@ function versionToken(localVersion: number | undefined, serverVersion: number | 
 }
 
 export function useCoverVersions() {
+  const { hideSensitiveCovers } = useDisplaySettings()
   function bumpVersion(bookId: number) {
     const next = new Map(versions.value).set(bookId, Date.now())
     versions.value = next
@@ -57,12 +59,16 @@ export function useCoverVersions() {
     return versions.value.get(bookId)
   }
 
-  function coverUrl(bookId: number, type: 'thumbnail' | 'cover' = 'thumbnail', sourceVersion?: CoverVersionInput): string {
+  function coverUrl(bookId: number, type: 'thumbnail' | 'cover' = 'thumbnail', sourceVersion?: CoverVersionInput, revealed = false): string {
     const base = `/api/v1/books/${bookId}/${type}`
     const localVersion = versions.value.get(bookId)
     const serverVersion = normalizeVersion(sourceVersion)
     const token = versionToken(localVersion, serverVersion)
-    return token ? `${base}?t=${token}` : base
+    const params = new URLSearchParams()
+    if (token) params.set('t', token)
+    if (hideSensitiveCovers.value && !revealed) params.set('hideSensitive', 'true')
+    const query = params.toString()
+    return query ? `${base}?${query}` : base
   }
 
   return { getVersion, bumpVersion, coverUrl }

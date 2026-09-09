@@ -58,6 +58,7 @@ export interface DisplayPreferences {
   bookSpineOverlay: BookSpineOverlay;
   showSpineOnComics: boolean;
   bookShadowStrength: BookShadowStrength;
+  hideSensitiveCovers: boolean;
   bookCoverDisplayMode: BookCoverDisplayMode;
   bookDetailCoverTint: BookDetailCoverTint;
   seriesCardCoverMode: SeriesCardCoverMode;

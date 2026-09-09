@@ -67,6 +67,7 @@ const DISPLAY_PREFERENCES_SCHEMA = z
     authorCoverShape: z.enum(AUTHOR_COVER_SHAPES),
     authorRowDensity: z.enum(TABLE_DENSITIES).default('comfortable'),
     authorCoverFallback: z.boolean().default(false),
+    hideSensitiveCovers: z.boolean().default(false),
     tableZebraStriping: z.boolean(),
     tableDensity: z.enum(TABLE_DENSITIES),
     bookSpineOverlay: z.enum(BOOK_SPINE_OVERLAYS),

@@ -158,6 +158,7 @@ const tableZebraStriping = ref(storage.get<boolean>('tableZebraStriping', false)
 const tableDensity = ref<TableDensity>(normalizeTableDensity(storage.get('tableDensity', 'comfortable')))
 const authorRowDensity = ref<TableDensity>(normalizeTableDensity(storage.get('authorRowDensity', 'comfortable')))
 // Off by default: a book cover under a person's name reads as their photograph.
+const hideSensitiveCovers = ref(storage.get<boolean>('hideSensitiveCovers', false) === true)
 const authorCoverFallback = ref(storage.get<boolean>('authorCoverFallback', false) === true)
 const bookSpineOverlay = ref<BookSpineOverlay>(normalizeBookSpineOverlay(storage.get('bookSpineOverlay', DEFAULT_BOOK_SPINE_OVERLAY)))
 const showSpineOnComics = ref(storage.get<boolean>('showSpineOnComics', false) === true)
@@ -189,6 +190,7 @@ watch(authorCoverShape, (v) => storage.set('authorCoverShape', normalizeAuthorCo
 watch(tableZebraStriping, (v) => storage.set('tableZebraStriping', v))
 watch(tableDensity, (v) => storage.set('tableDensity', normalizeTableDensity(v)))
 watch(authorRowDensity, (v) => storage.set('authorRowDensity', normalizeTableDensity(v)))
+watch(hideSensitiveCovers, (v) => storage.set('hideSensitiveCovers', v))
 watch(authorCoverFallback, (v) => storage.set('authorCoverFallback', v))
 watch(bookSpineOverlay, (value) => storage.set('bookSpineOverlay', normalizeBookSpineOverlay(value)))
 watch(showSpineOnComics, (v) => storage.set('showSpineOnComics', v))
@@ -216,6 +218,7 @@ export function getDisplayPreferencesSnapshot(): DisplayPreferences {
     authorCoverSize: normalizePositiveInteger(authorCoverSize.value, 120, 100, 400),
     authorCoverShape: normalizeAuthorCoverShape(authorCoverShape.value),
     authorRowDensity: normalizeTableDensity(authorRowDensity.value),
+    hideSensitiveCovers: hideSensitiveCovers.value === true,
     authorCoverFallback: authorCoverFallback.value === true,
     tableZebraStriping: tableZebraStriping.value === true,
     tableDensity: normalizeTableDensity(tableDensity.value),
@@ -252,6 +255,7 @@ export function sanitizeDisplayPreferences(raw: unknown): Partial<DisplayPrefere
   if (typeof obj.authorCoverSize === 'number') out.authorCoverSize = normalizePositiveInteger(obj.authorCoverSize, 120, 100, 400)
   if (AUTHOR_COVER_SHAPES.includes(obj.authorCoverShape as AuthorCoverShape)) out.authorCoverShape = obj.authorCoverShape as AuthorCoverShape
   if (TABLE_DENSITIES.includes(obj.authorRowDensity as TableDensity)) out.authorRowDensity = obj.authorRowDensity as TableDensity
+  if (typeof obj.hideSensitiveCovers === 'boolean') out.hideSensitiveCovers = obj.hideSensitiveCovers
   if (typeof obj.authorCoverFallback === 'boolean') out.authorCoverFallback = obj.authorCoverFallback
   if (typeof obj.tableZebraStriping === 'boolean') out.tableZebraStriping = obj.tableZebraStriping
   if (TABLE_DENSITIES.includes(obj.tableDensity as TableDensity)) out.tableDensity = obj.tableDensity as TableDensity
@@ -299,6 +303,7 @@ export function applyDisplayPreferences(raw: unknown): void {
   if (prefs.authorCoverSize !== undefined) authorCoverSize.value = prefs.authorCoverSize
   if (prefs.authorCoverShape !== undefined) authorCoverShape.value = prefs.authorCoverShape
   if (prefs.authorRowDensity !== undefined) authorRowDensity.value = prefs.authorRowDensity
+  if (prefs.hideSensitiveCovers !== undefined) hideSensitiveCovers.value = prefs.hideSensitiveCovers
   if (prefs.authorCoverFallback !== undefined) authorCoverFallback.value = prefs.authorCoverFallback
   if (prefs.tableZebraStriping !== undefined) tableZebraStriping.value = prefs.tableZebraStriping
   if (prefs.tableDensity !== undefined) tableDensity.value = prefs.tableDensity
@@ -329,6 +334,7 @@ export function useDisplaySettings() {
     authorCoverSize,
     authorCoverShape,
     authorRowDensity,
+    hideSensitiveCovers,
     authorCoverFallback,
     tableZebraStriping,
     tableDensity,

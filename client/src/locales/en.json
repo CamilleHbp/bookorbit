@@ -317,6 +317,10 @@
             "label": "Lock status",
             "hint": "Metadata lock icon at top-right - orange when locked, green when unlocked"
           }
+        },
+        "sensitive": {
+          "label": "Hide sensitive covers",
+          "hint": "Replace covers marked as sensitive with a placeholder."
         }
       },
       "layout": {
@@ -5989,6 +5993,13 @@
         "success": "Moved {count} books to {library}",
         "partial": "Moved {moved} books, {failed} failed"
       }
+    },
+    "sensitiveCover": {
+      "label": "Sensitive cover",
+      "hint": "Shared with everyone who can access this book.",
+      "reveal": "Show cover",
+      "hide": "Hide cover",
+      "saveError": "Could not save the cover setting. Try again."
     }
   },
   "bookMetadataFetch": {

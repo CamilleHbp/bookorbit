@@ -1,0 +1,1 @@
+ALTER TABLE "books" ADD COLUMN "sensitive_cover" boolean DEFAULT false NOT NULL;
