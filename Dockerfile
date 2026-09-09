@@ -77,6 +77,10 @@ COPY --from=server-builder --chown=node:node /app/server/entrypoint.sh ./entrypo
 COPY --chown=node:node server/bin/kepubify/ ./bin/kepubify/
 COPY --chown=node:node koreader-plugin/bookorbit.koplugin/ ./koreader-plugin/bookorbit.koplugin/
 
+RUN echo '{"operation":"health"}' | \
+    /opt/bookorbit-python/bin/python -I /app/dist/modules/fanfiction/runtime/fanficfare_wrapper.py | \
+    /opt/bookorbit-python/bin/python -c 'import json, sys; response = json.load(sys.stdin); assert response["ok"] and response["result"]["ready"], response'
+
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh /app/bin/kepubify/* && mkdir -p /books /data/covers /data/book-bucket /tmp && chown -R node:node /data /tmp
 
 EXPOSE 3000
