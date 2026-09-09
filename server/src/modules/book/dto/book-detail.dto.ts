@@ -60,6 +60,7 @@ export class BookDetailDto {
   personalNote: string | null;
   personalNoteUpdatedAt: Date | null;
   communityRatings: BookCommunityRating[];
+  sensitiveCover: boolean;
   coverSource: 'extracted' | 'custom' | null;
   coverMedia: CoverMedium[];
   covers: Record<CoverMedium, BookCoverSlot | null>;

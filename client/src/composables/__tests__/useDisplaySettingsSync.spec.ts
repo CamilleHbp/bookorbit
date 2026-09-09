@@ -18,6 +18,7 @@ function validDisplayPreferences(overrides: Partial<DisplayPreferences> = {}): D
     authorCoverShape: 'circle',
     authorRowDensity: 'comfortable',
     authorCoverFallback: false,
+    hideSensitiveCovers: false,
     tableZebraStriping: false,
     tableDensity: 'comfortable',
     bookSpineOverlay: 'subtle',
@@ -256,6 +257,24 @@ describe('useDisplaySettingsSync', () => {
       expect.objectContaining({
         method: 'PUT',
         body: expect.stringContaining('"authorCoverFallback":true'),
+      }),
+    )
+  })
+
+  it('syncs hideSensitiveCovers changes to the server', async () => {
+    vi.useFakeTimers()
+    const { apiMock, displaySettings, sync } = await loadModules()
+    apiMock.mockResolvedValue({ ok: true })
+
+    sync.initDisplaySettingsSync()
+    displaySettings.useDisplaySettings().hideSensitiveCovers.value = true
+    await vi.advanceTimersByTimeAsync(1500)
+
+    expect(apiMock).toHaveBeenCalledWith(
+      '/api/v1/user-preferences/display',
+      expect.objectContaining({
+        method: 'PUT',
+        body: expect.stringContaining('"hideSensitiveCovers":true'),
       }),
     )
   })

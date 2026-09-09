@@ -11,6 +11,7 @@ import CoverMediumSwitch from './CoverMediumSwitch.vue'
 
 const props = defineProps<{
   open: boolean
+  revealed?: boolean
   book: Pick<BookDetail, 'id' | 'title' | 'covers' | 'coverVersion'>
   /** The slot to open on. Without one the lightbox opens on the face, as the page shows it. */
   medium?: CoverMedium | null
@@ -41,11 +42,13 @@ watch(
 
 const src = computed(() => {
   const medium = selected.value
-  if (!medium) return coverUrl(props.book.id, 'cover', props.book.coverVersion)
+  if (!medium) return coverUrl(props.book.id, 'cover', props.book.coverVersion, undefined, props.revealed)
   const preview = props.previews?.[medium]
   if (preview) return preview
   const slot = props.book.covers[medium]
-  return slot ? coverUrl(props.book.id, 'cover', slot.updatedAt, medium) : coverUrl(props.book.id, 'cover', props.book.coverVersion)
+  return slot
+    ? coverUrl(props.book.id, 'cover', slot.updatedAt, medium, props.revealed)
+    : coverUrl(props.book.id, 'cover', props.book.coverVersion, undefined, props.revealed)
 })
 
 const switchValue = computed<CoverMedium>({

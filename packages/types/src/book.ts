@@ -270,6 +270,10 @@ export type BookFileWriteStatus = {
   writableFields: BookFileWriteField[];
 };
 
+export type UpdateSensitiveCoverRequest = {
+  sensitiveCover: boolean;
+};
+
 export type BookDetail = {
   id: number;
   libraryId: number;
@@ -296,6 +300,7 @@ export type BookDetail = {
   personalNote: string | null;
   personalNoteUpdatedAt: string | null;
   communityRatings: BookCommunityRating[];
+  sensitiveCover: boolean;
   coverSource: "extracted" | "custom" | null;
   coverMedia: CoverMedium[];
   covers: Record<CoverMedium, BookCoverSlot | null>;
