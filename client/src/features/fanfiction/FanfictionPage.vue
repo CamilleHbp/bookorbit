@@ -3,6 +3,11 @@ import ImportProgress from './components/ImportProgress.vue'
 import StoryPreviewModal from './components/StoryPreviewModal.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import { BookOpen, Plus, Settings, RefreshCw } from '@lucide/vue'
+import { Input } from '@/components/ui/input'
+import FanfictionStoryRow from './components/FanfictionStoryRow.vue'
+import FanfictionPagination from './components/FanfictionPagination.vue'
+import { useFanfictionNavigation } from './composables/useFanfictionNavigation'
 import { useI18n } from 'vue-i18n'
 import { Permission, type FanfictionJob, type FanfictionProfileSummary } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
@@ -18,6 +23,7 @@ import { useFanfiction } from './composables/useFanfiction'
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
 const canManage = computed(() => hasPermission(Permission.ManageLibraries))
+const page = useFanfiction()
 const {
   libraries,
   libraryCursor,
@@ -62,11 +68,23 @@ const {
   togglePaused,
   checkNow,
   refreshChapters,
-  showStories,
-  showAdd,
-  showActivity,
-  showDiscovery,
-} = useFanfiction()
+  previousSources,
+  previousJobs,
+  previousActivity,
+  sourceJobs,
+  sourceErrors,
+  checkingSourceId,
+} = page
+const { destination, showStories, showAdd, applyFilters, clearFilters, filtered } = useFanfictionNavigation(page)
+const sourcePagination = reactive(page.sourcePagination)
+const jobPagination = reactive(page.jobPagination)
+const activityPagination = reactive(page.activityPagination)
+const navigation = computed(() => [
+  { id: 'stories' as const, label: t('fanfiction.stories') },
+  { id: 'discovery' as const, label: t('fanfiction.discovery.title') },
+  { id: 'activity' as const, label: t('fanfiction.activity') },
+  { id: 'profiles' as const, label: t('fanfiction.profiles') },
+])
 const { sourceSettings, detectedSite, selectedProfile, addSource, editSource } = useInlineSourceSettings(libraryId, profiles, profileId, urls)
 const configuring = ref<(typeof candidates.value)[number] | null>(null)
 function handleAddSource() {
@@ -91,9 +109,7 @@ async function handleProfileSaved(profile: FanfictionProfileSummary) {
   if (candidate) await retryImport(candidate, profile)
   else useSavedProfile(profile)
 }
-function showProfiles() {
-  tab.value = 'profiles'
-}
+
 function handleRefresh() {
   if (tab.value === 'profiles') void sourceSettings.reload()
   else void refresh()
@@ -108,11 +124,33 @@ function handleProfileDeleted(id: string) {
   profiles.value = profiles.value.filter((profile) => profile.id !== id)
   if (profileId.value === id) profileId.value = ''
 }
-const bulk = reactive(useFanfictionSourceBatch(libraryId, sources, search, state, refresh))
+const bulk = reactive(useFanfictionSourceBatch(libraryId, sources, page.appliedSearch, page.appliedState, refresh))
 function reviewBatch(job: FanfictionJob) {
   showStories()
   void bulk.open(job.id)
 }
+const selecting = ref(false)
+const selectionLabel = computed(() =>
+  selecting.value || bulk.selectedIds.length > 0 || bulk.allMatching ? t('common.cancel') : t('fanfiction.selectStories'),
+)
+const showBulk = computed(() => selecting.value || bulk.selectedIds.length > 0 || bulk.allMatching || bulk.active || Boolean(bulk.error))
+function toggleSelection() {
+  const selected = selecting.value || bulk.selectedIds.length > 0 || bulk.allMatching
+  selecting.value = !selected
+  if (selected) bulk.clearSelection()
+}
+function selectStory(id: string, selected: boolean) {
+  bulk.selectedIds = selected ? [...bulk.selectedIds, id] : bulk.selectedIds.filter((item) => item !== id)
+}
+watch(libraryId, () => {
+  selecting.value = false
+})
+watch(
+  () => bulk.active,
+  (active) => {
+    if (active) selecting.value = true
+  },
+)
 function dateLabel(value: string | null) {
   return value ? new Date(value).toLocaleString() : t('fanfiction.never')
 }
@@ -122,52 +160,76 @@ onMounted(() => {
 </script>
 
 <template>
-  <main v-if="canManage" class="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
+  <main v-if="canManage" class="mx-auto w-full max-w-7xl space-y-5 p-4 sm:p-6">
     <header class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-2xl font-semibold">{{ t('fanfiction.title') }}</h1>
-        <p class="text-muted-foreground text-sm">{{ t('fanfiction.description') }}</p>
+      <div class="flex items-center gap-2">
+        <BookOpen class="size-5 text-primary" aria-hidden="true" />
+        <h1 class="text-lg font-semibold">{{ t('fanfiction.title') }}</h1>
       </div>
-      <Button variant="outline" as-child
-        ><RouterLink :to="{ name: 'settings-fanfiction' }">{{ t('fanfiction.settingsTitle') }}</RouterLink></Button
-      >
+      <div class="flex items-center gap-2">
+        <Button variant="ghost" class="size-11" as-child
+          ><RouterLink :to="{ name: 'settings-fanfiction' }" :aria-label="t('fanfiction.settingsTitle')"><Settings aria-hidden="true" /></RouterLink
+        ></Button>
+        <Button :disabled="libraryId === null" @click="showAdd"><Plus aria-hidden="true" />{{ t('fanfiction.addStories') }}</Button>
+      </div>
     </header>
-    <div class="flex flex-wrap items-end gap-3">
-      <label class="min-w-48 space-y-1 text-sm"
+    <div class="flex flex-wrap items-end gap-2">
+      <label class="min-w-0 flex-1 space-y-1 text-sm sm:max-w-xs"
         >{{ t('fanfiction.library') }}
-        <select v-model="libraryId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2" @change="changeLibrary">
+        <select
+          v-model="libraryId"
+          :disabled="busy"
+          class="border-input bg-background block h-11 w-full rounded-md border px-3 focus-visible:outline-2 focus-visible:outline-ring sm:h-9"
+          @change="changeLibrary"
+        >
           <option v-for="library in libraries" :key="library.id" :value="library.id">{{ library.name }}</option>
         </select>
       </label>
       <Button v-if="libraryCursor !== null" variant="outline" :disabled="busy" @click="loadLibraries">{{ t('fanfiction.moreLibraries') }}</Button>
-      <Button variant="outline" :disabled="busy || sourceSettings.busy || libraryId === null" @click="handleRefresh">{{
-        t('fanfiction.refresh')
-      }}</Button>
+      <Button
+        variant="ghost"
+        class="size-11 sm:size-9"
+        :aria-label="t('fanfiction.refresh')"
+        :disabled="busy || sourceSettings.busy || libraryId === null"
+        @click="handleRefresh"
+        ><RefreshCw class="size-4" :class="{ 'motion-safe:animate-spin': busy }" aria-hidden="true"
+      /></Button>
     </div>
     <p v-if="!libraries.length && !busy" class="text-muted-foreground">{{ t('fanfiction.noLibraries') }}</p>
     <p v-if="error" role="alert" class="border-destructive text-destructive rounded-md border p-3 text-sm">{{ error }}</p>
     <template v-if="libraryId !== null">
-      <nav class="flex flex-wrap gap-2" :aria-label="t('fanfiction.title')">
-        <Button :variant="tab === 'stories' ? 'default' : 'outline'" @click="showStories">{{ t('fanfiction.stories') }}</Button>
-        <Button :variant="tab === 'add' ? 'default' : 'outline'" @click="showAdd">{{ t('fanfiction.addStories') }}</Button>
-        <Button :variant="tab === 'discovery' ? 'default' : 'outline'" @click="showDiscovery">{{ t('fanfiction.discovery.title') }}</Button>
-        <Button :variant="tab === 'activity' ? 'default' : 'outline'" @click="showActivity">{{ t('fanfiction.activity') }}</Button>
-        <Button :variant="tab === 'profiles' ? 'default' : 'outline'" @click="showProfiles">{{ t('fanfiction.profiles') }}</Button>
+      <nav class="flex overflow-x-auto border-b border-border scrollbar-none" :aria-label="t('fanfiction.title')">
+        <RouterLink
+          v-for="item in navigation"
+          :key="item.id"
+          :to="destination(item.id)"
+          :aria-current="tab === item.id ? 'page' : undefined"
+          class="shrink-0 border-b-2 px-2 py-3 text-sm font-medium sm:px-3 focus-visible:outline-2 focus-visible:outline-ring"
+          :class="tab === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+          >{{ item.label }}</RouterLink
+        >
       </nav>
       <div v-if="tab === 'profiles'" class="space-y-4">
         <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
         <SourceProfiles :settings="sourceSettings" @saved="useSavedProfile" @deleted="handleProfileDeleted" />
       </div>
-      <section v-if="tab === 'stories'" class="space-y-4">
-        <form class="flex flex-wrap gap-3" @submit.prevent="refresh">
-          <input
+      <section v-else-if="tab === 'stories'" class="space-y-4" :aria-label="t('fanfiction.stories')" :aria-busy="busy">
+        <form class="flex flex-wrap items-center gap-2" @submit.prevent="applyFilters">
+          <Input
             v-model="search"
+            :disabled="busy"
             :aria-label="t('fanfiction.search')"
             :placeholder="t('fanfiction.search')"
             maxlength="200"
-            class="border-input bg-background min-w-48 rounded-md border p-2"
+            class="h-11 min-w-40 flex-1 sm:h-9"
           />
-          <select v-model="state" :aria-label="t('fanfiction.status')" class="border-input bg-background rounded-md border p-2" @change="refresh">
+          <select
+            v-model="state"
+            :disabled="busy"
+            :aria-label="t('fanfiction.status')"
+            class="border-input bg-background h-11 max-w-full rounded-md border px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring sm:h-9"
+            @change="applyFilters"
+          >
             <option value="">{{ t('fanfiction.allStates') }}</option>
             <option value="active">{{ t('fanfiction.sourceStates.active') }}</option>
             <option value="paused">{{ t('fanfiction.sourceStates.paused') }}</option>
@@ -175,61 +237,50 @@ onMounted(() => {
             <option value="configuration_blocked">{{ t('fanfiction.states.configuration_blocked') }}</option>
           </select>
           <Button type="submit" variant="outline" :disabled="busy">{{ t('fanfiction.search') }}</Button>
+          <Button v-if="sources.length" variant="ghost" :aria-pressed="showBulk" :disabled="busy || bulk.active" @click="toggleSelection">{{
+            selectionLabel
+          }}</Button>
         </form>
         <StoryBulkActions
+          v-if="showBulk"
           v-model:all-matching="bulk.allMatching"
           v-model:action="bulk.action"
           v-model:interval="bulk.interval"
           :bulk="bulk"
           :loading="busy"
         />
-        <p v-if="!sources.length" class="text-muted-foreground text-sm">{{ t('fanfiction.noStories') }}</p>
-        <article v-for="source in sources" :key="source.id" class="border-border bg-card grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto]">
-          <div class="min-w-0 space-y-1">
-            <label class="text-muted-foreground flex items-center gap-2 text-sm">
-              <input v-model="bulk.selectedIds" type="checkbox" :value="source.id" :disabled="busy || bulk.busy || bulk.active || bulk.allMatching" />
-              {{ t('fanfiction.bulk.selectStory', { title: source.title }) }}
-            </label>
-            <RouterLink
-              v-if="source.bookId"
-              :to="{ name: 'book-detail', params: { bookId: source.bookId } }"
-              class="text-primary font-medium hover:underline"
-              >{{ source.title }}</RouterLink
-            >
-            <h2 v-else class="font-medium">{{ source.title }}</h2>
-            <p class="text-muted-foreground text-sm">
-              {{ source.authors.join(', ') }} · {{ source.site }} · {{ t('fanfiction.chapterCount', { count: source.chapterCount }) }}
-              <span v-if="source.wordCount !== null"> · {{ t('fanfiction.wordCount', { count: source.wordCount }) }}</span>
-            </p>
-            <p class="text-sm">{{ t(`fanfiction.sourceStates.${source.state}`) }} · {{ source.storyStatus }}</p>
-            <p v-if="source.attentionCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
-            <dl class="text-muted-foreground grid gap-x-4 text-xs sm:grid-cols-2">
-              <div>
-                <dt class="inline">{{ t('fanfiction.lastChecked') }}:</dt>
-                <dd class="inline">{{ dateLabel(source.lastCheckedAt) }}</dd>
-              </div>
-              <div>
-                <dt class="inline">{{ t('fanfiction.nextCheck') }}:</dt>
-                <dd class="inline">{{ source.intervalMinutes === null ? t('fanfiction.manualOnly') : dateLabel(source.nextCheckAt) }}</dd>
-              </div>
-            </dl>
-          </div>
-          <div
-            v-if="source.bookFileId && source.attentionCode !== 'destination_profile_required' && ['active', 'paused'].includes(source.state)"
-            class="flex flex-wrap items-start gap-2"
-          >
-            <Button variant="outline" :disabled="busy" @click="checkNow(source)">{{ t('fanfiction.checkNow') }}</Button>
-            <Button variant="outline" :disabled="busy" @click="refreshChapters(source)">{{ t('fanfiction.refreshChapters') }}</Button>
-            <Button
-              v-if="source.state === 'active' || (source.state === 'paused' && source.bookFileId)"
-              variant="outline"
-              :disabled="busy"
-              @click="togglePaused(source)"
-              >{{ source.state === 'paused' ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates') }}</Button
-            >
-          </div>
-        </article>
-        <Button v-if="sourceCursor" variant="outline" :disabled="busy" @click="moreSources">{{ t('fanfiction.nextPage') }}</Button>
+        <p v-if="busy && !sources.length" role="status" class="py-12 text-center text-sm text-muted-foreground">{{ t('common.loading') }}</p>
+        <div v-else-if="!sources.length" class="space-y-3 py-12 text-center">
+          <p class="text-sm text-muted-foreground">{{ filtered ? t('fanfiction.noStories') : t('fanfiction.emptyStories') }}</p>
+          <Button v-if="filtered" variant="outline" @click="clearFilters">{{ t('fanfiction.clearFilters') }}</Button>
+          <Button v-else @click="showAdd"><Plus aria-hidden="true" />{{ t('fanfiction.addStories') }}</Button>
+        </div>
+        <div v-else>
+          <FanfictionStoryRow
+            v-for="source in sources"
+            :key="source.id"
+            :source="source"
+            :job="sourceJobs[source.id]"
+            :error="sourceErrors[source.id]"
+            :pending="checkingSourceId === source.id"
+            :disabled="busy || bulk.active"
+            :selected="bulk.selectedIds.includes(source.id) || bulk.allMatching"
+            :selection-disabled="busy || bulk.busy || bulk.active || bulk.allMatching"
+            @select="selectStory(source.id, $event)"
+            @check="checkNow(source)"
+            @refresh="refreshChapters(source)"
+            @pause="togglePaused(source)"
+          />
+        </div>
+        <FanfictionPagination
+          :page="sourcePagination.number"
+          :previous="sourcePagination.canPrevious"
+          :next="Boolean(sourceCursor)"
+          :busy="busy"
+          :label="t('fanfiction.stories')"
+          @previous="previousSources"
+          @next="moreSources"
+        />
       </section>
       <section v-else-if="tab === 'add'" class="space-y-4">
         <header class="space-y-1">
@@ -347,7 +398,7 @@ onMounted(() => {
         :profile-cursor="profileCursor"
         @more-profiles="moreProfiles"
       />
-      <section v-else class="space-y-3">
+      <section v-else-if="tab === 'activity'" class="space-y-3" :aria-label="t('fanfiction.activity')">
         <h2 class="text-lg font-medium">{{ t('fanfiction.recentChanges') }}</h2>
         <article v-for="event in activity" :key="event.id" class="border-border bg-card rounded-lg border p-4">
           <p class="font-medium">{{ event.title }}</p>
@@ -356,7 +407,15 @@ onMounted(() => {
             t('fanfiction.openBook')
           }}</RouterLink>
         </article>
-        <Button v-if="activityCursor" variant="outline" :disabled="busy" @click="moreActivity">{{ t('fanfiction.nextPage') }}</Button>
+        <FanfictionPagination
+          :page="activityPagination.number"
+          :previous="activityPagination.canPrevious"
+          :next="Boolean(activityCursor)"
+          :busy="busy"
+          :label="t('fanfiction.recentChanges')"
+          @previous="previousActivity"
+          @next="moreActivity"
+        />
         <h2 class="text-lg font-medium">{{ t('fanfiction.operations') }}</h2>
         <p v-if="!jobs.length" class="text-muted-foreground text-sm">{{ t('fanfiction.noActivity') }}</p>
         <article
@@ -393,7 +452,15 @@ onMounted(() => {
             >{{ t('fanfiction.retry') }}</Button
           >
         </article>
-        <Button v-if="jobCursor" variant="outline" :disabled="busy" @click="moreJobs">{{ t('fanfiction.nextPage') }}</Button>
+        <FanfictionPagination
+          :page="jobPagination.number"
+          :previous="jobPagination.canPrevious"
+          :next="Boolean(jobCursor)"
+          :busy="busy"
+          :label="t('fanfiction.operations')"
+          @previous="previousJobs"
+          @next="moreJobs"
+        />
       </section>
     </template>
   </main>

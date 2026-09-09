@@ -31,6 +31,110 @@ describe('managed Fanfiction page requests', () => {
     vi.useRealTimers()
   })
   const create = () => scope.run(() => useFanfiction())!
+  it('keeps bounded pages and lets users return without losing the active page on refresh', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    mockApi.mockImplementation(async (url) => {
+      const next = String(url).includes('cursor=next')
+      return response({ items: [{ id: next ? 'second' : 'first' }], nextCursor: next ? null : 'next' })
+    })
+    await state.refresh()
+    await state.moreSources()
+    expect(state.sources.value[0]?.id).toBe('second')
+    expect(state.sourcePagination.number.value).toBe(2)
+    await state.refresh()
+    expect(state.sources.value[0]?.id).toBe('second')
+    await state.previousSources()
+    expect(state.sources.value[0]?.id).toBe('first')
+    expect(state.sourcePagination.canPrevious.value).toBe(false)
+    await state.moreJobs()
+    await state.previousJobs()
+    await state.moreActivity()
+    await state.previousActivity()
+    expect(state.jobPagination.number.value).toBe(1)
+    expect(state.activityPagination.number.value).toBe(1)
+  })
+
+  it('does not advance history on failure and resets it only when filters are applied', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    mockApi.mockResolvedValue(response({ items: [], nextCursor: 'next' }))
+    await state.refresh()
+    mockApi.mockRejectedValueOnce(new Error('Offline'))
+    await state.moreSources()
+    expect(state.sourcePagination.number.value).toBe(1)
+    await state.moreSources()
+    state.search.value = 'dragon'
+    await state.refresh()
+    expect(String(mockApi.mock.calls.at(-3)?.[0])).not.toContain('dragon')
+    await state.applyFilters()
+    expect(String(mockApi.mock.calls.at(-1)?.[0])).toContain('search=dragon')
+    expect(String(mockApi.mock.calls.at(-1)?.[0])).not.toContain('cursor=')
+    expect(state.sourcePagination.number.value).toBe(1)
+  })
+
+  it('loads more library choices without changing the selected library or clearing imports', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    state.libraries.value = [{ id: 5, name: 'Current' }]
+    state.libraryCursor.value = 5
+    state.urls.value = preview.canonicalUrl
+    mockApi.mockResolvedValue(response({ items: [{ id: 6, name: 'Another' }], nextCursor: null }))
+    await state.loadLibraries()
+    expect(state.libraryId.value).toBe(5)
+    expect(state.libraries.value.map((library) => library.id)).toEqual([5, 6])
+    expect(state.urls.value).toBe(preview.canonicalUrl)
+    expect(mockApi).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a submitted check immediately, prevents duplicate clicks, and polls its outcome', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    const source = { id: 'source-id', libraryId: 5 } as FanfictionSource
+    let finish: (response: Response) => void = () => {}
+    mockApi.mockImplementation(async (url) => {
+      if (String(url).endsWith('/check'))
+        return new Promise<Response>((resolve) => {
+          finish = resolve
+        })
+      if (String(url).endsWith('/jobs/status')) return response({ items: [{ id: 'check', kind: 'update', state: 'no_change' }] })
+      if (String(url).includes('/sources?')) return response({ items: [source], nextCursor: null })
+      return response({ items: [], nextCursor: null })
+    })
+    const submitted = state.checkNow(source)
+    expect(state.checkingSourceId.value).toBe(source.id)
+    await state.checkNow(source)
+    expect(mockApi).toHaveBeenCalledTimes(1)
+    finish(response({ id: 'check', kind: 'update', state: 'queued' }))
+    await submitted
+    expect(state.sourceJobs.value[source.id]?.state).toBe('queued')
+    expect(state.checkingSourceId.value).toBeNull()
+    await state.checkNow(source)
+    expect(mockApi.mock.calls.filter(([url]) => String(url).endsWith('/check'))).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(state.sourceJobs.value[source.id]?.state).toBe('no_change')
+  })
+
+  it('ignores a delayed check when the library changes', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    let finish: (response: Response) => void = () => {}
+    mockApi.mockImplementation(async (url) =>
+      String(url).endsWith('/check')
+        ? new Promise<Response>((resolve) => {
+            finish = resolve
+          })
+        : response({ items: [], nextCursor: null }),
+    )
+    const submitted = state.checkNow({ id: 'old', libraryId: 5 } as FanfictionSource)
+    state.libraryId.value = 6
+    await state.changeLibrary()
+    finish(response({ id: 'old-job', state: 'queued' }))
+    await submitted
+    expect(state.sourceJobs.value).toEqual({})
+    expect(state.checkingSourceId.value).toBeNull()
+  })
+
   it('previews matching sources and imports only after explicit confirmation', async () => {
     const state = create()
     state.libraryId.value = 5
