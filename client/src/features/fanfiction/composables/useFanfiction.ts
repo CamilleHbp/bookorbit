@@ -355,6 +355,7 @@ export function useFanfiction(
       else {
         const match = await request<FanfictionProfileMatch>(`${path}/profile-match?${new URLSearchParams({ url: candidate.url })}`)
         if (!currentScope(current)) return
+        if (match.ambiguous) throw new Error('More than one profile matches. Choose a profile before continuing.')
         candidate.resolvedProfileId = match.profile?.id ?? ''
         if (match.profile) profiles.value = [match.profile, ...profiles.value.filter((item) => item.id !== match.profile!.id)].slice(0, 50)
       }

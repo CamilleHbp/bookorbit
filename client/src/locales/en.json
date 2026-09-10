@@ -10233,7 +10233,8 @@
       "adult_confirmation_required": "Confirm you are an adult in source settings, then retry.",
       "access_denied": "The website blocked access. Try again later or upload an EPUB.",
       "metadata_review_required": "Review the incoming story metadata.",
-      "import_review_required": "Review the story before importing it."
+      "import_review_required": "Review the story before importing it.",
+      "profile_ambiguous": "More than one profile matches. Choose a profile before continuing."
     },
     "title": "Fanfiction",
     "pageNumber": "Page {page}",
@@ -10510,7 +10511,12 @@
     },
     "restoreConfirm": "Restore the story from {date} and pause automatic updates? Your reading history and annotations are kept.",
     "importCollection": "Add imported stories to collection",
-    "noCollection": "No collection"
+    "noCollection": "No collection",
+    "rootUrls": "Matching root URLs",
+    "rootUrlsHelp": "One HTTPS root URL per line, up to 20. The most specific match wins. You can override the profile during review.",
+    "urlPrefixFilter": "URL prefixes (one per line)",
+    "applyUrlFilter": "Apply URL filter",
+    "useProfileUrls": "Use profile URLs"
   },
   "koreaderCopies": {
     "title": "Device copies",

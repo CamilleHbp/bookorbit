@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -21,12 +21,21 @@ export class StartFanfictionDiscoveryDto {
 }
 
 export class ListFanfictionDiscoveryDto {
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.split('\n') : value))
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(4096, { each: true })
+  urlPrefixes?: string[];
   @IsOptional() @IsUUID() cursor?: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 50;
   @IsIn(['pending', 'ambiguous', 'rejected', 'linked', 'failed']) state: FanfictionCandidateState = 'pending';
 }
 
 export class SelectFanfictionDiscoveryDto {
+  @IsOptional() @IsBoolean() autoProfile?: boolean;
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(4096, { each: true }) urlPrefixes?: string[];
   @IsUUID() idempotencyKey!: string;
   @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @IsUUID(undefined, { each: true }) ids?: string[];
   @IsOptional() @IsBoolean() allMatching?: boolean;

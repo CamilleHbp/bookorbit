@@ -19,12 +19,12 @@ describe('source profile tag rules', () => {
   const access = { administer: vi.fn() };
   const vault = { decrypt: vi.fn(), encrypt: vi.fn().mockResolvedValue({}) };
   const runtime = { mergeConfiguration: vi.fn().mockResolvedValue('[defaults]\n') };
-  const query = { from: vi.fn(), where: vi.fn(), limit: vi.fn(), set: vi.fn(), values: vi.fn(), returning: vi.fn() };
+  const query = { from: vi.fn(), where: vi.fn(), limit: vi.fn(), orderBy: vi.fn(), set: vi.fn(), values: vi.fn(), returning: vi.fn() };
   const db = { select: vi.fn(() => query), insert: vi.fn(() => query), update: vi.fn(() => query) };
   let service: FanfictionProfileService;
   beforeEach(async () => {
     vi.clearAllMocks();
-    for (const key of ['from', 'where', 'set', 'values'] as const) query[key].mockReturnValue(query);
+    for (const key of ['from', 'where', 'set', 'values', 'orderBy'] as const) query[key].mockReturnValue(query);
     query.limit.mockResolvedValue([row]);
     query.returning.mockResolvedValue([row]);
     vault.decrypt.mockResolvedValue(JSON.stringify({ configuration: '[defaults]\n', cookies: [], tagRules: [rule] }));
@@ -69,5 +69,42 @@ describe('source profile tag rules', () => {
     for (const tagRules of [[{ remoteTag: ' ', targetTag: 'A' }], [{ remoteTag: 'A', targetTag: 'B', unknown: true }], Array(101).fill(rule)]) {
       expect((await validate(plainToInstance(CreateFanfictionProfileDto, { name: 'Source', tagRules }), options)).length).toBeGreaterThan(0);
     }
+  });
+  it('normalizes and preserves roots through updates, and allows clearing them', async () => {
+    const roots = [' https://EXAMPLE.com/fiction/ ', 'https://example.com/fiction'];
+    const created = await service.create(5, { name: 'Source', rootUrls: roots }, user);
+    expect(created.rootUrls).toEqual(['https://example.com/fiction']);
+    expect(JSON.parse(vault.encrypt.mock.calls[0]![2]).rootUrls).toEqual(['https://example.com/fiction']);
+    vault.decrypt.mockResolvedValue(JSON.stringify({ configuration: '', cookies: [], rootUrls: ['https://example.com'] }));
+    await service.update(5, 'profile', { name: 'Source', version: 1 }, user);
+    expect(JSON.parse(vault.encrypt.mock.calls[1]![2]).rootUrls).toEqual(['https://example.com']);
+    await service.update(5, 'profile', { name: 'Source', version: 1, rootUrls: [] }, user);
+    expect(JSON.parse(vault.encrypt.mock.calls[2]![2]).rootUrls).toEqual([]);
+  });
+  it('matches the most specific profile and refuses equally specific matches', async () => {
+    const profiles = [
+      { ...row, id: 'broad', document: { rootUrls: ['https://example.com'], configuration: '', cookies: [] } },
+      { ...row, id: 'specific', document: { rootUrls: ['https://example.com/fiction'], configuration: '', cookies: [] } },
+    ];
+    query.limit.mockResolvedValue(profiles);
+    vault.decrypt.mockImplementation((_library, _id, document) => Promise.resolve(JSON.stringify(document)));
+    const result = await service.matchMany(
+      5,
+      ['https://example.com/fiction/1', 'https://example.com/other', 'https://example.com.evil/fiction/1'],
+      user,
+    );
+    expect(result.get('https://example.com/fiction/1')?.profile?.id).toBe('specific');
+    expect(result.get('https://example.com/other')?.profile?.id).toBe('broad');
+    expect(result.get('https://example.com.evil/fiction/1')?.profile).toBeNull();
+    expect(vault.decrypt).toHaveBeenCalledTimes(2);
+    query.limit.mockResolvedValue([...profiles, { ...profiles[1], id: 'duplicate' }]);
+    expect(await service.match(5, 'https://example.com/fiction/1', user)).toEqual({ profile: null, ambiguous: true });
+  });
+  it('keeps legacy matching until roots are explicitly configured', async () => {
+    query.limit.mockResolvedValue([{ ...row, document: { configuration: '[example.com]\n', cookies: [] } }]);
+    vault.decrypt.mockImplementation((_library, _id, document) => Promise.resolve(JSON.stringify(document)));
+    expect((await service.match(5, 'https://example.com/story/1', user)).profile?.id).toBe('profile');
+    query.limit.mockResolvedValue([{ ...row, document: { configuration: '[example.com]\n', cookies: [], rootUrls: [] } }]);
+    expect((await service.match(5, 'https://example.com/story/1', user)).profile).toBeNull();
   });
 });
