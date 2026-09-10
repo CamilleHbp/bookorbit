@@ -6,6 +6,7 @@ export interface ChipInputOptions {
   normalize?: (raw: string) => string | null
   disabled?: boolean
   minSearchLength?: number
+  splitOnSeparators?: boolean
   maxItems?: number
 }
 
@@ -47,7 +48,7 @@ export function useChipInput(props: ChipInputOptions, update: (items: string[]) 
   function onInput() {
     close()
     if (props.disabled) return
-    if (/[,\n\t;]/.test(query.value)) {
+    if (props.splitOnSeparators !== false && /[,\n\t;]/.test(query.value)) {
       const parts = query.value.split(/[,\n\t;]/)
       const trailing = parts.pop() ?? ''
       const next = [...props.modelValue]

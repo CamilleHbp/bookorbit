@@ -25,6 +25,8 @@ const loadReadingLogTab = () => import('@/features/book/components/detail/tabs/R
 const loadHighlightsTab = () => import('@/features/book/components/detail/tabs/HighlightsTab.vue')
 const ReadingLogTab = defineAsyncComponent(loadReadingLogTab)
 const HighlightsTab = defineAsyncComponent(loadHighlightsTab)
+const StoryReaderSummary = defineAsyncComponent(() => import('@/features/fanfiction/components/StoryReaderSummary.vue'))
+const storyFile = computed(() => detail.value?.files.find((file) => file.format === 'epub'))
 const StoryUpdatesTab = defineAsyncComponent(() => import('@/features/fanfiction/components/StoryUpdatesTab.vue'))
 
 const KEPT_ALIVE_TABS = ['ReadingLogTab', 'HighlightsTab']
@@ -155,7 +157,16 @@ function onCoverChanged(source: 'extracted' | 'custom' | null) {
           as loading. They revalidate silently on activation instead.
         -->
         <KeepAlive :include="KEPT_ALIVE_TABS">
-          <DetailsTab v-if="tab === 'details'" :book="detail" @saved="onMetadataSaved" @moved="handleMovedToLibrary" />
+          <template v-if="tab === 'details'">
+            <DetailsTab :book="detail" @saved="onMetadataSaved" @moved="handleMovedToLibrary" />
+            <StoryReaderSummary
+              v-if="storyFile"
+              :key="`${bookId}-${detail.updatedAt}`"
+              :book-id="bookId"
+              :book-file-id="storyFile.id"
+              :library-id="detail.libraryId"
+            />
+          </template>
           <EditMetadataTab
             v-else-if="tab === 'edit' && hasPermission('library_edit_metadata')"
             :book="detail"

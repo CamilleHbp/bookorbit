@@ -76,6 +76,7 @@ describe('book story administration', () => {
     expect(JSON.parse(call[1]!.body as string)).toEqual({
       jobId: 'update-job',
       fingerprint: 'fingerprint',
+      genres: 'keep',
       title: 'keep',
       description: 'keep',
       authors: 'keep',
@@ -321,7 +322,7 @@ describe('book story administration', () => {
     model.profileId.value = 'profile-id'
     await model.updateSettings()
     const patch = mockApi.mock.calls.find(([, init]) => init?.method === 'PATCH')!
-    expect(JSON.parse(patch[1]!.body as string)).toEqual({ version: 2, profileId: 'profile-id', intervalMinutes: null })
+    expect(JSON.parse(patch[1]!.body as string)).toEqual({ version: 2, profileId: 'profile-id', intervalMinutes: null, tagPolicy: 'review' })
     await model.unlink()
     expect(mockApi.mock.calls.filter(([, init]) => init?.method === 'PATCH').at(-1)?.[1]?.body).toBe(
       JSON.stringify({ version: 2, state: 'unlinked' }),
@@ -387,6 +388,6 @@ describe('book story administration', () => {
     await model.updateSettings()
     expect(model.canUpdate.value).toBe(true)
     const patch = mockApi.mock.calls.find(([, init]) => init?.method === 'PATCH')!
-    expect(JSON.parse(patch[1]!.body as string)).toEqual({ version: 2, profileId: null, intervalMinutes: 1440 })
+    expect(JSON.parse(patch[1]!.body as string)).toEqual({ version: 2, profileId: null, intervalMinutes: 1440, tagPolicy: 'review' })
   })
 })

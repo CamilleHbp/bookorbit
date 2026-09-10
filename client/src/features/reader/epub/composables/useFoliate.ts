@@ -45,6 +45,7 @@ export interface FoliateLocationContext {
 }
 
 export interface EpubOpenOptions {
+  onPositionRecovery?: (quality: 'relocated' | 'approximate' | 'unresolved') => void
   trackReading?: boolean
   restoreCanonical?: boolean
   fixedLayoutSpread?: EpubReaderSettings['fixedLayoutSpread']
@@ -314,6 +315,8 @@ export function useFoliate(
       if (reading?.state.anchor && options?.restoreCanonical !== false) {
         const acknowledgement = await restoreNativeAnchor(view as unknown as AnchorView, reading.state.anchor, reading.revision)
         didNavigate = acknowledgement !== null
+        if (!acknowledgement) options?.onPositionRecovery?.('unresolved')
+        else if (acknowledgement.quality !== 'exact') options?.onPositionRecovery?.(acknowledgement.quality)
         if (acknowledgement) {
           const deviceId = await readingDeviceIdentity()
           await api(`/api/v1/libraries/${reading.revision.libraryId}/files/${fileId}/reading-events/acknowledgements`, {

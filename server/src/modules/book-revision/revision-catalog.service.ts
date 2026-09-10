@@ -136,6 +136,9 @@ export class RevisionCatalogService {
     const rows = await this.db
       .select({
         revision: schema.bookFileRevisions.id,
+        chapterCount: sql<
+          number | null
+        >`(select nullif(count(*), 0)::int from jsonb_array_elements(${schema.bookFileRevisions.chapters}) chapter where chapter->>'sourceUrl' is not null)`,
         changeKind: schema.bookFileRevisions.changeKind,
         reason: schema.bookFileRevisions.reason,
         bookFileId: schema.bookFileRevisions.bookFileId,

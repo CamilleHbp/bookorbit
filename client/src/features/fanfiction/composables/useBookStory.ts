@@ -31,6 +31,7 @@ export function useBookStory(
   permitted: MaybeRefOrGetter<boolean>,
   onBookUpdated?: (bookId: number) => void | Promise<void>,
 ) {
+  const tagPolicy = ref<'review' | 'automatic'>('review')
   const allowed = ref(false)
   const denied = ref(false)
   const visible = computed(() => toValue(permitted) && toValue(libraryId) !== undefined && !denied.value)
@@ -56,6 +57,7 @@ export function useBookStory(
   const job = ref<FanfictionJob | null>(null)
   const metadataReview = ref<FanfictionMetadataReviewView | null>(null)
   const metadataChoices = ref<FanfictionMetadataChoices>({
+    genres: 'keep',
     title: 'keep',
     description: 'keep',
     authors: 'keep',
@@ -149,6 +151,7 @@ export function useBookStory(
     sources.value = page.items
     sourceCursor.value = page.nextCursor
     if (!page.items.some((row) => row.id === sourceId.value)) sourceId.value = page.items[0]?.id ?? ''
+    tagPolicy.value = source.value?.tagPolicy ?? 'review'
     profileId.value = source.value?.profileId ?? ''
     interval.value = source.value?.intervalMinutes === null ? 'manual' : String(source.value?.intervalMinutes ?? 1440)
     await loadMetadataReview(id)
@@ -161,6 +164,7 @@ export function useBookStory(
     if (!valid(id) || source.value?.id !== current.id) return
     metadataReview.value = result
     metadataChoices.value = result?.review.choices ?? {
+      genres: 'keep',
       title: 'keep',
       description: 'keep',
       authors: 'keep',
@@ -242,6 +246,7 @@ export function useBookStory(
     if (candidate && ['review_required', 'failed', 'cancelled', 'configuration_blocked'].includes(candidate.state)) job.value = candidate
   }
   async function selectSource() {
+    tagPolicy.value = source.value?.tagPolicy ?? 'review'
     profileId.value = source.value?.profileId ?? ''
     interval.value = source.value?.intervalMinutes === null ? 'manual' : String(source.value?.intervalMinutes ?? 1440)
     revisions.value = []
@@ -315,7 +320,7 @@ export function useBookStory(
         throw new Error('Use an interval between 60 and 525600 minutes.')
       await request(
         `${base.value}/sources/${current.id}`,
-        { version: current.version, profileId: profileId.value || null, intervalMinutes: minutes },
+        { version: current.version, profileId: profileId.value || null, intervalMinutes: minutes, tagPolicy: tagPolicy.value },
         'PATCH',
       )
       if (valid(id)) await loadSources(id)
@@ -492,6 +497,7 @@ export function useBookStory(
     reviewDeferred,
     resumeMetadataReview,
     allowed,
+    tagPolicy,
     visible,
     loading,
     error,

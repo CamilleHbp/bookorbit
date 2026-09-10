@@ -10179,7 +10179,7 @@
     "username": "Username",
     "password": "Password",
     "clearPassword": "Clear password",
-    "advanced": "FanFicFare configuration (INI)",
+    "advanced": "Advanced",
     "save": "Save profile",
     "cancel": "Cancel",
     "testSource": "Test source access",
@@ -10409,7 +10409,7 @@
     "confirmImport": "Confirm import",
     "editStoryData": "Edit details",
     "storyTitle": "Title",
-    "storyAuthors": "Authors (one per line)",
+    "storyAuthors": "Authors",
     "storyDescription": "Description",
     "storyTags": "Tags",
     "invalidStoryDetails": "Enter a title. Use at most 100 authors and 1,000 tags, with no more than 500 characters per entry.",
@@ -10438,7 +10438,8 @@
         "title": "Title",
         "description": "Description",
         "authors": "Authors",
-        "tags": "Tags"
+        "tags": "Tags",
+        "genres": "Genres"
       },
       "beforeHelp": "Review these changes before updating your library. Your current book stays unchanged until you apply the update.",
       "importHelp": "Check the details before adding this story to your library.",
@@ -10450,8 +10451,77 @@
       "later": "Review later",
       "discard": "Discard update",
       "discardImport": "Discard import",
-      "allActivity": "Show all activity"
-    }
+      "allActivity": "Show all activity",
+      "edit": "Edit",
+      "keepAll": "Update chapters, keep my metadata",
+      "keepTags": "Keep current source tags",
+      "useTags": "Use source tags",
+      "mergeTags": "Combine tags",
+      "final": "Final value"
+    },
+    "categories": {
+      "fandoms": "Fandoms",
+      "relationships": "Relationships",
+      "characters": "Characters",
+      "warnings": "Warnings",
+      "rating": "Content rating"
+    },
+    "weekly": "Weekly",
+    "customSchedule": "Custom interval",
+    "tagPolicy": "Source tag changes",
+    "tagPolicyReview": "Review changes",
+    "tagPolicyAutomatic": "Update automatically",
+    "tagPolicyHelp": "Your personal tags are kept.",
+    "reading": {
+      "unread": "Unread",
+      "reading": "Reading",
+      "caught_up": "Caught up",
+      "finished": "Finished",
+      "continue": "Continue reading",
+      "read": "Read now",
+      "progress": "{read} of {total} chapters read",
+      "collection": "Add to collection",
+      "story": "Story",
+      "source": "View source",
+      "loadFailed": "Story information could not be loaded. Refresh to try again.",
+      "readUnread": "Read unread chapters ({count})",
+      "recovery": {
+        "relocated": "Your reading position was restored in the updated story.",
+        "approximate": "Your previous passage changed. Opened the nearest location.",
+        "unresolved": "Your previous passage could not be found. Choose a chapter to continue."
+      },
+      "chapterUnavailable": "This chapter is no longer available. Choose a chapter to continue."
+    },
+    "link": {
+      "title": "Link story source",
+      "url": "Story URL",
+      "inspect": "Check source",
+      "confirm": "Link this book",
+      "failed": "Could not link this story. Try again.",
+      "queued": "Linking started. Follow its progress in Activity."
+    },
+    "filters": {
+      "title": "Filter and sort",
+      "view": "Show",
+      "all": "All stories",
+      "new": "New chapters since last read",
+      "attention": "Needs attention",
+      "publication": "Publication status",
+      "ongoing": "Ongoing",
+      "complete": "Complete",
+      "sort": "Sort by",
+      "added": "Recently added",
+      "updated": "Recently updated"
+    },
+    "outcome": {
+      "added": "Added {count} chapters",
+      "changed": "Updated {count} existing chapters",
+      "metadata": "Metadata changed",
+      "readNew": "Read new chapters"
+    },
+    "restoreConfirm": "Restore the story from {date} and pause automatic updates? Your reading history and annotations are kept.",
+    "importCollection": "Add imported stories to collection",
+    "noCollection": "No collection"
   },
   "koreaderCopies": {
     "title": "Device copies",

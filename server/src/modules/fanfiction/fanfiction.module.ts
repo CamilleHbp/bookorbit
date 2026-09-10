@@ -1,3 +1,7 @@
+import { CollectionModule } from '../collection/collection.module';
+import { BookModule } from '../book/book.module';
+import { FanfictionReaderService } from './fanfiction-reader.service';
+import { FanfictionReaderController } from './fanfiction-reader.controller';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { MetadataModule } from '../metadata/metadata.module';
 import { Module } from '@nestjs/common';
@@ -36,6 +40,8 @@ import { FanfictionSourceBatchController } from './fanfiction-source-batch.contr
 
 @Module({
   imports: [
+    BookModule,
+    CollectionModule,
     ConfigModule.forFeature(fanficfareConfig),
     ConfigModule.forFeature(storageConfig),
     MetadataModule,
@@ -48,6 +54,7 @@ import { FanfictionSourceBatchController } from './fanfiction-source-batch.contr
     NotificationModule,
   ],
   providers: [
+    FanfictionReaderService,
     FanfictionReviewService,
     FanfictionAccessService,
     FanficfareRuntimeService,
@@ -68,6 +75,7 @@ import { FanfictionSourceBatchController } from './fanfiction-source-batch.contr
     FanfictionReplacementService,
   ],
   controllers: [
+    FanfictionReaderController,
     FanfictionController,
     FanfictionLibraryController,
     FanfictionSourceController,
