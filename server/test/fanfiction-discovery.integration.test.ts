@@ -432,4 +432,59 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
     expect(page.items[0].errorCode).toBe('profile_ambiguous');
     expect(await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.libraryId, libraryId))).toHaveLength(0);
   });
+  it('links several reviewed exceptions with independent sources and profiles', async () => {
+    const firstUrl = 'https://archiveofourown.org/works/123';
+    const secondUrl = 'https://archiveofourown.org/works/789';
+    await epub([firstUrl, 'https://archiveofourown.org/works/456']);
+    await epub([secondUrl, 'https://archiveofourown.org/works/999']);
+    await scan();
+    const page = await discovery.list(libraryId, { state: 'ambiguous', limit: 50 }, user);
+    expect(page.total).toBe(2);
+    const [profile] = await db
+      .insert(schema.fanfictionProfiles)
+      .values({
+        id: randomUUID(),
+        libraryId,
+        name: 'Chosen',
+        createdBy: user.id,
+        document: { version: 1, keyId: 'test', iv: '', tag: '', ciphertext: '' },
+      })
+      .returning();
+    const overrides = page.items.map((item) => ({
+      id: item.id,
+      canonicalUrl: item.urls.some((url) => url.recognized && url.canonicalUrl === firstUrl) ? firstUrl : secondUrl,
+      profileId: item.urls.some((url) => url.recognized && url.canonicalUrl === firstUrl) ? profile.id : null,
+    }));
+    const dto = {
+      idempotencyKey: randomUUID(),
+      decision: 'approve' as const,
+      state: 'ambiguous' as const,
+      ids: page.items.map((item) => item.id),
+      autoProfile: true,
+      overrides,
+    };
+    await expect(adoption.start(libraryId, { ...dto, overrides: [{ id: randomUUID(), profileId: null }] }, user)).rejects.toThrow(
+      'explicit selection',
+    );
+    await expect(adoption.start(libraryId, { ...dto, overrides: [overrides[0], overrides[0]] }, user)).rejects.toThrow('only one');
+    profiles.get.mockRejectedValueOnce(new ForbiddenException('Profile belongs to another library'));
+    await expect(adoption.start(libraryId, dto, user)).rejects.toBeInstanceOf(ForbiddenException);
+    profiles.get.mockReset();
+    profiles.matchMany.mockResolvedValue(
+      new Map([
+        [firstUrl, { profile: null, ambiguous: true }],
+        [secondUrl, { profile: null, ambiguous: true }],
+      ]),
+    );
+    const started = await adoption.start(libraryId, dto, user);
+    expect((await adoption.start(libraryId, { ...dto, overrides: [...overrides].reverse() }, user)).id).toBe(started.id);
+    await expect(adoption.start(libraryId, { ...dto, overrides: overrides.map((item) => ({ ...item, profileId: null })) }, user)).rejects.toThrow(
+      'reused',
+    );
+    const job = (await jobs.claim())!;
+    expect((await adoption.run(job, user, authorize, signal())).selection).toMatchObject({ processed: 2, failed: 0 });
+    const linked = await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.libraryId, libraryId));
+    expect(linked.find((source) => source.canonicalUrl === firstUrl)?.profileId).toBe(profile.id);
+    expect(linked.find((source) => source.canonicalUrl === secondUrl)?.profileId).toBeNull();
+  }, 45_000);
 });

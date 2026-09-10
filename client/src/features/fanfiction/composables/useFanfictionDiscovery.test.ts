@@ -1,11 +1,20 @@
 import { effectScope } from 'vue'
+import type { FanfictionDiscoveryCandidate } from '@bookorbit/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useFanfictionDiscovery } from './useFanfictionDiscovery'
 vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 const mockApi = vi.mocked(api)
 const response = (body: unknown) => ({ ok: true, status: 200, json: () => Promise.resolve(body) }) as Response
-const candidate = { id: 'candidate', bookId: 4, bookFileId: 7, title: 'Story', state: 'pending', urls: [] }
+const candidate = {
+  id: 'candidate',
+  bookId: 4,
+  bookFileId: 7,
+  title: 'Story',
+  state: 'pending',
+  urls: [{ recognized: true, canonicalUrl: 'https://example.com/1' }],
+  profileMatch: { profile: null },
+}
 describe('existing story discovery UI contracts', () => {
   let scope: ReturnType<typeof effectScope>
   beforeEach(() => {
@@ -17,7 +26,11 @@ describe('existing story discovery UI contracts', () => {
     scope.stop()
     vi.useRealTimers()
   })
-  const model = () => scope.run(() => useFanfictionDiscovery(5))!
+  const model = () => {
+    const view = scope.run(() => useFanfictionDiscovery(5))!
+    view.items.value = [candidate as FanfictionDiscoveryCandidate]
+    return view
+  }
   it('reuses the exact selection after an uncertain response and locks its inputs', async () => {
     const view = model()
     view.selected.value = ['candidate']
@@ -67,6 +80,27 @@ describe('existing story discovery UI contracts', () => {
   it('requires a single explicit choice for ambiguous source evidence', async () => {
     const view = model()
     view.state.value = 'ambiguous'
+    view.items.value = [
+      {
+        ...candidate,
+        state: 'ambiguous',
+        urls: [
+          {
+            recognized: true,
+            url: 'https://archiveofourown.org/works/123',
+            canonicalUrl: 'https://archiveofourown.org/works/123',
+            site: 'archiveofourown.org',
+          },
+          {
+            recognized: true,
+            url: 'https://archiveofourown.org/works/456',
+            canonicalUrl: 'https://archiveofourown.org/works/456',
+            site: 'archiveofourown.org',
+          },
+        ],
+      } as FanfictionDiscoveryCandidate,
+    ]
+    view.profileChoices.value.candidate = 'public'
     view.selected.value = ['candidate']
     await view.review('approve', '', '1440')
     expect(mockApi).not.toHaveBeenCalled()
@@ -78,7 +112,7 @@ describe('existing story discovery UI contracts', () => {
       ids: ['candidate'],
     })
   })
-  it('replaces pages and clears selections instead of growing a library-sized list', async () => {
+  it('preselects ready matches on each page without growing a library-sized list', async () => {
     const view = model()
     mockApi.mockResolvedValueOnce(response({ items: [candidate], nextCursor: 'cursor' }))
     await view.refresh()
@@ -87,8 +121,56 @@ describe('existing story discovery UI contracts', () => {
     mockApi.mockResolvedValueOnce(response({ items: [{ ...candidate, id: 'next' }], nextCursor: null }))
     await view.nextPage()
     expect(view.items.value.map((item) => item.id)).toEqual(['next'])
-    expect(view.selected.value).toEqual([])
+    expect(view.selected.value).toEqual(['next'])
     expect(mockApi.mock.calls[1]![0]).toBe('/api/v1/libraries/5/fanfiction/discovery?limit=50&state=pending&cursor=cursor')
+  })
+  it('preserves deselections when returning to an earlier page', async () => {
+    const view = model()
+    mockApi.mockResolvedValueOnce(response({ items: [candidate], nextCursor: 'next' }))
+    await view.refresh()
+    expect(view.selected.value).toEqual(['candidate'])
+    view.selected.value = []
+    mockApi.mockResolvedValueOnce(response({ items: [{ ...candidate, id: 'next' }], nextCursor: null }))
+    await view.nextPage()
+    mockApi.mockResolvedValueOnce(response({ items: [candidate], nextCursor: 'next' }))
+    await view.previousPage()
+    expect(view.selected.value).toEqual([])
+    expect(view.pageNumber.value).toBe(1)
+  })
+  it('keeps uncertain, failed and multiple-source matches unselected', async () => {
+    const view = model()
+    mockApi.mockResolvedValueOnce(
+      response({
+        items: [
+          candidate,
+          { ...candidate, id: 'ambiguous', profileMatch: { ambiguous: true, profile: null } },
+          { ...candidate, id: 'failed', state: 'failed' },
+          { ...candidate, id: 'unknown', profileMatch: undefined },
+          { ...candidate, id: 'multiple', urls: [...candidate.urls, { recognized: true, canonicalUrl: 'https://example.com/2' }] },
+        ],
+        nextCursor: null,
+      }),
+    )
+    await view.refresh()
+    expect(view.selected.value).toEqual(['candidate'])
+    view.selectPage()
+    expect(view.selected.value).toEqual(['candidate', 'failed'])
+  })
+  it('submits only the chosen website or individual book and retains its exact retry', async () => {
+    const view = model()
+    mockApi.mockResolvedValueOnce(response({ items: [candidate, { ...candidate, id: 'other' }], nextCursor: null }))
+    await view.refresh()
+    mockApi.mockRejectedValueOnce(new Error('offline'))
+    await view.reviewBooks(['candidate'], 'chosen-profile', 'manual', 'https://example.com/1')
+    const original = mockApi.mock.calls[1]!
+    expect(JSON.parse(original[1]!.body as string)).toMatchObject({
+      ids: ['candidate'],
+      profileId: 'chosen-profile',
+      canonicalUrl: 'https://example.com/1',
+    })
+    mockApi.mockResolvedValueOnce(response({ id: 'job', state: 'queued' }))
+    await view.submitPending()
+    expect(mockApi.mock.calls[2]).toEqual(original)
   })
   it('recovers a durable operation and polls through connection failure to completion', async () => {
     const view = model()
