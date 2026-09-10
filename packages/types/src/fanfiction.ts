@@ -199,11 +199,19 @@ export interface FanfictionDiscoveryCandidate {
 }
 
 export interface FanfictionDiscoveryPage {
+  total?: number;
   items: FanfictionDiscoveryCandidate[];
   nextCursor: string | null;
 }
 
+export interface FanfictionDiscoveryOverride {
+  id: string;
+  profileId?: string | null;
+  canonicalUrl?: string;
+}
+
 export interface FanfictionDiscoverySelection {
+  overrides?: FanfictionDiscoveryOverride[];
   urlPrefixes?: string[];
   autoProfile?: boolean;
   cutoff: string;

@@ -13,6 +13,7 @@ import {
   MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import type { FanfictionCandidateState } from '@bookorbit/types';
 
@@ -33,7 +34,19 @@ export class ListFanfictionDiscoveryDto {
   @IsIn(['pending', 'ambiguous', 'rejected', 'linked', 'failed']) state: FanfictionCandidateState = 'pending';
 }
 
+export class FanfictionDiscoveryOverrideDto {
+  @IsUUID() id!: string;
+  @IsOptional() @IsUUID() profileId?: string | null;
+  @IsOptional() @IsString() @MaxLength(4096) canonicalUrl?: string;
+}
+
 export class SelectFanfictionDiscoveryDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => FanfictionDiscoveryOverrideDto)
+  overrides?: FanfictionDiscoveryOverrideDto[];
   @IsOptional() @IsBoolean() autoProfile?: boolean;
   @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(4096, { each: true }) urlPrefixes?: string[];
   @IsUUID() idempotencyKey!: string;
