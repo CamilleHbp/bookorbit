@@ -107,6 +107,7 @@ export interface FanfictionImportProgress {
 }
 
 export interface FanfictionJob {
+  reviewWebsite?: string;
   id: string;
   libraryId: number;
   kind: FanfictionJobKind;
@@ -198,6 +199,24 @@ export interface FanfictionDiscoveryCandidate {
   createdAt: string;
 }
 
+export interface FanfictionDiscoveryWebsite {
+  website: string;
+  total: number;
+  remaining: number;
+  linked: number;
+}
+export interface FanfictionDiscoveryWebsites {
+  items: FanfictionDiscoveryWebsite[];
+  nextCursor: string | null;
+  cutoff: string;
+}
+export interface FanfictionDiscoveryComparison {
+  canonicalUrl: string;
+  title: string;
+  authors: string[];
+  chapterCount: number;
+  profile: FanfictionProfileSummary | null;
+}
 export interface FanfictionDiscoveryPage {
   total?: number;
   items: FanfictionDiscoveryCandidate[];
@@ -211,6 +230,9 @@ export interface FanfictionDiscoveryOverride {
 }
 
 export interface FanfictionDiscoverySelection {
+  website?: string;
+  review?: boolean;
+  excludedIds?: string[];
   overrides?: FanfictionDiscoveryOverride[];
   urlPrefixes?: string[];
   autoProfile?: boolean;

@@ -638,6 +638,7 @@ export class FanfictionJobService {
 
   private view(row: typeof jobs.$inferSelect): FanfictionJob {
     return {
+      ...(row.selection?.website !== undefined ? { reviewWebsite: row.selection.website } : {}),
       id: row.id,
       libraryId: row.libraryId,
       kind: row.kind,

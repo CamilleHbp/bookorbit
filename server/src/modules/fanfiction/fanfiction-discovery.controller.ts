@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Permission } from '@bookorbit/types';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -6,6 +6,8 @@ import { RequireLibraryAccess } from '../../common/decorators/require-library-ac
 import type { RequestUser } from '../../common/types/request-user';
 import {
   PreviewStoryLinkDto,
+  ListFanfictionWebsitesDto,
+  CompareFanfictionDiscoveryDto,
   StartFanfictionDiscoveryDto,
   ListFanfictionDiscoveryDto,
   SelectFanfictionDiscoveryDto,
@@ -21,6 +23,21 @@ export class FanfictionDiscoveryController {
     private readonly discovery: FanfictionDiscoveryService,
     private readonly adoption: FanfictionAdoptionService,
   ) {}
+
+  @Get('websites')
+  websites(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: ListFanfictionWebsitesDto, @CurrentUser() user: RequestUser) {
+    return this.discovery.websites(libraryId, dto, user);
+  }
+
+  @Post(':id/compare')
+  compare(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CompareFanfictionDiscoveryDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.discovery.compare(libraryId, id, dto, user);
+  }
 
   @Post('book')
   previewBook(@Param('libraryId', ParseIntPipe) libraryId: number, @Body() dto: PreviewStoryLinkDto, @CurrentUser() user: RequestUser) {

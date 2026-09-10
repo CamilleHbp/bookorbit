@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, notInArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createHash, randomUUID } from 'node:crypto';
 import type { FanfictionDiscoverySelection } from '@bookorbit/types';
@@ -15,6 +15,7 @@ import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { SelectFanfictionDiscoveryDto } from './dto/fanfiction-discovery.dto';
 
+import { discoveryWebsite } from './fanfiction-discovery-website';
 import { candidateUrlPrefixFilter, normalizeUrlPrefixes } from './fanfiction-url-prefix';
 
 const candidates = schema.fanfictionDiscoveryCandidates;
@@ -38,17 +39,39 @@ export class FanfictionAdoptionService {
     if (Boolean(dto.ids?.length) === Boolean(dto.allMatching)) throw new BadRequestException('Choose explicit candidates or all matching candidates');
     if (dto.canonicalUrl && (dto.ids?.length !== 1 || dto.allMatching))
       throw new BadRequestException('Choose an ambiguous source for one candidate at a time');
-    if (dto.overrides?.length && (dto.allMatching || dto.overrides.some((item) => !dto.ids?.includes(item.id))))
+    if (
+      dto.overrides?.length &&
+      (dto.allMatching ? !dto.review || dto.website === undefined : dto.overrides.some((item) => !dto.ids?.includes(item.id)))
+    )
       throw new BadRequestException('Book choices must belong to the explicit selection');
     if (new Set(dto.overrides?.map((item) => item.id)).size !== (dto.overrides?.length ?? 0))
       throw new BadRequestException('Each book can have only one source and profile choice');
     if (
       dto.decision === 'approve' &&
       dto.state === 'ambiguous' &&
+      !dto.review &&
       !dto.canonicalUrl &&
       !dto.ids?.every((id) => dto.overrides?.some((item) => item.id === id && item.canonicalUrl))
     )
       throw new BadRequestException('Ambiguous candidates need an explicit source choice');
+    if (dto.review && (dto.website === undefined || !dto.cutoff)) throw new BadRequestException('Choose a website review before linking');
+    if (dto.cutoff && new Date(dto.cutoff).getTime() > Date.now()) throw new BadRequestException('The review date is in the future');
+    if (dto.allMatching && dto.overrides?.length) {
+      const owned = await this.db
+        .select({ id: candidates.id })
+        .from(candidates)
+        .where(
+          and(
+            eq(candidates.libraryId, libraryId),
+            eq(discoveryWebsite(sql`${candidates.urls}`), dto.website!),
+            inArray(
+              candidates.id,
+              dto.overrides.map((item) => item.id),
+            ),
+          ),
+        );
+      if (owned.length !== dto.overrides.length) throw new BadRequestException('Book choices must belong to this website');
+    }
     for (const profileId of new Set(
       [dto.profileId, ...(dto.overrides ?? []).map((item) => item.profileId)].filter((id): id is string => Boolean(id)),
     ))
@@ -57,7 +80,10 @@ export class FanfictionAdoptionService {
       rows: [{ cutoff }],
     } = await this.db.execute<{ cutoff: string }>(sql`select to_char(clock_timestamp(), 'YYYY-MM-DD"T"HH24:MI:SS.USOF') as cutoff`);
     const selection: FanfictionDiscoverySelection = {
-      cutoff,
+      cutoff: dto.cutoff ?? cutoff,
+      ...(dto.website !== undefined ? { website: dto.website } : {}),
+      ...(dto.review ? { review: true } : {}),
+      excludedIds: [...new Set(dto.excludedIds ?? [])].sort(),
       overrides: (dto.overrides ?? [])
         .map((item) => ({
           id: item.id,
@@ -103,6 +129,10 @@ export class FanfictionAdoptionService {
       existing?.kind !== 'adopt' ||
       !previous ||
       previous.decision !== selection.decision ||
+      previous.website !== selection.website ||
+      Boolean(previous.review) !== Boolean(selection.review) ||
+      Boolean(dto.cutoff && previous.cutoff !== selection.cutoff) ||
+      JSON.stringify(previous.excludedIds ?? []) !== JSON.stringify(selection.excludedIds) ||
       JSON.stringify(previous.overrides ?? []) !== JSON.stringify(selection.overrides) ||
       Boolean(previous.autoProfile) !== Boolean(selection.autoProfile) ||
       JSON.stringify(previous.urlPrefixes ?? []) !== JSON.stringify(selection.urlPrefixes) ||
@@ -134,6 +164,8 @@ export class FanfictionAdoptionService {
       .where(
         and(
           eq(candidates.libraryId, job.libraryId),
+          selection.website !== undefined ? eq(discoveryWebsite(sql`${candidates.urls}`), selection.website) : undefined,
+          selection.excludedIds?.length ? notInArray(candidates.id, selection.excludedIds) : undefined,
           candidateUrlPrefixFilter(sql`${candidates.urls}`, selection.urlPrefixes ?? []),
           sql`${candidates.createdAt} <= ${selection.cutoff}::timestamptz`,
           selection.cursor ? gt(candidates.id, selection.cursor) : undefined,
@@ -141,7 +173,9 @@ export class FanfictionAdoptionService {
             ? and(eq(candidates.reviewJobId, job.id), eq(candidates.state, 'failed'))
             : selection.ids
               ? inArray(candidates.id, selection.ids)
-              : and(eq(candidates.state, selection.state), sql`${candidates.updatedAt} <= ${selection.cutoff}::timestamptz`),
+              : selection.review
+                ? inArray(candidates.state, ['pending', 'ambiguous', 'failed'])
+                : and(eq(candidates.state, selection.state), sql`${candidates.updatedAt} <= ${selection.cutoff}::timestamptz`),
         ),
       )
       .orderBy(asc(candidates.id))
@@ -178,7 +212,11 @@ export class FanfictionAdoptionService {
           .where(eq(jobs.id, job.id));
       };
       try {
-        if (candidate.state !== (selection.retryFailedOnly ? 'failed' : selection.state))
+        if (
+          selection.review && !selection.retryFailedOnly
+            ? !['pending', 'ambiguous', 'failed'].includes(candidate.state)
+            : candidate.state !== (selection.retryFailedOnly ? 'failed' : selection.state)
+        )
           throw new ConflictException('Candidate review state changed');
         if (selection.decision === 'approve') {
           const match = matches.get(candidateUrl(candidate) ?? '');
