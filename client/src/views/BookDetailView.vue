@@ -157,16 +157,7 @@ function onCoverChanged(source: 'extracted' | 'custom' | null) {
           as loading. They revalidate silently on activation instead.
         -->
         <KeepAlive :include="KEPT_ALIVE_TABS">
-          <template v-if="tab === 'details'">
-            <DetailsTab :book="detail" @saved="onMetadataSaved" @moved="handleMovedToLibrary" />
-            <StoryReaderSummary
-              v-if="storyFile"
-              :key="`${bookId}-${detail.updatedAt}`"
-              :book-id="bookId"
-              :book-file-id="storyFile.id"
-              :library-id="detail.libraryId"
-            />
-          </template>
+          <DetailsTab v-if="tab === 'details'" :book="detail" @saved="onMetadataSaved" @moved="handleMovedToLibrary" />
           <EditMetadataTab
             v-else-if="tab === 'edit' && hasPermission('library_edit_metadata')"
             :book="detail"
@@ -180,6 +171,13 @@ function onCoverChanged(source: 'extracted' | 'custom' | null) {
           <HighlightsTab v-else-if="tab === 'highlights'" :book="detail" />
           <StoryUpdatesTab v-else-if="tab === 'story-updates' && story.visible.value" :state="story" />
         </KeepAlive>
+        <StoryReaderSummary
+          v-if="tab === 'details' && storyFile"
+          :key="`${bookId}-${detail.updatedAt}`"
+          :book-id="bookId"
+          :book-file-id="storyFile.id"
+          :library-id="detail.libraryId"
+        />
       </div>
 
       <div v-else-if="loading" key="loading">
