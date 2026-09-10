@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useCollections } from '@/features/collection/composables/useCollections'
+import StoryReadingActions from './components/StoryReadingActions.vue'
+import StoryFilters from './components/StoryFilters.vue'
+import StorySchedule from './components/StorySchedule.vue'
 import ImportProgress from './components/ImportProgress.vue'
 import StoryImportReview from './components/StoryImportReview.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
@@ -22,6 +26,8 @@ import { useFanfictionPreferences } from './composables/useFanfictionPreferences
 import { useFanfiction } from './composables/useFanfiction'
 
 const { t } = useI18n()
+const { collections, fetchCollections } = useCollections()
+const writableCollections = computed(() => collections.value.filter((collection) => collection.isOwner))
 const { hasPermission } = usePermissions()
 const canManage = computed(() => hasPermission(Permission.ManageLibraries))
 const router = useRouter()
@@ -175,6 +181,15 @@ function reviewBatch(job: FanfictionJob) {
   showStories()
   void bulk.open(job.id)
 }
+const advancedSelection = computed(() =>
+  Boolean(page.appliedSearch.value || Object.entries(page.appliedFilters.value).some(([key, value]) => value && key !== 'sort')),
+)
+watch(
+  () => [page.appliedSearch.value, ...Object.values(page.appliedFilters.value)],
+  () => {
+    bulk.clearSelection()
+  },
+)
 const selecting = ref(false)
 const selectionLabel = computed(() =>
   selecting.value || bulk.selectedIds.length > 0 || bulk.allMatching ? t('common.cancel') : t('fanfiction.selectStories'),
@@ -201,7 +216,10 @@ function dateLabel(value: string | null) {
   return value ? new Date(value).toLocaleString() : t('fanfiction.never')
 }
 onMounted(() => {
-  if (canManage.value) void loadLibraries()
+  if (canManage.value) {
+    void loadLibraries()
+    void fetchCollections()
+  }
 })
 </script>
 
@@ -284,6 +302,7 @@ onMounted(() => {
             <option value="review_required">{{ t('fanfiction.states.review_required') }}</option>
             <option value="configuration_blocked">{{ t('fanfiction.states.configuration_blocked') }}</option>
           </select>
+          <StoryFilters v-model="page.filters.value" :disabled="busy || bulk.active" />
           <Button type="submit" variant="outline" :disabled="busy">{{ t('fanfiction.search') }}</Button>
           <Button v-if="sources.length" variant="ghost" :aria-pressed="showBulk" :disabled="busy || bulk.active" @click="toggleSelection">{{
             selectionLabel
@@ -296,6 +315,7 @@ onMounted(() => {
           v-model:interval="bulk.interval"
           :bulk="bulk"
           :loading="busy"
+          :allow-all-matching="!advancedSelection"
         />
         <p v-if="busy && !sources.length" role="status" class="py-12 text-center text-sm text-muted-foreground">{{ t('common.loading') }}</p>
         <div v-else-if="!sources.length" class="space-y-3 py-12 text-center">
@@ -377,13 +397,17 @@ onMounted(() => {
                 </select>
               </label>
               <label class="space-y-1 text-sm"
-                >{{ t('fanfiction.schedule') }}
-                <select v-model="schedule" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
-                  <option value="1440">{{ t('fanfiction.daily') }}</option>
-                  <option value="60">{{ t('fanfiction.hourly') }}</option>
-                  <option value="manual">{{ t('fanfiction.manualOnly') }}</option>
+                >{{ t('fanfiction.importCollection') }}
+                <select
+                  v-model="page.collectionId.value"
+                  :disabled="busy"
+                  class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
+                >
+                  <option :value="null">{{ t('fanfiction.noCollection') }}</option>
+                  <option v-for="collection in writableCollections" :key="collection.id" :value="collection.id">{{ collection.name }}</option>
                 </select>
               </label>
+              <StorySchedule v-model="schedule" :disabled="busy" />
             </div>
             <div class="flex flex-wrap gap-2">
               <Button type="button" v-if="folderCursor !== null" variant="outline" :disabled="busy" @click="moreFolders">{{
@@ -466,6 +490,11 @@ onMounted(() => {
             >
             <Button v-else :disabled="busy" @click="retryImport(candidate)">{{ t('fanfiction.retry') }}</Button>
           </template>
+          <StoryReadingActions
+            v-if="candidate.job?.result?.bookId && candidate.job.result.bookFileId"
+            :book-id="candidate.job.result.bookId"
+            :book-file-id="candidate.job.result.bookFileId"
+          />
           <RouterLink
             v-if="candidate.job?.result?.bookId"
             :to="{ name: 'book-detail', params: { bookId: candidate.job.result.bookId } }"

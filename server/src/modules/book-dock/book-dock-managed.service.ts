@@ -27,6 +27,7 @@ export interface ManagedDockImport {
   relativePath: string;
   metadataSourceKey?: string;
   finalMetadata?: FanfictionMetadataValues;
+  personalTags?: string[];
 }
 
 export type AuthorizeManagedImport = (transaction: DatabaseTransaction) => Promise<void>;
@@ -246,7 +247,14 @@ export class BookDockManagedService {
           await this.metadata.extractAndSave(row.bookId, row.destinationPath, 'epub', { key: row.metadataSourceKey, libraryId: row.libraryId });
         else await this.metadata.extractAndSave(row.bookId, row.destinationPath, 'epub');
         if (input.finalMetadata && row.metadataSourceKey)
-          await this.managedMetadata.apply(tx, row.bookId, { key: row.metadataSourceKey, libraryId: row.libraryId }, input.finalMetadata);
+          await this.managedMetadata.apply(
+            tx,
+            row.bookId,
+            { key: row.metadataSourceKey, libraryId: row.libraryId },
+            input.finalMetadata,
+            undefined,
+            input.personalTags,
+          );
         state = 'metadata_committed';
       } else if (state === 'metadata_committed') {
         await this.cleanup(row);

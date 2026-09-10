@@ -96,6 +96,7 @@ export type BookRevisionChangeKind = "baseline" | "unknown" | "content" | "cover
 export type BookRevisionReason = "baseline" | "external_change" | "file_write" | "fanficfare" | "rollback" | "replacement";
 
 export interface BookFileRevisionSummary {
+  chapterCount?: number | null;
   revision: string;
   changeKind: BookRevisionChangeKind;
   reason: BookRevisionReason;

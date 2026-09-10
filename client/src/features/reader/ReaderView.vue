@@ -337,14 +337,26 @@ onMounted(async () => {
     shouldApplyStyles.value = false
   }
 
+  const chapterHref =
+    typeof route.query.chapter === 'string' && route.query.chapter.length <= 4096 && !/^[a-z]+:|^\/\//i.test(route.query.chapter)
+      ? route.query.chapter
+      : null
   const deepLinkCfi = typeof route.query.cfi === 'string' ? route.query.cfi : null
   const hadProgress = progress.percentage.value > 0
   const resumeTarget = resolveReaderResumeTarget(deepLinkCfi ? undefined : route.query.checkpoint, progress.cfi.value, progress.percentage.value)
   await open(bookId, fileId, fileFormat, resumeTarget.cfi, resumeTarget.fraction, {
     trackReading: trackingEnabled.value,
-    restoreCanonical: route.query.checkpoint === undefined,
+    restoreCanonical: route.query.checkpoint === undefined && !chapterHref,
+    onPositionRecovery: (quality) => toast.info(t(`fanfiction.reading.recovery.${quality}`)),
     fixedLayoutSpread: state.value.fixedLayoutSpread,
   })
+  if (chapterHref) {
+    try {
+      await goTo(chapterHref)
+    } catch {
+      toast.error(t('fanfiction.reading.chapterUnavailable'))
+    }
+  }
   setChapters(getChapters())
   sectionFractions.value = getSectionFractions()
   await bookmarks.load(bookId)

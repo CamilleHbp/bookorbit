@@ -88,6 +88,12 @@ def story_preview(adapter, story):
         'authors': story.getList('author'), 'description': story.getMetadata('description') or '',
         'chapterCount': chapter_count, 'wordCount': metadata_count(story, 'numWords', 2_147_483_647),
         'status': story.getMetadata('status') or '', 'tags': story.getSubjectTags(),
+        'genres': story.getList('genre'),
+        'categories': {
+            'fandoms': story.getList('category'), 'relationships': story.getList('ships'),
+            'characters': story.getList('characters'), 'warnings': story.getList('warnings'),
+            'rating': story.getMetadata('rating') or '',
+        },
     }
 
 

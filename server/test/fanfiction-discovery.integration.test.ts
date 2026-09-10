@@ -43,6 +43,7 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
   const authorize = vi.fn(() => Promise.resolve());
   const access = { administer: vi.fn(() => Promise.resolve()) };
   const runtime = {
+    preview: vi.fn((url: string) => Promise.resolve({ canonicalUrl: url, title: 'Remote story', authors: ['Writer'], chapterCount: 2 })),
     recognize: vi.fn((urls: string[]): Promise<FanfictionRecognizedUrl[]> =>
       Promise.resolve(urls.map((url) => ({ url, recognized: true, canonicalUrl: url, site: 'archiveofourown.org' }))),
     ),
@@ -50,7 +51,8 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
   const signal = () => new AbortController().signal;
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation') throw new Error('Isolated validation database required');
+    if (config.database !== 'bookorbit_revision_validation' && !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? ''))
+      throw new Error('Isolated validation database required');
     pool = new Pool({ ...config, connectionTimeoutMillis: 10_000, statement_timeout: 20_000 });
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
@@ -341,5 +343,21 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
     await expect(discovery.run(job, authorize, signal())).rejects.toThrow(BadRequestException);
     const [stored] = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, job.id));
     expect(stored.discovery?.cursorFileId).toBe(0);
+  });
+  it('links directly from a book after comparing local and source details', async () => {
+    const file = await epub();
+    const checked = await discovery.previewBook(
+      libraryId,
+      { bookId: file.bookId, bookFileId: file.id, url: 'https://archiveofourown.org/works/123' },
+      user,
+    );
+    expect(checked).toMatchObject({ title: 'Existing story', remote: { title: 'Remote story', chapterCount: 2 } });
+    expect((await pending()).items.map((item) => item.id)).toContain(checked.id);
+    await expect(
+      discovery.previewBook(libraryId, { bookId: file.bookId, bookFileId: file.id, url: 'https://archiveofourown.org/works/456' }, user),
+    ).rejects.toThrow('does not match');
+    await expect(
+      discovery.previewBook(libraryId, { bookId: file.bookId + 99999, bookFileId: file.id, url: 'https://archiveofourown.org/works/123' }, user),
+    ).rejects.toThrow('does not belong');
   });
 });

@@ -20,8 +20,11 @@ describe('story metadata review', () => {
     })
     expect(wrapper.text()).toContain('Custom tag')
     expect(wrapper.text()).toContain('Incoming tag')
-    expect(wrapper.text()).toContain('Merge tags')
-    await wrapper.get('select').setValue('merge')
+    expect(wrapper.text()).toContain('Combine tags')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Combine tags')!
+      .trigger('click')
     await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('save')).toHaveLength(1)
     wrapper.unmount()
@@ -34,7 +37,7 @@ describe('story metadata review', () => {
         modelValue: { title: 'keep', description: 'keep', authors: 'keep', tags: 'keep' },
       },
     })
-    expect(wrapper.get('select').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('input').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('This field is locked')
     wrapper.unmount()
   })

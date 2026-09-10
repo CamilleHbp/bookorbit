@@ -252,6 +252,7 @@ export class FanfictionJobService {
       existing.profileId !== (dto.profileId ?? null) ||
       existing.kind !== kind ||
       existing.input?.folderId !== input?.folderId ||
+      existing.input?.collectionId !== input?.collectionId ||
       existing.input?.intervalMinutes !== input?.intervalMinutes
     )
       throw new ConflictException('Operation identity was reused with different input');

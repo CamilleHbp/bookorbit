@@ -23,6 +23,16 @@ export interface FanfictionPreview {
   wordCount?: number | null;
   status: string;
   tags: string[];
+  genres?: string[];
+  categories?: FanfictionCategories;
+}
+
+export interface FanfictionCategories {
+  fandoms: string[];
+  relationships: string[];
+  characters: string[];
+  warnings: string[];
+  rating: string;
 }
 
 export interface FanficfareSite {
@@ -102,6 +112,7 @@ export interface FanfictionJob {
   attempts: number;
   cancellationRequested: boolean;
   result: {
+    changes?: FanfictionChapterChanges;
     progress?: FanfictionImportProgress;
     existingStory?: FanfictionExistingStory;
     existingImportId?: string;
@@ -116,6 +127,7 @@ export interface FanfictionJob {
       fingerprint: string;
       approved: boolean;
       metadataApplied?: boolean;
+      personalTags?: string[];
       baseline?: FanfictionMetadataValues;
     };
     importReview?: { preview: FanfictionPreview; values: FanfictionMetadataValues; approved: boolean };
@@ -222,6 +234,10 @@ export interface FanfictionSourceBatchFailurePage {
 }
 
 export interface FanfictionSource {
+  sourceTitle?: string;
+  categories?: FanfictionCategories | null;
+  tagPolicy?: "review" | "automatic";
+  reading?: FanfictionReading;
   id: string;
   libraryId: number;
   folderId: number | null;
@@ -256,6 +272,7 @@ export interface FanfictionFolderPage {
 }
 
 export interface FanfictionImportRequest {
+  collectionId?: number;
   url: string;
   idempotencyKey: string;
   profileId?: string;
@@ -306,7 +323,7 @@ export interface FanfictionReplacementReview {
   identityMatches: boolean;
 }
 
-export type FanfictionMetadataField = "title" | "description" | "authors" | "tags";
+export type FanfictionMetadataField = "title" | "description" | "authors" | "tags" | "genres";
 export type FanfictionMetadataValues = Pick<FanfictionPreview, FanfictionMetadataField>;
 export interface FanfictionMetadataReview {
   current: FanfictionMetadataValues;
@@ -319,7 +336,10 @@ export interface FanfictionMetadataReview {
   tags?: { custom: string[]; managed: string[]; added: string[]; removed: string[] };
   choices?: FanfictionMetadataChoices;
 }
-export type FanfictionMetadataChoices = Pick<FanfictionMetadataResolution, "title" | "description" | "authors" | "tags" | "selectedTags">;
+export type FanfictionMetadataChoices = Pick<
+  FanfictionMetadataResolution,
+  "title" | "description" | "authors" | "tags" | "genres" | "selectedTags" | "values" | "keepAll"
+>;
 export interface FanfictionMetadataReviewView {
   jobId: string;
   review: FanfictionMetadataReview;
@@ -327,9 +347,12 @@ export interface FanfictionMetadataReviewView {
 export interface FanfictionMetadataResolution {
   jobId: string;
   fingerprint: string;
-  title: "keep" | "incoming";
-  description: "keep" | "incoming";
-  authors: "keep" | "incoming";
+  title: "keep" | "incoming" | "edit";
+  description: "keep" | "incoming" | "edit";
+  authors: "keep" | "incoming" | "edit";
+  genres?: "keep" | "incoming" | "edit";
+  values?: FanfictionMetadataValues;
+  keepAll?: boolean;
   tags: "keep" | "merge" | "select";
   selectedTags?: string[];
 }
@@ -337,4 +360,46 @@ export interface FanfictionMetadataResolution {
 export interface FanfictionImportReviewRequest {
   action: "apply" | "later" | "discard";
   values?: FanfictionMetadataValues;
+}
+
+export interface FanfictionReading {
+  status: "unread" | "reading" | "caught_up" | "finished";
+  readChapters: number | null;
+  unreadChapters: number | null;
+  totalChapters: number;
+  nextChapterHref?: string;
+}
+export interface FanfictionReaderStory {
+  id: string;
+  bookId: number;
+  bookFileId: number;
+  title: string;
+  canonicalUrl: string;
+  storyStatus: string;
+  chapterCount: number;
+  lastUpdatedAt: string | null;
+  categories: FanfictionCategories | null;
+  reading: FanfictionReading;
+}
+
+export interface FanfictionLinkPreview {
+  remote: FanfictionPreview;
+  id: string;
+  title: string;
+  authors: string[];
+  chapterCount: number;
+  canonicalUrl: string;
+  state: "pending" | "ambiguous";
+}
+export interface FanfictionLinkRequest {
+  profileId?: string;
+  bookId: number;
+  bookFileId: number;
+  url: string;
+}
+
+export interface FanfictionChapterChanges {
+  added: { href: string; title: string }[];
+  changed: number;
+  metadataChanged: boolean;
 }
