@@ -1,18 +1,28 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { FanfictionJob, FanfictionLinkPreview, FanfictionProfileSummary, FanfictionProfilePage } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import StorySchedule from './StorySchedule.vue'
+import { useStoryLinkCompletion } from '../composables/useStoryLinkCompletion'
 const props = defineProps<{ bookId: number; bookFileId: number; libraryId: number }>()
+const emit = defineEmits<{ linked: [] }>()
 const { t } = useI18n()
 const url = ref('')
 const schedule = ref('manual')
 const preview = ref<FanfictionLinkPreview | null>(null)
 const job = ref<FanfictionJob | null>(null)
 const busy = ref(false)
+const { active, failed, statusUnavailable, refresh } = useStoryLinkCompletion(
+  () => props.libraryId,
+  job,
+  () => emit('linked'),
+)
+const locked = computed(() => busy.value || active.value)
+const controller = new AbortController()
+onScopeDispose(() => controller.abort())
 const error = ref('')
 const key = ref(crypto.randomUUID())
 const profileId = ref('')
@@ -28,6 +38,7 @@ async function loadProfiles() {
   try {
     const response = await api(
       `/api/v1/libraries/${props.libraryId}/fanfiction/profiles?limit=50${profileCursor.value ? `&cursor=${profileCursor.value}` : ''}`,
+      { signal: controller.signal },
     )
     if (!response.ok) throw new Error('Could not load profiles')
     const page: FanfictionProfilePage = await response.json()
@@ -48,12 +59,15 @@ async function request(path: string, body: unknown) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: controller.signal,
   })
   const result = await response.json()
+  controller.signal.throwIfAborted()
   if (!response.ok) throw new Error(result.message ?? t('fanfiction.link.failed'))
   return result
 }
 async function inspect() {
+  if (locked.value) return
   busy.value = true
   error.value = ''
   preview.value = null
@@ -73,7 +87,7 @@ async function inspect() {
   }
 }
 async function link() {
-  if (!preview.value) return
+  if (!preview.value || locked.value) return
   busy.value = true
   error.value = ''
   try {
@@ -104,18 +118,18 @@ async function link() {
           required
           type="url"
           maxlength="4096"
-          :disabled="busy"
+          :disabled="locked"
           class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
       /></label>
       <label class="block space-y-1 text-sm"
         >{{ t('fanfiction.profile')
-        }}<select v-model="profileId" :disabled="busy" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
+        }}<select v-model="profileId" :disabled="locked" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
           <option value="">{{ t('fanfiction.noProfile') }}</option>
           <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
         </select></label
       >
       <Button v-if="profileCursor" type="button" variant="ghost" @click="loadProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
-      <Button type="submit" variant="outline" :disabled="busy">{{ t('fanfiction.link.inspect') }}</Button>
+      <Button type="submit" variant="outline" :disabled="locked">{{ t('fanfiction.link.inspect') }}</Button>
     </form>
     <form v-if="preview && !job" class="mt-4 space-y-3" @submit.prevent="link">
       <p class="text-sm text-muted-foreground">{{ t('fanfiction.metadataReview.current') }}</p>
@@ -132,10 +146,12 @@ async function link() {
     </form>
     <p v-if="error" role="alert" class="mt-3 text-sm text-destructive">{{ error }}</p>
     <p v-if="job" role="status" class="mt-3 text-sm">
-      {{ t('fanfiction.link.queued') }}
+      {{ t(failed ? 'fanfiction.link.failed' : `fanfiction.states.${job.state}`) }}
       <RouterLink :to="{ name: 'fanfiction', query: { libraryId, tab: 'activity' } }" class="text-primary underline">{{
         t('fanfiction.activity')
       }}</RouterLink>
     </p>
+    <p v-if="statusUnavailable" role="alert" class="mt-3 text-sm text-destructive">{{ t('fanfiction.discovery.uncertain') }}</p>
+    <Button v-if="statusUnavailable" type="button" variant="outline" @click="refresh">{{ t('fanfiction.retry') }}</Button>
   </details>
 </template>
