@@ -487,4 +487,67 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
     expect(linked.find((source) => source.canonicalUrl === firstUrl)?.profileId).toBe(profile.id);
     expect(linked.find((source) => source.canonicalUrl === secondUrl)?.profileId).toBeNull();
   }, 45_000);
+  it('groups the whole library by website and keeps full-source selection inside its snapshot', async () => {
+    await epub(['https://www.royalroad.com/fiction/1']);
+    await epub(['https://royalroad.com/fiction/2']);
+    await epub(['https://archiveofourown.org/works/3']);
+    await scan();
+    const groups = await discovery.websites(libraryId, { limit: 50 }, user);
+    expect(groups.items.map((item) => [item.website, item.remaining])).toEqual([
+      ['archiveofourown.org', 1],
+      ['royalroad.com', 2],
+    ]);
+    const first = await discovery.list(
+      libraryId,
+      { website: 'royalroad.com', review: 'true', cutoff: groups.cutoff, limit: 1, state: 'pending' },
+      user,
+    );
+    expect(first.total).toBe(2);
+    expect(first.nextCursor).not.toBeNull();
+    const next = await discovery.list(
+      libraryId,
+      { website: 'royalroad.com', review: 'true', cutoff: groups.cutoff, cursor: first.nextCursor!, limit: 1, state: 'pending' },
+      user,
+    );
+    await epub(['https://royalroad.com/fiction/4']);
+    await scan();
+    const dto = {
+      idempotencyKey: randomUUID(),
+      decision: 'reject' as const,
+      state: 'pending' as const,
+      review: true,
+      website: 'royalroad.com',
+      cutoff: groups.cutoff,
+      allMatching: true,
+      excludedIds: [first.items[0].id],
+    };
+    await adoption.start(libraryId, dto, user);
+    await expect(adoption.start(libraryId, { ...dto, excludedIds: [] }, user)).rejects.toThrow('reused');
+    const job = (await jobs.claim())!;
+    expect((await adoption.run(job, user, authorize, signal())).selection).toMatchObject({ processed: 1, failed: 0 });
+    expect((await jobs.get(libraryId, job.id, user)).reviewWebsite).toBe('royalroad.com');
+    const outcomes = await discovery.list(
+      libraryId,
+      { website: 'royalroad.com', ids: [first.items[0].id, next.items[0].id], limit: 100, state: 'pending' },
+      user,
+    );
+    expect(outcomes.items.map((item) => item.id)).toEqual([first.items[0].id, next.items[0].id]);
+    expect(outcomes.items.map((item) => item.state)).toEqual(['pending', 'rejected']);
+    expect((await pending()).items).toHaveLength(3);
+  });
+
+  it('compares remote identity without changing candidate evidence or review state', async () => {
+    await epub();
+    await scan();
+    const candidate = (await pending()).items[0];
+    const remote = await discovery.compare(libraryId, candidate.id, {}, user);
+    expect(remote).toMatchObject({ title: 'Remote story', authors: ['Writer'], canonicalUrl: 'https://archiveofourown.org/works/123' });
+    expect((await pending()).items[0]).toEqual(candidate);
+    await expect(discovery.compare(libraryId + 10000, candidate.id, {}, user)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(discovery.compare(libraryId, candidate.id, { canonicalUrl: 'https://archiveofourown.org/works/999' }, user)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    runtime.preview.mockResolvedValueOnce({ canonicalUrl: 'https://archiveofourown.org/works/999', title: 'Other', authors: [], chapterCount: 1 });
+    await expect(discovery.compare(libraryId, candidate.id, {}, user)).rejects.toThrow('different story URL');
+  });
 });

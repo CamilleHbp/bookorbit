@@ -1,6 +1,6 @@
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { withFanfictionDefaults } from './fanfiction-defaults';
-import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, count, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { FanfictionLinkPreview, FanfictionLinkRequest, FanfictionDiscoveryPage, FanfictionDiscoveryProgress } from '@bookorbit/types';
@@ -13,8 +13,10 @@ import { EpubManifestService } from '../book-revision/epub-manifest.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
-import { ListFanfictionDiscoveryDto } from './dto/fanfiction-discovery.dto';
+import { ListFanfictionDiscoveryDto, ListFanfictionWebsitesDto, CompareFanfictionDiscoveryDto } from './dto/fanfiction-discovery.dto';
 
+import { discoveryWebsite } from './fanfiction-discovery-website';
+import type { FanfictionDiscoveryWebsites, FanfictionDiscoveryComparison } from '@bookorbit/types';
 import { candidateUrlPrefixFilter, normalizeUrlPrefixes } from './fanfiction-url-prefix';
 
 const candidates = schema.fanfictionDiscoveryCandidates;
@@ -154,6 +156,77 @@ export class FanfictionDiscoveryService {
     throw new ConflictException('A discovery scan for this library is already active');
   }
 
+  async websites(libraryId: number, dto: ListFanfictionWebsitesDto, user: RequestUser): Promise<FanfictionDiscoveryWebsites> {
+    await this.access.administer(user, libraryId);
+    const cutoff = dto.cutoff ?? new Date().toISOString();
+    const website = discoveryWebsite(sql`${candidates.urls}`);
+    const rows = await this.db
+      .select({
+        website,
+        total: count(),
+        remaining: sql<number>`count(*) filter (where ${candidates.state} in ('pending', 'ambiguous', 'failed'))`.mapWith(Number),
+        linked: sql<number>`count(*) filter (where ${candidates.state} = 'linked')`.mapWith(Number),
+      })
+      .from(candidates)
+      .where(
+        and(
+          eq(candidates.libraryId, libraryId),
+          sql`${candidates.createdAt} <= ${cutoff}::timestamptz`,
+          dto.cursor !== undefined ? sql`${website} > ${dto.cursor}` : undefined,
+          dto.website !== undefined ? eq(website, dto.website) : undefined,
+        ),
+      )
+      .groupBy(website)
+      .orderBy(asc(website))
+      .limit(dto.limit + 1);
+    return { items: rows.slice(0, dto.limit), cutoff, nextCursor: rows.length > dto.limit ? rows[dto.limit - 1].website : null };
+  }
+
+  async compare(libraryId: number, id: string, dto: CompareFanfictionDiscoveryDto, user: RequestUser): Promise<FanfictionDiscoveryComparison> {
+    await this.access.administer(user, libraryId);
+    const [candidate] = await this.db
+      .select()
+      .from(candidates)
+      .where(and(eq(candidates.libraryId, libraryId), eq(candidates.id, id)))
+      .limit(1);
+    if (!candidate) throw new ForbiddenException('This story does not belong to this library');
+    const urls = [...new Set(candidate.urls.flatMap((url) => (url.recognized ? [url.canonicalUrl] : [])))];
+    const canonicalUrl = dto.canonicalUrl ?? (urls.length === 1 ? urls[0] : undefined);
+    if (!canonicalUrl || !urls.includes(canonicalUrl)) throw new BadRequestException('Choose one of the recorded story URLs');
+    const match =
+      dto.autoProfile !== false && !dto.profileId ? (await this.profiles.matchMany(libraryId, [canonicalUrl], user)).get(canonicalUrl) : undefined;
+    if (match?.ambiguous) throw new BadRequestException('Choose a profile to compare this story');
+    const profileId = dto.profileId ?? match?.profile?.id;
+    const profile = profileId ? await this.profiles.get(libraryId, profileId, user) : null;
+    const session = profileId
+      ? await this.profiles.session(libraryId, profileId, user, () => this.access.administer(user, libraryId))
+      : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
+    const started = Date.now();
+    this.logger.log(`[fanfiction.compare] [start] userId=${user.id} libraryId=${libraryId} candidateId=${id} - fetching remote story details`);
+    try {
+      const remote = await this.runtime.preview(canonicalUrl, session.document, AbortSignal.timeout(60000), session.saveCookies);
+      await this.access.administer(user, libraryId);
+      if (remote.canonicalUrl !== canonicalUrl) throw new ConflictException('The website returned a different story URL');
+      this.logger.log(
+        `[fanfiction.compare] [end] userId=${user.id} libraryId=${libraryId} candidateId=${id} durationMs=${Date.now() - started} - remote story details ready`,
+      );
+      return {
+        canonicalUrl,
+        title: remote.title,
+        authors: remote.authors,
+        chapterCount: remote.chapterCount,
+        profile: profile
+          ? { id: profile.id, name: profile.name, libraryId, version: profile.version, updatedAt: profile.updatedAt, rootUrls: profile.rootUrls }
+          : null,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `[fanfiction.compare] [fail] userId=${user.id} libraryId=${libraryId} candidateId=${id} durationMs=${Date.now() - started} errorClass=RemoteComparisonError error="remote details unavailable" - could not compare story details`,
+      );
+      throw error;
+    }
+  }
+
   async list(libraryId: number, dto: ListFanfictionDiscoveryDto, user: RequestUser): Promise<FanfictionDiscoveryPage> {
     await this.access.administer(user, libraryId);
     if (dto.cursor) {
@@ -166,7 +239,13 @@ export class FanfictionDiscoveryService {
     }
     const filter = and(
       eq(candidates.libraryId, libraryId),
-      eq(candidates.state, dto.state),
+      dto.ids
+        ? inArray(candidates.id, dto.ids)
+        : dto.review === 'true'
+          ? inArray(candidates.state, ['pending', 'ambiguous', 'failed'])
+          : eq(candidates.state, dto.state),
+      dto.website !== undefined ? eq(discoveryWebsite(sql`${candidates.urls}`), dto.website) : undefined,
+      dto.cutoff ? sql`${candidates.createdAt} <= ${dto.cutoff}::timestamptz` : undefined,
       candidateUrlPrefixFilter(sql`${candidates.urls}`, normalizeUrlPrefixes(dto.urlPrefixes ?? [])),
     );
     const [summary] = await this.db.select({ total: count() }).from(candidates).where(filter);
@@ -189,14 +268,7 @@ export class FanfictionDiscoveryService {
         createdAt: candidates.createdAt,
       })
       .from(candidates)
-      .where(
-        and(
-          eq(candidates.libraryId, libraryId),
-          eq(candidates.state, dto.state),
-          candidateUrlPrefixFilter(sql`${candidates.urls}`, normalizeUrlPrefixes(dto.urlPrefixes ?? [])),
-          dto.cursor ? gt(candidates.id, dto.cursor) : undefined,
-        ),
-      )
+      .where(and(filter, dto.cursor ? gt(candidates.id, dto.cursor) : undefined))
       .orderBy(asc(candidates.id))
       .limit(dto.limit + 1);
     const page = rows.slice(0, dto.limit);

@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsIn,
   IsInt,
   IsOptional,
@@ -21,7 +22,30 @@ export class StartFanfictionDiscoveryDto {
   @IsUUID() idempotencyKey!: string;
 }
 
+export class ListFanfictionWebsitesDto {
+  @IsOptional() @IsString() @MaxLength(253) website?: string;
+  @IsOptional() @IsString() @MaxLength(253) cursor?: string;
+  @IsOptional() @IsDateString() cutoff?: string;
+  @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 50;
+}
+
+export class CompareFanfictionDiscoveryDto {
+  @IsOptional() @IsUUID() profileId?: string | null;
+  @IsOptional() @IsBoolean() autoProfile?: boolean;
+  @IsOptional() @IsString() @MaxLength(4096) canonicalUrl?: string;
+}
+
 export class ListFanfictionDiscoveryDto {
+  @IsOptional() @IsString() @MaxLength(253) website?: string;
+  @IsOptional() @IsIn(['true']) review?: string;
+  @IsOptional() @IsDateString() cutoff?: string;
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.split(',') : value))
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID(undefined, { each: true })
+  ids?: string[];
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.split('\n') : value))
   @IsArray()
@@ -41,6 +65,10 @@ export class FanfictionDiscoveryOverrideDto {
 }
 
 export class SelectFanfictionDiscoveryDto {
+  @IsOptional() @IsString() @MaxLength(253) website?: string;
+  @IsOptional() @IsBoolean() review?: boolean;
+  @IsOptional() @IsDateString() cutoff?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(1000) @IsUUID(undefined, { each: true }) excludedIds?: string[];
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(100)

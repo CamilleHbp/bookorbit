@@ -39,7 +39,7 @@ describe('Fanfiction HTTP contracts', () => {
     metadataReview: vi.fn(),
     resolveMetadata: vi.fn(),
   };
-  const discovery = { start: vi.fn(), list: vi.fn() };
+  const discovery = { start: vi.fn(), list: vi.fn(), websites: vi.fn(), compare: vi.fn() };
   const adoption = { start: vi.fn() };
   const batches = { start: vi.fn(), listFailures: vi.fn() };
   const activity = { list: vi.fn() };
@@ -392,5 +392,31 @@ describe('Fanfiction HTTP contracts', () => {
     expect((await app.inject({ method: 'PATCH', url: `${base}/sources/${uuid}`, payload: { state: 'paused' } })).statusCode).toBe(400);
     sources.update.mockResolvedValue({ id: uuid, state: 'paused', version: 2 });
     expect((await app.inject({ method: 'PATCH', url: `${base}/sources/${uuid}`, payload: { state: 'paused', version: 1 } })).statusCode).toBe(200);
+  });
+  it('validates website review, remote comparison and snapshot selection contracts', async () => {
+    discovery.websites.mockResolvedValue({ items: [], cutoff: '2026-09-10T12:00:00Z', nextCursor: null });
+    expect((await app.inject({ method: 'GET', url: `${base}/discovery/websites?limit=50` })).statusCode).toBe(200);
+    discovery.compare.mockResolvedValue({ title: 'Remote', authors: ['Writer'] });
+    expect(
+      (await app.inject({ method: 'POST', url: `${base}/discovery/${uuid}/compare`, payload: { autoProfile: false, profileId: null } })).statusCode,
+    ).toBe(201);
+    expect(discovery.compare).toHaveBeenCalledWith(5, uuid, expect.objectContaining({ autoProfile: false, profileId: null }), undefined);
+    expect((await app.inject({ method: 'POST', url: `${base}/discovery/not-a-uuid/compare`, payload: {} })).statusCode).toBe(400);
+    const payload = {
+      idempotencyKey: uuid,
+      decision: 'approve',
+      allMatching: true,
+      review: true,
+      website: 'royalroad.com',
+      cutoff: '2026-09-10T12:00:00Z',
+      excludedIds: [uuid],
+    };
+    expect((await app.inject({ method: 'POST', url: `${base}/discovery/selection`, payload })).statusCode).toBe(202);
+    for (const invalid of [
+      { ...payload, cutoff: 'bad' },
+      { ...payload, excludedIds: ['bad'] },
+      { ...payload, overrides: [{ id: uuid, unknown: true }] },
+    ])
+      expect((await app.inject({ method: 'POST', url: `${base}/discovery/selection`, payload: invalid })).statusCode).toBe(400);
   });
 });

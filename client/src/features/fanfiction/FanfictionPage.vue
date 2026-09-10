@@ -511,8 +511,6 @@ onMounted(() => {
       <ExistingStories
         v-else-if="tab === 'discovery'"
         :key="libraryId"
-        v-model:profile-id="profileId"
-        v-model:schedule="schedule"
         :library-id="libraryId"
         :profiles="profiles"
         :profile-cursor="profileCursor"
