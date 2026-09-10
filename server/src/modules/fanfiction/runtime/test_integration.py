@@ -12,6 +12,48 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_webp_chapter_images_survive_download_update_and_refresh(self):
+        from io import BytesIO
+        import posixpath
+        import xml.etree.ElementTree as ET
+        from PIL import Image
+        from fanficfare.adapters.adapter_test1 import TestSiteAdapter
+        from safe_transport import SafeTransport
+        source = BytesIO()
+        Image.new('RGB', (2400, 1800), (50, 120, 180)).save(source, 'PNG')
+        fetched = []
+
+        def chapter(adapter, url):
+            return adapter.utf8FromSoup(url, adapter.make_soup('<p>Illustration</p><img src="https://test1.com/illustration.png"/>'))
+
+        def request(_transport, method, url, parameters=None, headers=None):
+            self.assertEqual(url, 'https://test1.com/illustration.png')
+            fetched.append(url)
+            return 200, source.getvalue(), url
+
+        original = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory, patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'), patch.object(TestSiteAdapter, 'getChapterText', chapter), patch.object(SafeTransport, 'request', request):
+            try:
+                os.chdir(directory)
+                for operation in ['download', 'update', 'refresh']:
+                    with self.subTest(operation=operation):
+                        run({'operation': operation, 'url': 'https://test1.com/?sid=1', 'configuration': ''})
+                        with ZipFile('output.epub') as archive:
+                            images = [name for name in archive.namelist() if name.endswith('.webp')]
+                            self.assertEqual(len(images), 1)
+                            self.assertLessEqual(len(archive.read(images[0])), 256 * 1024)
+                            for name in archive.namelist():
+                                if name.endswith('.xhtml'):
+                                    for image in ET.fromstring(archive.read(name)).iter('{http://www.w3.org/1999/xhtml}img'):
+                                        path = posixpath.normpath(posixpath.join(posixpath.dirname(name), image.attrib['src']))
+                                        self.assertIn(path, images)
+                            opf = next(name for name in archive.namelist() if name.endswith('.opf'))
+                            self.assertIn(b'image/webp', archive.read(opf))
+                        Path('output.epub').replace('input.epub')
+                self.assertEqual(len(fetched), 2)
+            finally:
+                os.chdir(original)
+
     def test_source_covers_are_embedded_on_download_update_and_refresh(self):
         from io import BytesIO
         from PIL import Image
@@ -49,6 +91,8 @@ class ConfigurationTest(unittest.TestCase):
                             cover = next(name for name in archive.namelist() if '/cover.' in name)
                             with Image.open(BytesIO(archive.read(cover))) as embedded:
                                 self.assertEqual(embedded.size, (120, 160))
+                                self.assertEqual(embedded.format, 'WEBP')
+                            self.assertIn(b'image/webp', archive.read(opf))
                         Path('output.epub').replace('input.epub')
                 self.assertEqual(len(fetched), 3)
             finally:
@@ -135,8 +179,9 @@ class ConfigurationTest(unittest.TestCase):
         Image.effect_noise((2400, 3000), 100).convert('RGB').save(source, 'PNG')
         data, extension, mime = story.convert_image('https://example.org/image.png', source.getvalue(), [580, 725], False, True, 'jpg')
         with Image.open(BytesIO(data)) as image:
-            self.assertEqual(image.size, (580, 725))
-        self.assertEqual((extension, mime), ('jpg', 'image/jpeg'))
+            self.assertLessEqual(max(image.size), 1600)
+        self.assertLessEqual(len(data), 256 * 1024)
+        self.assertEqual((extension, mime), ('webp', 'image/webp'))
         self.assertLess(len(data), len(source.getvalue()) // 10)
 
     def test_invalid_ini_syntax_is_a_settings_error(self):
