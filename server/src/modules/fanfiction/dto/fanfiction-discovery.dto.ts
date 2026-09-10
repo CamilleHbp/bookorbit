@@ -36,3 +36,10 @@ export class SelectFanfictionDiscoveryDto {
   @ValidateIf((_object, value: unknown) => value !== null && value !== undefined) @IsInt() @Min(60) @Max(525600) intervalMinutes?: number | null;
   @IsOptional() @IsString() @MaxLength(4096) canonicalUrl?: string;
 }
+
+export class PreviewStoryLinkDto {
+  @IsOptional() @IsUUID() profileId?: string;
+  @IsInt() @Min(1) bookId!: number;
+  @IsInt() @Min(1) bookFileId!: number;
+  @IsString() @MaxLength(4096) url!: string;
+}

@@ -12,6 +12,34 @@ export interface ManagedTagSource {
 export class ManagedTagService {
   private readonly logger = new Logger(ManagedTagService.name);
 
+  async keepPersonal(tx: DatabaseTransaction, bookId: number, source: ManagedTagSource, names: string[]): Promise<void> {
+    const metadata = await this.context(tx, bookId, source);
+    if (!names.length || metadata.lockedFields?.includes('tags')) return;
+    const matches = await tx
+      .select({ id: tags.id })
+      .from(tags)
+      .where(
+        inArray(
+          tags.name,
+          names.map((name) => name.trim().slice(0, 200)),
+        ),
+      )
+      .limit(1000);
+    if (matches.length)
+      await tx
+        .update(bookTags)
+        .set({ managedOnly: false })
+        .where(
+          and(
+            eq(bookTags.bookId, bookId),
+            inArray(
+              bookTags.tagId,
+              matches.map((tag) => tag.id),
+            ),
+          ),
+        );
+  }
+
   async sync(tx: DatabaseTransaction, bookId: number, source: ManagedTagSource, input: string[]): Promise<boolean> {
     if (!Array.isArray(input) || input.length > 1000 || input.some((name) => typeof name !== 'string' || name.length > 500))
       throw new BadRequestException('Managed tags exceed the supported limits');

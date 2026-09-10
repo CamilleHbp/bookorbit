@@ -1,3 +1,5 @@
+import { CollectionService } from '../src/modules/collection/collection.service';
+import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
 import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
 import { BookMetadataLockService } from '../src/modules/book-metadata-lock/book-metadata-lock.service';
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
@@ -78,7 +80,11 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
   const authorize = vi.fn(async () => {});
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation' && !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? ''))
+    if (
+      config.database !== 'bookorbit_revision_validation' &&
+      !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? '') &&
+      !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? '')
+    )
       throw new Error('An isolated validation database is required');
     pool = new Pool(config);
     db = drizzle(pool, { schema });
@@ -113,6 +119,8 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
         FanfictionImportService,
         FanfictionReviewService,
         FanfictionSourceService,
+        { provide: CollectionService, useValue: {} },
+        { provide: FanfictionReaderService, useValue: {} },
         ManagedTagService,
         ManagedMetadataService,
         { provide: BookMetadataLockService, useValue: { filterAutomatedBookUpdate: (_id: number, dto: unknown) => Promise.resolve({ dto }) } },

@@ -7,23 +7,27 @@ import { X } from '@lucide/vue'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  modelValue: string[]
-  placeholder?: string
-  /** Omit for a free-text list: chips are whatever is typed, with no suggestion dropdown. */
-  searchFn?: (q: string) => Promise<string[]>
-  /** Returns null to reject an entry, so a list with a format can enforce it as it is typed. */
-  normalize?: (raw: string) => string | null
-  disabled?: boolean
-  controlClass?: string
-  inputId?: string
-  inputMode?: 'numeric' | 'text'
-  describedBy?: string
-  invalid?: boolean
-  minSearchLength?: number
-  maxItems?: number
-  removeLabel?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: string[]
+    placeholder?: string
+    /** Omit for a free-text list: chips are whatever is typed, with no suggestion dropdown. */
+    searchFn?: (q: string) => Promise<string[]>
+    /** Returns null to reject an entry, so a list with a format can enforce it as it is typed. */
+    normalize?: (raw: string) => string | null
+    disabled?: boolean
+    controlClass?: string
+    inputId?: string
+    inputMode?: 'numeric' | 'text'
+    describedBy?: string
+    invalid?: boolean
+    minSearchLength?: number
+    splitOnSeparators?: boolean
+    maxItems?: number
+    removeLabel?: string
+  }>(),
+  { splitOnSeparators: true },
+)
 
 const emit = defineEmits<{ 'update:modelValue': [string[]] }>()
 

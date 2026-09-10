@@ -4,7 +4,12 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { RequireLibraryAccess } from '../../common/decorators/require-library-access.decorator';
 import type { RequestUser } from '../../common/types/request-user';
-import { StartFanfictionDiscoveryDto, ListFanfictionDiscoveryDto, SelectFanfictionDiscoveryDto } from './dto/fanfiction-discovery.dto';
+import {
+  PreviewStoryLinkDto,
+  StartFanfictionDiscoveryDto,
+  ListFanfictionDiscoveryDto,
+  SelectFanfictionDiscoveryDto,
+} from './dto/fanfiction-discovery.dto';
 import { FanfictionDiscoveryService } from './fanfiction-discovery.service';
 import { FanfictionAdoptionService } from './fanfiction-adoption.service';
 
@@ -16,6 +21,11 @@ export class FanfictionDiscoveryController {
     private readonly discovery: FanfictionDiscoveryService,
     private readonly adoption: FanfictionAdoptionService,
   ) {}
+
+  @Post('book')
+  previewBook(@Param('libraryId', ParseIntPipe) libraryId: number, @Body() dto: PreviewStoryLinkDto, @CurrentUser() user: RequestUser) {
+    return this.discovery.previewBook(libraryId, dto, user);
+  }
 
   @Post()
   @HttpCode(202)

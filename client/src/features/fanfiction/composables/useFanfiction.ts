@@ -23,7 +23,7 @@ interface Candidate {
   updateKey?: string
   url: string
   profileId: string
-  destination?: { folderId: number; intervalMinutes: number | null }
+  destination?: { folderId: number; intervalMinutes: number | null; collectionId?: number }
   resolvedProfileId?: string
   previewKey: string
   importKey: string
@@ -54,6 +54,7 @@ export function useFanfiction(
   const libraryId = ref<number | null>(initialLibraryId ?? null)
   const folders = ref<FanfictionFolderPage['items']>([])
   const folderCursor = ref<number | null>(null)
+  const collectionId = ref<number | null>(null)
   const folderId = ref<number | null>(null)
   const profiles = ref<FanfictionProfilePage['items']>([])
   const profileCursor = ref<string | null>(null)
@@ -116,6 +117,8 @@ export function useFanfiction(
   let disposed = false
   let timer: ReturnType<typeof setTimeout> | undefined
   const appliedSearch = ref('')
+  const filters = ref({ publication: '', sort: 'added', tag: '', genre: '', fandom: '', view: '' })
+  const appliedFilters = ref({ ...filters.value })
   const appliedState = ref('')
   let sourcePage: string | null = null
   let jobPage: string | null = null
@@ -171,6 +174,7 @@ export function useFanfiction(
     if (cursor) query.set('cursor', cursor)
     if (appliedSearch.value) query.set('search', appliedSearch.value)
     if (appliedState.value) query.set('state', appliedState.value)
+    for (const [key, value] of Object.entries(appliedFilters.value)) if (value && !(key === 'sort' && value === 'added')) query.set(key, value)
     return query.toString()
   }
   async function loadSources(current: number, path: string, cursor: string | null) {
@@ -244,6 +248,7 @@ export function useFanfiction(
     clearTimeout(timer)
     appliedSearch.value = search.value
     appliedState.value = state.value
+    appliedFilters.value = { ...filters.value }
     candidates.value = []
     importBatchTotal.value = 0
     existingStoryIndex.value = 0
@@ -311,9 +316,10 @@ export function useFanfiction(
   }
   async function applyFilters() {
     if (busy.value || libraryId.value === null) return
-    const previous = { search: appliedSearch.value, state: appliedState.value }
+    const previous = { search: appliedSearch.value, state: appliedState.value, filters: appliedFilters.value }
     appliedSearch.value = search.value
     appliedState.value = state.value
+    appliedFilters.value = { ...filters.value }
     await perform(async (current, path) => {
       try {
         if (await loadSources(current, path, null)) sourcePagination.reset()
@@ -321,6 +327,7 @@ export function useFanfiction(
         if (currentScope(current)) {
           appliedSearch.value = previous.search
           appliedState.value = previous.state
+          appliedFilters.value = previous.filters
         }
         throw failure
       }
@@ -338,7 +345,11 @@ export function useFanfiction(
   }
   async function submitImport(candidate: Candidate, current: number, path: string) {
     if (folderId.value === null) return
-    candidate.destination ??= { folderId: folderId.value, intervalMinutes: schedule.value === 'manual' ? null : Number(schedule.value) }
+    candidate.destination ??= {
+      ...(collectionId.value ? { collectionId: collectionId.value } : {}),
+      folderId: folderId.value,
+      intervalMinutes: schedule.value === 'manual' ? null : Number(schedule.value),
+    }
     if (candidate.resolvedProfileId === undefined) {
       if (candidate.profileId) candidate.resolvedProfileId = candidate.profileId
       else {
@@ -565,6 +576,7 @@ export function useFanfiction(
         const job = await request<FanfictionJob>(`${path}/sources`, {
           url: candidate.preview.canonicalUrl,
           idempotencyKey: candidate.importKey,
+          ...(collectionId.value ? { collectionId: collectionId.value } : {}),
           folderId: selectedFolder,
           intervalMinutes,
           ...(profileId.value ? { profileId: profileId.value } : {}),
@@ -701,6 +713,7 @@ export function useFanfiction(
     folders,
     folderCursor,
     folderId,
+    collectionId,
     profiles,
     profileCursor,
     profileId,
@@ -725,6 +738,8 @@ export function useFanfiction(
     urls,
     search,
     state,
+    filters,
+    appliedFilters,
     appliedSearch,
     appliedState,
     schedule,

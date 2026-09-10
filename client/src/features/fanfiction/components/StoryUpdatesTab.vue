@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import type { BookFileRevisionSummary } from '@bookorbit/types'
+import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
+import StorySchedule from './StorySchedule.vue'
 import StoryMetadataReview from './StoryMetadataReview.vue'
 import type { useBookStory } from '../composables/useBookStory'
 
@@ -34,6 +37,7 @@ const {
   profiles,
   profileCursor,
   profileId,
+  tagPolicy,
   interval,
   revisions,
   revisionCursor,
@@ -53,12 +57,17 @@ const {
   moreProfiles,
   moreSources,
 } = props.state
-const manual = computed({
-  get: () => interval.value === 'manual',
-  set: (value: boolean) => {
-    interval.value = value ? 'manual' : '1440'
-  },
-})
+const restore = ref<BookFileRevisionSummary | null>(null)
+function requestRestore(revision: BookFileRevisionSummary) {
+  restore.value = revision
+}
+function cancelRestore() {
+  restore.value = null
+}
+async function confirmRestore() {
+  if (restore.value) await rollback(restore.value)
+  restore.value = null
+}
 const profileMissing = computed(() => profileId.value && !profiles.value.some((profile) => profile.id === profileId.value))
 const updating = computed(() => busy.value || (job.value !== null && ['queued', 'running'].includes(job.value.state)))
 function dateLabel(value: string | null) {
@@ -147,20 +156,15 @@ onMounted(() => {
         <Button v-if="profileCursor" type="button" variant="outline" :disabled="busy" @click="moreProfiles">{{
           t('fanfiction.moreProfiles')
         }}</Button>
-        <label class="flex items-center gap-2 text-sm"
-          ><input v-model="manual" :disabled="updating" type="checkbox" />{{ t('fanfiction.manualOnly') }}</label
+        <StorySchedule v-model="interval" :disabled="updating" />
+        <label class="block space-y-1 text-sm"
+          >{{ t('fanfiction.tagPolicy')
+          }}<select v-model="tagPolicy" :disabled="updating" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
+            <option value="review">{{ t('fanfiction.tagPolicyReview') }}</option>
+            <option value="automatic">{{ t('fanfiction.tagPolicyAutomatic') }}</option>
+          </select></label
         >
-        <label v-if="!manual" class="block space-y-1 text-sm"
-          >{{ t('fanfiction.intervalMinutes') }}
-          <input
-            v-model="interval"
-            :disabled="updating"
-            type="number"
-            min="60"
-            max="525600"
-            class="border-input bg-background block w-full rounded-md border p-2"
-          />
-        </label>
+        <p class="text-sm text-muted-foreground">{{ t('fanfiction.tagPolicyHelp') }}</p>
         <div class="flex flex-wrap items-center gap-3">
           <Button type="submit" :disabled="updating">{{ t('common.save') }}</Button>
           <Button variant="outline" as-child
@@ -168,18 +172,9 @@ onMounted(() => {
           >
         </div>
       </form>
-      <form v-if="canReplace" class="border-border space-y-3 rounded-xl border p-4" @submit.prevent="uploadReplacement">
-        <h2 class="font-semibold">{{ t('fanfiction.replacementTitle') }}</h2>
-        <p class="text-muted-foreground text-sm">{{ t('fanfiction.replacementHelp') }}</p>
-        <label class="block space-y-2 text-sm">
-          {{ t('fanfiction.replacementFile') }}
-          <input type="file" accept=".epub,application/epub+zip" :disabled="updating" class="block w-full" @change="chooseReplacement" />
-        </label>
-        <p v-if="replacementFile" class="text-sm break-words">{{ replacementFile.name }}</p>
-        <Button type="submit" :disabled="updating || !replacementFile">{{ t('fanfiction.replacementUpload') }}</Button>
-      </form>
       <div v-if="job" role="status" class="border-border rounded-xl border p-4 text-sm">
         {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }}
+        <StoryUpdateOutcome :job="job" />
         <p v-if="job.errorCode" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
         <div v-if="job.result?.replacement" class="my-3 space-y-2">
           <p>{{ job.result.replacement.title }}</p>
@@ -201,29 +196,55 @@ onMounted(() => {
           >{{ t('fanfiction.retry') }}</Button
         >
       </div>
-      <section class="border-border space-y-3 rounded-xl border p-4">
-        <h2 class="font-semibold">{{ t('book.detail.files.revisions.title') }}</h2>
-        <p class="text-muted-foreground text-sm">{{ t('fanfiction.rollbackHelp') }}</p>
-        <article
-          v-for="revision in revisions"
-          :key="revision.revision"
-          class="border-border flex flex-wrap items-center justify-between gap-3 border-t pt-3"
-        >
-          <div class="text-sm">
-            <p>
-              {{ t(`book.detail.files.revisions.${revision.changeKind}`)
-              }}<span v-if="revision.reason === 'rollback'"> · {{ t('fanfiction.kinds.rollback') }}</span
-              ><span v-if="revision.reason === 'replacement'"> · {{ t('fanfiction.kinds.replacement') }}</span
-              ><span v-if="revision.revision === currentRevisionId"> · {{ t('fanfiction.currentRevision') }}</span>
-            </p>
-            <p class="text-muted-foreground">{{ dateLabel(revision.createdAt) }}</p>
+      <details class="space-y-4">
+        <summary class="cursor-pointer font-medium">{{ t('fanfiction.advanced') }}</summary>
+        <form v-if="canReplace" class="border-border space-y-3 rounded-xl border p-4" @submit.prevent="uploadReplacement">
+          <h2 class="font-semibold">{{ t('fanfiction.replacementTitle') }}</h2>
+          <p class="text-muted-foreground text-sm">{{ t('fanfiction.replacementHelp') }}</p>
+          <label class="block space-y-2 text-sm">
+            {{ t('fanfiction.replacementFile') }}
+            <input type="file" accept=".epub,application/epub+zip" :disabled="updating" class="block w-full" @change="chooseReplacement" />
+          </label>
+          <p v-if="replacementFile" class="text-sm break-words">{{ replacementFile.name }}</p>
+          <Button type="submit" :disabled="updating || !replacementFile">{{ t('fanfiction.replacementUpload') }}</Button>
+        </form>
+        <section class="border-border space-y-3 rounded-xl border p-4">
+          <h2 class="font-semibold">{{ t('book.detail.files.revisions.title') }}</h2>
+          <p class="text-muted-foreground text-sm">{{ t('fanfiction.rollbackHelp') }}</p>
+          <div v-if="restore" class="space-y-3 rounded-lg border border-border p-3" role="alert">
+            <p>{{ t('fanfiction.restoreConfirm', { date: dateLabel(restore.createdAt) }) }}</p>
+            <p v-if="restore.chapterCount">{{ t('fanfiction.chapterCount', { count: restore.chapterCount }) }}</p>
+            <div class="flex flex-wrap gap-2">
+              <Button :disabled="updating" @click="confirmRestore">{{ t('fanfiction.rollback') }}</Button
+              ><Button variant="outline" :disabled="updating" @click="cancelRestore">{{ t('common.cancel') }}</Button>
+            </div>
           </div>
-          <Button v-if="revision.canRollback" variant="outline" :disabled="updating || !!metadataReview" @click="rollback(revision)">{{
-            t('fanfiction.rollback')
+          <article
+            v-for="revision in revisions"
+            :key="revision.revision"
+            class="border-border flex flex-wrap items-center justify-between gap-3 border-t pt-3"
+          >
+            <div class="text-sm">
+              <p>
+                {{ t(`book.detail.files.revisions.${revision.changeKind}`)
+                }}<span v-if="revision.reason === 'rollback'"> · {{ t('fanfiction.kinds.rollback') }}</span
+                ><span v-if="revision.reason === 'replacement'"> · {{ t('fanfiction.kinds.replacement') }}</span
+                ><span v-if="revision.revision === currentRevisionId"> · {{ t('fanfiction.currentRevision') }}</span>
+              </p>
+              <p class="text-muted-foreground">
+                {{ dateLabel(revision.createdAt)
+                }}<span v-if="revision.chapterCount"> · {{ t('fanfiction.chapterCount', { count: revision.chapterCount }) }}</span>
+              </p>
+            </div>
+            <Button v-if="revision.canRollback" variant="outline" :disabled="updating || !!metadataReview" @click="requestRestore(revision)">{{
+              t('fanfiction.rollback')
+            }}</Button>
+          </article>
+          <Button v-if="revisionCursor" variant="outline" :disabled="busy" @click="olderRevisions">{{
+            t('book.detail.files.revisions.older')
           }}</Button>
-        </article>
-        <Button v-if="revisionCursor" variant="outline" :disabled="busy" @click="olderRevisions">{{ t('book.detail.files.revisions.older') }}</Button>
-      </section>
+        </section>
+      </details>
     </template>
     <Button v-if="sourceCursor" variant="outline" :disabled="busy" @click="moreSources">{{ t('fanfiction.nextPage') }}</Button>
   </section>
