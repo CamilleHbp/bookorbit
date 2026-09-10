@@ -43,6 +43,14 @@ describe('ChipInput', () => {
     expect((wrapper.find('input').element as HTMLInputElement).value).toBe(' azw')
   })
 
+  it('preserves punctuation in story tags when separator splitting is disabled', async () => {
+    const wrapper = mountInput({ splitOnSeparators: false })
+    await typeInto(wrapper, 'Friendship, Love; and Adventure')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await wrapper.find('input').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['Friendship, Love; and Adventure']])
+  })
+
   it('refuses an entry the field says is not valid', async () => {
     const normalize = vi.fn<(raw: string) => string | null>((raw) => (/^\d+$/.test(raw) ? raw : null))
     const wrapper = mountInput({ normalize })

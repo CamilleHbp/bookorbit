@@ -1,5 +1,6 @@
+import { FanfictionReaderService } from './fanfiction-reader.service';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, ilike, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -42,6 +43,7 @@ export class FanfictionSourceService {
     private readonly managedMetadata: ManagedMetadataService,
     private readonly catalog: RevisionCatalogService,
     private readonly reviews: FanfictionReviewService,
+    private readonly reader: FanfictionReaderService,
   ) {}
 
   async create(libraryId: number, dto: ImportFanfictionDto, user: RequestUser) {
@@ -150,11 +152,27 @@ export class FanfictionSourceService {
           throw new ConflictException('The story source changed; reload it before editing');
         const snapshot = await this.managedMetadata.snapshot(tx, file.bookId, libraryId);
         if (snapshot.fingerprint !== dto.fingerprint) throw new ConflictException('Book metadata changed; refresh the review before saving');
-        const fields = review.fields.filter((field) => dto[field] !== 'keep');
+        const fields = dto.keepAll ? [] : review.fields.filter((field) => dto[field] !== 'keep' && dto[field] !== undefined);
         if (fields.some((field) => snapshot.lockedFields.includes(field)))
           throw new ConflictException('Unlock the selected metadata fields before saving');
-        const incoming = { ...review.incoming, tags: [...new Set([...snapshot.current.tags, ...review.incoming.tags])] };
-        await this.managedMetadata.apply(tx, file.bookId, { key: `fanfiction:${id}`, libraryId }, incoming, fields);
+        const incoming = { ...review.incoming };
+        for (const field of fields) {
+          if (field === 'tags') {
+            incoming.tags = dto.tags === 'select' ? (dto.selectedTags ?? []) : [...new Set([...snapshot.current.tags, ...review.incoming.tags])];
+          } else if (dto[field] === 'edit') {
+            const value = dto.values?.[field];
+            if (value === undefined) throw new BadRequestException('Enter a value for the edited field');
+            Object.assign(incoming, { [field]: value });
+          }
+        }
+        await this.managedMetadata.apply(
+          tx,
+          file.bookId,
+          { key: `fanfiction:${id}`, libraryId },
+          incoming,
+          fields,
+          incoming.tags.filter((tag) => !review.incoming.tags.includes(tag)),
+        );
         const result = { ...job.result };
         delete result.metadataReview;
         await tx
@@ -242,6 +260,18 @@ export class FanfictionSourceService {
     });
   }
 
+  async recordChapterChanges(job: Job) {
+    await this.db.transaction(async (tx) => {
+      await this.assertUpdatable(job, tx);
+      await tx
+        .update(schema.fanfictionJobs)
+        .set({
+          result: sql`jsonb_set(coalesce(${schema.fanfictionJobs.result}, '{}'::jsonb), '{changes}', ${JSON.stringify(job.result?.changes)}::jsonb)`,
+        })
+        .where(and(eq(schema.fanfictionJobs.id, job.id), eq(schema.fanfictionJobs.libraryId, job.libraryId)));
+    });
+  }
+
   async stageUpdatePreview(job: Job, preview: FanfictionPreview): Promise<void> {
     await this.db.transaction(async (tx) => {
       await this.assertUpdatable(job, tx);
@@ -269,6 +299,7 @@ export class FanfictionSourceService {
                 chapterCount: preview.chapterCount,
                 wordCount: preview.wordCount ?? null,
                 storyStatus: preview.status,
+                categories: preview.categories ?? null,
               }
             : {}),
           ...(job.kind === 'replacement' && result.replacement
@@ -347,6 +378,8 @@ export class FanfictionSourceService {
   async list(libraryId: number, dto: ListFanfictionSourcesDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
     const before = dto.cursor ? await this.find(libraryId, dto.cursor) : null;
+    const order = dto.sort === 'updated' ? sql`coalesce(${sources.lastUpdatedAt}, ${sources.createdAt})` : sql`${sources.createdAt}`;
+    const beforeOrder = before ? sql`(select ${order} from ${sources} where ${sources.id} = ${before.id}::uuid)` : null;
     const rows = await this.db
       .select()
       .from(sources)
@@ -355,15 +388,41 @@ export class FanfictionSourceService {
           eq(sources.libraryId, libraryId),
           dto.bookId ? eq(sources.bookId, dto.bookId) : undefined,
           dto.state ? eq(sources.state, dto.state) : sql`${sources.state} <> 'unlinked'`,
-          dto.search ? ilike(sources.title, `%${dto.search.replace(/[\\%_]/g, '\\$&')}%`) : undefined,
-          before
-            ? sql`(${sources.createdAt}, ${sources.id}) < (select ${sources.createdAt}, ${sources.id} from ${sources} where ${sources.id} = ${before.id} and ${sources.libraryId} = ${libraryId})`
+          dto.search
+            ? sql`(${sources.title} ilike ${'%' + dto.search.replace(/[\\%_]/g, '\\$&') + '%'} or ${sources.authors}::text ilike ${'%' + dto.search.replace(/[\\%_]/g, '\\$&') + '%'} or exists (select 1 from ${schema.bookMetadata} m where m.book_id = ${sources.bookId} and m.title ilike ${'%' + dto.search.replace(/[\\%_]/g, '\\$&') + '%'}) or exists (select 1 from ${schema.bookAuthors} ba join ${schema.authors} a on a.id = ba.author_id where ba.book_id = ${sources.bookId} and a.name ilike ${'%' + dto.search.replace(/[\\%_]/g, '\\$&') + '%'}))`
             : undefined,
+          dto.publication
+            ? dto.publication === 'complete'
+              ? sql`lower(${sources.storyStatus}) in ('complete', 'completed')`
+              : sql`lower(${sources.storyStatus}) not in ('complete', 'completed')`
+            : undefined,
+          dto.tag
+            ? sql`exists (select 1 from ${schema.bookTags} bt join ${schema.tags} t on t.id = bt.tag_id where bt.book_id = ${sources.bookId} and lower(t.name) = lower(${dto.tag}))`
+            : undefined,
+          dto.genre
+            ? sql`exists (select 1 from ${schema.bookGenres} bg join ${schema.genres} g on g.id = bg.genre_id where bg.book_id = ${sources.bookId} and lower(g.name) = lower(${dto.genre}))`
+            : undefined,
+          dto.fandom
+            ? sql`exists (select 1 from jsonb_array_elements_text(${sources.categories}->'fandoms') f where lower(f) = lower(${dto.fandom}))`
+            : undefined,
+          dto.view === 'unread'
+            ? sql`not exists (select 1 from ${schema.readingEventHeads} h where h.book_file_id = ${sources.bookFileId} and h.user_id = ${user.id} and h.event_id is not null)`
+            : undefined,
+          dto.view === 'attention'
+            ? sql`(${sources.attentionCode} is not null or ${sources.state} in ('review_required', 'configuration_blocked'))`
+            : undefined,
+          dto.view === 'new'
+            ? sql`exists (select 1 from ${schema.readingEventHeads} h join ${schema.canonicalReadingEvents} e on e.user_id = h.user_id and e.book_file_id = h.book_file_id and e.id = h.event_id join ${schema.bookFileRevisions} old on old.id::text = e.anchor->>'revision' join ${schema.bookFiles} bf on bf.id = h.book_file_id join ${schema.bookFileRevisions} current on current.id::text = bf.current_revision_id where h.user_id = ${user.id} and h.book_file_id = ${sources.bookFileId} and (select count(*) from jsonb_array_elements(current.chapters) c where c->>'sourceUrl' is not null) > (select count(*) from jsonb_array_elements(old.chapters) c where c->>'sourceUrl' is not null))`
+            : undefined,
+          before ? sql`(${order}, ${sources.id}) < (${beforeOrder}, ${before.id}::uuid)` : undefined,
         ),
       )
-      .orderBy(desc(sources.createdAt), desc(sources.id))
+      .orderBy(desc(order), desc(sources.id))
       .limit(dto.limit + 1);
-    const items = rows.slice(0, dto.limit).map((row) => this.view(row));
+    const items = await this.reader.project(
+      rows.slice(0, dto.limit).map((row) => this.view(row)),
+      user.id,
+    );
     return { items, nextCursor: rows.length > dto.limit ? items.at(-1)!.id : null };
   }
 
@@ -396,6 +455,7 @@ export class FanfictionSourceService {
         .update(sources)
         .set({
           state,
+          ...(dto.tagPolicy ? { tagPolicy: dto.tagPolicy } : {}),
           ...(needsProfile && dto.profileId !== undefined ? { attentionCode: null } : {}),
           ...(dto.profileId !== undefined ? { profileId: dto.profileId } : {}),
           intervalMinutes: interval,
@@ -515,6 +575,7 @@ export class FanfictionSourceService {
             chapterCount: preview.chapterCount,
             wordCount: preview.wordCount ?? null,
             storyStatus: preview.status,
+            categories: preview.categories ?? null,
             updatedAt: sql`now()`,
             version: sql`${sources.version} + 1`,
           })
@@ -617,6 +678,8 @@ export class FanfictionSourceService {
       chapterCount: row.chapterCount,
       wordCount: row.wordCount,
       storyStatus: row.storyStatus,
+      categories: row.categories,
+      tagPolicy: row.tagPolicy,
       intervalMinutes: row.intervalMinutes,
       nextCheckAt: row.nextCheckAt?.toISOString() ?? null,
       lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,

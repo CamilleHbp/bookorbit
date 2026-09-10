@@ -1,3 +1,4 @@
+import { CollectionService } from '../collection/collection.service';
 import { Test } from '@nestjs/testing';
 import { describe, expect, it, vi } from 'vitest';
 import type { FanfictionPreview } from '@bookorbit/types';
@@ -35,9 +36,11 @@ describe('review before importing a story', () => {
       preview: vi.fn().mockResolvedValue(preview),
       download: vi.fn().mockImplementation((_url, _document, consume) => consume('/staged/story.epub', preview)),
     };
+    const collections = { verifyWriteAccess: vi.fn(), addBooks: vi.fn() };
     const module = await Test.createTestingModule({
       providers: [
         FanfictionImportService,
+        { provide: CollectionService, useValue: collections },
         { provide: FanfictionSourceService, useValue: sources },
         { provide: FanficfareRuntimeService, useValue: runtime },
         { provide: BookDockManagedService, useValue: dock },
@@ -50,12 +53,15 @@ describe('review before importing a story', () => {
     try {
       const job = {
         profileId: null,
+        input: { collectionId: 8 },
         result: approved ? { importReview: { preview, values, approved } } : null,
       } as typeof schema.fanfictionJobs.$inferSelect;
       const result = await module
         .get(FanfictionImportService)
         .run(job, {} as RequestUser, { configuration: '', cookies: [] }, async () => {}, new AbortController().signal);
+      expect(collections.verifyWriteAccess).toHaveBeenCalledWith(8, {});
       if (!approved) {
+        expect(collections.addBooks).not.toHaveBeenCalled();
         expect(result?.importReview?.approved).toBe(false);
         expect(runtime.download).not.toHaveBeenCalled();
         expect(dock.ingest).not.toHaveBeenCalled();
@@ -63,6 +69,8 @@ describe('review before importing a story', () => {
       } else {
         expect(dock.ingest).toHaveBeenCalledWith(expect.objectContaining({ finalMetadata: values }), expect.any(Function));
         expect(result?.bookId).toBe(4);
+        expect(collections.addBooks).toHaveBeenCalledWith(8, { bookIds: [4] }, {});
+        expect(dock.ingest).toHaveBeenCalledWith(expect.objectContaining({ personalTags: ['My tag'] }), expect.any(Function));
         expect(result?.importReview).toBeUndefined();
       }
     } finally {

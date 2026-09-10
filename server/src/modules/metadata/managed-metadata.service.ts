@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { FanfictionPreview, FanfictionMetadataField, FanfictionMetadataValues } from '@bookorbit/types';
 import { createHash } from 'node:crypto';
 import type { DatabaseTransaction } from '../../db/transaction';
-import { authors, bookAuthors, bookMetadata, books, bookTags, bookTagSources, tags } from '../../db/schema';
+import { authors, bookAuthors, bookMetadata, bookGenres, genres, books, bookTags, bookTagSources, tags } from '../../db/schema';
 import { normalizeMetadataText, normalizeMetadataTextKey } from '../../common/utils/metadata-text-normalize.utils';
 import { ManagedTagService, type ManagedTagSource } from './managed-tag.service';
 import { BookMetadataLockService } from '../book-metadata-lock/book-metadata-lock.service';
@@ -47,6 +47,15 @@ export class ManagedMetadataService {
       authors: authorRows.map(({ name }) => name),
       tags: tagRows.map(({ name }) => name),
     };
+    const genreRows = await tx
+      .select({ name: genres.name })
+      .from(bookGenres)
+      .innerJoin(genres, eq(genres.id, bookGenres.genreId))
+      .where(eq(bookGenres.bookId, bookId))
+      .orderBy(asc(genres.name))
+      .limit(1001);
+    if (genreRows.length > 1000) throw new BadRequestException('Book genres exceed the supported review limits');
+    current.genres = genreRows.map(({ name }) => name);
     const lockedFields = [...(row.lockedFields ?? [])].sort();
     const managed = sourceKey
       ? await tx
@@ -78,8 +87,9 @@ export class ManagedMetadataService {
     tx: DatabaseTransaction,
     bookId: number,
     source: ManagedTagSource,
-    preview: Pick<FanfictionPreview, 'title' | 'description' | 'authors' | 'tags'>,
-    fields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags'],
+    preview: Pick<FanfictionPreview, 'title' | 'description' | 'authors' | 'tags' | 'genres'>,
+    fields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags', 'genres'],
+    personalTags: string[] = [],
   ) {
     if (
       typeof preview.title !== 'string' ||
@@ -141,7 +151,12 @@ export class ManagedMetadataService {
           changed = true;
         }
       }
+      if (filtered.genres !== undefined) {
+        await this.metadata.replaceGenres(bookId, filtered.genres, { executor: tx, emitEvent: false });
+        changed = true;
+      }
       if (filtered.tags !== undefined) changed = (await this.tags.sync(tx, bookId, source, filtered.tags)) || changed;
+      if (personalTags.length) await this.tags.keepPersonal(tx, bookId, source, personalTags);
       if (changed) await tx.update(books).set({ updatedAt: new Date() }).where(eq(books.id, bookId));
       this.logger.log(
         `[metadata.managed_story] [end] bookId=${bookId} libraryId=${source.libraryId} durationMs=${Date.now() - startedAt} changed=${changed} - story metadata processed`,

@@ -36,5 +36,26 @@ export function validateFanfictionPreview(value: unknown): FanfictionPreview {
     wordCount: row.wordCount == null ? null : Number(row.wordCount),
     status: string('status', 100),
     tags: strings('tags', 1000, 500),
+    ...(row.genres === undefined ? {} : { genres: strings('genres', 1000, 500) }),
+    ...(row.categories === undefined ? {} : { categories: validateCategories(row.categories) }),
+  };
+}
+
+function validateCategories(value: unknown): NonNullable<FanfictionPreview['categories']> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ServiceUnavailableException('Invalid story categories');
+  const row = value as Record<string, unknown>;
+  const list = (key: string): string[] => {
+    const values = row[key];
+    if (!Array.isArray(values) || values.length > 1000 || values.some((item) => typeof item !== 'string' || item.length > 500))
+      throw new ServiceUnavailableException('Invalid story categories');
+    return values as string[];
+  };
+  if (typeof row.rating !== 'string' || row.rating.length > 500) throw new ServiceUnavailableException('Invalid story rating');
+  return {
+    fandoms: list('fandoms'),
+    relationships: list('relationships'),
+    characters: list('characters'),
+    warnings: list('warnings'),
+    rating: row.rating,
   };
 }

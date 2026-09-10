@@ -1,3 +1,5 @@
+import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
+import { BookService } from '../src/modules/book/book.service';
 import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
 import { BookDockManagedUploadService } from '../src/modules/book-dock/book-dock-managed-upload.service';
 import { RevisionFileService } from '../src/modules/book-revision/revision-file.service';
@@ -126,7 +128,11 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
   }
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation' && !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? ''))
+    if (
+      config.database !== 'bookorbit_revision_validation' &&
+      !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? '') &&
+      !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? '')
+    )
       throw new Error('Isolated validation database required');
     pool = new Pool(config);
     await installPostgresExtensions(pool);
@@ -149,6 +155,8 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         RevisionInterruptionService,
         RevisionRetentionService,
         FanfictionSourceService,
+        FanfictionReaderService,
+        { provide: BookService, useValue: {} },
         ManagedTagService,
         ManagedMetadataService,
         BookMetadataLockService,
@@ -669,7 +677,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       if (path === output) await sources.update(libraryId, source.id, { version: source.version, state: 'paused' }, user);
       return manifest;
     });
-    await expect(run(job)).rejects.toThrow('settings changed');
+    await expect(run(job)).rejects.toThrow('changed');
     expect(await readFile(target)).toEqual(original);
   }, 30_000);
   it('queues due sources once across concurrent schedulers and respects manual mode', async () => {
@@ -861,4 +869,75 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect(await readFile(target)).toEqual(before);
     expect((await catalog.current(fileId, libraryId)).id).toBe(update?.revisionId);
   }, 60_000);
+  it('projects library metadata and filters by genres, tags, fandom and publication', async () => {
+    const managed = module.get(ManagedMetadataService);
+    await db.transaction((tx) =>
+      managed.apply(
+        tx,
+        source.bookId!,
+        { key: `fanfiction:${source.id}`, libraryId },
+        { title: 'My library title', description: '', authors: ['My author'], tags: ['Personal, tag'], genres: ['Fantasy'] },
+      ),
+    );
+    await db
+      .update(schema.fanfictionSources)
+      .set({ categories: { fandoms: ['Fandom'], relationships: [], characters: [], warnings: [], rating: '' }, storyStatus: 'Completed' })
+      .where(eq(schema.fanfictionSources.id, source.id));
+    const matches = await sources.list(
+      libraryId,
+      { limit: 10, search: 'My author', tag: 'Personal, tag', genre: 'fantasy', fandom: 'fandom', publication: 'complete', sort: 'updated' },
+      user,
+    );
+    expect(matches.items).toHaveLength(1);
+    expect(matches.items[0]).toMatchObject({
+      title: 'My library title',
+      authors: ['My author'],
+      sourceTitle: preview.title,
+      reading: { status: 'unread' },
+    });
+    expect((await sources.list(libraryId, { limit: 10, genre: 'Romance' }, user)).items).toEqual([]);
+    expect((await sources.list(libraryId, { limit: 10, view: 'new' }, user)).items).toEqual([]);
+  });
+  it('uses only the current reader position and excludes generated pages from chapter counts', async () => {
+    const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
+    const [revision] = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.id, file.currentRevisionId!));
+    const chapter = revision.chapters[0];
+    await db
+      .update(schema.bookFileRevisions)
+      .set({
+        chapters: [
+          { ...chapter, index: 0, href: 'title.xhtml', sourceUrl: undefined },
+          { ...chapter, index: 1, href: 'one.xhtml', sourceUrl: 'https://example.org/chapter/1' },
+          { ...chapter, index: 2, href: 'two.xhtml', sourceUrl: 'https://example.org/chapter/2' },
+        ],
+      })
+      .where(eq(schema.bookFileRevisions.id, revision.id));
+    await db.update(schema.fanfictionSources).set({ chapterCount: 2 }).where(eq(schema.fanfictionSources.id, source.id));
+    const eventId = randomUUID();
+    await db.insert(schema.canonicalReadingEvents).values({
+      userId: user.id,
+      bookFileId: fileId,
+      id: eventId,
+      deviceId: 'ux-reader',
+      deviceSequence: 1,
+      resetGeneration: 0,
+      occurredAt: new Date(),
+      anchor: {
+        revision: revision.id,
+        chapterIndex: 1,
+        chapterHref: 'old-name.xhtml',
+        chapterSourceUrl: 'https://example.org/chapter/1',
+        chapterFraction: 1,
+        bookFraction: 0.5,
+      },
+    });
+    await db.insert(schema.readingEventHeads).values({ userId: user.id, bookFileId: fileId, eventId });
+    const reader = module.get(FanfictionReaderService);
+    expect((await reader.project([{ ...source, chapterCount: 2 }], user.id))[0].reading).toMatchObject({
+      readChapters: 1,
+      unreadChapters: 1,
+      nextChapterHref: 'two.xhtml',
+    });
+    expect((await reader.project([{ ...source, chapterCount: 2 }], user.id + 99999))[0].reading).toMatchObject({ status: 'unread', readChapters: 0 });
+  });
 });

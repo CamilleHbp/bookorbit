@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import StorySchedule from './StorySchedule.vue'
 import type { FanfictionSourceBatchAction } from '@bookorbit/types'
 import type { UnwrapNestedRefs } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import type { useFanfictionSourceBatch } from '../composables/useFanfictionSourceBatch'
 
-defineProps<{ bulk: UnwrapNestedRefs<ReturnType<typeof useFanfictionSourceBatch>>; loading: boolean }>()
+defineProps<{ bulk: UnwrapNestedRefs<ReturnType<typeof useFanfictionSourceBatch>>; loading: boolean; allowAllMatching?: boolean }>()
 const { t } = useI18n()
 const allMatching = defineModel<boolean>('allMatching', { required: true })
 const action = defineModel<FanfictionSourceBatchAction>('action', { required: true })
@@ -24,7 +25,7 @@ const interval = defineModel<string>('interval', { required: true })
         t('fanfiction.bulk.selected', { count: bulk.selectedIds.length })
       }}</span>
     </div>
-    <label class="flex items-center gap-2 text-sm">
+    <label v-if="allowAllMatching !== false" class="flex items-center gap-2 text-sm">
       <input v-model="allMatching" type="checkbox" :disabled="loading || bulk.busy || bulk.active" />
       {{ t('fanfiction.bulk.allMatching') }}
     </label>
@@ -39,14 +40,7 @@ const interval = defineModel<string>('interval', { required: true })
           <option value="schedule">{{ t('fanfiction.bulk.schedule') }}</option>
         </select>
       </label>
-      <label v-if="bulk.action === 'schedule'" class="space-y-1 text-sm"
-        >{{ t('fanfiction.schedule') }}
-        <select v-model="interval" :disabled="bulk.busy || bulk.active" class="border-input bg-background block rounded-md border p-2">
-          <option value="1440">{{ t('fanfiction.daily') }}</option>
-          <option value="60">{{ t('fanfiction.hourly') }}</option>
-          <option value="manual">{{ t('fanfiction.manualOnly') }}</option>
-        </select>
-      </label>
+      <StorySchedule v-if="bulk.action === 'schedule'" v-model="interval" :disabled="bulk.busy || bulk.active" />
       <Button :disabled="loading || !bulk.canStart" @click="bulk.start">{{ t('fanfiction.bulk.start') }}</Button>
     </div>
     <p v-if="bulk.action === 'refresh'" class="text-muted-foreground text-sm">{{ t('fanfiction.bulk.refreshHelp') }}</p>

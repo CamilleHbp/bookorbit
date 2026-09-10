@@ -1,9 +1,11 @@
+import { ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { api } from '@/lib/api'
 import FanfictionPage from './FanfictionPage.vue'
 
+vi.mock('@/features/collection/composables/useCollections', () => ({ useCollections: () => ({ collections: ref([]), fetchCollections: vi.fn() }) }))
 vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
 
@@ -138,7 +140,10 @@ describe('Fanfiction navigation and story hierarchy', () => {
       if (String(url).endsWith('/jobs/status')) return new Response(JSON.stringify({ items: [job] }))
       return new Response(JSON.stringify({ items: [], nextCursor: null }))
     })
-    await wrapper!.findAll('details select')[2]!.setValue('manual')
+    await wrapper!
+      .findAll('details select')
+      .find((select) => select.text().includes('Weekly'))!
+      .setValue('manual')
     await wrapper!.get('textarea').setValue('https://archiveofourown.org/works/1')
     await wrapper!.get('form').trigger('submit')
     await flushPromises()
@@ -159,7 +164,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await flushPromises()
     expect(wrapper!.get('textarea').element).toHaveProperty('value', '')
     expect(document.activeElement).toBe(wrapper!.get('textarea').element)
-    expect(wrapper!.findAll('details select')[2]!.element).toHaveProperty('value', 'manual')
+    expect(wrapper!.findAll('details select').find((select) => select.text().includes('Weekly'))!.element).toHaveProperty('value', 'manual')
     expect(wrapper!.findAll('article')).toHaveLength(0)
   })
 

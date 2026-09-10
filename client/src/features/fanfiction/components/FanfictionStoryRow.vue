@@ -6,6 +6,8 @@ import { Check, LoaderCircle, MoreHorizontal } from '@lucide/vue'
 import type { FanfictionJob, FanfictionSource } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
+import StoryReadingActions from './StoryReadingActions.vue'
 import ImportProgress from './ImportProgress.vue'
 
 const props = defineProps<{
@@ -101,6 +103,13 @@ function handlePause() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <StoryReadingActions
+        v-if="source.bookId && source.bookFileId"
+        :book-id="source.bookId"
+        :book-file-id="source.bookFileId"
+        :reading="source.reading"
+      />
+      <p v-if="source.sourceTitle && source.sourceTitle !== source.title" class="text-xs text-muted-foreground">{{ source.sourceTitle }}</p>
       <p v-if="source.attentionCode" class="text-sm text-destructive">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
       <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
       <div v-if="pending" role="status" class="flex items-center gap-2 text-sm">
@@ -110,6 +119,7 @@ function handlePause() {
         <Check class="size-4 text-primary" aria-hidden="true" />{{ outcome }}
       </p>
       <ImportProgress v-else-if="job" :job="job" />
+      <StoryUpdateOutcome v-if="succeeded && job" :job="job" />
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Button v-if="needsAttention && source.bookId" variant="outline" as-child
           ><RouterLink :to="details">{{

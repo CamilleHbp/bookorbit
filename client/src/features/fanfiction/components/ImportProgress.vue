@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
@@ -76,6 +77,7 @@ const lastStage = computed(() =>
         ><span v-if="percentage !== undefined">{{ percentage }}%</span>
       </div>
     </template>
+    <StoryUpdateOutcome :job="job" />
     <p v-if="lastStage" class="text-muted-foreground text-xs">{{ lastStage }}</p>
     <p v-if="errorText" role="alert" class="text-destructive text-sm">{{ errorText }}</p>
   </div>

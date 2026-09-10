@@ -1,3 +1,5 @@
+import { storyTags } from './fanfiction-metadata-review';
+import { CollectionService } from '../collection/collection.service';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { FanfictionProfileDocument, FanfictionJob, FanfictionImportProgress } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
@@ -23,6 +25,7 @@ export class FanfictionImportService {
     private readonly dock: BookDockManagedService,
     private readonly revisions: BookRevisionService,
     private readonly catalog: RevisionCatalogService,
+    private readonly collections: CollectionService,
   ) {}
 
   async run(
@@ -34,6 +37,7 @@ export class FanfictionImportService {
     saveCookies?: FanfictionCookieSink,
     reportProgress: (progress: FanfictionImportProgress) => Promise<void> = async () => {},
   ): Promise<FanfictionJob['result']> {
+    if (job.input?.collectionId) await this.collections.verifyWriteAccess(job.input.collectionId, user);
     await reportProgress({ stage: 'metadata' });
     const resumed = await this.sources.resume(job, user);
     const preview = job.result?.importReview?.preview ?? (resumed ? null : await this.runtime.preview(job.url, document, signal, saveCookies));
@@ -59,7 +63,13 @@ export class FanfictionImportService {
         preview: incoming,
         importReview: {
           preview: incoming,
-          values: { title: incoming.title, description: incoming.description, authors: incoming.authors, tags: incoming.tags },
+          values: {
+            title: incoming.title,
+            description: incoming.description,
+            authors: incoming.authors,
+            tags: incoming.tags,
+            ...(incoming.genres ? { genres: incoming.genres } : {}),
+          },
           approved: false,
         },
       };
@@ -67,6 +77,7 @@ export class FanfictionImportService {
     const input = {
       operationId: source.importOperationId,
       finalMetadata: job.result.importReview.values,
+      personalTags: storyTags(job.result.importReview.values.tags).filter((tag) => !storyTags(job.result!.importReview!.preview.tags).includes(tag)),
       metadataSourceKey: `fanfiction:${source.id}`,
       libraryId: source.libraryId,
       folderId: source.folderId!,
@@ -87,6 +98,7 @@ export class FanfictionImportService {
       await this.catalog.requireFile(installed.bookFileId, source.libraryId);
       await this.revisions.observeFile(installed.bookFileId, {});
       await authorize();
+      if (job.input?.collectionId) await this.collections.addBooks(job.input.collectionId, { bookIds: [installed.bookId] }, user);
       await this.sources.completeImport(job, source.id, installed);
       return { sourceId: source.id, bookId: installed.bookId, bookFileId: installed.bookFileId, preview: job.result!.importReview!.preview };
     };

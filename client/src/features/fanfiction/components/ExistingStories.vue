@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import StorySchedule from './StorySchedule.vue'
 import { onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -93,14 +94,7 @@ onMounted(recover)
           </select></label
         >
         <Button v-if="profileCursor" variant="outline" :disabled="locked" @click="moreProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
-        <label class="text-sm"
-          >{{ t('fanfiction.schedule')
-          }}<select v-model="schedule" :disabled="locked" class="border-input bg-background block rounded-md border p-2">
-            <option value="1440">{{ t('fanfiction.daily') }}</option>
-            <option value="60">{{ t('fanfiction.hourly') }}</option>
-            <option value="manual">{{ t('fanfiction.manualOnly') }}</option>
-          </select></label
-        >
+        <StorySchedule v-model="schedule" :disabled="locked" />
         <Button :disabled="locked || !canApprove" @click="approve">{{ t('fanfiction.discovery.link') }}</Button>
         <Button variant="outline" :disabled="locked || (!allMatching && !selected.length)" @click="reject">{{
           t('fanfiction.discovery.reject')

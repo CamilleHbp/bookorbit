@@ -84,10 +84,18 @@ export class FanfictionReviewService {
         )
         .orderBy(desc(jobs.createdAt), desc(jobs.id))
         .limit(1);
-      const plan = planStoryMetadata(snapshot.current, preview, snapshot.managedTags, snapshot.lockedFields, previous?.result?.preview);
+      const plan = planStoryMetadata(
+        snapshot.current,
+        preview,
+        snapshot.managedTags,
+        snapshot.lockedFields,
+        previous?.result?.preview,
+        source.tagPolicy,
+      );
       const remote = storyTags(preview.tags);
       const previousState = previousPlan?.previousState ?? (source.state === 'paused' ? 'paused' : 'active');
       const result: NonNullable<Job['result']> = {
+        ...(stored.result?.changes ? { changes: stored.result.changes } : {}),
         preview,
         sourceId: source.id,
         bookId: source.bookId,
@@ -96,7 +104,7 @@ export class FanfictionReviewService {
           noChange,
           previousState,
           values: plan.values,
-          fields: ['title', 'description', 'authors', 'tags'],
+          fields: ['title', 'description', 'authors', 'tags', 'genres'],
           fingerprint: snapshot.fingerprint,
           approved: !plan.fields.length,
           baseline: previous?.result?.preview,
@@ -131,7 +139,14 @@ export class FanfictionReviewService {
     const snapshot = await this.metadata.snapshot(tx, source.bookId!, source.libraryId, `fanfiction:${source.id}`);
     const review = job.result!.metadataReview!;
     const prepared = job.result!.preparedUpdate!;
-    const plan = planStoryMetadata(snapshot.current, review.incoming, snapshot.managedTags, snapshot.lockedFields, prepared.baseline);
+    const plan = planStoryMetadata(
+      snapshot.current,
+      review.incoming,
+      snapshot.managedTags,
+      snapshot.lockedFields,
+      prepared.baseline,
+      source.tagPolicy,
+    );
     const remote = storyTags(review.incoming.tags);
     const updated = {
       ...review,
@@ -171,7 +186,7 @@ export class FanfictionReviewService {
         noChange: true,
         previousState: review.previousState,
         values: { ...snapshot.current, tags: snapshot.managedTags },
-        fields: ['title', 'description', 'authors', 'tags'],
+        fields: ['title', 'description', 'authors', 'tags', 'genres'],
         approved: false,
         fingerprint: snapshot.fingerprint,
       },
@@ -207,7 +222,14 @@ export class FanfictionReviewService {
     const plan = stored.result?.preparedUpdate;
     if (plan && !plan.metadataApplied) {
       await this.assertApproved(job, tx);
-      await this.metadata.apply(tx, bookId, { key: `fanfiction:${job.sourceId}`, libraryId: job.libraryId }, plan.values, plan.fields);
+      await this.metadata.apply(
+        tx,
+        bookId,
+        { key: `fanfiction:${job.sourceId}`, libraryId: job.libraryId },
+        plan.values,
+        plan.fields,
+        plan.personalTags,
+      );
       plan.metadataApplied = true;
     }
     const result = { ...stored.result };
@@ -253,7 +275,16 @@ export class FanfictionReviewService {
       const snapshot = await this.metadata.snapshot(tx, source.bookId, libraryId, `fanfiction:${sourceId}`);
       if (action !== 'discard' && snapshot.fingerprint !== dto.fingerprint)
         throw new ConflictException('Book details changed. Refresh the review before continuing.');
-      const choices = { title: dto.title, description: dto.description, authors: dto.authors, tags: dto.tags, selectedTags: dto.selectedTags };
+      const choices = {
+        title: dto.title,
+        description: dto.description,
+        authors: dto.authors,
+        tags: dto.tags,
+        selectedTags: dto.selectedTags,
+        genres: dto.genres,
+        values: dto.values,
+        keepAll: dto.keepAll,
+      };
       if (action === 'later') {
         await tx
           .update(jobs)
@@ -262,23 +293,31 @@ export class FanfictionReviewService {
         return;
       }
       const values = { ...job.result.preparedUpdate.values };
-      for (const field of action === 'discard' ? [] : review.fields) {
-        if (dto[field] === 'keep') {
+      for (const field of action === 'discard' ? [] : dto.keepAll ? job.result.preparedUpdate.fields : review.fields) {
+        if (dto.keepAll || dto[field] === 'keep' || dto[field] === undefined) {
           Object.assign(values, { [field]: field === 'tags' ? snapshot.managedTags : snapshot.current[field] });
           continue;
         }
         if (snapshot.lockedFields.includes(field)) throw new ConflictException('This field is locked. Keep its library value.');
-        if (field !== 'tags') Object.assign(values, { [field]: review.incoming[field] });
-        else {
+        if (field !== 'tags') {
+          const value = dto[field] === 'edit' ? dto.values?.[field] : review.incoming[field];
+          if (value === undefined) throw new BadRequestException('Enter a value for the edited field');
+          Object.assign(values, { [field]: value });
+        } else {
           const allowed = storyTags([...snapshot.managedTags, ...review.incoming.tags]);
           const selected = dto.tags === 'select' ? storyTags(dto.selectedTags ?? []) : allowed;
-          if (selected.some((tag) => !allowed.includes(tag))) throw new BadRequestException('Select tags from the proposed update');
           values.tags = selected;
         }
       }
       const result = {
         ...job.result,
-        preparedUpdate: { ...job.result.preparedUpdate, approved: action === 'apply', values, fingerprint: snapshot.fingerprint },
+        preparedUpdate: {
+          ...job.result.preparedUpdate,
+          approved: action === 'apply',
+          values,
+          fingerprint: snapshot.fingerprint,
+          personalTags: values.tags.filter((tag) => !storyTags([...snapshot.managedTags, ...review.incoming.tags]).includes(tag)),
+        },
         ...(action === 'discard' ? { reviewDiscarded: true } : {}),
       };
       if (action === 'discard') delete result.metadataReview;

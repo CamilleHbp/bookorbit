@@ -37,4 +37,17 @@ describe('story metadata review', () => {
       'authors',
     ]);
   });
+  it('reviews changed genres but preserves genres absent from legacy source snapshots', () => {
+    const library = { ...current, genres: ['Fantasy'] };
+    expect(planStoryMetadata(library, { ...current, genres: ['Romance'] }, current.tags, [], library).values.genres).toEqual(['Romance']);
+    expect(planStoryMetadata(library, current, current.tags, [], current).values.genres).toEqual(['Fantasy']);
+    expect(planStoryMetadata(library, { ...current, genres: ['Romance'] }, current.tags, ['genres'], library).values.genres).toEqual(['Fantasy']);
+  });
+  it('automatically follows source tags only when their field is unlocked', () => {
+    const incoming = { ...current, tags: ['Incoming'] };
+    const automatic = planStoryMetadata(current, incoming, current.tags, [], current, 'automatic');
+    expect(automatic.fields).not.toContain('tags');
+    expect(automatic.values.tags).toEqual(['Incoming']);
+    expect(planStoryMetadata(current, incoming, current.tags, ['tags'], current, 'automatic').values.tags).toEqual(current.tags);
+  });
 });

@@ -1,3 +1,4 @@
+import { storyChapterChanges } from './fanfiction-chapter-changes';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createWriteStream } from 'node:fs';
@@ -111,7 +112,18 @@ export class FanfictionUpdateService {
           return finish(expected, true, preview);
         }
         job.result = await this.reviews.prepare(job, preview, false);
+        job.result.changes = storyChapterChanges(
+          {
+            version: 1,
+            chapters: current.chapters ?? [],
+            contentHash: current.contentHash ?? '',
+            metadataHash: current.metadataHash ?? '',
+            coverHash: current.coverHash,
+          },
+          next,
+        );
         const prepared = await this.publications.prepare(fileId, source.libraryId, expected, path, 'fanficfare', authority);
+        await this.sources.recordChapterChanges(job);
         if (job.result.metadataReview && !job.result.preparedUpdate?.approved) return job.result;
         const installed = await this.publications.resume(prepared.publicationId, source.libraryId, approvedAuthority);
         return finish(installed.revisionId, false, preview);

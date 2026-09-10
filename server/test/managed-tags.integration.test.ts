@@ -43,7 +43,8 @@ describe.skipIf(!configPath)('managed story metadata with PostgreSQL', () => {
       .orderBy(asc(schema.tags.name));
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation') throw new Error('An isolated validation database is required');
+    if (config.database !== 'bookorbit_revision_validation' && !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? ''))
+      throw new Error('An isolated validation database is required');
     pool = new Pool({ ...config, application_name: 'bookorbit_managed_tags_test', statement_timeout: 10_000 });
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
@@ -246,5 +247,26 @@ describe.skipIf(!configPath)('managed story metadata with PostgreSQL', () => {
       .from(schema.bookTagSources)
       .where(and(eq(schema.bookTagSources.bookId, bookId), eq(schema.bookTagSources.sourceKey, source().key)));
     expect(claims[0].count).toBe(1000);
+  });
+  it('keeps explicitly entered personal tags when source tags change', async () => {
+    await sync(['Source', 'Personal, with comma']);
+    await db.transaction((tx) => service.keepPersonal(tx, bookId, source(), ['Personal, with comma']));
+    await sync(['Next source']);
+    expect(await links()).toEqual([
+      { name: 'Next source', managedOnly: true },
+      { name: 'Personal, with comma', managedOnly: false },
+    ]);
+  });
+  it('persists genres while honoring the existing metadata lock', async () => {
+    const managed = module.get(ManagedMetadataService);
+    const preview = { title: 'Story', description: '', authors: [], tags: [], genres: ['Fantasy'] };
+    await db.transaction((tx) => managed.apply(tx, bookId, source(), preview));
+    expect((await db.transaction((tx) => managed.snapshot(tx, bookId, libraryId, source().key))).current.genres).toEqual(['Fantasy']);
+    await db
+      .update(schema.bookMetadata)
+      .set({ lockedFields: ['genres'] })
+      .where(eq(schema.bookMetadata.bookId, bookId));
+    await db.transaction((tx) => managed.apply(tx, bookId, source(), { ...preview, genres: ['Romance'] }));
+    expect((await db.transaction((tx) => managed.snapshot(tx, bookId, libraryId, source().key))).current.genres).toEqual(['Fantasy']);
   });
 });

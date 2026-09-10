@@ -350,6 +350,10 @@ export class CollectionService {
     return { items, total, page, size };
   }
 
+  async verifyWriteAccess(id: number, user: RequestUser): Promise<void> {
+    await this.getWritableCollectionOrThrow(id, user);
+  }
+
   async addBooks(id: number, dto: CollectionBooksDto, user: RequestUser) {
     const event = 'collection.add_books';
     const startedAt = Date.now();

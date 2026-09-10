@@ -1,7 +1,9 @@
-import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { FanfictionProfileService } from './fanfiction-profile.service';
+import { withFanfictionDefaults } from './fanfiction-defaults';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { FanfictionDiscoveryPage, FanfictionDiscoveryProgress } from '@bookorbit/types';
+import type { FanfictionLinkPreview, FanfictionLinkRequest, FanfictionDiscoveryPage, FanfictionDiscoveryProgress } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
@@ -18,6 +20,7 @@ const jobs = schema.fanfictionJobs;
 
 @Injectable()
 export class FanfictionDiscoveryService {
+  private readonly logger = new Logger(FanfictionDiscoveryService.name);
   constructor(
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly access: FanfictionAccessService,
@@ -26,7 +29,90 @@ export class FanfictionDiscoveryService {
     private readonly files: RevisionFileService,
     private readonly manifests: EpubManifestService,
     private readonly runtime: FanficfareRuntimeService,
+    private readonly profiles: FanfictionProfileService,
   ) {}
+
+  async previewBook(libraryId: number, input: FanfictionLinkRequest, user: RequestUser): Promise<FanfictionLinkPreview> {
+    await this.access.administer(user, libraryId);
+    const started = Date.now();
+    this.logger.log(
+      `[fanfiction.link] [start] userId=${user.id} libraryId=${libraryId} bookId=${input.bookId} fileId=${input.bookFileId} - inspecting story source`,
+    );
+    try {
+      const file = await this.catalog.fileLocation(input.bookFileId, libraryId);
+      if (file.bookId !== input.bookId) throw new BadRequestException('The file does not belong to this book');
+      const inspected = await this.files.require(file.absolutePath);
+      const evidence = await this.manifests.sourceEvidence(file.absolutePath);
+      const signal = AbortSignal.timeout(60000);
+      const [url] = await this.runtime.recognize([input.url], signal);
+      if (!url?.recognized) throw new BadRequestException('Enter a supported story URL');
+      const existingUrls = evidence.sourceUrls.length
+        ? await this.runtime.recognize(
+            evidence.sourceUrls.map((value) => value.replace(/^http:\/\//i, 'https://')),
+            signal,
+          )
+        : [];
+      const known = existingUrls.filter((value) => value.recognized);
+      if (known.length && !known.some((value) => value.canonicalUrl === url.canonicalUrl))
+        throw new ConflictException('This URL does not match the story source recorded in the EPUB');
+      const session = input.profileId
+        ? await this.profiles.session(libraryId, input.profileId, user, () => this.access.administer(user, libraryId))
+        : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
+      const remote = await this.runtime.preview(url.canonicalUrl, session.document, signal, session.saveCookies);
+      if (remote.canonicalUrl !== url.canonicalUrl) throw new ConflictException('The source URL changed. Check the story URL again.');
+      await this.access.administer(user, libraryId);
+      const candidate = await this.db.transaction(async (tx) => {
+        await this.catalog.lockFileLocation(tx, libraryId, file);
+        await this.files.verifyUnchanged(file.absolutePath, inspected);
+        const [row] = await tx
+          .insert(candidates)
+          .values({
+            libraryId,
+            bookId: input.bookId,
+            bookFileId: input.bookFileId,
+            sha256: inspected.sha256,
+            title: evidence.title,
+            authors: evidence.authors,
+            chapterCount: evidence.chapterCount,
+            urls: [url],
+            state: 'pending',
+          })
+          .onConflictDoNothing()
+          .returning();
+        if (row) return row;
+        const [existing] = await tx
+          .select()
+          .from(candidates)
+          .where(and(eq(candidates.libraryId, libraryId), eq(candidates.bookFileId, file.id), eq(candidates.sha256, inspected.sha256)))
+          .for('update');
+        if (!existing || existing.state === 'linked' || existing.reviewJobId)
+          throw new ConflictException('This book is already linked or being reviewed');
+        const [updated] = await tx
+          .update(candidates)
+          .set({ urls: [url], state: 'pending', errorCode: null, version: existing.version + 1, updatedAt: sql`now()` })
+          .where(eq(candidates.id, existing.id))
+          .returning();
+        return updated;
+      });
+      this.logger.log(
+        `[fanfiction.link] [end] userId=${user.id} libraryId=${libraryId} bookId=${input.bookId} durationMs=${Date.now() - started} candidates=1 - source ready to link`,
+      );
+      return {
+        id: candidate.id,
+        remote,
+        title: candidate.title,
+        authors: candidate.authors,
+        chapterCount: candidate.chapterCount,
+        canonicalUrl: url.canonicalUrl,
+        state: 'pending',
+      };
+    } catch (error) {
+      this.logger.warn(
+        `[fanfiction.link] [fail] userId=${user.id} libraryId=${libraryId} bookId=${input.bookId} durationMs=${Date.now() - started} errorClass=StoryLinkError error="source inspection failed" - could not inspect story source`,
+      );
+      throw error;
+    }
+  }
 
   async start(libraryId: number, idempotencyKey: string, user: RequestUser) {
     await this.access.administer(user, libraryId);
