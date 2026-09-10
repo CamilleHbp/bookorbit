@@ -5,7 +5,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { api } from '@/lib/api'
 import FanfictionPage from './FanfictionPage.vue'
 
-vi.mock('@/features/collection/composables/useCollections', () => ({ useCollections: () => ({ collections: ref([]), fetchCollections: vi.fn() }) }))
+vi.mock('@/features/collection/composables/useCollections', () => ({
+  useCollections: () => ({ collections: ref([]), fetchCollections: vi.fn<() => Promise<void>>().mockResolvedValue(undefined) }),
+}))
 vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
 
