@@ -16,11 +16,15 @@ const loaded = ref(false)
 const story = ref<FanfictionReaderStory | null>(null)
 const error = ref(false)
 const copiesOpen = ref(false)
+const refreshVersion = ref(0)
+function handleLinked() {
+  refreshVersion.value++
+}
 function toggleCopies(event: Event) {
   copiesOpen.value = (event.target as HTMLDetailsElement).open
 }
 watch(
-  () => [props.bookId, props.bookFileId],
+  () => [props.bookId, props.bookFileId, props.libraryId, refreshVersion.value],
   async (_, __, cleanup) => {
     const controller = new AbortController()
     cleanup(() => controller.abort())
@@ -30,7 +34,9 @@ watch(
     try {
       const response = await api(`/api/v1/books/${props.bookId}/files/${props.bookFileId}/story`, { signal: controller.signal })
       if (!response.ok) throw new Error('Could not load story')
-      story.value = await response.json()
+      const result: FanfictionReaderStory | null = await response.json()
+      if (controller.signal.aborted) return
+      story.value = result
       loaded.value = true
     } catch {
       if (!controller.signal.aborted) error.value = true
@@ -58,8 +64,10 @@ watch(
   <p v-else-if="error" role="status" class="my-4 text-sm text-muted-foreground">{{ t('fanfiction.reading.loadFailed') }}</p>
   <LinkStorySource
     v-else-if="loaded && hasPermission(Permission.ManageLibraries)"
+    :key="`${bookId}:${bookFileId}:${libraryId}`"
     :book-id="bookId"
     :book-file-id="bookFileId"
     :library-id="libraryId"
+    @linked="handleLinked"
   />
 </template>
