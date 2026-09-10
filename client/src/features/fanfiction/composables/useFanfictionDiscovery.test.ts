@@ -122,4 +122,37 @@ describe('existing story discovery UI contracts', () => {
     await loading
     expect(view.items.value).toEqual([])
   })
+  it('carries every applied URL prefix into all-matching selection and idempotent retries', async () => {
+    const view = model()
+    view.urlPrefixesText.value = 'https://example.com/fiction\nhttps://other.com/stories'
+    mockApi.mockResolvedValueOnce(response({ items: [candidate], nextCursor: 'next' }))
+    await view.refresh()
+    expect(new URL(String(mockApi.mock.calls[0]![0]), 'https://local').searchParams.get('urlPrefixes')).toBe(view.urlPrefixesText.value)
+    view.allMatching.value = true
+    mockApi.mockRejectedValueOnce(new Error('Offline'))
+    await view.review('approve', '', 'manual', true)
+    const original = mockApi.mock.calls[1]!
+    expect(JSON.parse(original[1]!.body as string)).toMatchObject({
+      allMatching: true,
+      autoProfile: true,
+      urlPrefixes: ['https://example.com/fiction', 'https://other.com/stories'],
+    })
+    mockApi.mockResolvedValueOnce(response({ id: 'job', state: 'queued' }))
+    await view.submitPending()
+    expect(mockApi.mock.calls[2]).toEqual(original)
+  })
+  it('requires applying a changed filter before selection and lets an explicit profile override matching', async () => {
+    const view = model()
+    view.allMatching.value = true
+    view.urlPrefixesText.value = 'https://example.com'
+    await view.review('approve', 'chosen', 'manual', true)
+    expect(mockApi).not.toHaveBeenCalled()
+    mockApi.mockResolvedValueOnce(response({ items: [candidate], nextCursor: null }))
+    await view.refresh()
+    view.allMatching.value = true
+    mockApi.mockResolvedValueOnce(response({ id: 'job', state: 'queued' }))
+    await view.review('approve', 'chosen', 'manual', true)
+    expect(JSON.parse(mockApi.mock.calls[1]![1]!.body as string)).toMatchObject({ profileId: 'chosen' })
+    expect(JSON.parse(mockApi.mock.calls[1]![1]!.body as string)).not.toHaveProperty('autoProfile')
+  })
 })

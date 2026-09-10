@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import type {
   FanfictionCandidateState,
   FanfictionDiscoveryCandidate,
@@ -21,6 +21,15 @@ export function useFanfictionDiscovery(libraryId: number) {
   const base = `/api/v1/libraries/${libraryId}/fanfiction`
   const items = ref<FanfictionDiscoveryCandidate[]>([])
   const cursor = ref<string | null>(null)
+  const urlPrefixesText = ref('')
+  const urlPrefixes = computed(() =>
+    urlPrefixesText.value
+      .split(/\r?\n/)
+      .map((url) => url.trim())
+      .filter(Boolean),
+  )
+  const appliedPrefixes = ref<string[]>([])
+  const filterDirty = computed(() => JSON.stringify(urlPrefixes.value) !== JSON.stringify(appliedPrefixes.value))
   const state = ref<FanfictionCandidateState>('pending')
   const selected = ref<string[]>([])
   const allMatching = ref(false)
@@ -34,10 +43,15 @@ export function useFanfictionDiscovery(libraryId: number) {
   const reviewable = computed(() => ['pending', 'ambiguous', 'failed'].includes(state.value))
   const canApprove = computed(
     () =>
+      !filterDirty.value &&
       reviewable.value &&
       (allMatching.value || selected.value.length > 0) &&
       (state.value !== 'ambiguous' || (!allMatching.value && selected.value.length === 1 && Boolean(choices.value[selected.value[0]!]))),
   )
+  watch(urlPrefixesText, () => {
+    selected.value = []
+    allMatching.value = false
+  })
   let disposed = false
   let requestId = 0
   let pageCursor: string | null = null
@@ -68,6 +82,7 @@ export function useFanfictionDiscovery(libraryId: number) {
     const current = ++requestId
     const query = new URLSearchParams({ limit: '50', state: state.value })
     if (next) query.set('cursor', next)
+    if (appliedPrefixes.value.length) query.set('urlPrefixes', appliedPrefixes.value.join('\n'))
     const page = await request<FanfictionDiscoveryPage>(`${base}/discovery?${query}`)
     if (disposed || current !== requestId) return
     items.value = page.items
@@ -78,7 +93,20 @@ export function useFanfictionDiscovery(libraryId: number) {
     choices.value = {}
   }
   async function refresh() {
-    await perform(() => load(null))
+    await perform(async () => {
+      const previous = appliedPrefixes.value
+      appliedPrefixes.value = [...urlPrefixes.value]
+      items.value = []
+      cursor.value = null
+      selected.value = []
+      allMatching.value = false
+      try {
+        await load(null)
+      } catch (failure) {
+        appliedPrefixes.value = previous
+        throw failure
+      }
+    })
   }
   async function nextPage() {
     if (cursor.value) await perform(() => load(cursor.value))
@@ -149,8 +177,8 @@ export function useFanfictionDiscovery(libraryId: number) {
     pending.value = { path: `${base}/discovery`, body: { idempotencyKey: crypto.randomUUID() } }
     await submitPending()
   }
-  async function review(decision: 'approve' | 'reject', profileId: string, schedule: string) {
-    if (locked.value || !reviewable.value || (!allMatching.value && !selected.value.length)) return
+  async function review(decision: 'approve' | 'reject', profileId: string, schedule: string, autoProfile = false) {
+    if (filterDirty.value || locked.value || !reviewable.value || (!allMatching.value && !selected.value.length)) return
     if (decision === 'approve' && !canApprove.value) return
     const canonicalUrl = !allMatching.value && selected.value.length === 1 ? choices.value[selected.value[0]!] : undefined
     pending.value = {
@@ -159,10 +187,12 @@ export function useFanfictionDiscovery(libraryId: number) {
         idempotencyKey: crypto.randomUUID(),
         decision,
         state: state.value,
+        ...(appliedPrefixes.value.length ? { urlPrefixes: [...appliedPrefixes.value] } : {}),
         ...(allMatching.value ? { allMatching: true } : { ids: [...selected.value] }),
         ...(decision === 'approve'
           ? {
               profileId: profileId || null,
+              ...(autoProfile && !profileId ? { autoProfile: true } : {}),
               intervalMinutes: schedule === 'manual' ? null : Number(schedule),
               ...(canonicalUrl ? { canonicalUrl } : {}),
             }
@@ -196,6 +226,8 @@ export function useFanfictionDiscovery(libraryId: number) {
   })
   return {
     items,
+    urlPrefixesText,
+    filterDirty,
     cursor,
     state,
     selected,

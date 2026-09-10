@@ -15,6 +15,8 @@ import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { SelectFanfictionDiscoveryDto } from './dto/fanfiction-discovery.dto';
 
+import { candidateUrlPrefixFilter, normalizeUrlPrefixes } from './fanfiction-url-prefix';
+
 const candidates = schema.fanfictionDiscoveryCandidates;
 const jobs = schema.fanfictionJobs;
 const sources = schema.fanfictionSources;
@@ -44,6 +46,8 @@ export class FanfictionAdoptionService {
     } = await this.db.execute<{ cutoff: string }>(sql`select to_char(clock_timestamp(), 'YYYY-MM-DD"T"HH24:MI:SS.USOF') as cutoff`);
     const selection: FanfictionDiscoverySelection = {
       cutoff,
+      urlPrefixes: normalizeUrlPrefixes(dto.urlPrefixes ?? []),
+      autoProfile: !dto.profileId && dto.autoProfile === true,
       cursor: null,
       ids: dto.ids ? [...new Set(dto.ids)].sort() : null,
       state: dto.state,
@@ -80,6 +84,8 @@ export class FanfictionAdoptionService {
       existing?.kind !== 'adopt' ||
       !previous ||
       previous.decision !== selection.decision ||
+      Boolean(previous.autoProfile) !== Boolean(selection.autoProfile) ||
+      JSON.stringify(previous.urlPrefixes ?? []) !== JSON.stringify(selection.urlPrefixes) ||
       previous.state !== selection.state ||
       previous.profileId !== selection.profileId ||
       previous.intervalMinutes !== selection.intervalMinutes ||
@@ -108,6 +114,7 @@ export class FanfictionAdoptionService {
       .where(
         and(
           eq(candidates.libraryId, job.libraryId),
+          candidateUrlPrefixFilter(sql`${candidates.urls}`, selection.urlPrefixes ?? []),
           sql`${candidates.createdAt} <= ${selection.cutoff}::timestamptz`,
           selection.cursor ? gt(candidates.id, selection.cursor) : undefined,
           selection.retryFailedOnly
@@ -119,6 +126,18 @@ export class FanfictionAdoptionService {
       )
       .orderBy(asc(candidates.id))
       .limit(100);
+    const candidateUrl = (candidate: (typeof batch)[number]) => {
+      const urls = [...new Set(candidate.urls.flatMap((url) => (url.recognized ? [url.canonicalUrl] : [])))];
+      return selection.canonicalUrl ?? (urls.length === 1 ? urls[0] : undefined);
+    };
+    const matches =
+      selection.autoProfile && selection.decision === 'approve'
+        ? await this.profiles.matchMany(
+            job.libraryId,
+            batch.flatMap((candidate) => (candidateUrl(candidate) ? [candidateUrl(candidate)!] : [])),
+            user,
+          )
+        : new Map();
     const deadline = Date.now() + 20_000;
     for (const candidate of batch) {
       if (signal.aborted) throw new ConflictException('Discovery selection was cancelled');
@@ -139,8 +158,13 @@ export class FanfictionAdoptionService {
       try {
         if (candidate.state !== (selection.retryFailedOnly ? 'failed' : selection.state))
           throw new ConflictException('Candidate review state changed');
-        if (selection.decision === 'approve') await this.adopt(job, candidate, selection, authorize, (tx) => checkpoint(tx, false));
-        else
+        if (selection.decision === 'approve') {
+          const match = matches.get(candidateUrl(candidate) ?? '');
+          if (match?.ambiguous)
+            throw new ConflictException({ errorCode: 'profile_ambiguous', message: 'Choose a profile for this story before linking' });
+          const profileId = selection.autoProfile ? (match?.profile?.id ?? null) : selection.profileId;
+          await this.adopt(job, candidate, { ...selection, profileId }, authorize, (tx) => checkpoint(tx, false));
+        } else
           await this.db.transaction(async (tx) => {
             await this.jobs.assertOwnership(job, tx);
             await authorize();

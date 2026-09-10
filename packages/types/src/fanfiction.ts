@@ -3,6 +3,7 @@ export interface FanfictionPreferences {
 }
 
 export interface FanfictionProfileMatch {
+  ambiguous?: boolean;
   profile: FanfictionProfileSummary | null;
 }
 
@@ -65,6 +66,7 @@ export interface FanfictionTagRule {
 }
 
 export interface FanfictionProfileDocument {
+  rootUrls?: string[];
   configuration: string;
   tagRules?: FanfictionTagRule[];
   cookies: FanfictionCookie[];
@@ -79,6 +81,7 @@ export interface EncryptedFanfictionDocument {
 }
 
 export interface FanfictionProfileSummary {
+  rootUrls?: string[];
   id: string;
   libraryId: number;
   name: string;
@@ -177,6 +180,7 @@ export interface FanfictionDiscoveryProgress {
 export type FanfictionCandidateState = "pending" | "ambiguous" | "rejected" | "linked" | "failed";
 
 export interface FanfictionDiscoveryCandidate {
+  profileMatch?: FanfictionProfileMatch;
   id: string;
   libraryId: number;
   bookId: number;
@@ -200,6 +204,8 @@ export interface FanfictionDiscoveryPage {
 }
 
 export interface FanfictionDiscoverySelection {
+  urlPrefixes?: string[];
+  autoProfile?: boolean;
   cutoff: string;
   cursor: string | null;
   ids: string[] | null;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import StorySchedule from './StorySchedule.vue'
-import { onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { FanfictionProfileSummary } from '@bookorbit/types'
@@ -13,6 +13,8 @@ const schedule = defineModel<string>('schedule', { required: true })
 const { t } = useI18n()
 const {
   items,
+  urlPrefixesText,
+  filterDirty,
   cursor,
   state,
   selected,
@@ -36,7 +38,20 @@ const {
   submitPending,
   selectPage,
 } = useFanfictionDiscovery(props.libraryId)
-const approve = () => review('approve', profileId.value, schedule.value)
+const autoProfile = ref(true)
+const profileChoice = computed({
+  get: () => profileId.value || (autoProfile.value ? 'auto' : 'public'),
+  set: (value: string) => {
+    profileId.value = value === 'auto' || value === 'public' ? '' : value
+    autoProfile.value = value !== 'public'
+  },
+})
+const selectedProfileRoots = computed(() => props.profiles.find((profile) => profile.id === profileId.value)?.rootUrls ?? [])
+async function useProfileUrls() {
+  urlPrefixesText.value = selectedProfileRoots.value.join('\n')
+  await refresh()
+}
+const approve = () => review('approve', profileId.value, schedule.value, autoProfile.value)
 const reject = () => review('reject', '', 'manual')
 function moreProfiles() {
   emit('moreProfiles')
@@ -77,26 +92,45 @@ onMounted(recover)
         </option>
       </select>
     </label>
+    <form class="space-y-2" @submit.prevent="refresh">
+      <label class="block space-y-1 text-sm"
+        ><span>{{ t('fanfiction.urlPrefixFilter') }}</span>
+        <textarea
+          v-model="urlPrefixesText"
+          :disabled="locked"
+          rows="2"
+          maxlength="81939"
+          class="border-input bg-background block w-full rounded-md border p-2"
+        />
+      </label>
+      <Button type="submit" variant="outline" :disabled="locked">{{ t('fanfiction.applyUrlFilter') }}</Button>
+    </form>
     <div v-if="reviewable" class="border-border space-y-3 rounded-md border p-3">
       <div class="flex flex-wrap items-center gap-3">
-        <Button variant="outline" :disabled="locked || !items.length" @click="selectPage">{{ t('fanfiction.discovery.selectPage') }}</Button>
+        <Button variant="outline" :disabled="locked || filterDirty || !items.length" @click="selectPage">{{
+          t('fanfiction.discovery.selectPage')
+        }}</Button>
         <label class="flex items-center gap-2 text-sm"
-          ><input v-model="allMatching" type="checkbox" :disabled="locked" />{{ t('fanfiction.discovery.allMatching') }}</label
+          ><input v-model="allMatching" type="checkbox" :disabled="locked || filterDirty" />{{ t('fanfiction.discovery.allMatching') }}</label
         >
       </div>
       <p v-if="allMatching" class="text-muted-foreground text-sm">{{ t('fanfiction.discovery.cutoffHelp') }}</p>
       <div class="flex flex-wrap items-end gap-3">
         <label class="text-sm"
           >{{ t('fanfiction.profile')
-          }}<select v-model="profileId" :disabled="locked" class="border-input bg-background block rounded-md border p-2">
-            <option value="">{{ t('fanfiction.noProfile') }}</option>
+          }}<select v-model="profileChoice" :disabled="locked" class="border-input bg-background block rounded-md border p-2">
+            <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
+            <option value="public">{{ t('fanfiction.noProfile') }}</option>
             <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
           </select></label
         >
         <Button v-if="profileCursor" variant="outline" :disabled="locked" @click="moreProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
+        <Button variant="outline" :disabled="locked || !selectedProfileRoots.length" @click="useProfileUrls">{{
+          t('fanfiction.useProfileUrls')
+        }}</Button>
         <StorySchedule v-model="schedule" :disabled="locked" />
         <Button :disabled="locked || !canApprove" @click="approve">{{ t('fanfiction.discovery.link') }}</Button>
-        <Button variant="outline" :disabled="locked || (!allMatching && !selected.length)" @click="reject">{{
+        <Button variant="outline" :disabled="locked || filterDirty || (!allMatching && !selected.length)" @click="reject">{{
           t('fanfiction.discovery.reject')
         }}</Button>
       </div>
@@ -109,7 +143,7 @@ onMounted(recover)
           v-model="selected"
           :value="item.id"
           type="checkbox"
-          :disabled="locked || allMatching"
+          :disabled="locked || filterDirty || allMatching"
           :aria-label="t('fanfiction.discovery.selectBook', { title: item.title })"
           class="mt-1"
         />
@@ -122,10 +156,18 @@ onMounted(recover)
           </p>
         </div>
       </div>
+      <p v-if="!profileId && autoProfile && item.profileMatch" class="text-sm">
+        {{ t('fanfiction.profile') }}:
+        {{ item.profileMatch.ambiguous ? t('fanfiction.errors.profile_ambiguous') : (item.profileMatch.profile?.name ?? t('fanfiction.noProfile')) }}
+      </p>
       <p v-if="item.errorCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${item.errorCode}`) }}</p>
       <label v-if="item.state === 'ambiguous' || item.state === 'failed'" class="block text-sm"
         >{{ t('fanfiction.discovery.chooseSource') }}
-        <select v-model="choices[item.id]" :disabled="locked || allMatching" class="border-input bg-background block w-full rounded-md border p-2">
+        <select
+          v-model="choices[item.id]"
+          :disabled="locked || filterDirty || allMatching"
+          class="border-input bg-background block w-full rounded-md border p-2"
+        >
           <option value="">{{ t('fanfiction.discovery.chooseSource') }}</option>
           <template v-for="url in item.urls" :key="url.url"
             ><option v-if="url.recognized" :value="url.canonicalUrl">{{ url.canonicalUrl }}</option></template
@@ -134,6 +176,6 @@ onMounted(recover)
       </label>
       <p v-for="url in item.urls" :key="url.url" class="text-muted-foreground break-all text-xs">{{ url.recognized ? url.canonicalUrl : url.url }}</p>
     </article>
-    <Button v-if="cursor" variant="outline" :disabled="locked" @click="nextPage">{{ t('fanfiction.nextPage') }}</Button>
+    <Button v-if="cursor" variant="outline" :disabled="locked || filterDirty" @click="nextPage">{{ t('fanfiction.nextPage') }}</Button>
   </section>
 </template>

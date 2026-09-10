@@ -48,6 +48,7 @@ export class FanfictionTagRuleDto {
 }
 
 export class CreateFanfictionProfileDto {
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(4096, { each: true }) rootUrls?: string[];
   @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => FanfictionTagRuleDto) tagRules?: FanfictionTagRuleDto[];
   @IsString() @MinLength(1) @MaxLength(120) name!: string;
   @IsOptional() @IsString() @MaxLength(65536) configuration?: string;

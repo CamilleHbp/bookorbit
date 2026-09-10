@@ -15,6 +15,8 @@ import { FanfictionJobService } from './fanfiction-job.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { ListFanfictionDiscoveryDto } from './dto/fanfiction-discovery.dto';
 
+import { candidateUrlPrefixFilter, normalizeUrlPrefixes } from './fanfiction-url-prefix';
+
 const candidates = schema.fanfictionDiscoveryCandidates;
 const jobs = schema.fanfictionJobs;
 
@@ -181,10 +183,27 @@ export class FanfictionDiscoveryService {
         createdAt: candidates.createdAt,
       })
       .from(candidates)
-      .where(and(eq(candidates.libraryId, libraryId), eq(candidates.state, dto.state), dto.cursor ? gt(candidates.id, dto.cursor) : undefined))
+      .where(
+        and(
+          eq(candidates.libraryId, libraryId),
+          eq(candidates.state, dto.state),
+          candidateUrlPrefixFilter(sql`${candidates.urls}`, normalizeUrlPrefixes(dto.urlPrefixes ?? [])),
+          dto.cursor ? gt(candidates.id, dto.cursor) : undefined,
+        ),
+      )
       .orderBy(asc(candidates.id))
       .limit(dto.limit + 1);
-    const items = rows.slice(0, dto.limit).map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
+    const page = rows.slice(0, dto.limit);
+    const singleUrl = (row: (typeof page)[number]) => {
+      const urls = [...new Set(row.urls.flatMap((url) => (url.recognized ? [url.canonicalUrl] : [])))];
+      return urls.length === 1 ? urls[0] : undefined;
+    };
+    const matches = await this.profiles.matchMany(
+      libraryId,
+      page.flatMap((row) => (singleUrl(row) ? [singleUrl(row)!] : [])),
+      user,
+    );
+    const items = page.map((row) => ({ ...row, createdAt: row.createdAt.toISOString(), profileMatch: matches.get(singleUrl(row) ?? '') }));
     return { items, nextCursor: rows.length > dto.limit ? items.at(-1)!.id : null };
   }
 
