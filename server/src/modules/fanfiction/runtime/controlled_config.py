@@ -121,6 +121,8 @@ def make_configuration(url, ini, transport):
         'zip_output': 'false', 'make_directories': 'false', 'continue_on_chapter_error': 'false',
         'do_update_hook': 'false', 'pre_process_cmd': '', 'post_process_cmd': '',
         'output_filename': 'output.epub', 'always_overwrite': 'true',
+        'no_image_processing': 'false', 'no_image_processing_regexp': '',
+        'image_max_size': '1600, 1600', 'convert_images_to': 'webp',
     }
     for key, value in overrides.items():
         configuration.set('overrides', key, value)
