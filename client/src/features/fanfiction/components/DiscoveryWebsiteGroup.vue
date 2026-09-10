@@ -1,170 +1,285 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
+import { ChevronDown, ExternalLink } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import type { FanfictionDiscoveryCandidate, FanfictionProfileSummary } from '@bookorbit/types'
+import type { FanfictionDiscoveryCandidate, FanfictionDiscoveryWebsite, FanfictionProfileSummary } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
-import { discoverySources, isDiscoveryReady } from '../composables/discoveryReview'
-
+import StorySchedule from './StorySchedule.vue'
+import type { DiscoveryReview } from '../composables/useDiscoveryReview'
+import { useWebsiteReview, comparisonMatches } from '../composables/useWebsiteReview'
+import { discoverySources } from '../composables/discoveryReview'
 const props = defineProps<{
-  website: string
-  books: FanfictionDiscoveryCandidate[]
+  source: FanfictionDiscoveryWebsite
+  cutoff: string
+  review: DiscoveryReview
   profiles: FanfictionProfileSummary[]
-  locked: boolean
-  reviewable: boolean
-  allMatching: boolean
+  moreProfiles: boolean
 }>()
-const selected = defineModel<string[]>('selected', { required: true })
-const emit = defineEmits<{
-  link: [ids: string[], profile: string, source?: string]
-  filter: [website: string]
-}>()
+const emit = defineEmits<{ moreProfiles: [] }>()
 const { t } = useI18n()
-const profileChoices = defineModel<Record<string, string>>('profileChoices', { required: true })
-const sourceChoices = defineModel<Record<string, string>>('sourceChoices', { required: true })
-function isReady(book: FanfictionDiscoveryCandidate) {
-  return isDiscoveryReady(book, profileChoices.value[book.id], sourceChoices.value[book.id])
+const panelId = useId()
+const {
+  open,
+  items,
+  total,
+  cursor,
+  pageNumber,
+  loading,
+  error,
+  selectionError,
+  profile,
+  schedule,
+  sourceChoices,
+  profileChoices,
+  comparisons,
+  selectedCount,
+  all,
+  busy,
+  finished,
+  uncheckedCount,
+  targetJob,
+  reviewable,
+  isSelected,
+  urlFor,
+  toggleOpen,
+  nextPage,
+  previousPage,
+  toggleAll,
+  toggleBook,
+  clearSelection,
+  changeProfile,
+  changeBook,
+  compareBook,
+  link,
+  remaining,
+} = useWebsiteReview(
+  () => props.source,
+  () => props.cutoff,
+  props.review,
+)
+const websiteName = computed(() => props.source.website || t('fanfiction.discovery.websiteUnknown'))
+const active = computed(() => targetJob.value && ['queued', 'running'].includes(targetJob.value.state))
+function changeSource(book: FanfictionDiscoveryCandidate, event: Event) {
+  sourceChoices.value[book.id] = (event.target as HTMLSelectElement).value
+  changeBook(book)
 }
-const ready = computed(() => props.books.filter(isReady))
-const canLinkGroup = computed(() => selectedBooks.value.length > 0 && selectedBooks.value.every(isReady))
-const selectedBooks = computed(() => props.books.filter((book) => selected.value.includes(book.id)))
-const needsChoice = computed(() => props.books.length - ready.value.length)
-function profileName(book: FanfictionDiscoveryCandidate) {
-  const choice = profileChoices.value[book.id]
-  if (choice && choice !== 'auto') return props.profiles.find((profile) => profile.id === choice)?.name ?? t('fanfiction.noProfile')
-  return book.profileMatch?.profile?.name ?? t('fanfiction.noProfile')
+function changeBookProfile(book: FanfictionDiscoveryCandidate, event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (value) profileChoices.value[book.id] = value
+  else delete profileChoices.value[book.id]
+  changeBook(book)
 }
-function selectReady() {
-  selected.value = [...new Set([...selected.value, ...ready.value.map((book) => book.id)])]
+function loadMoreProfiles() {
+  emit('moreProfiles')
 }
-function clearGroup() {
-  const ids = new Set(props.books.map((book) => book.id))
-  selected.value = selected.value.filter((id) => !ids.has(id))
+function cancel() {
+  void props.review.cancel()
 }
-const allReadySelected = computed(() => ready.value.length > 0 && ready.value.every((book) => selected.value.includes(book.id)))
-function toggleGroup() {
-  if (allReadySelected.value) clearGroup()
-  else selectReady()
-}
-function linkGroup() {
-  emit(
-    'link',
-    selectedBooks.value.map((book) => book.id),
-    'auto',
-  )
-}
-function filterWebsite() {
-  emit('filter', props.website)
-}
-function linkBook(book: FanfictionDiscoveryCandidate) {
-  if (!isReady(book)) return
-  const sources = discoverySources(book)
-  emit('link', [book.id], profileChoices.value[book.id] ?? 'auto', sourceChoices.value[book.id] || sources[0])
+function retry() {
+  void props.review.retry(targetJob.value?.id)
 }
 </script>
 <template>
-  <section class="space-y-3" :aria-label="website || t('fanfiction.discovery.websiteUnknown')">
-    <header class="flex flex-wrap items-center justify-between gap-3">
-      <div class="min-w-0">
-        <h3 class="break-words text-lg font-semibold">{{ website || t('fanfiction.discovery.websiteUnknown') }}</h3>
-        <p class="text-muted-foreground text-sm">
-          {{ t('fanfiction.discovery.booksOnPage', { count: books.length }) }}
-          <template v-if="reviewable">
-            · {{ t('fanfiction.discovery.readyCount', { count: ready.length }) }} ·
-            {{ t('fanfiction.discovery.needsChoiceCount', { count: needsChoice }) }}</template
+  <section class="border-border rounded-lg border" :aria-label="websiteName">
+    <h3>
+      <button
+        type="button"
+        class="hover:bg-muted/50 focus-visible:ring-ring flex min-h-16 w-full items-center gap-3 rounded-lg p-4 text-left focus-visible:ring-2"
+        :aria-expanded="open"
+        :aria-controls="panelId"
+        @click="toggleOpen"
+      >
+        <ChevronDown class="size-5 shrink-0 transition-transform" :class="{ '-rotate-90': !open }" aria-hidden="true" />
+        <span class="min-w-0 flex-1">
+          <span class="block break-words text-lg font-semibold">{{ websiteName }}</span>
+          <span class="text-muted-foreground block text-sm font-normal"
+            >{{ t('fanfiction.sourceReview.remainingCount', { count: total })
+            }}<template v-if="source.linked"> · {{ t('fanfiction.sourceReview.linkedCount', { count: source.linked }) }}</template></span
           >
-        </p>
-      </div>
-      <Button v-if="website" variant="ghost" :disabled="locked" @click="filterWebsite">{{ t('fanfiction.discovery.onlyWebsite') }}</Button>
-    </header>
-    <div v-if="reviewable && !allMatching" class="flex flex-wrap items-center justify-between gap-2">
-      <label class="flex min-h-11 items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          :checked="allReadySelected"
-          :indeterminate="selectedBooks.length > 0 && !allReadySelected"
-          :disabled="locked || !ready.length"
-          class="accent-primary size-4"
-          @change="toggleGroup"
-        />
-        {{ t('fanfiction.discovery.selectReady') }}
-      </label>
-      <Button variant="outline" :disabled="locked || !canLinkGroup" @click="linkGroup">{{
-        t('fanfiction.discovery.linkCount', { count: selectedBooks.length })
+        </span>
+        <span v-if="selectedCount" class="text-sm font-medium">{{ t('fanfiction.sourceReview.selected', { count: selectedCount }) }}</span>
+      </button>
+    </h3>
+    <div v-if="targetJob" class="bg-muted mx-4 mb-4 space-y-2 rounded-md p-3 text-sm" role="status">
+      <p v-if="active" class="font-medium">{{ t('fanfiction.sourceReview.linkingWebsite', { website: websiteName }) }}</p>
+      <p v-else class="font-medium">{{ t(`fanfiction.states.${targetJob.state}`) }}</p>
+      <p v-if="targetJob.result?.selection">{{ t('fanfiction.discovery.selectionProgress', targetJob.result.selection) }}</p>
+      <p v-if="targetJob.errorCode" class="text-destructive">{{ t(`fanfiction.errors.${targetJob.errorCode}`) }}</p>
+      <Button v-if="active" variant="outline" :disabled="review.busy.value || targetJob.cancellationRequested" @click="cancel">{{
+        t('fanfiction.cancel')
       }}</Button>
+      <Button
+        v-else-if="['failed', 'cancelled', 'configuration_blocked'].includes(targetJob.state)"
+        variant="outline"
+        :disabled="review.locked.value"
+        @click="retry"
+        >{{ t('fanfiction.retry') }}</Button
+      >
     </div>
-    <div class="border-border divide-border divide-y border-y">
-      <article v-for="book in books" :key="book.id" class="py-4">
-        <div class="flex items-start gap-3">
-          <label v-if="reviewable" class="flex min-h-11 min-w-11 items-center justify-center">
+    <div v-show="open" :id="panelId" class="space-y-4 px-4 pb-4">
+      <div v-if="!finished" class="flex flex-wrap items-end gap-3">
+        <label class="min-w-0 flex-1 space-y-1 text-sm">
+          <span>{{ t('fanfiction.profile') }}</span>
+          <select
+            v-model="profile"
+            :disabled="busy"
+            class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
+            @change="changeProfile"
+          >
+            <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
+            <option value="public">{{ t('fanfiction.noProfile') }}</option>
+            <option v-for="option in profiles" :key="option.id" :value="option.id">{{ option.name }}</option>
+          </select>
+        </label>
+        <StorySchedule v-model="schedule" :disabled="busy" />
+        <Button v-if="moreProfiles" variant="ghost" :disabled="busy" @click="loadMoreProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
+      </div>
+      <div v-if="!finished" class="border-border bg-background sticky top-0 z-10 space-y-2 border-y py-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <label class="flex min-h-11 items-center gap-2 text-sm">
             <input
-              v-if="allMatching"
               type="checkbox"
-              checked
-              disabled
-              :aria-label="t('fanfiction.discovery.selectBook', { title: book.title })"
+              :checked="all && selectedCount === total && total > 0"
+              :indeterminate="selectedCount > 0 && !(all && selectedCount === total)"
+              :disabled="busy || !total || finished"
               class="accent-primary size-4"
+              @change="toggleAll"
             />
-            <input
-              v-else
-              v-model="selected"
-              type="checkbox"
-              :value="book.id"
-              :disabled="locked || (!isReady(book) && !selected.includes(book.id))"
-              :aria-label="t('fanfiction.discovery.selectBook', { title: book.title })"
-              class="accent-primary size-4"
-            />
+            {{ t('fanfiction.sourceReview.selectWebsite', { count: total }) }}
           </label>
-          <div class="min-w-0 flex-1 space-y-1">
-            <RouterLink :to="{ name: 'book-detail', params: { bookId: book.bookId } }" class="text-primary font-medium hover:underline">{{
-              book.title || t('fanfiction.openBook')
-            }}</RouterLink>
-            <p class="text-muted-foreground text-sm">
-              {{ book.authors.join(', ') }} · {{ t('fanfiction.chapterCount', { count: book.chapterCount }) }}
-            </p>
-            <p v-if="isReady(book)" class="text-sm">{{ t('fanfiction.profile') }}: {{ profileName(book) }}</p>
-            <p v-if="reviewable && !isReady(book)" class="text-sm font-medium">{{ t('fanfiction.discovery.needsChoice') }}</p>
-            <p v-if="book.errorCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${book.errorCode}`) }}</p>
-            <details v-if="reviewable" :open="book.state !== 'pending' || book.profileMatch?.ambiguous" class="pt-1">
-              <summary class="text-primary min-h-11 cursor-pointer py-2 text-sm underline-offset-4 hover:underline">
-                {{ t(isReady(book) ? 'fanfiction.discovery.changeLink' : 'fanfiction.discovery.resolveLink') }}
-              </summary>
-              <div class="space-y-3 pb-2">
-                <p v-if="book.profileMatch?.ambiguous && !isReady(book)" class="text-sm">{{ t('fanfiction.errors.profile_ambiguous') }}</p>
-                <label v-if="discoverySources(book).length !== 1" class="block space-y-1 text-sm">
-                  <span>{{ t('fanfiction.discovery.chooseSource') }}</span>
-                  <select
-                    v-model="sourceChoices[book.id]"
-                    :disabled="locked || allMatching"
-                    class="border-input bg-background min-h-11 w-full rounded-md border p-2"
-                  >
-                    <option value="">{{ t('fanfiction.discovery.chooseSource') }}</option>
-                    <option v-for="url in discoverySources(book)" :key="url" :value="url">{{ url }}</option>
-                  </select>
-                </label>
-                <p v-for="url in discoverySources(book)" v-else :key="url" class="text-muted-foreground break-all text-sm">{{ url }}</p>
-                <div class="flex flex-wrap items-end gap-3">
-                  <label class="block min-w-0 flex-1 space-y-1 text-sm">
-                    <span>{{ t('fanfiction.profile') }}</span>
+          <Button :disabled="busy || !selectedCount || finished" @click="link">{{
+            t('fanfiction.discovery.linkCount', { count: selectedCount })
+          }}</Button>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span v-if="uncheckedCount" class="text-muted-foreground">{{ t('fanfiction.sourceReview.notCompared', { count: uncheckedCount }) }}</span>
+          <span v-else class="text-muted-foreground">{{ t('fanfiction.sourceReview.confidentHelp') }}</span>
+          <Button v-if="selectedCount" variant="ghost" :disabled="busy" @click="clearSelection">{{
+            t('fanfiction.discovery.clearSelection')
+          }}</Button>
+        </div>
+        <p v-if="!all && selectedCount >= 100" class="text-sm">{{ t('fanfiction.sourceReview.selectionLimit') }}</p>
+      </div>
+      <p v-if="selectionError" role="alert" class="text-destructive text-sm">{{ t(`fanfiction.sourceReview.${selectionError}`) }}</p>
+      <p v-if="error" role="alert" class="text-destructive text-sm">{{ error }}</p>
+      <p v-if="loading" role="status" class="text-muted-foreground py-6 text-sm">{{ t('fanfiction.discovery.loading') }}</p>
+      <div v-if="finished" class="flex flex-wrap items-center justify-between gap-3 py-2">
+        <p class="text-sm">{{ t('fanfiction.sourceReview.resultsKept') }}</p>
+        <Button variant="outline" :disabled="busy" @click="remaining">{{ t('fanfiction.sourceReview.reviewRemaining', { count: total }) }}</Button>
+      </div>
+      <p v-if="!loading && !items.length" class="text-muted-foreground py-4 text-sm">{{ t('fanfiction.sourceReview.websiteDone') }}</p>
+      <ul class="divide-border divide-y">
+        <li v-for="book in items" :key="book.id" class="py-4">
+          <div class="flex items-start gap-3">
+            <label class="flex min-h-11 min-w-8 items-center justify-center">
+              <input
+                type="checkbox"
+                :checked="isSelected(book)"
+                :disabled="busy || finished || !reviewable(book) || (!all && selectedCount >= 100 && !isSelected(book))"
+                :aria-label="t('fanfiction.discovery.selectBook', { title: book.title })"
+                class="accent-primary size-4"
+                @change="toggleBook(book)"
+              />
+            </label>
+            <div class="min-w-0 flex-1 space-y-3">
+              <dl class="grid gap-4 sm:grid-cols-2">
+                <div class="min-w-0 space-y-1">
+                  <dt class="text-muted-foreground text-sm">{{ t('fanfiction.sourceReview.localBook') }}</dt>
+                  <dd>
+                    <RouterLink :to="{ name: 'book-detail', params: { bookId: book.bookId } }" class="text-primary font-medium hover:underline">{{
+                      book.title
+                    }}</RouterLink>
+                  </dd>
+                  <dd class="text-sm">{{ book.authors.join(', ') || t('fanfiction.sourceReview.noAuthor') }}</dd>
+                  <dd class="text-muted-foreground text-sm">{{ t('fanfiction.chapterCount', { count: book.chapterCount }) }}</dd>
+                </div>
+                <div class="min-w-0 space-y-1">
+                  <dt class="text-muted-foreground text-sm">{{ t('fanfiction.sourceReview.remoteBook') }}</dt>
+                  <template v-if="comparisons[book.id]?.remote">
+                    <dd class="font-medium">{{ comparisons[book.id]!.remote!.title }}</dd>
+                    <dd class="text-sm">{{ comparisons[book.id]!.remote!.authors.join(', ') || t('fanfiction.sourceReview.noAuthor') }}</dd>
+                    <dd class="text-muted-foreground text-sm">
+                      {{ t('fanfiction.chapterCount', { count: comparisons[book.id]!.remote!.chapterCount }) }}
+                    </dd>
+                    <dd class="text-sm font-medium">
+                      {{
+                        t(
+                          comparisonMatches(book, comparisons[book.id]!.remote!)
+                            ? 'fanfiction.sourceReview.matches'
+                            : 'fanfiction.sourceReview.differs',
+                        )
+                      }}
+                    </dd>
+                  </template>
+                  <dd v-else-if="comparisons[book.id]?.state === 'failed'" class="space-y-1 text-sm">
+                    <p class="text-destructive">{{ comparisons[book.id]?.error }}</p>
+                    <Button variant="outline" :disabled="busy" @click="compareBook(book)">{{ t('fanfiction.sourceReview.retryComparison') }}</Button>
+                  </dd>
+                  <dd v-else class="text-muted-foreground text-sm" role="status">
+                    {{
+                      t(
+                        finished
+                          ? 'fanfiction.sourceReview.notChecked'
+                          : urlFor(book)
+                            ? 'fanfiction.sourceReview.checking'
+                            : 'fanfiction.discovery.chooseSource',
+                      )
+                    }}
+                  </dd>
+                </div>
+              </dl>
+              <a
+                v-if="urlFor(book)"
+                :href="urlFor(book)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-primary inline-flex max-w-full items-start gap-1 break-all text-sm underline-offset-4 hover:underline"
+                >{{ urlFor(book) }}<ExternalLink class="mt-1 size-3 shrink-0" aria-hidden="true"
+              /></a>
+              <p v-if="!reviewable(book)" class="text-sm font-medium">{{ t(`fanfiction.discovery.states.${book.state}`) }}</p>
+              <p v-if="book.errorCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${book.errorCode}`) }}</p>
+              <details v-if="reviewable(book)" :open="discoverySources(book).length !== 1 || book.profileMatch?.ambiguous">
+                <summary class="text-muted-foreground min-h-11 cursor-pointer py-2 text-sm">{{ t('fanfiction.discovery.changeLink') }}</summary>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <label v-if="discoverySources(book).length !== 1" class="min-w-0 space-y-1 text-sm">
+                    <span>{{ t('fanfiction.discovery.chooseSource') }}</span>
                     <select
-                      v-model="profileChoices[book.id]"
-                      :disabled="locked || allMatching"
-                      class="border-input bg-background min-h-11 w-full rounded-md border p-2"
+                      :value="sourceChoices[book.id] ?? ''"
+                      :disabled="busy || finished"
+                      class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
+                      @change="changeSource(book, $event)"
                     >
-                      <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
-                      <option value="public">{{ t('fanfiction.noProfile') }}</option>
-                      <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+                      <option value="">{{ t('fanfiction.discovery.chooseSource') }}</option>
+                      <option v-for="url in discoverySources(book)" :key="url" :value="url">{{ url }}</option>
                     </select>
                   </label>
-                  <Button variant="outline" :disabled="locked || allMatching || !isReady(book)" @click="linkBook(book)">{{
-                    t('fanfiction.discovery.linkBook')
-                  }}</Button>
+                  <label class="min-w-0 space-y-1 text-sm">
+                    <span>{{ t('fanfiction.profile') }}</span>
+                    <select
+                      :value="profileChoices[book.id] ?? ''"
+                      :disabled="busy || finished"
+                      class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
+                      @change="changeBookProfile(book, $event)"
+                    >
+                      <option value="">{{ t('fanfiction.sourceReview.websiteProfile') }}</option>
+                      <option value="public">{{ t('fanfiction.noProfile') }}</option>
+                      <option v-for="option in profiles" :key="option.id" :value="option.id">{{ option.name }}</option>
+                    </select>
+                  </label>
                 </div>
-              </div>
-            </details>
+              </details>
+            </div>
           </div>
-        </div>
-      </article>
+        </li>
+      </ul>
+      <nav v-if="cursor || pageNumber > 1" class="flex flex-wrap items-center justify-between gap-3" :aria-label="t('fanfiction.discovery.pages')">
+        <Button variant="outline" :disabled="busy || pageNumber === 1 || finished" @click="previousPage">{{
+          t('fanfiction.discovery.previousPage')
+        }}</Button>
+        <span class="text-muted-foreground text-sm">{{ t('fanfiction.discovery.page', { page: pageNumber }) }}</span>
+        <Button variant="outline" :disabled="busy || cursor === null || finished" @click="nextPage">{{ t('fanfiction.nextPage') }}</Button>
+      </nav>
     </div>
   </section>
 </template>
