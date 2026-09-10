@@ -1,7 +1,7 @@
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { withFanfictionDefaults } from './fanfiction-defaults';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
-import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { FanfictionLinkPreview, FanfictionLinkRequest, FanfictionDiscoveryPage, FanfictionDiscoveryProgress } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
@@ -164,6 +164,12 @@ export class FanfictionDiscoveryService {
         .limit(1);
       if (!cursor) throw new BadRequestException('Discovery cursor does not belong to this library');
     }
+    const filter = and(
+      eq(candidates.libraryId, libraryId),
+      eq(candidates.state, dto.state),
+      candidateUrlPrefixFilter(sql`${candidates.urls}`, normalizeUrlPrefixes(dto.urlPrefixes ?? [])),
+    );
+    const [summary] = await this.db.select({ total: count() }).from(candidates).where(filter);
     const rows = await this.db
       .select({
         id: candidates.id,
@@ -204,7 +210,7 @@ export class FanfictionDiscoveryService {
       user,
     );
     const items = page.map((row) => ({ ...row, createdAt: row.createdAt.toISOString(), profileMatch: matches.get(singleUrl(row) ?? '') }));
-    return { items, nextCursor: rows.length > dto.limit ? items.at(-1)!.id : null };
+    return { items, total: summary.total, nextCursor: rows.length > dto.limit ? items.at(-1)!.id : null };
   }
 
   async run(job: typeof jobs.$inferSelect, authorize: () => Promise<unknown>, signal: AbortSignal) {

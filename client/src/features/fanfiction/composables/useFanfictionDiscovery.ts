@@ -7,6 +7,7 @@ import type {
   FanfictionJobPage,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
+import { isConfidentDiscoveryMatch, isDiscoveryReady } from './discoveryReview'
 
 class DiscoveryRequestError extends Error {
   constructor(
@@ -21,6 +22,7 @@ export function useFanfictionDiscovery(libraryId: number) {
   const base = `/api/v1/libraries/${libraryId}/fanfiction`
   const items = ref<FanfictionDiscoveryCandidate[]>([])
   const cursor = ref<string | null>(null)
+  const total = ref<number | null>(null)
   const urlPrefixesText = ref('')
   const urlPrefixes = computed(() =>
     urlPrefixesText.value
@@ -34,6 +36,26 @@ export function useFanfictionDiscovery(libraryId: number) {
   const selected = ref<string[]>([])
   const allMatching = ref(false)
   const choices = ref<Record<string, string>>({})
+  const profileChoices = ref<Record<string, string>>({})
+  function isReady(id: string) {
+    const item = items.value.find((candidate) => candidate.id === id)
+    return Boolean(item && isDiscoveryReady(item, profileChoices.value[id], choices.value[id]))
+  }
+  function overridesFor(ids: string[]) {
+    return ids.flatMap((id) => {
+      const profile = profileChoices.value[id]
+      const canonicalUrl = choices.value[id]
+      return (profile && profile !== 'auto') || canonicalUrl
+        ? [
+            {
+              id,
+              ...(profile && profile !== 'auto' ? { profileId: profile === 'public' ? null : profile } : {}),
+              ...(canonicalUrl ? { canonicalUrl } : {}),
+            },
+          ]
+        : []
+    })
+  }
   const job = ref<FanfictionJob | null>(null)
   const busy = ref(false)
   const error = ref('')
@@ -45,16 +67,23 @@ export function useFanfictionDiscovery(libraryId: number) {
     () =>
       !filterDirty.value &&
       reviewable.value &&
-      (allMatching.value || selected.value.length > 0) &&
-      (state.value !== 'ambiguous' || (!allMatching.value && selected.value.length === 1 && Boolean(choices.value[selected.value[0]!]))),
+      (allMatching.value ? state.value !== 'ambiguous' : selected.value.length > 0 && selected.value.every(isReady)),
   )
   watch(urlPrefixesText, () => {
     selected.value = []
     allMatching.value = false
   })
+  let hasLoaded = false
   let disposed = false
   let requestId = 0
   let pageCursor: string | null = null
+  let appliedState = state.value
+  const pageHistory = ref<(string | null)[]>([])
+  const pageNumber = computed(() => pageHistory.value.length + 1)
+  const drafts = new Map<string, { selected: string[]; choices: Record<string, string>; profiles: Record<string, string> }>()
+  function saveDraft() {
+    drafts.set(pageCursor ?? '', { selected: [...selected.value], choices: { ...choices.value }, profiles: { ...profileChoices.value } })
+  }
   let timer: ReturnType<typeof setTimeout> | undefined
   async function request<T>(path: string, body?: unknown): Promise<T> {
     const response = await api(
@@ -85,16 +114,24 @@ export function useFanfictionDiscovery(libraryId: number) {
     if (appliedPrefixes.value.length) query.set('urlPrefixes', appliedPrefixes.value.join('\n'))
     const page = await request<FanfictionDiscoveryPage>(`${base}/discovery?${query}`)
     if (disposed || current !== requestId) return
+    hasLoaded = true
+    total.value = page.total ?? null
     items.value = page.items
     cursor.value = page.nextCursor
     pageCursor = next
-    selected.value = []
+    const draft = drafts.get(next ?? '')
+    selected.value = page.items.filter((item) => (draft ? draft.selected.includes(item.id) : isConfidentDiscoveryMatch(item))).map((item) => item.id)
     allMatching.value = false
-    choices.value = {}
+    choices.value = draft?.choices ?? Object.fromEntries(page.items.map((item) => [item.id, '']))
+    profileChoices.value = draft?.profiles ?? Object.fromEntries(page.items.map((item) => [item.id, 'auto']))
   }
   async function refresh() {
     await perform(async () => {
       const previous = appliedPrefixes.value
+      if (hasLoaded && !filterDirty.value && appliedState === state.value) saveDraft()
+      else drafts.clear()
+      appliedState = state.value
+      pageHistory.value = []
       appliedPrefixes.value = [...urlPrefixes.value]
       items.value = []
       cursor.value = null
@@ -109,7 +146,21 @@ export function useFanfictionDiscovery(libraryId: number) {
     })
   }
   async function nextPage() {
-    if (cursor.value) await perform(() => load(cursor.value))
+    if (cursor.value)
+      await perform(async () => {
+        saveDraft()
+        const previous = pageCursor
+        await load(cursor.value)
+        pageHistory.value.push(previous)
+      })
+  }
+  async function previousPage() {
+    if (!pageHistory.value.length) return
+    await perform(async () => {
+      saveDraft()
+      await load(pageHistory.value.at(-1) ?? null)
+      pageHistory.value.pop()
+    })
   }
   async function recover() {
     await perform(async () => {
@@ -165,6 +216,7 @@ export function useFanfictionDiscovery(libraryId: number) {
         throw failure
       }
       if (disposed) return
+      saveDraft()
       job.value = result
       pending.value = null
       selected.value = []
@@ -192,6 +244,7 @@ export function useFanfictionDiscovery(libraryId: number) {
         ...(decision === 'approve'
           ? {
               profileId: profileId || null,
+              ...(!allMatching.value && overridesFor(selected.value).length ? { overrides: overridesFor(selected.value) } : {}),
               ...(autoProfile && !profileId ? { autoProfile: true } : {}),
               intervalMinutes: schedule === 'manual' ? null : Number(schedule),
               ...(canonicalUrl ? { canonicalUrl } : {}),
@@ -215,9 +268,34 @@ export function useFanfictionDiscovery(libraryId: number) {
       schedulePoll()
     })
   }
+  async function reviewBooks(ids: string[], profileId: string, schedule: string, canonicalUrl?: string) {
+    if (locked.value || filterDirty.value || !reviewable.value || !ids.length || ids.some((id) => !items.value.some((item) => item.id === id))) return
+    if (
+      !ids.every((id) => {
+        const item = items.value.find((candidate) => candidate.id === id)!
+        return isDiscoveryReady(item, profileId === 'auto' ? profileChoices.value[id] : profileId, canonicalUrl || choices.value[id])
+      })
+    )
+      return
+    pending.value = {
+      path: `${base}/discovery/selection`,
+      body: {
+        idempotencyKey: crypto.randomUUID(),
+        decision: 'approve',
+        state: state.value,
+        ids: [...ids],
+        ...(overridesFor(ids).length ? { overrides: overridesFor(ids) } : {}),
+        profileId: profileId === 'auto' || profileId === 'public' ? null : profileId,
+        ...(profileId === 'auto' ? { autoProfile: true } : {}),
+        intervalMinutes: schedule === 'manual' ? null : Number(schedule),
+        ...(canonicalUrl ? { canonicalUrl } : {}),
+      },
+    }
+    await submitPending()
+  }
   function selectPage() {
     allMatching.value = false
-    selected.value = items.value.map((item) => item.id)
+    selected.value = items.value.filter((item) => isReady(item.id)).map((item) => item.id)
   }
   onScopeDispose(() => {
     disposed = true
@@ -226,6 +304,7 @@ export function useFanfictionDiscovery(libraryId: number) {
   })
   return {
     items,
+    total,
     urlPrefixesText,
     filterDirty,
     cursor,
@@ -233,6 +312,7 @@ export function useFanfictionDiscovery(libraryId: number) {
     selected,
     allMatching,
     choices,
+    profileChoices,
     job,
     busy,
     error,
@@ -243,6 +323,9 @@ export function useFanfictionDiscovery(libraryId: number) {
     canApprove,
     refresh,
     nextPage,
+    previousPage,
+    pageNumber,
+    reviewBooks,
     recover,
     scan,
     review,

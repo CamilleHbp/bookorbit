@@ -38,14 +38,33 @@ export class FanfictionAdoptionService {
     if (Boolean(dto.ids?.length) === Boolean(dto.allMatching)) throw new BadRequestException('Choose explicit candidates or all matching candidates');
     if (dto.canonicalUrl && (dto.ids?.length !== 1 || dto.allMatching))
       throw new BadRequestException('Choose an ambiguous source for one candidate at a time');
-    if (dto.decision === 'approve' && dto.state === 'ambiguous' && !dto.canonicalUrl)
+    if (dto.overrides?.length && (dto.allMatching || dto.overrides.some((item) => !dto.ids?.includes(item.id))))
+      throw new BadRequestException('Book choices must belong to the explicit selection');
+    if (new Set(dto.overrides?.map((item) => item.id)).size !== (dto.overrides?.length ?? 0))
+      throw new BadRequestException('Each book can have only one source and profile choice');
+    if (
+      dto.decision === 'approve' &&
+      dto.state === 'ambiguous' &&
+      !dto.canonicalUrl &&
+      !dto.ids?.every((id) => dto.overrides?.some((item) => item.id === id && item.canonicalUrl))
+    )
       throw new BadRequestException('Ambiguous candidates need an explicit source choice');
-    if (dto.profileId) await this.profiles.get(libraryId, dto.profileId, user);
+    for (const profileId of new Set(
+      [dto.profileId, ...(dto.overrides ?? []).map((item) => item.profileId)].filter((id): id is string => Boolean(id)),
+    ))
+      await this.profiles.get(libraryId, profileId, user);
     const {
       rows: [{ cutoff }],
     } = await this.db.execute<{ cutoff: string }>(sql`select to_char(clock_timestamp(), 'YYYY-MM-DD"T"HH24:MI:SS.USOF') as cutoff`);
     const selection: FanfictionDiscoverySelection = {
       cutoff,
+      overrides: (dto.overrides ?? [])
+        .map((item) => ({
+          id: item.id,
+          ...(item.profileId !== undefined ? { profileId: item.profileId } : {}),
+          ...(item.canonicalUrl ? { canonicalUrl: item.canonicalUrl } : {}),
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
       urlPrefixes: normalizeUrlPrefixes(dto.urlPrefixes ?? []),
       autoProfile: !dto.profileId && dto.autoProfile === true,
       cursor: null,
@@ -84,6 +103,7 @@ export class FanfictionAdoptionService {
       existing?.kind !== 'adopt' ||
       !previous ||
       previous.decision !== selection.decision ||
+      JSON.stringify(previous.overrides ?? []) !== JSON.stringify(selection.overrides) ||
       Boolean(previous.autoProfile) !== Boolean(selection.autoProfile) ||
       JSON.stringify(previous.urlPrefixes ?? []) !== JSON.stringify(selection.urlPrefixes) ||
       previous.state !== selection.state ||
@@ -126,9 +146,10 @@ export class FanfictionAdoptionService {
       )
       .orderBy(asc(candidates.id))
       .limit(100);
+    const overrides = new Map((selection.overrides ?? []).map((item) => [item.id, item]));
     const candidateUrl = (candidate: (typeof batch)[number]) => {
       const urls = [...new Set(candidate.urls.flatMap((url) => (url.recognized ? [url.canonicalUrl] : [])))];
-      return selection.canonicalUrl ?? (urls.length === 1 ? urls[0] : undefined);
+      return overrides.get(candidate.id)?.canonicalUrl ?? selection.canonicalUrl ?? (urls.length === 1 ? urls[0] : undefined);
     };
     const matches =
       selection.autoProfile && selection.decision === 'approve'
@@ -138,6 +159,7 @@ export class FanfictionAdoptionService {
             user,
           )
         : new Map();
+    const checkedProfiles = new Set<string>();
     const deadline = Date.now() + 20_000;
     for (const candidate of batch) {
       if (signal.aborted) throw new ConflictException('Discovery selection was cancelled');
@@ -160,10 +182,22 @@ export class FanfictionAdoptionService {
           throw new ConflictException('Candidate review state changed');
         if (selection.decision === 'approve') {
           const match = matches.get(candidateUrl(candidate) ?? '');
-          if (match?.ambiguous)
+          const override = overrides.get(candidate.id);
+          if (match?.ambiguous && override?.profileId === undefined)
             throw new ConflictException({ errorCode: 'profile_ambiguous', message: 'Choose a profile for this story before linking' });
-          const profileId = selection.autoProfile ? (match?.profile?.id ?? null) : selection.profileId;
-          await this.adopt(job, candidate, { ...selection, profileId }, authorize, (tx) => checkpoint(tx, false));
+          const profileId =
+            override?.profileId !== undefined ? override.profileId : selection.autoProfile ? (match?.profile?.id ?? null) : selection.profileId;
+          if (override?.profileId && !checkedProfiles.has(override.profileId)) {
+            await this.profiles.get(job.libraryId, override.profileId, user);
+            checkedProfiles.add(override.profileId);
+          }
+          await this.adopt(
+            job,
+            candidate,
+            { ...selection, profileId, canonicalUrl: override?.canonicalUrl ?? selection.canonicalUrl },
+            authorize,
+            (tx) => checkpoint(tx, false),
+          );
         } else
           await this.db.transaction(async (tx) => {
             await this.jobs.assertOwnership(job, tx);
