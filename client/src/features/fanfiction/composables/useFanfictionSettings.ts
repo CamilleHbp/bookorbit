@@ -28,6 +28,7 @@ export function useFanfictionSettings() {
   const showEditor = ref(false)
   const deleting = ref<FanfictionProfileSummary | null>(null)
   const name = ref('')
+  const rootUrls = ref('')
   const configuration = ref('')
   const tagRules = ref<FanfictionTagRule[]>([])
   const section = ref('defaults')
@@ -66,6 +67,7 @@ export function useFanfictionSettings() {
       clearEditor()
       return
     }
+    rootUrls.value = preset.value.hosts.map((host) => `https://${host}`).join('\n')
     name.value = preset.value.name
     section.value = preset.value.section
     configuration.value = preset.value.configuration
@@ -212,6 +214,7 @@ export function useFanfictionSettings() {
   function clearEditor() {
     editing.value = null
     name.value = ''
+    rootUrls.value = ''
     configuration.value = ''
     tagRules.value = []
     section.value = 'defaults'
@@ -241,6 +244,7 @@ export function useFanfictionSettings() {
       if (current !== generation) return
       clearEditor()
       editing.value = view
+      rootUrls.value = (view.rootUrls ?? []).join('\n')
       name.value = view.name
       configuration.value = view.configuration
       tagRules.value = structuredClone(view.tagRules ?? [])
@@ -310,6 +314,10 @@ export function useFanfictionSettings() {
         json(
           {
             name: name.value,
+            rootUrls: rootUrls.value
+              .split(/\r?\n/)
+              .map((url) => url.trim())
+              .filter(Boolean),
             configuration: configuration.value,
             tagRules: tagRules.value,
             credentials,
@@ -400,6 +408,7 @@ export function useFanfictionSettings() {
     cancelDelete,
     deleteProfile,
     name,
+    rootUrls,
     configuration,
     tagRules,
     section,

@@ -3,7 +3,7 @@ import { and, asc, eq, gt, inArray, ne, notInArray, or, sql } from 'drizzle-orm'
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
-import type { FanfictionProfileDocument, FanfictionProfileSummary, FanfictionProfileView } from '@bookorbit/types';
+import type { FanfictionProfileDocument, FanfictionProfileSummary, FanfictionProfileView, FanfictionProfileMatch } from '@bookorbit/types';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import type { RequestUser } from '../../common/types/request-user';
@@ -19,6 +19,7 @@ import {
   type FanfictionCookieSink,
 } from './fanfiction-cookies';
 
+import { normalizeUrlPrefixes, urlPrefixScore } from './fanfiction-url-prefix';
 import { configurationMatchesUrl, withFanfictionDefaults } from './fanfiction-defaults';
 
 const profiles = schema.fanfictionProfiles;
@@ -43,17 +44,31 @@ export class FanfictionProfileService {
   async list(libraryId: number, dto: ListFanfictionProfilesDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
     const rows = await this.db
-      .select(summaryFields)
+      .select({ ...summaryFields, document: profiles.document })
       .from(profiles)
       .where(and(eq(profiles.libraryId, libraryId), dto.cursor ? gt(profiles.id, dto.cursor) : undefined))
       .orderBy(asc(profiles.id))
       .limit(dto.limit + 1);
-    const items = rows.slice(0, dto.limit).map((row) => ({ ...row, updatedAt: row.updatedAt.toISOString() }));
+    const items = await Promise.all(
+      rows.slice(0, dto.limit).map(async (row) => {
+        const document = JSON.parse(await this.vault.decrypt(libraryId, row.id, row.document)) as FanfictionProfileDocument;
+        return { ...this.summary(row), rootUrls: this.roots(document) };
+      }),
+    );
     return { items, nextCursor: rows.length > dto.limit ? items[items.length - 1].id : null };
   }
 
   async match(libraryId: number, url: string, user: RequestUser) {
+    return (await this.matchMany(libraryId, [url], user)).get(url)!;
+  }
+
+  async matchMany(libraryId: number, urls: string[], user: RequestUser): Promise<Map<string, FanfictionProfileMatch>> {
     await this.access.administer(user, libraryId);
+    if (urls.length > 100) throw new BadRequestException('Match at most 100 story URLs at a time');
+    const matches = new Map(
+      [...new Set(urls)].map((url) => [url, { score: -1, profile: null as FanfictionProfileSummary | null, ambiguous: false }]),
+    );
+    if (!matches.size) return new Map();
     let cursor: string | undefined;
     do {
       const rows = await this.db
@@ -64,11 +79,41 @@ export class FanfictionProfileService {
         .limit(50);
       for (const row of rows) {
         const document = JSON.parse(await this.vault.decrypt(libraryId, row.id, row.document)) as FanfictionProfileDocument;
-        if (configurationMatchesUrl(document.configuration, url)) return { profile: this.summary(row) };
+        for (const [url, current] of matches) {
+          const score =
+            document.rootUrls === undefined
+              ? configurationMatchesUrl(document.configuration, url)
+                ? 0
+                : -1
+              : Math.max(-1, ...document.rootUrls.map((root) => urlPrefixScore(url, root)));
+          if (score < 0 || score < current.score) continue;
+          if (score === current.score) {
+            current.profile = null;
+            current.ambiguous = true;
+          } else {
+            current.score = score;
+            current.profile = { ...this.summary(row), rootUrls: this.roots(document) };
+            current.ambiguous = false;
+          }
+        }
       }
       cursor = rows.length === 50 ? rows[rows.length - 1].id : undefined;
     } while (cursor);
-    return { profile: null };
+    return new Map([...matches].map(([url, { profile, ambiguous }]) => [url, { profile, ambiguous }]));
+  }
+
+  private roots(document: FanfictionProfileDocument): string[] {
+    if (document.rootUrls !== undefined) return normalizeUrlPrefixes(document.rootUrls);
+    const roots: string[] = [];
+    for (const [, section] of document.configuration.matchAll(/^\[([^\]\r\n]+)\][ \t]*$/gm)) {
+      if (!section.includes('.')) continue;
+      try {
+        roots.push(...normalizeUrlPrefixes([section.startsWith('https://') ? section : `https://${section}`]));
+      } catch {
+        /* Ignore non-URL configuration sections. */
+      }
+    }
+    return [...new Set(roots)].slice(0, 20);
   }
 
   async get(libraryId: number, id: string, user: RequestUser): Promise<FanfictionProfileView> {
@@ -77,6 +122,7 @@ export class FanfictionProfileService {
     return {
       ...this.summary(row),
       configuration,
+      rootUrls: this.roots(document),
       tagRules: document.tagRules ?? [],
       cookieCount: document.cookies.length,
       cookies: redactFanfictionCookies(document.cookies),
@@ -91,12 +137,17 @@ export class FanfictionProfileService {
     const document = await this.vault.encrypt(
       libraryId,
       id,
-      this.serialize({ configuration, tagRules: dto.tagRules ?? [], cookies: mergeFanfictionCookies([], dto.cookies) }),
+      this.serialize({
+        rootUrls: dto.rootUrls === undefined ? undefined : normalizeUrlPrefixes(dto.rootUrls),
+        configuration,
+        tagRules: dto.tagRules ?? [],
+        cookies: mergeFanfictionCookies([], dto.cookies),
+      }),
       !existing,
     );
     await this.access.administer(user, libraryId);
     const [row] = await this.db.insert(profiles).values({ id, libraryId, name: dto.name, createdBy: user.id, document }).returning(summaryFields);
-    return this.summary(row);
+    return { ...this.summary(row), rootUrls: this.roots({ configuration, cookies: [], rootUrls: dto.rootUrls }) };
   }
 
   async update(libraryId: number, id: string, dto: UpdateFanfictionProfileDto, user: RequestUser): Promise<FanfictionProfileSummary> {
@@ -108,6 +159,7 @@ export class FanfictionProfileService {
       id,
       this.serialize({
         configuration,
+        rootUrls: dto.rootUrls === undefined ? old.document.rootUrls : normalizeUrlPrefixes(dto.rootUrls),
         tagRules: dto.tagRules ?? old.document.tagRules ?? [],
         cookies: mergeFanfictionCookies(old.document.cookies, dto.cookies),
       }),
@@ -120,7 +172,7 @@ export class FanfictionProfileService {
       .where(and(eq(profiles.id, id), eq(profiles.libraryId, libraryId), eq(profiles.version, dto.version)))
       .returning(summaryFields);
     if (!row) throw new ConflictException('Profile changed; reload before saving');
-    return this.summary(row);
+    return { ...this.summary(row), rootUrls: dto.rootUrls === undefined ? this.roots(old.document) : normalizeUrlPrefixes(dto.rootUrls) };
   }
 
   async remove(libraryId: number, id: string, user: RequestUser): Promise<void> {

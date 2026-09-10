@@ -14,6 +14,7 @@ const {
   editing,
   showEditor,
   name,
+  rootUrls,
   configuration,
   tagRules,
   section,
@@ -66,6 +67,18 @@ async function save() {
         ><span>{{ t('fanfiction.profileName') }}</span
         ><input v-model="name" required maxlength="120" class="w-full rounded-md border border-input bg-background p-2"
       /></label>
+      <label class="block space-y-1 text-sm">
+        <span>{{ t('fanfiction.rootUrls') }}</span>
+        <textarea
+          v-model="rootUrls"
+          rows="3"
+          maxlength="81939"
+          spellcheck="false"
+          placeholder="https://www.royalroad.com/fiction/"
+          class="w-full rounded-md border border-input bg-background p-2"
+        />
+        <span class="block text-xs text-muted-foreground">{{ t('fanfiction.rootUrlsHelp') }}</span>
+      </label>
       <div v-if="!preset || preset.login" class="grid gap-3 sm:grid-cols-2">
         <label class="block space-y-1 text-sm"
           ><span>{{ t('fanfiction.username') }}</span

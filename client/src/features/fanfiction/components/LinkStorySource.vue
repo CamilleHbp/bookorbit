@@ -2,7 +2,7 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import type { FanfictionJob, FanfictionLinkPreview, FanfictionProfileSummary, FanfictionProfilePage } from '@bookorbit/types'
+import type { FanfictionProfileMatch, FanfictionJob, FanfictionLinkPreview, FanfictionProfileSummary, FanfictionProfilePage } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import StorySchedule from './StorySchedule.vue'
@@ -26,11 +26,22 @@ onScopeDispose(() => controller.abort())
 const error = ref('')
 const key = ref(crypto.randomUUID())
 const profileId = ref('')
+const autoProfile = ref(true)
+const profileChoice = computed({
+  get: () => profileId.value || (autoProfile.value ? 'auto' : 'public'),
+  set: (value: string) => {
+    profileId.value = value === 'auto' || value === 'public' ? '' : value
+    autoProfile.value = value !== 'public'
+  },
+})
+const matchedProfile = ref<FanfictionProfileSummary | null>(null)
+const resolvedProfileId = ref('')
 const profiles = ref<FanfictionProfileSummary[]>([])
 const profileCursor = ref<string | null>(null)
 const profilesLoaded = ref(false)
-watch([url, profileId], () => {
+watch([url, profileId, autoProfile], () => {
   preview.value = null
+  matchedProfile.value = null
   job.value = null
   key.value = crypto.randomUUID()
 })
@@ -73,11 +84,23 @@ async function inspect() {
   preview.value = null
   job.value = null
   try {
+    resolvedProfileId.value = profileId.value
+    if (!profileId.value && autoProfile.value) {
+      const response = await api(`/api/v1/libraries/${props.libraryId}/fanfiction/profile-match?${new URLSearchParams({ url: url.value })}`, {
+        signal: controller.signal,
+      })
+      if (!response.ok) throw new Error(t('fanfiction.link.failed'))
+      const match: FanfictionProfileMatch = await response.json()
+      controller.signal.throwIfAborted()
+      if (match.ambiguous) throw new Error(t('fanfiction.errors.profile_ambiguous'))
+      matchedProfile.value = match.profile
+      resolvedProfileId.value = match.profile?.id ?? ''
+    }
     preview.value = await request('/book', {
       bookId: props.bookId,
       bookFileId: props.bookFileId,
       url: url.value,
-      ...(profileId.value ? { profileId: profileId.value } : {}),
+      ...(resolvedProfileId.value ? { profileId: resolvedProfileId.value } : {}),
     })
     key.value = crypto.randomUUID()
   } catch (failure) {
@@ -96,7 +119,7 @@ async function link() {
       ids: [preview.value.id],
       state: 'pending',
       decision: 'approve',
-      ...(profileId.value ? { profileId: profileId.value } : {}),
+      ...(resolvedProfileId.value ? { profileId: resolvedProfileId.value } : {}),
       canonicalUrl: preview.value.canonicalUrl,
       intervalMinutes: schedule.value === 'manual' ? null : Number(schedule.value),
     })
@@ -123,11 +146,13 @@ async function link() {
       /></label>
       <label class="block space-y-1 text-sm"
         >{{ t('fanfiction.profile')
-        }}<select v-model="profileId" :disabled="locked" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
-          <option value="">{{ t('fanfiction.noProfile') }}</option>
+        }}<select v-model="profileChoice" :disabled="locked" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
+          <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
+          <option value="public">{{ t('fanfiction.noProfile') }}</option>
           <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
         </select></label
       >
+      <p v-if="matchedProfile" class="text-sm">{{ t('fanfiction.profile') }}: {{ matchedProfile.name }}</p>
       <Button v-if="profileCursor" type="button" variant="ghost" @click="loadProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
       <Button type="submit" variant="outline" :disabled="locked">{{ t('fanfiction.link.inspect') }}</Button>
     </form>
