@@ -546,6 +546,20 @@ describe('LibrariesSettings ledger', () => {
       expect(finishedLabel?.element.nextElementSibling?.textContent?.trim()).toBe('98%')
     })
 
+    it.each([
+      { threshold: 90, expected: '90%' },
+      { threshold: 98.05, expected: '98.05%' },
+      { threshold: 99.95, expected: '99.95%' },
+      { threshold: 100, expected: '100%' },
+    ])('shows a $threshold% finished threshold as $expected', async ({ threshold, expected }) => {
+      librariesRef.value = [makeLibrary({ id: 4, readingThreshold: 0.25, markAsFinishedPercentComplete: threshold })]
+      const wrapper = await mountLoaded()
+      await expandFirst(wrapper)
+      const panel = wrapper.get('[id="library-detail-4"]')
+      const finishedLabel = panel.findAll('dt').find((label) => label.text() === 'Counts as finished')
+      expect(finishedLabel?.element.nextElementSibling?.textContent?.trim()).toBe(expected)
+    })
+
     it('renders the scan history with trigger and deltas', async () => {
       historyRef.value = [
         { id: 9, ...makeScan({ triggeredBy: 'watcher', addedCount: 3, updatedCount: 1 }) },
