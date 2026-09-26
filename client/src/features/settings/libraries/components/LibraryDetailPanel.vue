@@ -6,7 +6,7 @@ import type { Library, LibraryScanHistoryEntry } from '@bookorbit/types'
 import { formatKeyName } from '@/features/book/lib/book-formats'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatDate, formatList, formatPercent } from '@/i18n/formatters'
+import { formatDate, formatList, formatNumber, formatPercent } from '@/i18n/formatters'
 import { METADATA_LABELS } from '@/features/library/composables/useLibraryCreator'
 import LibraryScanHistory from './LibraryScanHistory.vue'
 
@@ -41,6 +41,7 @@ const formatsLabel = computed(() =>
     : formatList(props.library.allowedFormats.map((format) => formatKeyName(format))),
 )
 const accessLabel = computed(() => (props.accessCount === null ? '' : t('settings.admin.libraries.detail.peopleCount', { count: props.accessCount })))
+const readingThresholdLabel = computed(() => formatNumber(props.library.readingThreshold / 100, { style: 'percent', maximumFractionDigits: 2 }))
 
 function requestEdit() {
   emit('edit', props.library)
@@ -115,7 +116,7 @@ function requestEdit() {
           </div>
           <div class="flex items-center gap-3 border-t border-border py-1.5">
             <dt class="shrink-0 text-[12.5px] text-muted-foreground">{{ t('settings.admin.libraries.detail.countsAsStarted') }}</dt>
-            <dd class="ms-auto text-[12.5px] font-medium tabular-nums text-foreground">{{ formatPercent(library.readingThreshold) }}</dd>
+            <dd class="ms-auto text-[12.5px] font-medium tabular-nums text-foreground">{{ readingThresholdLabel }}</dd>
           </div>
           <div class="flex items-center gap-3 border-t border-border py-1.5">
             <dt class="shrink-0 text-[12.5px] text-muted-foreground">{{ t('settings.admin.libraries.detail.countsAsFinished') }}</dt>
