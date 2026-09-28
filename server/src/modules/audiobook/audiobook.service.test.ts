@@ -102,13 +102,25 @@ describe('AudiobookService', () => {
     expect(manifest.schemaVersion).toBe(AUDIOBOOK_MANIFEST_VERSION);
     expect(manifest.revision).toMatch(/^[0-9a-f]{64}$/);
     expect(manifest.assets).toEqual([
-      expect.objectContaining({ assetId: `aud_${FIRST_PUBLIC_ID}`, sequence: 0, durationMs: 10_125 }),
-      expect.objectContaining({ assetId: `aud_${SECOND_PUBLIC_ID}`, sequence: 1, durationMs: 20_000 }),
+      expect.objectContaining({ assetId: `aud_${FIRST_PUBLIC_ID}`, fileId: 11, sequence: 0, durationMs: 10_125 }),
+      expect.objectContaining({ assetId: `aud_${SECOND_PUBLIC_ID}`, fileId: 12, sequence: 1, durationMs: 20_000 }),
     ]);
     expect(manifest.chapters).toEqual([
       expect.objectContaining({ sequence: 0, startMs: 0, endMs: 10_125, assetId: `aud_${FIRST_PUBLIC_ID}`, assetOffsetMs: 0 }),
       expect.objectContaining({ sequence: 1, startMs: 10_125, endMs: 30_125, assetId: `aud_${SECOND_PUBLIC_ID}`, assetOffsetMs: 0 }),
     ]);
+  });
+
+  it('keeps the manifest revision independent of the file ids it exposes', async () => {
+    const { service, repo } = makeFixture();
+    const before = await service.getManifest(30, makeUser());
+    const files = await repo.findAudioFiles();
+    repo.findAudioFiles.mockResolvedValue(files.map((file) => ({ ...file, id: file.id + 900 })));
+
+    const after = await service.getManifest(30, makeUser());
+
+    expect(after.assets.map((asset) => asset.fileId)).toEqual([911, 912]);
+    expect(after.revision).toBe(before.revision);
   });
 
   it('derives percentage and creates revision one from a matching manifest write', async () => {

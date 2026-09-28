@@ -212,6 +212,7 @@ export class AudiobookService {
       .digest('hex');
     const assets = files.map<AudiobookManifestAsset>((file, sequence) => ({
       assetId: this.assetId(file.publicId),
+      fileId: file.id,
       sequence,
       format: file.format!,
       durationMs: file.durationSeconds === null ? null : Math.round(file.durationSeconds * 1000),
