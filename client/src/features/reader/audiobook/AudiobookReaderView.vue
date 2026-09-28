@@ -77,7 +77,23 @@ const audioFiles = computed<AudiobookManifestAsset[]>(() => manifest.value?.asse
 // ── Progress ──────────────────────────────────────────────────────────────────
 
 const manifestRevision = computed(() => manifest.value?.revision ?? '')
-const progress = useAudioProgress(props.bookId, { trackingEnabled, manifestRevision })
+const progress = useAudioProgress(props.bookId, { trackingEnabled, manifestRevision, assets: audioFiles, onManifestStale: reloadStaleManifest })
+
+async function reloadStaleManifest() {
+  try {
+    const res = await api(`/api/v1/audiobooks/${props.bookId}/manifest`)
+    if (!res.ok || !mounted) return
+    const next = (await res.json()) as AudiobookManifest
+    const current = audioFiles.value
+    // The queue was built from the old track list, so only a manifest with the same tracks can replace it in place.
+    const sameTracks = next.assets.length === current.length && next.assets.every((asset, index) => asset.assetId === current[index]?.assetId)
+    if (!sameTracks) return
+    manifest.value = next
+    progress.flush()
+  } catch {
+    // Progress stays on hold until the manifest can be reloaded.
+  }
+}
 
 // ── Queue (created lazily after files load) ───────────────────────────────────
 
