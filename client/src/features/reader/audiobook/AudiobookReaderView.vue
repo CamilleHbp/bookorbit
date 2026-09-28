@@ -161,7 +161,7 @@ const audioBookmarks = useAudioBookmarks(props.bookId)
 
 // ── Reading session ───────────────────────────────────────────────────────────
 
-const session = useReadingSession(props.fileId, () => ({ percentage: progressPct.value }), { trackingEnabled })
+const session = useReadingSession(props.fileId, () => ({ percentage: progressPct.value }), { trackingEnabled, sessionType: 'listen' })
 
 // ── Ticker (updates position every 500ms while playing) ──────────────────────
 
