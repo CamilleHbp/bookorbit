@@ -14,7 +14,7 @@ import {
 } from '@bookorbit/types';
 
 import type { RequestUser } from '../../common/types/request-user';
-import { naturalCompare } from '../../common/utils/natural-sort.utils';
+import { compareAudioTracks } from '../../common/utils/book-media.utils';
 import type { BookmarkRow } from '../../db/schema';
 import { BookService } from '../book/book.service';
 import type { CreateAudiobookBookmarkDto } from './dto/create-audiobook-bookmark.dto';
@@ -199,15 +199,7 @@ export class AudiobookService {
   private async loadManifestContext(bookId: number, user: RequestUser): Promise<ManifestContext> {
     await this.bookService.verifyBookAccess(bookId, user);
     const [detail, rows] = await Promise.all([this.bookService.getDetail(bookId, user), this.repo.findAudioFiles(bookId)]);
-    const files = rows
-      .filter((row) => row.format !== null && isAudioFormat(row.format))
-      .sort((left, right) => {
-        if (left.sortOrder !== null || right.sortOrder !== null) {
-          const byOrder = (left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER);
-          if (byOrder !== 0) return byOrder;
-        }
-        return naturalCompare(basename(left.absolutePath), basename(right.absolutePath));
-      });
+    const files = rows.filter((row) => row.format !== null && isAudioFormat(row.format)).sort(compareAudioTracks);
     if (files.length === 0) throw new NotFoundException('Book has no audiobook assets');
 
     const revision = createHash('sha256')

@@ -1458,6 +1458,7 @@ export class BookRepository {
           absolutePath: bookFiles.absolutePath,
           createdAt: bookFiles.createdAt,
           durationSeconds: bookFiles.durationSeconds,
+          sortOrder: bookFiles.sortOrder,
           mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,
           mediaOverlayDurationSeconds: bookFiles.mediaOverlayDurationSeconds,
           mediaOverlayCheckedAt: bookFiles.mediaOverlayCheckedAt,
