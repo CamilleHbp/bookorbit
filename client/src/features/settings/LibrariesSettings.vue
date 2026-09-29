@@ -269,6 +269,17 @@ async function onSaved(library: LibraryType) {
   void overview.load()
 }
 
+/** Both open their own confirmation, which cannot sit on top of the editor, so the editor closes first. */
+function syncFilesFromEditor(lib: LibraryType) {
+  closeCreator()
+  promptSyncFiles(lib)
+}
+
+function removeFromEditor(lib: LibraryType) {
+  closeCreator()
+  openDelete(lib)
+}
+
 function openDelete(lib: LibraryType) {
   deletingLibrary.value = lib
   deleteConfirmName.value = ''
@@ -411,7 +422,16 @@ async function confirmDelete() {
       </div>
     </div>
 
-    <LibraryCreatorModal v-if="creatorOpen" :library="editingLibrary" @close="closeCreator" @saved="onSaved" />
+    <LibraryCreatorModal
+      v-if="creatorOpen"
+      :library="editingLibrary"
+      @close="closeCreator"
+      @saved="onSaved"
+      @scan="scan"
+      @refresh-covers="refreshCovers"
+      @sync-files="syncFilesFromEditor"
+      @remove="removeFromEditor"
+    />
 
     <ConfirmDialog
       v-if="deletingLibrary"

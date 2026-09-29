@@ -46,7 +46,7 @@ vi.mock('vue-sonner', () => ({
 }))
 
 vi.mock('@/features/library/components/LibraryCreatorModal.vue', () => ({
-  default: { template: '<div />' },
+  default: { name: 'LibraryCreatorModal', props: ['library'], template: '<div data-testid="library-creator" />' },
 }))
 
 // --- Module-level mutable state ---
@@ -645,6 +645,28 @@ describe('LibrariesSettings ledger', () => {
       input.dispatchEvent(new Event('input'))
       await flushPromises()
       expect(confirmButton()?.disabled).toBe(false)
+
+      wrapper.unmount()
+      headerTarget.remove()
+    })
+
+    it('closes the editor before asking to delete from its menu, so the dialog is not stacked on it', async () => {
+      const headerTarget = document.createElement('div')
+      headerTarget.id = 'settings-header-actions'
+      document.body.appendChild(headerTarget)
+      librariesRef.value = [makeLibrary({ id: 5, name: 'Novels' })]
+      const wrapper = await mountLoaded({ realTeleport: true })
+
+      wrapper.findComponent(LibraryRowActions).vm.$emit('edit', librariesRef.value[0]!)
+      await flushPromises()
+      const editor = wrapper.findComponent({ name: 'LibraryCreatorModal' })
+      expect(editor.props('library')).toEqual(librariesRef.value[0])
+
+      editor.vm.$emit('remove', librariesRef.value[0]!)
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="library-creator"]').exists()).toBe(false)
+      expect(document.querySelector('[role="dialog"]')!.textContent).toContain('Delete "Novels"?')
 
       wrapper.unmount()
       headerTarget.remove()

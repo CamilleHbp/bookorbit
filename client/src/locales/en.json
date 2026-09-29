@@ -8484,7 +8484,26 @@
         "icon": {
           "label": "Icon",
           "placeholder": "Choose an icon...",
-          "selected": "Selected"
+          "selected": "Selected",
+          "more": "More icons"
+        },
+        "identity": "Identity",
+        "podcastName": "Podcast library name",
+        "podcastPlaceholder": "My Podcasts",
+        "podcastDefaultName": "Podcasts",
+        "type": {
+          "title": "Library type",
+          "books": "Books",
+          "booksHint": "Ebooks, comics, and audiobooks",
+          "podcasts": "Podcasts",
+          "podcastsHint": "RSS feeds and managed episode storage"
+        },
+        "cover": {
+          "portraitTitle": "Portrait 2:3",
+          "portraitHint": "Ebooks and mixed libraries",
+          "squareTitle": "Square 1:1",
+          "squareHint": "Audiobook-only libraries",
+          "slotsHint": "A book with both an ebook and an audiobook shows the cover that fits this shape."
         }
       },
       "folders": {
@@ -8519,6 +8538,32 @@
           "addDescription": "Every folder directly inside becomes a show.",
           "add": "Add another folder",
           "remove": "Remove {folder}"
+        },
+        "listTitle": "Folders",
+        "storageTitle": "Storage folder",
+        "matchingFiles": "{count, plural, one {# matching file} other {# matching files}}",
+        "bookCount": "{count, plural, one {# book} other {# books}}",
+        "checkAll": "Check folders again",
+        "checkAgain": "Check {folder} again",
+        "checkHint": "Each folder is checked as soon as you add it. A folder another library already reads is flagged, because both libraries would import the same files.",
+        "emptyHint": "Paste a server path below, or browse for one.",
+        "emptyPodcastHint": "Choose where downloaded podcast episodes will be stored.",
+        "pastePlaceholder": "Paste a server path, e.g. /books/Sci-Fi",
+        "pastePodcastPlaceholder": "Paste a server path, e.g. /podcasts",
+        "browse": "Browse...",
+        "status": {
+          "checking": "Checking",
+          "failed": "Check failed",
+          "notAccessible": "Not accessible",
+          "overlap": "Also in {library}",
+          "overlapTitle": "The library \"{library}\" already reads this folder.",
+          "files": "{count, plural, one {# file} other {# files}}"
+        },
+        "errors": {
+          "empty": "Enter a server folder path.",
+          "notAbsolute": "Enter an absolute server path beginning with /.",
+          "duplicate": "That folder has already been added.",
+          "covered": "That folder is already covered by {path}."
         }
       },
       "scanner": {
@@ -8592,6 +8637,36 @@
           "hintAfter": ").",
           "add": "Add",
           "empty": "No patterns added."
+        },
+        "mode": {
+          "title": "How files become books",
+          "locked": "Set at creation",
+          "cannotChange": "This is the one setting you cannot change later.",
+          "folderHint": "Every folder is one book. Best when a title keeps several formats together, or an audiobook spans many files.",
+          "fileHint": "Every file is its own book. Best for flat folders with one format per title.",
+          "folderResult": "One book with two formats",
+          "fileResult": "Three books, one per file"
+        },
+        "import": {
+          "title": "Import",
+          "all": "All formats",
+          "some": "Only these",
+          "groups": {
+            "ebook": "Ebooks",
+            "kindle": "Kindle",
+            "document": "Documents",
+            "comic": "Comics",
+            "audio": "Audio"
+          }
+        },
+        "skip": {
+          "title": "Skip files matching",
+          "count": "{count, plural, one {# pattern} other {# patterns}}",
+          "hint": "Glob patterns, matched against paths inside the library folders.",
+          "inputLabel": "Pattern to skip",
+          "placeholder": "Type a pattern like **/samples/** and press Enter",
+          "placeholderMore": "Add another pattern",
+          "remove": "Remove pattern {pattern}"
         }
       },
       "metadata": {
@@ -8604,7 +8679,28 @@
           "hint": "When a book has multiple formats, the format highest in the list is preferred."
         },
         "moveUp": "Move {item} up",
-        "moveDown": "Move {item} down"
+        "moveDown": "Move {item} down",
+        "primary": {
+          "title": "Primary file",
+          "hint": "When a book has several files, the first format in this order becomes its primary file: the one that opens first and supplies the book's details. Drag a row, or use the arrows.",
+          "reset": "Reset order",
+          "first": "First choice",
+          "notImported": "Not imported",
+          "notHeld": "{count, plural, one {# format this library does not hold keeps its default place after these.} other {# formats this library does not hold keep their default order after these.}}",
+          "moreBelow": "{count, plural, one {# more format follows in this order.} other {# more formats follow in this order.}}",
+          "showingAll": "Showing every format.",
+          "showAll": "Show all {count}",
+          "showFewer": "Show fewer"
+        },
+        "source": {
+          "title": "Book details come from",
+          "embeddedTitle": "Tags in the book file",
+          "embeddedHint": "Read from the primary file",
+          "opfTitle": "metadata.opf file",
+          "opfHint": "Saved next to the book by Calibre",
+          "swap": "Swap the order",
+          "hint": "BookOrbit uses the first one a book has and ignores the other. Calibre libraries usually want metadata.opf first."
+        }
       },
       "fileWrite": {
         "maxFileSizeMb": "Max file size (MB)",
@@ -8650,7 +8746,17 @@
           "title": "Audio",
           "hint": "Embeds the stored cover into M4B, M4A, MP3, and FLAC files.",
           "toggleAria": "Write audio covers"
-        }
+        },
+        "coverAudioHint": "Writes the stored cover into the file too. Audio files can only take a cover.",
+        "audioNeedsCover": "Needs “Include cover image” turned on.",
+        "table": {
+          "format": "Format",
+          "inLibrary": "Here",
+          "sizeLimit": "Size limit"
+        },
+        "sizeLimitAria": "{format} size limit in MB",
+        "mb": "MB",
+        "summary": "{count, plural, =0 {No file types are written.} one {# kind of file is written. Files over their size limit are skipped.} other {# kinds of file are written. Files over their size limit are skipped.}}"
       },
       "reading": {
         "readingStart": {
@@ -8661,7 +8767,16 @@
           "title": "Mark as finished",
           "hint": "A book is automatically marked as \"read\" when this percentage of progress is reached.",
           "invalidThreshold": "Finished progress must be between 90% and 100%."
-        }
+        },
+        "statusTitle": "Reading status",
+        "zones": {
+          "notStarted": "Not started",
+          "reading": "Reading",
+          "read": "Read"
+        },
+        "range": "Between {min} and {max}.",
+        "startSlider": "Drag to set when a book counts as started",
+        "finishSlider": "Drag to set when a book counts as finished"
       },
       "schedule": {
         "fileWatching": "File watching",
@@ -8716,8 +8831,101 @@
         "errors": {
           "grant": "Failed to grant access",
           "updateLevel": "Failed to update access level",
-          "revoke": "Failed to revoke access"
+          "revoke": "Failed to revoke access",
+          "load": "Could not load library access settings."
+        },
+        "peopleTitle": "People with access",
+        "peopleCount": "{count, plural, one {# person} other {# people}}",
+        "add": "Add",
+        "emptyCreate": "Nobody else yet. People you add here get access as soon as the library exists.",
+        "superusers": "Superusers always have full access.",
+        "levelFor": "Access level for {name}",
+        "revokeFor": "Remove access for {name}",
+        "revokeQuestion": "Remove access?",
+        "revoke": "Remove",
+        "keep": "Keep",
+        "failed": {
+          "title": "{count, plural, one {# person could not be added} other {# people could not be added}}",
+          "body": "The library was created. Try adding {names} again, or add them later from this section."
         }
+      },
+      "optional": "Optional",
+      "nav": {
+        "details": "Library",
+        "folders": "Folders",
+        "scanner": "Scanning",
+        "metadata": "Metadata",
+        "reading": "Reading",
+        "schedule": "Automation",
+        "fileWrite": "File updates",
+        "access": "Access",
+        "descriptions": {
+          "details": "What the library is called and how its covers look.",
+          "folders": "The server folders this library reads from.",
+          "scanner": "How files are grouped into books, and which files are skipped.",
+          "metadata": "Which file leads when a book has several, and where its details come from.",
+          "reading": "When a book moves from unread to reading to read.",
+          "schedule": "Keep the library current without pressing Scan.",
+          "fileWrite": "Optional changes BookOrbit may make to the files on disk.",
+          "access": "Who else can see and work with this library."
+        }
+      },
+      "sheet": {
+        "createTitle": "New library",
+        "createHint": "Name it and point it at a folder. Everything else starts with a sensible default.",
+        "editFallbackTitle": "Library settings",
+        "editSubtitle": "{books, plural, one {# book} other {# books}} · {folders, plural, one {# folder} other {# folders}} · {mode}",
+        "editSubtitleNoBooks": "{folders, plural, one {# folder} other {# folders}} · {mode}",
+        "readyHint": "Ready to create. The rest can wait.",
+        "needsHint": "Needs a name, an icon and a folder.",
+        "discardQuestion": "Discard your unsaved changes?",
+        "discard": "Discard",
+        "keepEditing": "Keep editing",
+        "done": "Done",
+        "loading": "Loading settings...",
+        "staleWarning": "The latest library settings could not be loaded. You can still edit the cached settings shown here.",
+        "scanNow": "Scan now"
+      },
+      "summary": {
+        "needsName": "Needs a name",
+        "needsIcon": "Needs an icon",
+        "needsFolder": "Needs a folder",
+        "detailsPortrait": "{name} · Portrait covers",
+        "detailsSquare": "{name} · Square covers",
+        "folders": "{folders, plural, one {# folder} other {# folders}}",
+        "foldersFiles": "{folders, plural, one {# folder} other {# folders}} · {files, plural, one {# file} other {# files}}",
+        "foldersBooks": "{folders, plural, one {# folder} other {# folders}} · {books, plural, one {# book} other {# books}}",
+        "scannerAll": "{mode} · All formats",
+        "scannerSome": "{mode} · {count, plural, one {# format} other {# formats}}",
+        "metadataFile": "{format} leads · Book file first",
+        "metadataOpf": "{format} leads · metadata.opf first",
+        "reading": "Started {start} · Finished {finish}",
+        "watching": "Watching folders",
+        "notWatching": "Not watching",
+        "watchingScheduled": "Watching · {schedule}",
+        "watchingOnly": "Watching · No schedule",
+        "scheduledOnly": "Not watching · {schedule}",
+        "manualOnly": "Manual scans only",
+        "customSchedule": "Custom schedule",
+        "writesAndRenames": "{count, plural, =0 {Writes nothing} one {Writes # kind} other {Writes # kinds}} · Renames",
+        "writes": "{count, plural, =0 {Writes nothing} one {Writes # kind of file} other {Writes # kinds of file}}",
+        "renames": "Renames files",
+        "untouched": "Files left untouched",
+        "onlySuperusers": "Only superusers",
+        "accessQueued": "{count, plural, one {# person to add} other {# people to add}}",
+        "accessPeople": "{count, plural, =0 {Only superusers} one {# person} other {# people}}"
+      },
+      "errors": {
+        "nameRequired": "Enter a library name.",
+        "iconRequired": "Choose an icon.",
+        "folderRequired": "Add at least one folder.",
+        "podcastStorageFolder": "Choose exactly one storage folder for podcasts.",
+        "podcastFolderOverlap": "Existing podcast folders must sit outside the storage folder.",
+        "cronInvalid": "Enter a valid 5-field cron expression.",
+        "readingStartRange": "Reading start must be between 0.05% and 5%.",
+        "fileSizeRange": "File-size limits must be whole numbers from 1 to 10,000 MB.",
+        "saveFailed": "Failed to save library.",
+        "connection": "Could not connect to the server. Check your connection and try again."
       }
     },
     "folderPicker": {
