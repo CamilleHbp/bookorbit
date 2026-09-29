@@ -566,7 +566,7 @@ onMounted(async () => {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-70 bg-foreground/25 motion-safe:animate-in motion-safe:fade-in-0" role="presentation" @click.self="requestClose">
+    <div class="fixed inset-0 z-70 bg-scrim motion-safe:animate-in motion-safe:fade-in-0" role="presentation" @click.self="requestClose">
       <div
         ref="panel"
         class="fixed inset-y-0 end-0 flex w-full flex-col bg-background shadow-2xl outline-none sm:max-w-[56rem] sm:border-s sm:border-border motion-safe:animate-in motion-safe:duration-300 ltr:motion-safe:slide-in-from-right rtl:motion-safe:slide-in-from-left"

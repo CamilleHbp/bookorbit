@@ -464,7 +464,7 @@ watch(
   <DialogRoot :open="lightboxSrc !== null" @update:open="handleCoverPreviewOpenChange">
     <DialogPortal>
       <DialogOverlay
-        class="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 motion-reduce:animate-none"
+        class="fixed inset-0 z-[60] bg-scrim-media data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 motion-reduce:animate-none"
       />
       <DialogContent
         :aria-describedby="undefined"

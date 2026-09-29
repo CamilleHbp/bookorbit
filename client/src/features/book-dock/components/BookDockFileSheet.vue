@@ -443,7 +443,7 @@ onMounted(() => {
 
 <template>
   <div class="fixed inset-0 z-50 flex">
-    <div class="hidden sm:block flex-1 bg-black/50 backdrop-blur-sm" @click="$emit('close')" />
+    <div class="hidden sm:block flex-1 bg-scrim" @click="$emit('close')" />
 
     <div
       class="relative flex flex-col w-full h-full bg-background sm:border-l border-border shadow-2xl overflow-hidden transition-[width,max-width] duration-300"
