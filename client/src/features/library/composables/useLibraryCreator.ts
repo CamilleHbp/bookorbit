@@ -124,6 +124,28 @@ export function useLibraryCreator() {
   }
 
   function initEdit(library: Library) {
+    applyLibrary(library)
+    mode.value = 'edit'
+    editingLibraryId.value = library.id
+    folderChecks.value = {}
+    error.value = null
+  }
+
+  /**
+   * Seeds a new library from an existing one's settings. Folders and access belong to the original, so
+   * they start empty, and nothing reaches the server until the new library is created.
+   */
+  function initFromTemplate(template: Library, name: string) {
+    initCreate()
+    applyLibrary(template)
+    form.name = name
+    form.displayOrder = blankForm().displayOrder
+    form.folders = []
+    form.localFolders = []
+    storedAddedAtSource.value = null
+  }
+
+  function applyLibrary(library: Library) {
     form.type = library.type
     form.name = library.name
     form.icon = library.icon ?? null
@@ -159,10 +181,6 @@ export function useLibraryCreator() {
     form.fileWriteAudioEnabled = library.fileWriteAudioEnabled
     form.fileWriteAudioMaxFileSizeMb = library.fileWriteAudioMaxFileSizeMb
     form.fileRenameEnabled = library.fileRenameEnabled
-    mode.value = 'edit'
-    editingLibraryId.value = library.id
-    folderChecks.value = {}
-    error.value = null
   }
 
   /**
@@ -285,6 +303,7 @@ export function useLibraryCreator() {
     validationErrors,
     initCreate,
     initEdit,
+    initFromTemplate,
     checkFolders,
     loadStats,
     save,

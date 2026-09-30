@@ -151,6 +151,29 @@ describe('LibraryCreatorModal', () => {
     wrapper.unmount()
   })
 
+  it('opens on the section it was asked for', async () => {
+    const library = makeLibrary()
+    apiMock.mockImplementation(async (url) => jsonResponse(String(url).endsWith('/libraries/9') ? library : null))
+    const wrapper = await mountCreator({ library, initialSection: 'access' })
+
+    expect(navButton(wrapper, 'Access').attributes('aria-current')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it("starts a new library from another one's settings, without its folders", async () => {
+    const template = makeLibrary({ name: 'Novels', watch: true, autoScanCronExpression: '0 0 * * 1', fileRenameEnabled: true })
+    const wrapper = await mountCreator({ template })
+
+    expect(wrapper.get('#library-creator-title').text()).toBe('New library')
+    expect(wrapper.getComponent(LibraryCreatorDetails).props('name')).toBe('Novels copy')
+    expect(wrapper.getComponent(LibraryCreatorDetails).props('icon')).toBe('Swords')
+    expect(navButton(wrapper, 'Folders').text()).toContain('Needs a folder')
+    expect(navButton(wrapper, 'Automation').text()).toContain('Watching · Weekly')
+    expect(navButton(wrapper, 'File updates').text()).toContain('Renames')
+    expect(apiMock.mock.calls.some((call) => String(call[0]).endsWith('/libraries/9'))).toBe(false)
+    wrapper.unmount()
+  })
+
   it('keeps save disabled until something changes while editing', async () => {
     const library = makeLibrary()
     apiMock.mockImplementation(async (url) => jsonResponse(String(url).endsWith('/libraries/9') ? library : null))

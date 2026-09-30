@@ -34,6 +34,7 @@ import { api } from '@/lib/api'
 import { useLibraryAddedAt } from '../composables/useLibraryAddedAt'
 import { LIBRARY_ACCESS_KEY, useLibraryAccess } from '../composables/useLibraryAccess'
 import { useLibraryCreator, type LibraryCreatorSectionId } from '../composables/useLibraryCreator'
+import { writtenKindCount } from '../utils/library-summary'
 import LibraryCreatorAccess from './LibraryCreatorAccess.vue'
 import LibraryCreatorDetails from './LibraryCreatorDetails.vue'
 import LibraryCreatorFileWrite from './LibraryCreatorFileWrite.vue'
@@ -49,6 +50,10 @@ const props = defineProps<{
   library?: Library | null
   /** Create mode only: pre-selects the library type (e.g. from the podcast sidebar section). */
   initialType?: LibraryType
+  /** The section to open on, e.g. from an Edit button beside that part of the library. */
+  initialSection?: LibraryCreatorSectionId
+  /** Create mode only: a library whose settings seed the new one. Its folders and access are not copied. */
+  template?: Library | null
 }>()
 
 const emit = defineEmits<{
@@ -81,13 +86,6 @@ const SECTION_COMPONENTS: Record<LibraryCreatorSectionId, Component> = {
   access: LibraryCreatorAccess,
 }
 const BOOK_SECTIONS: LibraryCreatorSectionId[] = ['details', 'folders', 'scanner', 'metadata', 'reading', 'schedule', 'fileWrite', 'access']
-const WRITE_FAMILY_FLAGS = [
-  'fileWriteEpubEnabled',
-  'fileWriteFb2Enabled',
-  'fileWritePdfEnabled',
-  'fileWriteCbxEnabled',
-  'fileWriteKindleEnabled',
-] as const
 
 const creator = useLibraryCreator()
 const { form, mode, editingLibraryId, loading, folderChecks, stats, error, validationErrors } = creator
@@ -150,9 +148,7 @@ const leadFormat = computed(() => {
   return lead ? lead.toUpperCase() : ''
 })
 
-const writtenKinds = computed(
-  () => WRITE_FAMILY_FLAGS.filter((flag) => form[flag]).length + (form.fileWriteAudioEnabled && form.fileWriteWriteCover ? 1 : 0),
-)
+const writtenKinds = computed(() => writtenKindCount(form))
 
 const scheduleLabel = computed(() => {
   const cron = form.autoScanCronExpression
@@ -545,15 +541,25 @@ async function initialize() {
     void access.load()
     return
   }
+  if (props.template) {
+    creator.initFromTemplate(props.template, t('library.creator.copyName', { name: props.template.name }))
+    return
+  }
   creator.initCreate()
   if (props.initialType && props.initialType !== form.type) handleTypeUpdate(props.initialType)
+}
+
+function startingSection(): LibraryCreatorSectionId | null {
+  const requested = props.initialSection && sectionIds.value.includes(props.initialSection) ? props.initialSection : null
+  if (requested) return requested
+  return isWide.value ? 'details' : null
 }
 
 onMounted(async () => {
   try {
     await initialize()
   } finally {
-    activeSection.value = isWide.value ? 'details' : null
+    activeSection.value = startingSection()
     initialFormSnapshot.value = JSON.stringify(form)
     initializing.value = false
     if (creating.value && isWide.value) {
