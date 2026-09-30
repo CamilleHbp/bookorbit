@@ -25,6 +25,9 @@ packageExtensions:
   "@embedpdf/utils@2.15.1":
     dependencies:
       "@embedpdf/models": 2.15.1
+peerDependencyRules:
+  allowedVersions:
+    "vite-plugin-pwa>@vite-pwa/assets-generator": "^2.0.0"
 allowBuilds:
   "@ffmpeg-installer/darwin-arm64": true
   "@ffmpeg-installer/darwin-x64": true
