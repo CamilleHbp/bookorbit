@@ -116,4 +116,40 @@ describe('reader progress across offline close and reopen', () => {
     expect(JSON.parse(mockApi.mock.calls[0]![1]!.body as string)).toMatchObject({ expectedUserId: 7, anchor: { quote: 'Saved passage' } })
     expect(progress.synchronizationError.value).toBe('Offline storage unavailable')
   })
+  it('saves narration progress after capturing a revision anchor', async () => {
+    mockApi.mockResolvedValue(new Response('{}', { status: 200 }))
+    open()
+    progress.onRelocate(relocate(false))
+    await vi.waitFor(async () => expect(await readingEventOutbox.pending(7, 9)).toHaveLength(1))
+    progress.setMediaOverlayProgress('chapter.xhtml#sentence-4', 0, 12)
+    await progress.save()
+    const request = mockApi.mock.calls.find(([url]) => url === '/api/v1/books/files/9/progress')
+    expect(request).toBeDefined()
+    expect(JSON.parse(request![1]!.body as string)).toMatchObject({
+      source: 'narration',
+      mediaOverlayFragment: 'chapter.xhtml#sentence-4',
+      mediaOverlaySectionIndex: 0,
+      positionSeconds: 12,
+    })
+    expect(await readingEventOutbox.pending(7, 9)).toHaveLength(1)
+  })
+
+  it('saves resumed narration after position restoration', async () => {
+    mockApi.mockResolvedValue(new Response('{}', { status: 200 }))
+    open()
+    progress.onRelocate(relocate(true))
+    progress.setMediaOverlayProgress('chapter.xhtml#sentence-4', 0, 12)
+    await progress.save()
+    expect(mockApi).toHaveBeenCalledWith('/api/v1/books/files/9/progress', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('does not save narration under another account after capturing a revision anchor', async () => {
+    open()
+    progress.onRelocate(relocate(false))
+    await vi.waitFor(async () => expect(await readingEventOutbox.pending(7, 9)).toHaveLength(1))
+    userId.value = 8
+    progress.setMediaOverlayProgress('chapter.xhtml#sentence-4', 0, 12)
+    await progress.save()
+    expect(mockApi).not.toHaveBeenCalled()
+  })
 })
