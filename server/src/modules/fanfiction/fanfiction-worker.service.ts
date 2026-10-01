@@ -1,11 +1,10 @@
-import { BadRequestException, ForbiddenException, HttpException, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { ForbiddenException, HttpException, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import type { FanfictionJob } from '@bookorbit/types';
 import { UserService } from '../user/user.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { withFanfictionDefaults } from './fanfiction-defaults';
-import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanfictionConnectionService } from './fanfiction-connection.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionImportService } from './fanfiction-import.service';
@@ -28,7 +27,6 @@ export class FanfictionWorkerService implements OnModuleDestroy {
   constructor(
     private readonly jobs: FanfictionJobService,
     private readonly access: FanfictionAccessService,
-    private readonly profiles: FanfictionProfileService,
     private readonly connections: FanfictionConnectionService,
     private readonly runtime: FanficfareRuntimeService,
     private readonly users: UserService,
@@ -107,22 +105,12 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const downloads =
         !job.result?.preparedUpdate?.approved && !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind);
       // Resolve at execution time so already queued stories use a repaired website login.
-      const personal = downloads && job.accessMode === 'personal';
-      const match = downloads && !personal && !job.profileId ? await this.profiles.match(job.libraryId, job.url, user) : null;
-      if (match?.ambiguous) throw new BadRequestException({ message: 'Choose a website login for this story', errorCode: 'configuration_blocked' });
-      const profileId = downloads ? (job.profileId ?? match?.profile?.id) : null;
-      const session = personal ? await this.connections.session(job.url, user, authorizeCookies) : null;
+      const session = downloads ? await this.connections.session(job.url, user, authorizeCookies) : null;
       connection = session?.connection ?? null;
-      const { document, saveCookies } =
-        session ??
-        (profileId
-          ? await this.profiles.session(job.libraryId, profileId, user, authorizeCookies)
-          : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined });
-      if (personal && profileId) {
-        const { document: legacy } = await this.profiles.document(job.libraryId, profileId, user);
-        document.configuration = await this.runtime.personalConfiguration(legacy.configuration, document.configuration);
-        document.tagRules = legacy.tagRules;
-      }
+      const { document, saveCookies } = session ?? {
+        document: withFanfictionDefaults({ configuration: '', cookies: [] }, user),
+        saveCookies: undefined,
+      };
       const result: FanfictionJob['result'] =
         job.kind === 'replacement'
           ? await this.replacements.run(job, () => this.authorized(job), controller.signal)

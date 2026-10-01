@@ -1,7 +1,7 @@
 import { storyTags } from './fanfiction-metadata-review';
 import { CollectionService } from '../collection/collection.service';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { FanfictionProfileDocument, FanfictionJob, FanfictionImportProgress } from '@bookorbit/types';
+import type { FanfictionConnectionDocument, FanfictionJob, FanfictionImportProgress } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import type * as schema from '../../db/schema';
 import { BookDockManagedService, type AuthorizeManagedImport } from '../book-dock/book-dock-managed.service';
@@ -9,8 +9,6 @@ import { BookRevisionService } from '../book-revision/book-revision.service';
 import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionSourceService } from './fanfiction-source.service';
-import { withFanfictionDefaults } from './fanfiction-defaults';
-import { FanfictionProfileService } from './fanfiction-profile.service';
 
 import type { FanfictionCookieSink } from './fanfiction-cookies';
 
@@ -21,7 +19,6 @@ export class FanfictionImportService {
   constructor(
     private readonly runtime: FanficfareRuntimeService,
     private readonly sources: FanfictionSourceService,
-    private readonly profiles: FanfictionProfileService,
     private readonly dock: BookDockManagedService,
     private readonly revisions: BookRevisionService,
     private readonly catalog: RevisionCatalogService,
@@ -31,7 +28,7 @@ export class FanfictionImportService {
   async run(
     job: Job,
     user: RequestUser,
-    document: FanfictionProfileDocument,
+    document: FanfictionConnectionDocument,
     authorize: () => Promise<unknown>,
     signal: AbortSignal,
     saveCookies?: FanfictionCookieSink,
@@ -103,22 +100,16 @@ export class FanfictionImportService {
       return { sourceId: source.id, bookId: installed.bookId, bookFileId: installed.bookFileId, preview: job.result!.importReview!.preview };
     };
     if (await this.dock.isPrepared(input, authorizeImport)) return install('');
-    const effective =
-      source.profileId === job.profileId
-        ? { document, saveCookies }
-        : source.profileId
-          ? await this.profiles.session(job.libraryId, source.profileId, user, authorize)
-          : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
     return this.runtime.download(
       source.canonicalUrl,
-      effective.document,
+      document,
       async (path, downloaded) => {
         await authorize();
         await this.sources.recordImportMetadata(job, source.id, downloaded, user);
         return install(path);
       },
       signal,
-      effective.saveCookies,
+      saveCookies,
       reportProgress,
     );
   }

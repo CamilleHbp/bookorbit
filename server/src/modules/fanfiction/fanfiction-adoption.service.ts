@@ -12,7 +12,6 @@ import { BookRevisionService } from '../book-revision/book-revision.service';
 import { RevisionFileService } from '../book-revision/revision-file.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
-import { FanfictionProfileService } from './fanfiction-profile.service';
 import { SelectFanfictionDiscoveryDto } from './dto/fanfiction-discovery.dto';
 
 import { discoveryWebsite } from './fanfiction-discovery-website';
@@ -28,7 +27,6 @@ export class FanfictionAdoptionService {
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly access: FanfictionAccessService,
     private readonly jobs: FanfictionJobService,
-    private readonly profiles: FanfictionProfileService,
     private readonly catalog: RevisionCatalogService,
     private readonly revisions: BookRevisionService,
     private readonly files: RevisionFileService,
@@ -45,7 +43,7 @@ export class FanfictionAdoptionService {
     )
       throw new BadRequestException('Book choices must belong to the explicit selection');
     if (new Set(dto.overrides?.map((item) => item.id)).size !== (dto.overrides?.length ?? 0))
-      throw new BadRequestException('Each book can have only one source and profile choice');
+      throw new BadRequestException('Each book can have only one original story choice');
     if (
       dto.decision === 'approve' &&
       dto.state === 'ambiguous' &&
@@ -72,10 +70,6 @@ export class FanfictionAdoptionService {
         );
       if (owned.length !== dto.overrides.length) throw new BadRequestException('Book choices must belong to this website');
     }
-    for (const profileId of new Set(
-      [dto.profileId, ...(dto.overrides ?? []).map((item) => item.profileId)].filter((id): id is string => Boolean(id)),
-    ))
-      await this.profiles.get(libraryId, profileId, user);
     const {
       rows: [{ cutoff }],
     } = await this.db.execute<{ cutoff: string }>(sql`select to_char(clock_timestamp(), 'YYYY-MM-DD"T"HH24:MI:SS.USOF') as cutoff`);
@@ -87,17 +81,14 @@ export class FanfictionAdoptionService {
       overrides: (dto.overrides ?? [])
         .map((item) => ({
           id: item.id,
-          ...(item.profileId !== undefined ? { profileId: item.profileId } : {}),
           ...(item.canonicalUrl ? { canonicalUrl: item.canonicalUrl } : {}),
         }))
         .sort((a, b) => a.id.localeCompare(b.id)),
       urlPrefixes: normalizeUrlPrefixes(dto.urlPrefixes ?? []),
-      autoProfile: !dto.profileId && dto.autoProfile === true,
       cursor: null,
       ids: dto.ids ? [...new Set(dto.ids)].sort() : null,
       state: dto.state,
       decision: dto.decision,
-      profileId: dto.profileId ?? null,
       intervalMinutes: dto.intervalMinutes === undefined ? 1440 : dto.intervalMinutes,
       canonicalUrl: dto.canonicalUrl,
       processed: 0,
@@ -111,8 +102,6 @@ export class FanfictionAdoptionService {
         tokenVersion: user.tokenVersion,
         idempotencyKey: dto.idempotencyKey,
         kind: 'adopt',
-        accessMode: dto.profileId || dto.autoProfile ? 'legacy' : 'personal',
-        profileId: dto.profileId ?? null,
         url: '',
         site: `local-library-${libraryId}`,
         selection,
@@ -135,10 +124,8 @@ export class FanfictionAdoptionService {
       Boolean(dto.cutoff && previous.cutoff !== selection.cutoff) ||
       JSON.stringify(previous.excludedIds ?? []) !== JSON.stringify(selection.excludedIds) ||
       JSON.stringify(previous.overrides ?? []) !== JSON.stringify(selection.overrides) ||
-      Boolean(previous.autoProfile) !== Boolean(selection.autoProfile) ||
       JSON.stringify(previous.urlPrefixes ?? []) !== JSON.stringify(selection.urlPrefixes) ||
       previous.state !== selection.state ||
-      previous.profileId !== selection.profileId ||
       previous.intervalMinutes !== selection.intervalMinutes ||
       previous.canonicalUrl !== selection.canonicalUrl ||
       JSON.stringify(previous.ids) !== JSON.stringify(selection.ids)
@@ -150,15 +137,6 @@ export class FanfictionAdoptionService {
   async run(job: typeof jobs.$inferSelect, user: RequestUser, authorize: () => Promise<unknown>, signal: AbortSignal) {
     if (!job.selection) throw new BadRequestException('Adoption has no saved selection');
     const selection = { ...job.selection };
-    if (selection.profileId) {
-      try {
-        await this.profiles.get(job.libraryId, selection.profileId, user);
-      } catch (error) {
-        if (error instanceof NotFoundException)
-          throw new BadRequestException({ errorCode: 'configuration_blocked', message: 'The selected profile is no longer available' });
-        throw error;
-      }
-    }
     const batch = await this.db
       .select()
       .from(candidates)
@@ -182,19 +160,6 @@ export class FanfictionAdoptionService {
       .orderBy(asc(candidates.id))
       .limit(100);
     const overrides = new Map((selection.overrides ?? []).map((item) => [item.id, item]));
-    const candidateUrl = (candidate: (typeof batch)[number]) => {
-      const urls = [...new Set(candidate.urls.flatMap((url) => (url.recognized ? [url.canonicalUrl] : [])))];
-      return overrides.get(candidate.id)?.canonicalUrl ?? selection.canonicalUrl ?? (urls.length === 1 ? urls[0] : undefined);
-    };
-    const matches =
-      selection.autoProfile && selection.decision === 'approve'
-        ? await this.profiles.matchMany(
-            job.libraryId,
-            batch.flatMap((candidate) => (candidateUrl(candidate) ? [candidateUrl(candidate)!] : [])),
-            user,
-          )
-        : new Map();
-    const checkedProfiles = new Set<string>();
     const deadline = Date.now() + 20_000;
     for (const candidate of batch) {
       if (signal.aborted) throw new ConflictException('Discovery selection was cancelled');
@@ -220,22 +185,9 @@ export class FanfictionAdoptionService {
         )
           throw new ConflictException('Candidate review state changed');
         if (selection.decision === 'approve') {
-          const match = matches.get(candidateUrl(candidate) ?? '');
           const override = overrides.get(candidate.id);
-          if (match?.ambiguous && override?.profileId === undefined)
-            throw new ConflictException({ errorCode: 'profile_ambiguous', message: 'Choose a profile for this story before linking' });
-          const profileId =
-            override?.profileId !== undefined ? override.profileId : selection.autoProfile ? (match?.profile?.id ?? null) : selection.profileId;
-          if (override?.profileId && !checkedProfiles.has(override.profileId)) {
-            await this.profiles.get(job.libraryId, override.profileId, user);
-            checkedProfiles.add(override.profileId);
-          }
-          await this.adopt(
-            job,
-            candidate,
-            { ...selection, profileId, canonicalUrl: override?.canonicalUrl ?? selection.canonicalUrl },
-            authorize,
-            (tx) => checkpoint(tx, false),
+          await this.adopt(job, candidate, { ...selection, canonicalUrl: override?.canonicalUrl ?? selection.canonicalUrl }, authorize, (tx) =>
+            checkpoint(tx, false),
           );
         } else
           await this.db.transaction(async (tx) => {
@@ -325,12 +277,10 @@ export class FanfictionAdoptionService {
           libraryId: job.libraryId,
           createdBy: job.userId,
           folderId: file.libraryFolderId,
-          profileId: selection.profileId,
           maintainerUserId: job.userId,
-          accessMode: selection.profileId ? 'legacy' : job.accessMode,
           updatesEnabled: selection.intervalMinutes !== null,
-          updatePolicy: job.accessMode === 'personal' ? 'safe' : 'review',
-          tagPolicy: job.accessMode === 'personal' ? 'automatic' : 'review',
+          updatePolicy: 'safe',
+          tagPolicy: 'automatic',
           bookId: file.bookId,
           bookFileId: file.id,
           canonicalUrl: choice.canonicalUrl,
@@ -359,10 +309,8 @@ export class FanfictionAdoptionService {
           .set({
             state: 'active',
             maintainerUserId: job.userId,
-            accessMode: selection.profileId ? 'legacy' : job.accessMode,
             updatesEnabled: selection.intervalMinutes !== null,
-            updatePolicy: job.accessMode === 'personal' ? 'safe' : source.updatePolicy,
-            profileId: selection.profileId,
+            updatePolicy: source.updatePolicy,
             intervalMinutes: selection.intervalMinutes,
             nextCheckAt: selection.intervalMinutes === null ? null : sql`now() + (${selection.intervalMinutes} * interval '1 minute')`,
             attentionCode: null,

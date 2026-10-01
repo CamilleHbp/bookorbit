@@ -5,7 +5,6 @@ import { FanfictionWorkerService } from './fanfiction-worker.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionConnectionService } from './fanfiction-connection.service';
-import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionImportService } from './fanfiction-import.service';
 import { FanfictionUpdateService } from './fanfiction-update.service';
@@ -25,12 +24,10 @@ describe('Fanfiction queued execution', () => {
       userId: 7,
       tokenVersion: 1,
       attempts: 1,
-      profileId: null,
       url: 'https://archiveofourown.org/works/1',
     };
     const document = { configuration: '[archiveofourown.org]\nusername: reader', cookies: [] };
-    const profiles = {
-      match: vi.fn().mockResolvedValue({ profile: { id: 'saved-login' } }),
+    const connections = {
       session: vi.fn().mockResolvedValue({ document, saveCookies: undefined }),
     };
     const jobs = {
@@ -50,11 +47,10 @@ describe('Fanfiction queued execution', () => {
     const module = await Test.createTestingModule({
       providers: [
         FanfictionWorkerService,
-        { provide: FanfictionConnectionService, useValue: {} },
+        { provide: FanfictionConnectionService, useValue: connections },
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionAccessService, useValue: access },
         { provide: FanfictionImportService, useValue: imports },
-        { provide: FanfictionProfileService, useValue: profiles },
         { provide: UserService, useValue: { findByIdWithPermissions: vi.fn().mockResolvedValue({ id: 7, tokenVersion: 1 }) } },
         ...[
           FanficfareRuntimeService,
@@ -75,8 +71,7 @@ describe('Fanfiction queued execution', () => {
       await worker.tick();
       await vi.waitFor(() => expect(jobs.finish).toHaveBeenCalledWith(job, 'succeeded', { bookId: 42, bookFileId: 43 }, null));
       expect(jobs.renew).not.toHaveBeenCalled();
-      expect(profiles.match).toHaveBeenCalledWith(5, job.url, expect.objectContaining({ id: 7 }));
-      expect(profiles.session).toHaveBeenCalledWith(5, 'saved-login', expect.objectContaining({ id: 7 }), expect.any(Function));
+      expect(connections.session).toHaveBeenCalledWith(job.url, expect.objectContaining({ id: 7 }), expect.any(Function));
       expect(imports.run.mock.calls[0][2]).toBe(document);
       expect(access.administer).toHaveBeenCalledTimes(4);
     } finally {
@@ -86,9 +81,9 @@ describe('Fanfiction queued execution', () => {
   });
 
   it.each(['rollback', 'replacement', 'discovery', 'adopt', 'source_batch'] as const)(
-    'runs %s without decrypting a profile or contacting FanFicFare',
+    'runs %s without decrypting a connection or contacting FanFicFare',
     async (kind) => {
-      const job = { id: 'job', kind, libraryId: 5, userId: 7, tokenVersion: 1, profileId: 'broken-profile', attempts: 1 };
+      const job = { id: 'job', kind, libraryId: 5, userId: 7, tokenVersion: 1, attempts: 1 };
       const result = ['rollback', 'replacement'].includes(kind)
         ? { revisionId: 'new-rollback-revision' }
         : kind === 'discovery'
@@ -100,15 +95,14 @@ describe('Fanfiction queued execution', () => {
         yieldBatch: vi.fn().mockResolvedValue(true),
         renew: vi.fn().mockResolvedValue(true),
       };
-      const profiles = { document: vi.fn().mockRejectedValue(new Error('Encryption key unavailable')) };
+      const connections = { session: vi.fn().mockRejectedValue(new Error('Encryption key unavailable')) };
       const runtime = { preview: vi.fn() };
       const rollback = { run: vi.fn().mockResolvedValue(result) };
       const module = await Test.createTestingModule({
         providers: [
           FanfictionWorkerService,
-          { provide: FanfictionConnectionService, useValue: {} },
+          { provide: FanfictionConnectionService, useValue: connections },
           { provide: FanfictionJobService, useValue: jobs },
-          { provide: FanfictionProfileService, useValue: profiles },
           { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
           { provide: FanficfareRuntimeService, useValue: runtime },
           { provide: UserService, useValue: { findByIdWithPermissions: vi.fn().mockResolvedValue({ id: 7, tokenVersion: 1 }) } },
@@ -137,7 +131,7 @@ describe('Fanfiction queued execution', () => {
             ),
           );
         expect(rollback.run).toHaveBeenCalledOnce();
-        expect(profiles.document).not.toHaveBeenCalled();
+        expect(connections.session).not.toHaveBeenCalled();
         expect(runtime.preview).not.toHaveBeenCalled();
       } finally {
         await worker.onModuleDestroy();
@@ -160,13 +154,15 @@ describe('Fanfiction queued execution', () => {
     const module = await Test.createTestingModule({
       providers: [
         FanfictionWorkerService,
-        { provide: FanfictionConnectionService, useValue: {} },
+        {
+          provide: FanfictionConnectionService,
+          useValue: { session: vi.fn().mockResolvedValue({ document: { configuration: '', cookies: [] }, connection: null }) },
+        },
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
         { provide: FanficfareRuntimeService, useValue: { preview: vi.fn().mockRejectedValue(new BadRequestException({ errorCode: code })) } },
         { provide: UserService, useValue: { findByIdWithPermissions: vi.fn().mockResolvedValue({ id: 7, tokenVersion: 1 }) } },
         ...[
-          FanfictionProfileService,
           FanfictionImportService,
           FanfictionUpdateService,
           FanfictionRollbackService,
@@ -176,7 +172,7 @@ describe('Fanfiction queued execution', () => {
           FanfictionSourceBatchService,
         ].map((provide) => ({
           provide,
-          useValue: provide === FanfictionProfileService ? { match: vi.fn().mockResolvedValue({ profile: null }) } : {},
+          useValue: {},
         })),
       ],
     }).compile();

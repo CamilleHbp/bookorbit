@@ -2,7 +2,7 @@ import { BadRequestException, ServiceUnavailableException } from '@nestjs/common
 import type { FanfictionCookie } from '@bookorbit/types';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { FanfictionCookieDto } from './dto/fanfiction-profile.dto';
+import { FanfictionCookieDto } from './dto/fanfiction.dto';
 
 export type FanfictionCookieSink = (cookies: FanfictionCookie[]) => Promise<void>;
 

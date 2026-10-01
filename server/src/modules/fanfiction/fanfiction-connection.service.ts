@@ -3,7 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
-import type { FanfictionConnection, FanfictionProfileDocument, FanfictionWebsite } from '@bookorbit/types';
+import type { FanfictionConnection, FanfictionConnectionSettings, FanfictionConnectionDocument, FanfictionWebsite } from '@bookorbit/types';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import type { RequestUser } from '../../common/types/request-user';
@@ -62,11 +62,22 @@ export class FanfictionConnectionService {
     return row;
   }
 
+  async settings(id: string, user: RequestUser): Promise<FanfictionConnectionSettings> {
+    const row = await this.owned(id, user);
+    const document = JSON.parse(await this.vault.decrypt(`user:${user.id}`, row.id, row.document)) as FanfictionConnectionDocument;
+    return {
+      configuration: await this.runtime.mergeConfiguration(document.configuration, undefined, undefined, true),
+      tagRules: document.tagRules ?? [],
+    };
+  }
+
   async save(dto: SaveFanfictionConnectionDto, user: RequestUser): Promise<FanfictionConnection> {
     const startedAt = Date.now();
     const website = await this.website(dto.site);
     if (website.access !== 'login' && (dto.username !== undefined || dto.password !== undefined))
       throw new BadRequestException('This website uses browser cookies instead of a saved password');
+    const tagKeys = (dto.tagRules ?? []).map((rule) => rule.remoteTag.trim().toLowerCase());
+    if (new Set(tagKeys).size !== tagKeys.length) throw new BadRequestException('Use each remote tag only once');
     this.logger.log(`[fanfiction.connection] [start] userId=${user.id} - saving website login`);
     try {
       return await this.db.transaction(async (tx) => {
@@ -79,10 +90,10 @@ export class FanfictionConnectionService {
         if (previous && dto.version !== previous.version) throw new ConflictException('Website login changed; reload before saving');
         if (!previous && dto.version !== undefined) throw new ConflictException('Website login was removed; reload before saving');
         const id = previous?.id ?? randomUUID();
-        const old: FanfictionProfileDocument = previous
+        const old: FanfictionConnectionDocument = previous
           ? JSON.parse(await this.vault.decrypt(`user:${user.id}`, id, previous.document))
           : { configuration: '', cookies: [] };
-        const configuration = await this.runtime.mergeConfiguration(old.configuration, undefined, {
+        const configuration = await this.runtime.mergeConfiguration(old.configuration, dto.configuration, {
           section: this.sections.get(website.id) ?? website.id,
           ...(dto.username !== undefined ? { username: dto.username } : {}),
           ...(dto.password !== undefined ? { password: dto.password } : {}),
@@ -90,19 +101,22 @@ export class FanfictionConnectionService {
         const cookies = mergeFanfictionCookies(old.cookies, dto.cookies);
         const hosts = new Set([website.id, ...website.examples.map((url) => new URL(url).hostname.replace(/^www\./, ''))]);
         if (
-          cookies.some(
+          (dto.cookies ?? []).some(
             (cookie) =>
               ![...hosts].some((host) => host === cookie.domain.replace(/^\./, '') || cookie.domain.replace(/^\./, '').endsWith(`.${host}`)),
           )
         )
           throw new BadRequestException('Cookies must belong to this website');
-        const [existing] = await tx
-          .execute(sql`select exists(select 1 from ${schema.fanfictionProfiles}) or exists(select 1 from ${connections}) as present`)
-          .then((result) => result.rows);
-        const document = await this.vault.encrypt(`user:${user.id}`, id, JSON.stringify({ configuration, cookies }), !existing?.present);
+        const [existing] = await tx.execute(sql`select exists(select 1 from ${connections}) as present`).then((result) => result.rows);
+        const document = await this.vault.encrypt(
+          `user:${user.id}`,
+          id,
+          JSON.stringify({ configuration, cookies, tagRules: dto.tagRules ?? old.tagRules ?? [] }),
+          !existing?.present,
+        );
         const values = {
           document,
-          hasPassword: dto.password === undefined ? (previous?.hasPassword ?? false) : !!dto.password,
+          hasPassword: /^[ \t]*password[ \t]*[:=][ \t]*\S/m.test(configuration),
           cookieCount: cookies.length,
           lastSuccessfulAt: null,
           errorCode: null,
@@ -163,7 +177,7 @@ export class FanfictionConnectionService {
       .where(and(eq(connections.site, site), eq(connections.userId, user.id)))
       .limit(1);
     if (!row) return { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined, connection: null };
-    const original = JSON.parse(await this.vault.decrypt(`user:${user.id}`, row.id, row.document)) as FanfictionProfileDocument;
+    const original = JSON.parse(await this.vault.decrypt(`user:${user.id}`, row.id, row.document)) as FanfictionConnectionDocument;
     const saveCookies: FanfictionCookieSink = async (incoming) => {
       const cookies = validateRuntimeCookies(incoming);
       await this.db.transaction(async (tx) => {
@@ -175,7 +189,7 @@ export class FanfictionConnectionService {
           .for('update');
         if (!current || current.credentialGeneration !== row.credentialGeneration)
           throw new ConflictException('Website login changed during download');
-        const document = JSON.parse(await this.vault.decrypt(`user:${user.id}`, row.id, current.document)) as FanfictionProfileDocument;
+        const document = JSON.parse(await this.vault.decrypt(`user:${user.id}`, row.id, current.document)) as FanfictionConnectionDocument;
         const merged = mergeRenewedCookies(original.cookies, document.cookies, cookies);
         await tx
           .update(connections)

@@ -2,7 +2,7 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import type { FanfictionProfileMatch, FanfictionJob, FanfictionLinkPreview, FanfictionProfileSummary, FanfictionProfilePage } from '@bookorbit/types'
+import type { FanfictionJob, FanfictionLinkPreview } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import StorySchedule from './StorySchedule.vue'
@@ -11,7 +11,7 @@ const props = defineProps<{ bookId: number; bookFileId: number; libraryId: numbe
 const emit = defineEmits<{ linked: [] }>()
 const { t } = useI18n()
 const url = ref('')
-const schedule = ref('manual')
+const schedule = ref('1440')
 const preview = ref<FanfictionLinkPreview | null>(null)
 const job = ref<FanfictionJob | null>(null)
 const busy = ref(false)
@@ -25,44 +25,11 @@ const controller = new AbortController()
 onScopeDispose(() => controller.abort())
 const error = ref('')
 const key = ref(crypto.randomUUID())
-const profileId = ref('')
-const profileChoice = computed({
-  get: () => profileId.value || 'auto',
-  set: (value: string) => {
-    profileId.value = value === 'auto' ? '' : value
-  },
-})
-const matchedProfile = ref<FanfictionProfileSummary | null>(null)
-const resolvedProfileId = ref('')
-const profiles = ref<FanfictionProfileSummary[]>([])
-const profileCursor = ref<string | null>(null)
-const profilesLoaded = ref(false)
-watch([url, profileId], () => {
+watch(url, () => {
   preview.value = null
-  matchedProfile.value = null
   job.value = null
   key.value = crypto.randomUUID()
 })
-async function loadProfiles() {
-  try {
-    const response = await api(
-      `/api/v1/libraries/${props.libraryId}/fanfiction/profiles?limit=50${profileCursor.value ? `&cursor=${profileCursor.value}` : ''}`,
-      { signal: controller.signal },
-    )
-    if (!response.ok) throw new Error('Could not load profiles')
-    const page: FanfictionProfilePage = await response.json()
-    profiles.value.push(...page.items)
-    profileCursor.value = page.nextCursor
-    profilesLoaded.value = true
-  } catch {
-    error.value = t('fanfiction.link.failed')
-  }
-}
-
-function toggle(event: Event) {
-  if ((event.target as HTMLDetailsElement).open && !profilesLoaded.value) void loadProfiles()
-}
-
 async function request(path: string, body: unknown) {
   const response = await api(`/api/v1/libraries/${props.libraryId}/fanfiction/discovery${path}`, {
     method: 'POST',
@@ -82,23 +49,10 @@ async function inspect() {
   preview.value = null
   job.value = null
   try {
-    resolvedProfileId.value = profileId.value
-    if (!profileId.value) {
-      const response = await api(`/api/v1/libraries/${props.libraryId}/fanfiction/profile-match?${new URLSearchParams({ url: url.value })}`, {
-        signal: controller.signal,
-      })
-      if (!response.ok) throw new Error(t('fanfiction.link.failed'))
-      const match: FanfictionProfileMatch = await response.json()
-      controller.signal.throwIfAborted()
-      if (match.ambiguous) throw new Error(t('fanfiction.errors.profile_ambiguous'))
-      matchedProfile.value = match.profile
-      resolvedProfileId.value = match.profile?.id ?? ''
-    }
     preview.value = await request('/book', {
       bookId: props.bookId,
       bookFileId: props.bookFileId,
       url: url.value,
-      ...(resolvedProfileId.value ? { profileId: resolvedProfileId.value } : {}),
     })
     key.value = crypto.randomUUID()
   } catch (failure) {
@@ -117,7 +71,6 @@ async function link() {
       ids: [preview.value.id],
       state: 'pending',
       decision: 'approve',
-      ...(resolvedProfileId.value ? { profileId: resolvedProfileId.value } : {}),
       canonicalUrl: preview.value.canonicalUrl,
       intervalMinutes: schedule.value === 'manual' ? null : Number(schedule.value),
     })
@@ -129,7 +82,7 @@ async function link() {
 }
 </script>
 <template>
-  <details @toggle="toggle" class="my-4 rounded-xl border border-border p-4">
+  <details class="my-4 rounded-xl border border-border p-4">
     <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.link.title') }}</summary>
     <form class="mt-4 space-y-3" @submit.prevent="inspect">
       <label class="block space-y-1 text-sm"
@@ -142,15 +95,6 @@ async function link() {
           :disabled="locked"
           class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
       /></label>
-      <label class="block space-y-1 text-sm"
-        >{{ t('fanfiction.profile')
-        }}<select v-model="profileChoice" :disabled="locked" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
-          <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
-          <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
-        </select></label
-      >
-      <p v-if="matchedProfile" class="text-sm">{{ t('fanfiction.profile') }}: {{ matchedProfile.name }}</p>
-      <Button v-if="profileCursor" type="button" variant="ghost" @click="loadProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
       <Button type="submit" variant="outline" :disabled="locked">{{ t('fanfiction.link.inspect') }}</Button>
     </form>
     <form v-if="preview && !job" class="mt-4 space-y-3" @submit.prevent="link">

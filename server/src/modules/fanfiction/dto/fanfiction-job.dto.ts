@@ -1,8 +1,8 @@
 import { IsIn, IsOptional, IsUUID } from 'class-validator';
 import type { FanfictionJobKind } from '@bookorbit/types';
-import { ListFanfictionProfilesDto } from './fanfiction-profile.dto';
+import { FanfictionPageDto } from './fanfiction.dto';
 
-export class ListFanfictionJobsDto extends ListFanfictionProfilesDto {
+export class ListFanfictionJobsDto extends FanfictionPageDto {
   @IsOptional()
   @IsIn(['preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch', 'replacement'])
   kind?: FanfictionJobKind;

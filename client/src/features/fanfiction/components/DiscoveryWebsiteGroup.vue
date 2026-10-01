@@ -3,7 +3,7 @@ import { computed, useId } from 'vue'
 import { ChevronDown, ExternalLink } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import type { FanfictionDiscoveryCandidate, FanfictionDiscoveryWebsite, FanfictionProfileSummary } from '@bookorbit/types'
+import type { FanfictionDiscoveryCandidate, FanfictionDiscoveryWebsite } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import StorySchedule from './StorySchedule.vue'
 import type { DiscoveryReview } from '../composables/useDiscoveryReview'
@@ -13,10 +13,7 @@ const props = defineProps<{
   source: FanfictionDiscoveryWebsite
   cutoff: string
   review: DiscoveryReview
-  profiles: FanfictionProfileSummary[]
-  moreProfiles: boolean
 }>()
-const emit = defineEmits<{ moreProfiles: [] }>()
 const { t } = useI18n()
 const panelId = useId()
 const {
@@ -28,10 +25,8 @@ const {
   loading,
   error,
   selectionError,
-  profile,
   schedule,
   sourceChoices,
-  profileChoices,
   comparisons,
   selectedCount,
   all,
@@ -48,7 +43,6 @@ const {
   toggleAll,
   toggleBook,
   clearSelection,
-  changeProfile,
   changeBook,
   compareBook,
   link,
@@ -63,15 +57,6 @@ const active = computed(() => targetJob.value && ['queued', 'running'].includes(
 function changeSource(book: FanfictionDiscoveryCandidate, event: Event) {
   sourceChoices.value[book.id] = (event.target as HTMLSelectElement).value
   changeBook(book)
-}
-function changeBookProfile(book: FanfictionDiscoveryCandidate, event: Event) {
-  const value = (event.target as HTMLSelectElement).value
-  if (value) profileChoices.value[book.id] = value
-  else delete profileChoices.value[book.id]
-  changeBook(book)
-}
-function loadMoreProfiles() {
-  emit('moreProfiles')
 }
 function cancel() {
   void props.review.cancel()
@@ -119,24 +104,7 @@ function retry() {
     </div>
     <div v-show="open" :id="panelId" class="space-y-4 px-4 pb-4">
       <div v-if="!finished" class="flex flex-wrap items-end gap-3">
-        <details class="min-w-0 flex-1 space-y-2">
-          <summary class="min-h-11 cursor-pointer py-3 text-sm">{{ t('fanfiction.advanced') }}</summary>
-          <label class="block space-y-1 text-sm">
-            <span>{{ t('fanfiction.profile') }}</span>
-            <select
-              v-model="profile"
-              :disabled="busy"
-              class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
-              @change="changeProfile"
-            >
-              <option value="public">{{ t('fanfiction.maintenance.personal') }}</option>
-              <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
-              <option v-for="option in profiles" :key="option.id" :value="option.id">{{ option.name }}</option>
-            </select>
-          </label>
-        </details>
         <StorySchedule v-model="schedule" :disabled="busy" />
-        <Button v-if="moreProfiles" variant="ghost" :disabled="busy" @click="loadMoreProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
       </div>
       <div v-if="!finished" class="border-border bg-background sticky top-0 z-10 space-y-2 border-y py-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -242,7 +210,7 @@ function retry() {
               /></a>
               <p v-if="!reviewable(book)" class="text-sm font-medium">{{ t(`fanfiction.discovery.states.${book.state}`) }}</p>
               <p v-if="book.errorCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${book.errorCode}`) }}</p>
-              <details v-if="reviewable(book)" :open="discoverySources(book).length !== 1 || book.profileMatch?.ambiguous">
+              <details v-if="reviewable(book) && discoverySources(book).length !== 1" open>
                 <summary class="text-muted-foreground min-h-11 cursor-pointer py-2 text-sm">{{ t('fanfiction.discovery.changeLink') }}</summary>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label v-if="discoverySources(book).length !== 1" class="min-w-0 space-y-1 text-sm">
@@ -255,18 +223,6 @@ function retry() {
                     >
                       <option value="">{{ t('fanfiction.discovery.chooseSource') }}</option>
                       <option v-for="url in discoverySources(book)" :key="url" :value="url">{{ url }}</option>
-                    </select>
-                  </label>
-                  <label class="min-w-0 space-y-1 text-sm">
-                    <span>{{ t('fanfiction.profile') }}</span>
-                    <select
-                      :value="profileChoices[book.id] ?? ''"
-                      :disabled="busy || finished"
-                      class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
-                      @change="changeBookProfile(book, $event)"
-                    >
-                      <option value="">{{ t('fanfiction.sourceReview.websiteProfile') }}</option>
-                      <option v-for="option in profiles" :key="option.id" :value="option.id">{{ option.name }}</option>
                     </select>
                   </label>
                 </div>

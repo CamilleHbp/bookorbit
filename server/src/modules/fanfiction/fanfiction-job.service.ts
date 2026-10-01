@@ -14,9 +14,8 @@ import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
-import { FanfictionProfileService } from './fanfiction-profile.service';
 import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
-import { PreviewFanfictionDto } from './dto/fanfiction-profile.dto';
+import { PreviewFanfictionDto } from './dto/fanfiction.dto';
 import { recordFanfictionActivity } from './fanfiction-activity';
 
 const jobs = schema.fanfictionJobs;
@@ -27,7 +26,6 @@ export class FanfictionJobService {
   constructor(
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly access: FanfictionAccessService,
-    private readonly profiles: FanfictionProfileService,
   ) {}
 
   async preview(libraryId: number, dto: PreviewFanfictionDto, user: RequestUser): Promise<FanfictionJob> {
@@ -83,14 +81,13 @@ export class FanfictionJobService {
         current.version !== source.version ||
         !current.bookFileId ||
         (current.attentionCode === 'metadata_review_required' && current.updatePolicy !== 'safe') ||
-        (!['rollback', 'replacement'].includes(kind) && current.attentionCode === 'destination_profile_required') ||
         !(
           ['rollback', 'replacement'].includes(kind) ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']
         ).includes(current.state) ||
         (scheduled && current.state !== 'active')
       )
         throw new ConflictException('Story source changed or requires attention before updating');
-      if (current.accessMode === 'personal' && (current.maintainerUserId ?? current.createdBy) !== user.id)
+      if (current.maintainerUserId !== user.id)
         throw new ConflictException({ message: 'Use your own website login before maintaining this story', errorCode: 'maintainer_required' });
       const [active] = await tx
         .select({ id: jobs.id })
@@ -107,8 +104,6 @@ export class FanfictionJobService {
           idempotencyKey,
           sourceId: source.id,
           sourceVersion: current.version,
-          profileId: current.profileId,
-          accessMode: current.accessMode,
           ...(rollback ? { rollbackRevisionId: rollback.revisionId, expectedRevisionId: rollback.expectedRevisionId } : {}),
           ...(replacement
             ? { replacementUploadId: replacement.uploadId, replacementSha256: replacement.sha256, expectedRevisionId: replacement.expectedRevisionId }
@@ -162,11 +157,11 @@ export class FanfictionJobService {
       const due = await tx
         .select({ source: sources, tokenVersion: schema.users.tokenVersion })
         .from(sources)
-        .innerJoin(schema.users, eq(schema.users.id, sql`coalesce(${sources.maintainerUserId}, ${sources.createdBy})`))
+        .innerJoin(schema.users, eq(schema.users.id, sources.maintainerUserId))
         .where(
           and(
             eq(sources.state, 'active'),
-            sql`coalesce(${sources.updatesEnabled}, true)`,
+            eq(sources.updatesEnabled, true),
             lte(sources.nextCheckAt, sql`now()`),
             sql`${sources.intervalMinutes} is not null`,
             sql`not exists (select 1 from ${jobs} where ${jobs.sourceId} = ${sources.id} and ${jobs.state} in ('queued', 'running'))`,
@@ -187,11 +182,9 @@ export class FanfictionJobService {
           .insert(jobs)
           .values({
             libraryId: source.libraryId,
-            userId: source.maintainerUserId ?? source.createdBy,
+            userId: source.maintainerUserId!,
             tokenVersion,
             idempotencyKey: randomUUID(),
-            profileId: source.profileId,
-            accessMode: source.accessMode,
             sourceId: source.id,
             sourceVersion: source.version,
             kind: 'update',
@@ -221,7 +214,6 @@ export class FanfictionJobService {
     input?: FanfictionImportRequest,
   ): Promise<FanfictionJob> {
     await this.access.administer(user, libraryId);
-    if (dto.profileId) await this.profiles.document(libraryId, dto.profileId, user);
     let url: URL;
     try {
       url = new URL(dto.url);
@@ -238,8 +230,6 @@ export class FanfictionJobService {
         userId: user.id,
         tokenVersion: user.tokenVersion,
         idempotencyKey: dto.idempotencyKey,
-        profileId: dto.profileId,
-        accessMode: dto.profileId ? 'legacy' : (dto.accessMode ?? 'personal'),
         kind,
         input,
         url: url.href,
@@ -256,8 +246,6 @@ export class FanfictionJobService {
     if (
       !existing ||
       existing.url !== url.href ||
-      existing.profileId !== (dto.profileId ?? null) ||
-      existing.accessMode !== (dto.profileId ? 'legacy' : (dto.accessMode ?? 'personal')) ||
       existing.kind !== kind ||
       existing.input?.folderId !== input?.folderId ||
       existing.input?.collectionId !== input?.collectionId ||
@@ -333,7 +321,7 @@ export class FanfictionJobService {
         .where(and(eq(jobs.libraryId, libraryId), eq(jobs.id, id)))
         .for('update');
       if (!job) throw new NotFoundException('Fanfiction job not found in this library');
-      if (job.accessMode === 'personal' && job.userId !== user.id) throw new ForbiddenException('This operation uses another person’s website login');
+      if (job.kind !== 'source_batch' && job.userId !== user.id) throw new ForbiddenException('This operation uses another person’s website login');
       if (job.result?.contentReview && !job.result.contentReview.approved) throw new ConflictException('Review the changed chapters before retrying');
       if (job.kind === 'source_batch' && job.userId !== user.id && !user.isSuperuser)
         throw new ForbiddenException('This story check belongs to another user');
@@ -343,8 +331,6 @@ export class FanfictionJobService {
         !(job.result.preparedUpdate?.approved || job.result.importReview?.approved)
       )
         throw new ConflictException('Review or discard this proposal before continuing');
-      if (job.errorCode === 'profile_deleted')
-        throw new ConflictException('This profile was deleted. Start again with another profile or the website login.');
       if (job.sourceId) {
         const [source] = await tx
           .select()
@@ -364,7 +350,7 @@ export class FanfictionJobService {
             .update(schema.fanfictionSources)
             .set({
               state: source.bookFileId ? (source.updatesEnabled ? 'active' : 'paused') : 'pending',
-              attentionCode: source.attentionCode === 'destination_profile_required' ? source.attentionCode : null,
+              attentionCode: null,
             })
             .where(eq(schema.fanfictionSources.id, source.id));
       }
@@ -428,7 +414,7 @@ export class FanfictionJobService {
           .for('update');
         if (!job?.sourceId || !job.result?.contentReview || job.result.contentReview.approved || job.state !== 'review_required')
           throw new ConflictException('Refresh this chapter review before continuing');
-        if (job.accessMode === 'personal' && job.userId !== user.id) throw new ForbiddenException('This update belongs to another maintainer');
+        if (job.userId !== user.id) throw new ForbiddenException('This update belongs to another maintainer');
         const sources = schema.fanfictionSources;
         const [source] = await tx
           .select()
@@ -667,9 +653,8 @@ export class FanfictionJobService {
       await tx
         .update(schema.fanfictionSources)
         .set({
-          updatesEnabled: sql`coalesce(${schema.fanfictionSources.updatesEnabled}, ${schema.fanfictionSources.state} <> 'paused')`,
           ...(job.state === 'configuration_blocked' || job.state === 'review_required' ? { state: job.state } : {}),
-          attentionCode: sql`case when ${schema.fanfictionSources.attentionCode} = 'destination_profile_required' then ${schema.fanfictionSources.attentionCode} else ${job.errorCode ?? job.state} end`,
+          attentionCode: job.errorCode ?? job.state,
           nextCheckAt: null,
           updatedAt: sql`now()`,
         })

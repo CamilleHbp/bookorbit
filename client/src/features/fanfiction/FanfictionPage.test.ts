@@ -227,9 +227,9 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.findAll('button').filter((button) => button.text() === 'Import another batch')).toHaveLength(2)
   })
 
-  it('keeps the legacy Profiles route available outside primary navigation', async () => {
+  it('falls back to Stories when an old profile tab URL is opened', async () => {
     await open('/fanfiction?tab=profiles')
-    expect(wrapper!.find('source-profiles-stub').exists()).toBe(true)
+    expect(wrapper!.find('source-profiles-stub').exists()).toBe(false)
     expect(wrapper!.text()).not.toContain('Recent story changes')
     expect(wrapper!.text()).not.toContain('No activity yet.')
     expect(wrapper!.findAll('nav a').map((link) => link.text())).toEqual(['Stories', 'Updates'])

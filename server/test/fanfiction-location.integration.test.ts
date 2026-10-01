@@ -1,3 +1,4 @@
+import { installPostgresExtensions } from '../src/scripts/postgres-extensions';
 import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
 import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
@@ -20,7 +21,6 @@ import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
-import { FanfictionProfileService } from '../src/modules/fanfiction/fanfiction-profile.service';
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import { FileRenameRepository } from '../src/modules/file-write/file-rename.repository';
 import { BookMoveRepository } from '../src/modules/book-move/book-move.repository';
@@ -44,13 +44,13 @@ describe.skipIf(!configPath)('managed story relocation', () => {
   let jobs: FanfictionJobService;
   let rename: FileRenameRepository;
   let move: BookMoveRepository;
-  const profiles = { document: vi.fn(() => Promise.resolve({})) };
 
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
     if (!/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database))) throw new Error('Isolated validation database required');
     pool = new Pool({ ...config, connectionTimeoutMillis: 10_000, statement_timeout: 20_000 });
     db = drizzle(pool, { schema });
+    await installPostgresExtensions(pool);
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
     const [created] = await db
       .insert(schema.users)
@@ -72,7 +72,6 @@ describe.skipIf(!configPath)('managed story relocation', () => {
         BookMoveRepository,
         { provide: DB, useValue: db },
         { provide: FanfictionAccessService, useValue: { administer: vi.fn(() => Promise.resolve()) } },
-        { provide: FanfictionProfileService, useValue: profiles },
         { provide: LibraryService, useValue: {} },
         { provide: AppSettingsService, useValue: {} },
         { provide: UploadValidatorService, useValue: {} },
@@ -115,6 +114,8 @@ describe.skipIf(!configPath)('managed story relocation', () => {
         libraryId: libraryIds[0],
         folderId: folders[0].id,
         createdBy: user.id,
+        maintainerUserId: user.id,
+        updatePolicy: 'review',
         bookId: book.id,
         bookFileId: file.id,
         canonicalUrl: 'https://archiveofourown.org/works/123',
@@ -127,7 +128,6 @@ describe.skipIf(!configPath)('managed story relocation', () => {
         nextCheckAt: new Date(),
       })
       .returning();
-    profiles.document.mockClear();
   });
   afterEach(async () => {
     await db.delete(schema.libraries).where(inArray(schema.libraries.id, libraryIds));
@@ -171,17 +171,7 @@ describe.skipIf(!configPath)('managed story relocation', () => {
     await rename.applyFolderRename(book.id, [{ id: file.id, absolutePath: file.absolutePath, relPath: file.relPath }], book.folderPath);
     expect(await current()).toMatchObject({ relativePath: file.relPath, state: 'active', version: source.version });
   });
-  it('pauses cross-library moves, invalidates discovery and requires an explicit destination profile choice', async () => {
-    const [profile] = await db
-      .insert(schema.fanfictionProfiles)
-      .values({
-        id: randomUUID(),
-        libraryId: libraryIds[0],
-        name: 'Old library account',
-        document: { version: 1, keyId: 'test-key', iv: '', tag: '', ciphertext: '' },
-      })
-      .returning();
-    await db.update(schema.fanfictionSources).set({ profileId: profile.id }).where(eq(schema.fanfictionSources.id, source.id));
+  it('keeps personal maintenance across library moves while invalidating stale jobs and discovery', async () => {
     const oldJob = await sources.check(libraryIds[0], source.id, 'update', randomUUID(), user);
     await db.insert(schema.fanfictionDiscoveryCandidates).values({
       libraryId: libraryIds[0],
@@ -202,10 +192,9 @@ describe.skipIf(!configPath)('managed story relocation', () => {
       bookFileId: file.id,
       libraryId: libraryIds[1],
       folderId: folders[1].id,
-      profileId: null,
-      state: 'paused',
-      nextCheckAt: null,
-      attentionCode: 'destination_profile_required',
+      state: 'active',
+      maintainerUserId: user.id,
+      attentionCode: null,
       version: source.version + 1,
       relativePath: 'renamed/story.epub',
     });
@@ -213,22 +202,12 @@ describe.skipIf(!configPath)('managed story relocation', () => {
       [],
     );
     await expect(sources.get(libraryIds[0], source.id, user)).rejects.toThrow();
-    await expect(sources.check(libraryIds[1], source.id, 'update', randomUUID(), user)).rejects.toThrow('destination library profile');
-    await expect(jobs.updateStory(moved, 'update', randomUUID(), user)).rejects.toThrow('requires attention');
-    await expect(sources.update(libraryIds[1], source.id, { version: moved.version, state: 'active' }, user)).rejects.toThrow(
-      'destination library profile',
-    );
     const claimed = (await jobs.claim())!;
     expect(claimed.id).toBe(oldJob.id);
     await expect(sources.updateContext(claimed)).rejects.toThrow('settings changed');
     await jobs.finish(claimed, 'configuration_blocked', null, 'configuration_blocked');
-    expect(await current()).toMatchObject({ state: 'paused', attentionCode: 'destination_profile_required' });
-    await expect(jobs.retry(libraryIds[0], oldJob.id, user)).rejects.toThrow('settings changed');
-    const selected = await sources.update(libraryIds[1], source.id, { version: moved.version, profileId: null }, user);
-    expect(selected).toMatchObject({ state: 'paused', attentionCode: null });
-    const resumed = await sources.update(libraryIds[1], source.id, { version: selected.version, state: 'active' }, user);
-    expect(resumed.state).toBe('active');
-    expect(profiles.document).not.toHaveBeenCalled();
+    expect(await current()).toMatchObject({ state: 'active', maintainerUserId: user.id, attentionCode: null });
+    expect((await sources.check(libraryIds[1], source.id, 'update', randomUUID(), user)).libraryId).toBe(libraryIds[1]);
     const [stale] = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, oldJob.id));
     expect(stale.libraryId).toBe(libraryIds[0]);
     expect(stale.sourceVersion).toBe(source.version);

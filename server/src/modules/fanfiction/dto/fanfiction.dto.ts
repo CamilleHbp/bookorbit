@@ -4,9 +4,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
-  IsDefined,
   IsInt,
-  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -15,15 +13,10 @@ import {
   MaxLength,
   Min,
   MinLength,
-  ValidateNested,
 } from 'class-validator';
 
 export class FanfictionPreferencesDto {
   @IsBoolean() isAdult!: boolean;
-}
-
-export class MatchFanfictionProfileDto {
-  @IsString() @MaxLength(4096) @Matches(/^https:\/\/[^\s]+$/) url!: string;
 }
 
 export class FanfictionCookieDto {
@@ -36,40 +29,18 @@ export class FanfictionCookieDto {
   @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) expires?: number;
 }
 
-export class FanfictionCredentialsDto {
-  @IsOptional() @IsString() @MinLength(1) @MaxLength(255) @Matches(/^[^\r\n[\]]+$/) section?: string;
-  @IsOptional() @IsString() @MaxLength(4096) username?: string;
-  @IsOptional() @IsString() @MaxLength(4096) password?: string;
-  @IsOptional() @IsBoolean() isAdult?: boolean;
-}
-
 export class FanfictionTagRuleDto {
   @IsString() @MinLength(1) @MaxLength(500) @Matches(/\S/) remoteTag!: string;
   @IsString() @MinLength(1) @MaxLength(500) @Matches(/\S/) targetTag!: string;
 }
 
-export class CreateFanfictionProfileDto {
-  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(4096, { each: true }) rootUrls?: string[];
-  @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => FanfictionTagRuleDto) tagRules?: FanfictionTagRuleDto[];
-  @IsString() @MinLength(1) @MaxLength(120) name!: string;
-  @IsOptional() @IsString() @MaxLength(65536) configuration?: string;
-  @IsOptional() @ValidateNested() @Type(() => FanfictionCredentialsDto) credentials?: FanfictionCredentialsDto;
-  @IsOptional() @IsArray() @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => FanfictionCookieDto) cookies?: FanfictionCookieDto[];
-}
-
-export class UpdateFanfictionProfileDto extends CreateFanfictionProfileDto {
-  @IsDefined() @IsInt() @Min(1) version!: number;
-}
-
-export class ListFanfictionProfilesDto {
+export class FanfictionPageDto {
   @IsOptional() @IsUUID() cursor?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 50;
 }
 
 export class PreviewFanfictionDto {
-  @IsOptional() @IsIn(['legacy', 'personal']) accessMode?: 'legacy' | 'personal';
   @IsString() @MaxLength(4096) @Matches(/^https:\/\/[^\s]+$/) url!: string;
-  @IsOptional() @IsUUID() profileId?: string;
   @IsUUID() idempotencyKey!: string;
 }
 

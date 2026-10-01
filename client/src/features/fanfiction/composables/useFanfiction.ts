@@ -6,8 +6,6 @@ import type {
   FanfictionJobPage,
   FanfictionLibraryPage,
   FanfictionPreview,
-  FanfictionProfilePage,
-  FanfictionProfileSummary,
   FanfictionSource,
   FanfictionSourcePage,
   FanfictionActivity,
@@ -21,9 +19,7 @@ interface Candidate {
   existingStory?: FanfictionExistingStory
   updateKey?: string
   url: string
-  profileId: string
   destination?: { folderId: number; intervalMinutes: number | null; collectionId?: number }
-  resolvedProfileId?: string
   previewKey: string
   importKey: string
   selected: boolean
@@ -55,9 +51,6 @@ export function useFanfiction(
   const folderCursor = ref<number | null>(null)
   const collectionId = ref<number | null>(null)
   const folderId = ref<number | null>(null)
-  const profiles = ref<FanfictionProfilePage['items']>([])
-  const profileCursor = ref<string | null>(null)
-  const profileId = ref('')
   const sources = ref<FanfictionSource[]>([])
   const sourceCursor = ref<string | null>(null)
   const jobs = ref<FanfictionJob[]>([])
@@ -103,14 +96,12 @@ export function useFanfiction(
   const schedule = ref('1440')
   const busy = ref(false)
   const error = ref('')
-  const tab = ref<'stories' | 'add' | 'discovery' | 'activity' | 'profiles'>('stories')
+  const tab = ref<'stories' | 'add' | 'discovery' | 'activity'>('stories')
   const base = computed(() => `/api/v1/libraries/${libraryId.value}/fanfiction`)
   const canImport = computed(
     () =>
       folderId.value !== null &&
-      candidates.value.some(
-        (row) => row.profileId === profileId.value && row.selected && row.preview && row.job?.kind === 'preview' && row.job.state === 'succeeded',
-      ),
+      candidates.value.some((row) => row.selected && row.preview && row.job?.kind === 'preview' && row.job.state === 'succeeded'),
   )
   let generation = 0
   let disposed = false
@@ -264,16 +255,13 @@ export function useFanfiction(
     activity.value = []
     activityCursor.value = null
     activityPage = null
-    profiles.value = []
     folders.value = []
-    profileId.value = ''
     folderId.value = null
     sourcePage = jobPage = null
     if (libraryId.value === null) return
     await perform(async (current, path) => {
-      const [folderPage, profilePage] = await Promise.all([
+      const [folderPage] = await Promise.all([
         request<FanfictionFolderPage>(`${path}/sources/folders?limit=50`),
-        request<FanfictionProfilePage>(`${path}/profiles?limit=50`),
         loadSources(current, path, null),
         loadJobs(current, path, null),
         loadActivity(current, path, null),
@@ -282,8 +270,6 @@ export function useFanfiction(
       folders.value = folderPage.items
       folderCursor.value = folderPage.nextCursor
       folderId.value = folderPage.items[0]?.id ?? null
-      profiles.value = profilePage.items
-      profileCursor.value = profilePage.nextCursor
     })
     schedulePoll(generation)
   }
@@ -295,16 +281,6 @@ export function useFanfiction(
       folders.value = page.items
       folderCursor.value = page.nextCursor
       folderId.value = page.items[0]?.id ?? null
-    })
-  }
-  async function moreProfiles() {
-    await perform(async (current, path) => {
-      if (!profileCursor.value) return
-      const page = await request<FanfictionProfilePage>(`${path}/profiles?limit=50&cursor=${profileCursor.value}`)
-      if (!currentScope(current)) return
-      profiles.value = page.items
-      profileCursor.value = page.nextCursor
-      profileId.value = ''
     })
   }
   async function refresh() {
@@ -336,12 +312,6 @@ export function useFanfiction(
   const previousSources = () => navigatePage('sources', 'previous')
   const moreJobs = () => navigatePage('jobs', 'next')
   const previousJobs = () => navigatePage('jobs', 'previous')
-  function useSavedProfile(profile: FanfictionProfileSummary) {
-    if (profile.libraryId !== libraryId.value) return
-    profiles.value = [profile, ...profiles.value.filter((item) => item.id !== profile.id)].slice(0, 50)
-    profileId.value = profile.id
-    candidates.value = candidates.value.filter((row) => row.job?.kind === 'import')
-  }
   async function submitImport(candidate: Candidate, current: number, path: string) {
     if (folderId.value === null) return
     candidate.destination ??= {
@@ -349,7 +319,6 @@ export function useFanfiction(
       folderId: folderId.value,
       intervalMinutes: schedule.value === 'manual' ? null : Number(schedule.value),
     }
-    candidate.resolvedProfileId ??= candidate.profileId || ''
     if (!currentScope(current)) return
     let job: FanfictionJob
     try {
@@ -357,7 +326,6 @@ export function useFanfiction(
         url: candidate.url,
         ...candidate.destination,
         idempotencyKey: candidate.importKey,
-        ...(candidate.resolvedProfileId ? { profileId: candidate.resolvedProfileId } : {}),
       })
     } catch (failure) {
       if (failure instanceof ExistingStoryError) {
@@ -415,7 +383,6 @@ export function useFanfiction(
           (url) =>
             prior.get(url) ?? {
               url,
-              profileId: profileId.value,
               previewKey: crypto.randomUUID(),
               importKey: crypto.randomUUID(),
               selected: true,
@@ -489,7 +456,7 @@ export function useFanfiction(
     for (const candidate of candidates.value) if (candidate.job?.id === job.id) candidate.job = job
     schedulePoll(generation)
   }
-  async function retryImport(candidate: Candidate, profile?: FanfictionProfileSummary) {
+  async function retryImport(candidate: Candidate) {
     if (busy.value || !candidate.job || !['configuration_blocked', 'failed', 'cancelled'].includes(candidate.job.state)) return
     if (candidate.job.kind !== 'import') {
       const jobId = candidate.job.id
@@ -503,10 +470,6 @@ export function useFanfiction(
     }
     candidate.importKey = crypto.randomUUID()
     candidate.job = null
-    if (profile) {
-      profiles.value = [profile, ...profiles.value.filter((item) => item.id !== profile.id)].slice(0, 50)
-      candidate.resolvedProfileId = profile.id
-    } else if (profileId.value) candidate.resolvedProfileId = profileId.value
     await perform((current, path) => submitImport(candidate, current, path))
   }
   async function previewStories() {
@@ -521,13 +484,11 @@ export function useFanfiction(
       ]
       if (!lines.length || lines.length > 100) throw new Error('Enter between 1 and 100 story URLs, one per line.')
       if (lines.some((url) => url.length > 4096 || !/^https:\/\/[^\s]+$/.test(url))) throw new Error('Each story needs a valid HTTPS URL.')
-      const selectedProfile = profileId.value
-      const prior = new Map(candidates.value.filter((row) => row.profileId === selectedProfile).map((row) => [row.url, row]))
+      const prior = new Map(candidates.value.map((row) => [row.url, row]))
       candidates.value = lines.map(
         (url) =>
           prior.get(url) ?? {
             url,
-            profileId: selectedProfile,
             previewKey: crypto.randomUUID(),
             importKey: crypto.randomUUID(),
             selected: true,
@@ -541,7 +502,6 @@ export function useFanfiction(
         const job = await request<FanfictionJob>(`${path}/previews`, {
           url: candidate.url,
           idempotencyKey: candidate.previewKey,
-          ...(selectedProfile ? { profileId: selectedProfile } : {}),
         })
         if (!currentScope(current)) break
         candidate.job = job
@@ -556,21 +516,13 @@ export function useFanfiction(
       const intervalMinutes = schedule.value === 'manual' ? null : Number(schedule.value)
       for (const candidate of candidates.value) {
         if (!currentScope(current)) break
-        if (
-          candidate.profileId !== profileId.value ||
-          !candidate.selected ||
-          !candidate.preview ||
-          candidate.job?.kind !== 'preview' ||
-          candidate.job.state !== 'succeeded'
-        )
-          continue
+        if (!candidate.selected || !candidate.preview || candidate.job?.kind !== 'preview' || candidate.job.state !== 'succeeded') continue
         const job = await request<FanfictionJob>(`${path}/sources`, {
           url: candidate.preview.canonicalUrl,
           idempotencyKey: candidate.importKey,
           ...(collectionId.value ? { collectionId: collectionId.value } : {}),
           folderId: selectedFolder,
           intervalMinutes,
-          ...(profileId.value ? { profileId: profileId.value } : {}),
         })
         if (!currentScope(current)) break
         candidate.job = job
@@ -709,9 +661,6 @@ export function useFanfiction(
     folderCursor,
     folderId,
     collectionId,
-    profiles,
-    profileCursor,
-    profileId,
     sources,
     sourceCursor,
     jobs,
@@ -745,7 +694,6 @@ export function useFanfiction(
     loadLibraries,
     changeLibrary,
     moreFolders,
-    moreProfiles,
     refresh,
     moreSources,
     moreJobs,
@@ -771,7 +719,6 @@ export function useFanfiction(
     retryImport,
     acceptImportReview,
     previewStories,
-    useSavedProfile,
     importSelected,
     cancelJob,
     retryJob,

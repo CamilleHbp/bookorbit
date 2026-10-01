@@ -15,7 +15,6 @@ const response = (body: unknown) => ({ ok: true, status: 200, json: async () => 
 const source = {
   id: 'story',
   libraryId: 5,
-  profileId: null,
   canonicalUrl: 'https://archiveofourown.org/works/1',
   site: 'archiveofourown.org',
   state: 'configuration_blocked',
@@ -29,6 +28,11 @@ const source = {
   wordCount: null,
   storyStatus: '',
   lastCheckedAt: null,
+  folderId: 6,
+  intervalMinutes: 1440,
+  nextCheckAt: null,
+  lastUpdatedAt: null,
+  createdAt: '',
 } as FanfictionSource
 const website = { id: 'archiveofourown.org', name: 'Archive of Our Own', examples: [], access: 'login' }
 const connection = { id: 'personal', website, version: 1, lastSuccessfulAt: null }

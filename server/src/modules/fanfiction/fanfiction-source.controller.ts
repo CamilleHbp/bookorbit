@@ -13,7 +13,7 @@ import {
   ResolveFanfictionMetadataDto,
 } from './dto/fanfiction-source.dto';
 import { FanfictionSourceService } from './fanfiction-source.service';
-import { FanfictionLibrariesDto } from './dto/fanfiction-profile.dto';
+import { FanfictionLibrariesDto } from './dto/fanfiction.dto';
 import { FanfictionReviewService } from './fanfiction-review.service';
 
 @Controller('libraries/:libraryId/fanfiction/sources')

@@ -14,7 +14,6 @@ const source = {
   title: 'Story',
   version: 2,
   state: 'active',
-  profileId: null,
   intervalMinutes: 1440,
 }
 describe('book story administration', () => {
@@ -314,17 +313,15 @@ describe('book story administration', () => {
       expectedRevisionId: 'current',
     })
   })
-  it('keeps schedule, profile, and unlink requests within the validated source DTO', async () => {
+  it('keeps schedule and unlink requests within the validated source DTO', async () => {
     mockApi.mockImplementation((url) => Promise.resolve(pages(String(url))))
     const model = scope.run(() => useBookStory(7, 5, true))!
     await flush()
     model.interval.value = 'manual'
-    model.profileId.value = 'profile-id'
     await model.updateSettings()
     const patch = mockApi.mock.calls.find(([, init]) => init?.method === 'PATCH')!
     expect(JSON.parse(patch[1]!.body as string)).toEqual({
       version: 2,
-      profileId: 'profile-id',
       intervalMinutes: null,
       tagPolicy: 'review',
       updatePolicy: 'review',
@@ -373,35 +370,5 @@ describe('book story administration', () => {
     await flush()
     expect(updated).not.toHaveBeenCalled()
     expect(model.job.value).toBeNull()
-  })
-  it('requires a saved destination profile before exposing update controls after a library move', async () => {
-    let needsProfile = true
-    mockApi.mockImplementation((url, init) => {
-      if (init?.method === 'PATCH') {
-        needsProfile = false
-      }
-      return Promise.resolve(
-        String(url).includes('/sources?')
-          ? response({
-              items: [{ ...source, state: 'paused', attentionCode: needsProfile ? 'destination_profile_required' : null }],
-              nextCursor: null,
-            })
-          : pages(String(url)),
-      )
-    })
-    const model = scope.run(() => useBookStory(7, 5, true))!
-    await flush()
-    expect(model.canUpdate.value).toBe(false)
-    await model.updateSettings()
-    expect(model.canUpdate.value).toBe(true)
-    const patch = mockApi.mock.calls.find(([, init]) => init?.method === 'PATCH')!
-    expect(JSON.parse(patch[1]!.body as string)).toEqual({
-      version: 2,
-      profileId: null,
-      intervalMinutes: 1440,
-      tagPolicy: 'review',
-      updatePolicy: 'review',
-      keepUpdated: false,
-    })
   })
 })

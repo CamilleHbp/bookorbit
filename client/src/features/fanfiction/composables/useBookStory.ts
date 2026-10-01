@@ -4,7 +4,6 @@ import type {
   BookFileRevisionSummary,
   FanfictionJob,
   FanfictionJobPage,
-  FanfictionProfilePage,
   FanfictionSource,
   FanfictionSourcePage,
   FanfictionMetadataReviewView,
@@ -43,15 +42,7 @@ export function useBookStory(
   const sourceCursor = ref<string | null>(null)
   const sourceId = ref('')
   const source = computed(() => sources.value.find((row) => row.id === sourceId.value) ?? null)
-  const profiles = ref<FanfictionProfilePage['items']>([])
-  const profileCursor = ref<string | null>(null)
-  const canUpdate = computed(
-    () =>
-      source.value !== null &&
-      source.value?.attentionCode !== 'destination_profile_required' &&
-      ['active', 'paused'].includes(source.value?.state ?? ''),
-  )
-  const profileId = ref('')
+  const canUpdate = computed(() => source.value !== null && ['active', 'paused'].includes(source.value?.state ?? ''))
   const interval = ref('1440')
   const revisions = ref<BookFileRevisionSummary[]>([])
   const revisionCursor = ref<string | null>(null)
@@ -156,7 +147,6 @@ export function useBookStory(
     updatePolicy.value = source.value?.tracking?.policy ?? 'review'
     keepUpdated.value = source.value?.tracking?.enabled ?? source.value?.state !== 'paused'
     tagPolicy.value = source.value?.tagPolicy ?? 'review'
-    profileId.value = source.value?.profileId ?? ''
     interval.value = source.value?.intervalMinutes === null ? 'manual' : String(source.value?.intervalMinutes ?? 1440)
     await loadMetadataReview(id)
   }
@@ -226,19 +216,13 @@ export function useBookStory(
     revisionCursor.value = page.nextCursor
     currentRevisionId.value = page.currentRevisionId ?? null
   }
-  async function loadProfiles(id: number, cursor?: string) {
-    const page = await request<FanfictionProfilePage>(`${base.value}/profiles?limit=50${cursor ? `&cursor=${cursor}` : ''}`)
-    if (!valid(id)) return
-    profiles.value = page.items
-    profileCursor.value = page.nextCursor
-  }
   async function refresh() {
     if (!visible.value) return
     failures = 0
     pollingBlocked = false
     await perform(async (id) => {
       await loadSources(id)
-      if (valid(id)) await Promise.all([loadHistory(id), loadProfiles(id), recoverJob(id)])
+      if (valid(id)) await Promise.all([loadHistory(id), recoverJob(id)])
     })
     poll(generation)
   }
@@ -258,7 +242,6 @@ export function useBookStory(
     updatePolicy.value = source.value?.tracking?.policy ?? 'review'
     keepUpdated.value = source.value?.tracking?.enabled ?? source.value?.state !== 'paused'
     tagPolicy.value = source.value?.tagPolicy ?? 'review'
-    profileId.value = source.value?.profileId ?? ''
     interval.value = source.value?.intervalMinutes === null ? 'manual' : String(source.value?.intervalMinutes ?? 1440)
     revisions.value = []
     revisionCursor.value = null
@@ -333,9 +316,6 @@ export function useBookStory(
         `${base.value}/sources/${current.id}`,
         {
           version: current.version,
-          ...(profileId.value !== (current.profileId ?? '') || current.attentionCode === 'destination_profile_required'
-            ? { profileId: profileId.value || null }
-            : {}),
           intervalMinutes: minutes,
           tagPolicy: tagPolicy.value,
           updatePolicy: updatePolicy.value,
@@ -445,7 +425,6 @@ export function useBookStory(
   }
   const rollback = (revision: BookFileRevisionSummary) => enqueue('rollback', revision.revision)
   const olderRevisions = () => perform((id) => loadHistory(id, revisionCursor.value ?? undefined))
-  const moreProfiles = () => perform((id) => loadProfiles(id, profileCursor.value ?? undefined))
   const moreSources = () =>
     perform(async (id) => {
       await loadSources(id, sourceCursor.value ?? undefined)
@@ -469,8 +448,6 @@ export function useBookStory(
       revisions.value = []
       revisionCursor.value = null
       currentRevisionId.value = null
-      profiles.value = []
-      profileCursor.value = null
       job.value = null
       metadataReview.value = null
       replacementFile.value = null
@@ -482,7 +459,7 @@ export function useBookStory(
       }
       try {
         await loadSources(id)
-        if (valid(id)) await Promise.all([loadHistory(id), loadProfiles(id), recoverJob(id)])
+        if (valid(id)) await Promise.all([loadHistory(id), recoverJob(id)])
         poll(id)
       } catch (failure) {
         if (valid(id)) error.value = failure instanceof Error ? failure.message : 'Request failed'
@@ -551,9 +528,6 @@ export function useBookStory(
     chooseReplacement,
     uploadReplacement,
     approveReplacement,
-    profiles,
-    profileCursor,
-    profileId,
     interval,
     revisions,
     revisionCursor,
@@ -570,7 +544,6 @@ export function useBookStory(
     retryJob,
     rollback,
     olderRevisions,
-    moreProfiles,
     moreSources,
   }
 }

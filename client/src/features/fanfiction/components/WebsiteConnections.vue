@@ -9,6 +9,13 @@ const emit = defineEmits<{ saved: [connection: FanfictionConnection, job?: Fanfi
 const { t } = useI18n()
 const state = useWebsiteConnections(() => props.libraryId)
 const {
+  configuration,
+  tagRules,
+  settingsLoaded,
+  settingsLoading,
+  loadSettings,
+  addTagRule,
+  removeTagRule,
   websites,
   connections,
   issues,
@@ -26,6 +33,9 @@ const {
   reload,
   remove,
 } = state
+function toggleSettings(event: Event) {
+  if ((event.target as HTMLDetailsElement).open) void loadSettings()
+}
 const removing = ref(false)
 function requestRemoval() {
   removing.value = true
@@ -81,11 +91,10 @@ function date(value: string) {
 </script>
 <template>
   <section v-if="!repairsOnly || rows.length || site || error" class="space-y-4" :aria-label="t('fanfiction.connections.title')">
-    <header class="flex flex-wrap items-center justify-between gap-3">
-      <h2 class="text-lg font-semibold">{{ t(repairsOnly ? 'fanfiction.connections.attention' : 'fanfiction.connections.title') }}</h2>
+    <header v-if="repairsOnly || error" class="flex flex-wrap items-center justify-between gap-3">
+      <h2 v-if="repairsOnly" class="text-lg font-semibold">{{ t('fanfiction.connections.attention') }}</h2>
       <Button v-if="error" variant="outline" :disabled="busy" @click="reload">{{ t('fanfiction.retry') }}</Button>
     </header>
-    <p v-if="!repairsOnly" class="max-w-prose text-sm text-muted-foreground">{{ t('fanfiction.connections.help') }}</p>
     <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
     <p v-if="busy && !websites.length" role="status" class="text-sm text-muted-foreground">{{ t('common.loading') }}</p>
     <ul v-if="rows.length" class="divide-y divide-border">
@@ -163,6 +172,53 @@ function date(value: string) {
             :disabled="busy"
             class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
         /></label>
+      </details>
+      <details v-if="!repairsOnly" :key="site" class="space-y-3" @toggle="toggleSettings">
+        <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">{{ t('fanfiction.advanced') }}</summary>
+        <p v-if="settingsLoading" role="status" class="text-sm text-muted-foreground">{{ t('common.loading') }}</p>
+        <template v-if="settingsLoaded">
+          <label class="block space-y-1 text-sm"
+            >{{ t('fanfiction.advancedSettings') }}
+            <textarea
+              v-model="configuration"
+              :disabled="busy"
+              rows="6"
+              maxlength="65536"
+              spellcheck="false"
+              class="border-input bg-background block w-full rounded-md border p-3 font-mono text-sm"
+            />
+          </label>
+          <fieldset class="space-y-3">
+            <legend class="text-sm font-medium">{{ t('fanfiction.tagRules') }}</legend>
+            <div v-for="(rule, index) in tagRules" :key="index" class="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <label class="min-w-0 flex-1 text-sm"
+                >{{ t('fanfiction.remoteTag')
+                }}<input
+                  v-model="rule.remoteTag"
+                  required
+                  maxlength="500"
+                  :disabled="busy"
+                  class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
+              /></label>
+              <label class="min-w-0 flex-1 text-sm"
+                >{{ t('fanfiction.targetTag')
+                }}<input
+                  v-model="rule.targetTag"
+                  required
+                  maxlength="500"
+                  :disabled="busy"
+                  class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
+              /></label>
+              <Button type="button" variant="ghost" class="self-start sm:self-auto" :disabled="busy" @click="removeTagRule(index)">{{
+                t('fanfiction.removeTagRule')
+              }}</Button>
+            </div>
+            <Button type="button" variant="outline" :disabled="busy || tagRules.length >= 100" @click="addTagRule">{{
+              t('fanfiction.addTagRule')
+            }}</Button>
+          </fieldset>
+        </template>
+        <Button v-else-if="!settingsLoading" type="button" variant="outline" @click="loadSettings">{{ t('fanfiction.retry') }}</Button>
       </details>
       <div v-if="connection && !repairsOnly" class="space-y-2 border-t border-border pt-3">
         <template v-if="removing"

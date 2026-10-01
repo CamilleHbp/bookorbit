@@ -12,7 +12,6 @@ import { LIBRARY_ACCESS_KEY } from '../../common/decorators/require-library-acce
 import { FanfictionController } from './fanfiction.controller';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
-import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionSourceController } from './fanfiction-source.controller';
 import { FanfictionSourceService } from './fanfiction-source.service';
@@ -27,7 +26,6 @@ import { FanfictionSourceBatchService } from './fanfiction-source-batch.service'
 describe('Fanfiction HTTP contracts', () => {
   let app: NestFastifyApplication;
   const replacements = { upload: vi.fn() };
-  const profiles = { create: vi.fn(), update: vi.fn(), list: vi.fn(), get: vi.fn(), remove: vi.fn() };
   const jobs = { preview: vi.fn(), get: vi.fn(), list: vi.fn(), cancel: vi.fn(), status: vi.fn(), retry: vi.fn(), approveReplacement: vi.fn() };
   const sources = {
     create: vi.fn(),
@@ -41,7 +39,7 @@ describe('Fanfiction HTTP contracts', () => {
   };
   const discovery = { start: vi.fn(), list: vi.fn(), websites: vi.fn(), compare: vi.fn() };
   const adoption = { start: vi.fn() };
-  const batches = { start: vi.fn(), listFailures: vi.fn(), repairProfile: vi.fn().mockResolvedValue({ id: 'repair' }) };
+  const batches = { start: vi.fn(), listFailures: vi.fn() };
   const activity = { list: vi.fn() };
   const reviews = { decide: vi.fn(), importDecision: vi.fn() };
   const uuid = '97e5bb69-36e8-43a2-9e3b-0fb924d1ca2f';
@@ -58,7 +56,6 @@ describe('Fanfiction HTTP contracts', () => {
       providers: [
         { provide: FanfictionReviewService, useValue: reviews },
         { provide: FanfictionReplacementService, useValue: replacements },
-        { provide: FanfictionProfileService, useValue: profiles },
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionSourceService, useValue: sources },
         { provide: FanfictionDiscoveryService, useValue: discovery },
@@ -124,16 +121,19 @@ describe('Fanfiction HTTP contracts', () => {
     }
     expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/metadata-review/invalid`, payload: choices })).statusCode).toBe(400);
   });
-  it('deletes a profile with an empty response and rejects invalid identifiers', async () => {
-    profiles.remove.mockResolvedValue(undefined);
-    const deleted = await app.inject({ method: 'DELETE', url: `${base}/profiles/${uuid}` });
-    expect(deleted.statusCode).toBe(204);
-    expect(deleted.body).toBe('');
-    expect(profiles.remove).toHaveBeenCalledWith(5, uuid, undefined);
-    expect((await app.inject({ method: 'DELETE', url: `${base}/profiles/invalid` })).statusCode).toBe(400);
-    expect((await app.inject({ method: 'DELETE', url: `/api/v1/libraries/invalid/fanfiction/profiles/${uuid}` })).statusCode).toBe(400);
-    expect(profiles.remove).toHaveBeenCalledTimes(1);
+  it('removes profile routes and rejects profile fields on story requests', async () => {
+    expect((await app.inject({ method: 'GET', url: `${base}/profiles` })).statusCode).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `${base}/previews`,
+          payload: { url: 'https://archiveofourown.org/works/1', idempotencyKey: uuid, profileId: uuid },
+        })
+      ).statusCode,
+    ).toBe(400);
   });
+
   it('requires library administration at both permission and library role boundaries', () => {
     expect(Reflect.getMetadata(PERMISSION_KEY, FanfictionReplacementController)).toBe(Permission.ManageLibraries);
     expect(Reflect.getMetadata(LIBRARY_ACCESS_KEY, FanfictionReplacementController)).toBe('owner');
@@ -197,7 +197,7 @@ describe('Fanfiction HTTP contracts', () => {
     expect(started.json()).toEqual(job);
     expect(discovery.start).toHaveBeenCalledWith(5, uuid, undefined);
     adoption.start.mockResolvedValue({ ...job, kind: 'adopt' });
-    const payload = { idempotencyKey: uuid, decision: 'approve', state: 'pending', allMatching: true, profileId: null, intervalMinutes: null };
+    const payload = { idempotencyKey: uuid, decision: 'approve', state: 'pending', allMatching: true, intervalMinutes: null };
     expect((await app.inject({ method: 'POST', url: `${base}/discovery/selection`, payload })).statusCode).toBe(202);
     expect(adoption.start).toHaveBeenCalledWith(5, expect.objectContaining(payload), undefined);
     for (const invalid of [
@@ -312,55 +312,12 @@ describe('Fanfiction HTTP contracts', () => {
     expect(sources.list).toHaveBeenCalledWith(5, expect.objectContaining({ bookId: 12, limit: 50 }), undefined);
     expect((await app.inject({ method: 'GET', url: `${base}/sources?bookId=0` })).statusCode).toBe(400);
   });
-  it('accepts settings profile fields and returns the exact summary response', async () => {
-    const summary = { id: uuid, libraryId: 5, name: 'AO3', version: 1, updatedAt: new Date().toISOString() };
-    profiles.create.mockResolvedValue(summary);
-    const payload = {
-      name: 'AO3',
-      configuration: '[defaults]\n',
-      credentials: { section: 'archiveofourown.org', username: 'reader', password: '********' },
-    };
-    const response = await app.inject({ method: 'POST', url: `${base}/profiles`, payload });
-    expect(response.statusCode).toBe(201);
-    expect(response.json()).toEqual({ ...summary, repairJobId: 'repair' });
-    expect(batches.repairProfile).toHaveBeenCalledWith(summary, undefined);
-    expect(profiles.create).toHaveBeenCalledWith(5, expect.objectContaining(payload), undefined);
-    expect((await app.inject({ method: 'POST', url: `${base}/profiles`, payload: { ...payload, libraryId: 99 } })).statusCode).toBe(400);
-    expect((await app.inject({ method: 'PATCH', url: `${base}/profiles/${uuid}`, payload })).statusCode).toBe(400);
-  });
-  it('accepts cookie edits and returns masked cookie metadata through the profile contract', async () => {
-    const cookie = { name: 'session', domain: 'archiveofourown.org', path: '/', secure: true, value: '********' };
-    const view = {
-      id: uuid,
-      libraryId: 5,
-      name: 'AO3',
-      version: 2,
-      updatedAt: new Date().toISOString(),
-      configuration: '',
-      cookieCount: 1,
-      cookies: [cookie],
-    };
-    profiles.get.mockResolvedValue(view);
-    expect((await app.inject({ method: 'GET', url: `${base}/profiles/${uuid}` })).json()).toEqual(view);
-    const payload = { name: 'AO3', version: 2, cookies: [cookie] };
-    profiles.update.mockResolvedValue({ ...view, version: 3 });
-    expect((await app.inject({ method: 'PATCH', url: `${base}/profiles/${uuid}`, payload })).statusCode).toBe(200);
-    expect(profiles.update).toHaveBeenCalledWith(5, uuid, expect.objectContaining(payload), undefined);
-    for (const invalid of [
-      { ...cookie, key: 'client-only' },
-      { ...cookie, value: 'bad\nvalue' },
-      { ...cookie, expires: Number.MAX_SAFE_INTEGER + 1 },
-    ])
-      expect((await app.inject({ method: 'PATCH', url: `${base}/profiles/${uuid}`, payload: { ...payload, cookies: [invalid] } })).statusCode).toBe(
-        400,
-      );
-  });
   it('accepts durable preview and cancellation requests with 202 responses and rejects oversized pagination', async () => {
     const job = { id: uuid, state: 'queued', libraryId: 5 };
     jobs.preview.mockResolvedValue(job);
     jobs.cancel.mockResolvedValue({ ...job, state: 'cancelled' });
     jobs.retry.mockResolvedValue(job);
-    const payload = { url: 'https://archiveofourown.org/works/123', profileId: uuid, idempotencyKey: uuid };
+    const payload = { url: 'https://archiveofourown.org/works/123', idempotencyKey: uuid };
     const response = await app.inject({ method: 'POST', url: `${base}/previews`, payload });
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual(job);
@@ -398,10 +355,8 @@ describe('Fanfiction HTTP contracts', () => {
     discovery.websites.mockResolvedValue({ items: [], cutoff: '2026-09-10T12:00:00Z', nextCursor: null });
     expect((await app.inject({ method: 'GET', url: `${base}/discovery/websites?limit=50` })).statusCode).toBe(200);
     discovery.compare.mockResolvedValue({ title: 'Remote', authors: ['Writer'] });
-    expect(
-      (await app.inject({ method: 'POST', url: `${base}/discovery/${uuid}/compare`, payload: { autoProfile: false, profileId: null } })).statusCode,
-    ).toBe(201);
-    expect(discovery.compare).toHaveBeenCalledWith(5, uuid, expect.objectContaining({ autoProfile: false, profileId: null }), undefined);
+    expect((await app.inject({ method: 'POST', url: `${base}/discovery/${uuid}/compare`, payload: {} })).statusCode).toBe(201);
+    expect(discovery.compare).toHaveBeenCalledWith(5, uuid, expect.objectContaining({}), undefined);
     expect((await app.inject({ method: 'POST', url: `${base}/discovery/not-a-uuid/compare`, payload: {} })).statusCode).toBe(400);
     const payload = {
       idempotencyKey: uuid,

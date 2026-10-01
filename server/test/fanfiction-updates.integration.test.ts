@@ -56,7 +56,6 @@ import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
-import { FanfictionProfileService } from '../src/modules/fanfiction/fanfiction-profile.service';
 import { FanficfareRuntimeService } from '../src/modules/fanfiction/fanficfare-runtime.service';
 import { LibraryService } from '../src/modules/library/library.service';
 import { AppSettingsService } from '../src/modules/app-settings/app-settings.service';
@@ -194,7 +193,6 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         { provide: DB, useValue: db },
         { provide: storageConfig.KEY, useValue: storage },
         { provide: FanfictionAccessService, useValue: { administer: () => Promise.resolve() } },
-        { provide: FanfictionProfileService, useValue: {} },
         { provide: FanficfareRuntimeService, useValue: runtime },
         { provide: UserService, useValue: { findByIdWithPermissions: () => Promise.resolve(user) } },
         { provide: NotificationGateway, useValue: { emitNew: vi.fn() } },
@@ -235,6 +233,8 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       .values({
         libraryId,
         createdBy: user.id,
+        maintainerUserId: user.id,
+        updatePolicy: 'review',
         folderId: folder.id,
         bookId: book.id,
         bookFileId: fileId,
@@ -894,6 +894,8 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     const sourceRows = Array.from({ length: 104 }, (_, i) => ({
       libraryId,
       createdBy: user.id,
+      maintainerUserId: user.id,
+      updatePolicy: 'review',
       canonicalUrl: `https://example.org/story/batch-${i}`,
       canonicalKey: createHash('sha256').update(`batch-${i}`).digest('hex'),
       site: 'example.org',

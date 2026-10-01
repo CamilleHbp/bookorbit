@@ -6,7 +6,7 @@ import type { RequestUser } from '../../common/types/request-user';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { UserService } from '../user/user.service';
 import type { FanfictionPreferences } from '@bookorbit/types';
-import { FanfictionPreferencesDto, FanfictionLibrariesDto } from './dto/fanfiction-profile.dto';
+import { FanfictionPreferencesDto, FanfictionLibrariesDto } from './dto/fanfiction.dto';
 
 @Controller('fanfiction')
 export class FanfictionLibraryController {

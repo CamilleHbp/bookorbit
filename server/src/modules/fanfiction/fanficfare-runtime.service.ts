@@ -4,7 +4,7 @@ import type {
   FanficfareRuntimeHealth,
   FanficfareSiteCatalog,
   FanfictionPreview,
-  FanfictionProfileDocument,
+  FanfictionConnectionDocument,
   FanfictionRecognizedUrl,
 } from '@bookorbit/types';
 import { spawn } from 'node:child_process';
@@ -16,12 +16,12 @@ import { validateRuntimeCookies, type FanfictionCookieSink } from './fanfiction-
 import { FanfictionRuntimeProgress, type FanfictionProgressSink } from './fanfiction-runtime-progress';
 
 type RuntimeRequest = {
-  operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'personal' | 'preview' | 'download' | 'update' | 'refresh';
+  operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
   urls?: string[];
   url?: string;
   configuration?: string;
-  cookies?: FanfictionProfileDocument['cookies'];
-  tagRules?: FanfictionProfileDocument['tagRules'];
+  cookies?: FanfictionConnectionDocument['cookies'];
+  tagRules?: FanfictionConnectionDocument['tagRules'];
   previous?: string;
   edits?: { section?: string; username?: string; password?: string; isAdult?: boolean };
   redact?: boolean;
@@ -101,16 +101,9 @@ export class FanficfareRuntimeService {
     return result.configuration;
   }
 
-  async personalConfiguration(previous: string, configuration: string): Promise<string> {
-    const result = (await this.temporary({ operation: 'personal', previous, configuration })) as { configuration: string };
-    if (typeof result.configuration !== 'string' || Buffer.byteLength(result.configuration) > 65536)
-      throw new ServiceUnavailableException('Invalid configuration response');
-    return result.configuration;
-  }
-
   async preview(
     url: string,
-    document: FanfictionProfileDocument,
+    document: FanfictionConnectionDocument,
     signal?: AbortSignal,
     saveCookies?: FanfictionCookieSink,
   ): Promise<FanfictionPreview> {
@@ -119,7 +112,7 @@ export class FanficfareRuntimeService {
 
   async download<T>(
     url: string,
-    document: FanfictionProfileDocument,
+    document: FanfictionConnectionDocument,
     consume: (path: string, preview: FanfictionPreview) => Promise<T>,
     signal?: AbortSignal,
     saveCookies?: FanfictionCookieSink,
@@ -138,7 +131,7 @@ export class FanficfareRuntimeService {
   async update<T>(
     operation: 'update' | 'refresh',
     url: string,
-    document: FanfictionProfileDocument,
+    document: FanfictionConnectionDocument,
     prepare: (inputPath: string) => Promise<void>,
     consume: (path: string, preview: FanfictionPreview) => Promise<T>,
     signal?: AbortSignal,

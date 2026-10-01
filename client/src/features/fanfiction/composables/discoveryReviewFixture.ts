@@ -24,7 +24,6 @@ export function discoveryReviewFixture() {
     reviewJobId: null,
     version: 1,
     createdAt: cutoff,
-    profileMatch: { profile: null },
   }))
   let operation: { website: string; ids?: string[]; excludedIds?: string[]; allMatching?: boolean } | null = null
   let uncertain = false
@@ -57,7 +56,6 @@ export function discoveryReviewFixture() {
         title: id === '2' ? 'A different title' : book.title,
         authors: book.authors,
         chapterCount: 12,
-        profile: null,
       })
     }
     if (path.endsWith('/selection')) {

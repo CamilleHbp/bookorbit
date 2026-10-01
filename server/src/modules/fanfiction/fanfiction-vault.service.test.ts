@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { FanfictionVaultService } from './fanfiction-vault.service';
 
-describe('Fanfiction profile encryption', () => {
+describe('Fanfiction connection encryption', () => {
   let directory: string;
   let vault: FanfictionVaultService;
   const profile = randomUUID();
@@ -30,40 +30,39 @@ describe('Fanfiction profile encryption', () => {
   const keyPath = () => join(directory, 'fanfiction/keys/profile-key-v1.json');
   it('uses an operator key without provisioning a file and blocks a mismatched override', async () => {
     config.encryptionKey = Buffer.alloc(32, 1).toString('base64');
-    const value = await vault.encrypt(1, profile, 'secret', true);
-    expect(await vault.decrypt(1, profile, value)).toBe('secret');
+    const value = await vault.encrypt('user:1', profile, 'secret', true);
+    expect(await vault.decrypt('user:1', profile, value)).toBe('secret');
     await expect(stat(keyPath())).rejects.toMatchObject({ code: 'ENOENT' });
     config.encryptionKey = Buffer.alloc(32, 2).toString('base64');
-    await expect(vault.decrypt(1, profile, value)).rejects.toThrow('mismatched');
+    await expect(vault.decrypt('user:1', profile, value)).rejects.toThrow('mismatched');
   });
-  it('atomically provisions one private key for concurrent profiles', async () => {
-    const values = await Promise.all(Array.from({ length: 8 }, () => vault.encrypt(1, profile, 'secret', true)));
+  it('atomically provisions one private key for concurrent connections', async () => {
+    const values = await Promise.all(Array.from({ length: 8 }, () => vault.encrypt('user:1', profile, 'secret', true)));
     expect(new Set(values.map((value) => value.keyId)).size).toBe(1);
     expect((await stat(keyPath())).mode & 0o777).toBe(0o600);
-    for (const value of values) expect(await vault.decrypt(1, profile, value)).toBe('secret');
+    for (const value of values) expect(await vault.decrypt('user:1', profile, value)).toBe('secret');
   });
-  it('authenticates library, profile, ciphertext and key version', async () => {
-    const value = await vault.encrypt(1, profile, 'secret', true);
-    await expect(vault.decrypt(2, profile, value)).rejects.toThrow('authenticate');
-    await expect(vault.decrypt(1, randomUUID(), value)).rejects.toThrow('authenticate');
-    await expect(vault.decrypt(1, profile, { ...value, ciphertext: 'AAAA' })).rejects.toThrow('authenticate');
-    await expect(vault.decrypt(1, profile, { ...value, keyId: randomUUID() })).rejects.toThrow('authenticate');
+  it('authenticates owner, connection, ciphertext and key version', async () => {
+    const value = await vault.encrypt('user:1', profile, 'secret', true);
+    await expect(vault.decrypt('user:2', profile, value)).rejects.toThrow('authenticate');
+    await expect(vault.decrypt('user:1', randomUUID(), value)).rejects.toThrow('authenticate');
+    await expect(vault.decrypt('user:1', profile, { ...value, ciphertext: 'AAAA' })).rejects.toThrow('authenticate');
+    await expect(vault.decrypt('user:1', profile, { ...value, keyId: randomUUID() })).rejects.toThrow('authenticate');
   });
 
-  it('binds personal access to its owner and keeps the legacy encryption context distinct', async () => {
+  it('binds personal access to its owner across website connections', async () => {
     const value = await vault.encrypt('user:7', profile, 'private login', true);
     expect(await vault.decrypt('user:7', profile, value)).toBe('private login');
     await expect(vault.decrypt('user:8', profile, value)).rejects.toThrow('authenticate');
-    await expect(vault.decrypt(7, profile, value)).rejects.toThrow('authenticate');
   });
   it('never replaces a lost or corrupt referenced key', async () => {
-    const value = await vault.encrypt(1, profile, 'secret', true);
+    const value = await vault.encrypt('user:1', profile, 'secret', true);
     await unlink(keyPath());
-    await expect(vault.decrypt(1, profile, value)).rejects.toThrow('restore');
-    await expect(vault.encrypt(1, profile, 'new', false)).rejects.toThrow('restore');
+    await expect(vault.decrypt('user:1', profile, value)).rejects.toThrow('restore');
+    await expect(vault.encrypt('user:1', profile, 'new', false)).rejects.toThrow('restore');
     await expect(stat(keyPath())).rejects.toMatchObject({ code: 'ENOENT' });
     await writeFile(keyPath(), 'corrupt', { mode: 0o600 });
-    await expect(vault.encrypt(1, profile, 'new', true)).rejects.toThrow('restore');
+    await expect(vault.encrypt('user:1', profile, 'new', true)).rejects.toThrow('restore');
     expect(await readFile(keyPath(), 'utf8')).toBe('corrupt');
   });
 });

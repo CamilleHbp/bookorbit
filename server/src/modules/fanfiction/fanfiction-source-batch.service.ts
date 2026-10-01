@@ -1,8 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, exists, gt, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, ilike, inArray, ne, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
-import type { FanfictionJob, FanfictionProfileSummary, FanfictionSourceBatchStatus, FanfictionSourceSelection } from '@bookorbit/types';
+import type { FanfictionJob, FanfictionSourceBatchStatus, FanfictionSourceSelection } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
@@ -10,7 +10,6 @@ import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionSourceService } from './fanfiction-source.service';
-import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanfictionSourceBatchScopeDto, SelectFanfictionSourcesDto } from './dto/fanfiction-source-batch.dto';
 import { personalAccessIssueFilter, storyStateFilter } from './fanfiction-source-filters';
 
@@ -27,15 +26,10 @@ export class FanfictionSourceBatchService {
     private readonly access: FanfictionAccessService,
     private readonly jobs: FanfictionJobService,
     private readonly sources: FanfictionSourceService,
-    private readonly profiles: FanfictionProfileService,
   ) {}
 
-  async repairProfile(profile: FanfictionProfileSummary, user: RequestUser) {
-    return this.start(profile.libraryId, { action: 'retry', allMatching: true, idempotencyKey: randomUUID() }, user, profile);
-  }
-
   async repairConnection(libraryId: number, site: string, user: RequestUser) {
-    return this.start(libraryId, { action: 'retry', allMatching: true, idempotencyKey: randomUUID() }, user, undefined, site);
+    return this.start(libraryId, { action: 'retry', allMatching: true, idempotencyKey: randomUUID() }, user, site);
   }
 
   private connectionFilter(site: string | undefined, userId: number) {
@@ -43,30 +37,7 @@ export class FanfictionSourceBatchService {
   }
 
   private enabledFilter(exclude?: boolean) {
-    return exclude ? and(ne(sources.state, 'unlinked'), sql`coalesce(${sources.updatesEnabled}, ${sources.state} <> 'paused')`) : undefined;
-  }
-
-  private repairFilter(profileId?: string, roots: string[] = []) {
-    if (!profileId) return undefined;
-    const website = or(
-      ...roots.map(
-        (root) =>
-          sql`(${sources.canonicalUrl} = ${root} or starts_with(${sources.canonicalUrl}, ${root + '/'}) or starts_with(${sources.canonicalUrl}, ${root + '?'}) or starts_with(${sources.canonicalUrl}, ${root + '#'}))`,
-      ),
-    );
-    return and(
-      ne(sources.state, 'unlinked'),
-      inArray(sources.attentionCode, [
-        'authentication_required',
-        'access_denied',
-        'source_not_found',
-        'source_failed',
-        'source_unavailable',
-        'source_rate_limited',
-        'download_timeout',
-      ]),
-      or(eq(sources.profileId, profileId), website ? and(isNull(sources.profileId), website) : undefined),
-    );
+    return exclude ? and(ne(sources.state, 'unlinked'), eq(sources.updatesEnabled, true)) : undefined;
   }
 
   async scope(libraryId: number, dto: FanfictionSourceBatchScopeDto, user: RequestUser) {
@@ -128,13 +99,7 @@ export class FanfictionSourceBatchService {
     };
   }
 
-  async start(
-    libraryId: number,
-    dto: SelectFanfictionSourcesDto,
-    user: RequestUser,
-    repair?: FanfictionProfileSummary,
-    repairConnectionSite?: string,
-  ) {
+  async start(libraryId: number, dto: SelectFanfictionSourcesDto, user: RequestUser, repairConnectionSite?: string) {
     await this.access.administer(user, libraryId);
     if (Boolean(dto.ids?.length) === Boolean(dto.allMatching)) throw new BadRequestException('Choose selected stories or all matching stories');
     if (dto.action === 'schedule' && dto.intervalMinutes === undefined) throw new BadRequestException('Choose an update schedule');
@@ -152,7 +117,6 @@ export class FanfictionSourceBatchService {
       ...(dto.updatePolicy ? { updatePolicy: dto.updatePolicy } : {}),
       ...(repairConnectionSite ? { repairConnectionSite } : {}),
       excludePaused: !ids && !['schedule', 'policy'].includes(dto.action),
-      ...(repair ? { repairProfileId: repair.id, repairRootUrls: repair.rootUrls ?? [] } : {}),
     };
     const reuse = (existing: typeof jobs.$inferSelect | undefined) => {
       const previous = existing?.sourceSelection;
@@ -163,7 +127,6 @@ export class FanfictionSourceBatchService {
         previous.search !== input.search ||
         previous.state !== input.state ||
         previous.intervalMinutes !== input.intervalMinutes ||
-        previous.repairProfileId !== input.repairProfileId ||
         previous.repairConnectionSite !== input.repairConnectionSite ||
         previous.updatePolicy !== input.updatePolicy ||
         JSON.stringify(previous.ids) !== JSON.stringify(ids)
@@ -195,7 +158,6 @@ export class FanfictionSourceBatchService {
         .where(
           and(
             eq(sources.libraryId, libraryId),
-            this.repairFilter(repair?.id, repair?.rootUrls),
             this.connectionFilter(repairConnectionSite, user.id),
             this.enabledFilter(input.excludePaused),
             sql`${sources.createdAt} <= ${cutoff}::timestamptz`,
@@ -210,7 +172,6 @@ export class FanfictionSourceBatchService {
           tokenVersion: user.tokenVersion,
           idempotencyKey: dto.idempotencyKey,
           kind: 'source_batch',
-          profileId: repair?.id,
           site: `local-library-${libraryId}`,
           url: '',
           sourceSelection: { ...input, cutoff, total, tracksOutcomes: true, cursor: null, processed: 0, failed: 0 },
@@ -239,7 +200,6 @@ export class FanfictionSourceBatchService {
           title: sources.title,
           bookId: sources.bookId,
           site: sources.site,
-          profileId: sources.profileId,
           errorCode: sql<string>`coalesce(${items.errorCode}, ${jobs.errorCode}, ${sources.attentionCode}, 'source_batch_item_failed')`,
         })
         .from(items)
@@ -289,7 +249,6 @@ export class FanfictionSourceBatchService {
         .where(
           and(
             eq(sources.libraryId, job.libraryId),
-            this.repairFilter(selection.repairProfileId, selection.repairRootUrls),
             this.connectionFilter(selection.repairConnectionSite, user.id),
             this.enabledFilter(selection.excludePaused),
             sql`${sources.createdAt} <= ${selection.cutoff}::timestamptz`,
@@ -308,20 +267,13 @@ export class FanfictionSourceBatchService {
         )
         .orderBy(asc(sources.id))
         .limit(100);
-      const matches = selection.repairProfileId
-        ? await this.profiles.matchMany(
-            job.libraryId,
-            batch.filter((source) => !source.profileId).map((source) => source.canonicalUrl),
-            user,
-          )
-        : null;
       for (const source of batch) {
         if (signal.aborted) throw new ConflictException('Story selection was cancelled');
         try {
           selection = await this.db.transaction(async (tx) => {
             await this.jobs.assertOwnership(job, tx);
             await authorize();
-            const child = await this.apply(tx, job, source, selection, user, matches?.get(source.canonicalUrl)?.profile?.id);
+            const child = await this.apply(tx, job, source, selection, user);
             return this.checkpoint(tx, job, source.id, selection, null, child?.id);
           });
         } catch (error) {
@@ -366,11 +318,8 @@ export class FanfictionSourceBatchService {
     source: typeof sources.$inferSelect,
     selection: FanfictionSourceSelection,
     user: RequestUser,
-    matchedProfileId?: string,
   ) {
-    if (selection.repairProfileId || selection.repairConnectionSite) {
-      if (selection.repairProfileId && !source.profileId && matchedProfileId !== selection.repairProfileId)
-        throw new ConflictException('Choose the website login before retrying');
+    if (selection.repairConnectionSite) {
       const [current] = await tx
         .select()
         .from(sources)
