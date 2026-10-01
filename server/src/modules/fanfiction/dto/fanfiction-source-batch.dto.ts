@@ -7,9 +7,10 @@ export class FanfictionSourceBatchScopeDto {
 }
 
 export class SelectFanfictionSourcesDto extends FanfictionSourceBatchScopeDto {
+  @IsOptional() @IsIn(['review', 'safe']) updatePolicy?: 'review' | 'safe';
   @IsUUID() idempotencyKey!: string;
   @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @IsUUID(undefined, { each: true }) ids?: string[];
   @IsOptional() @IsBoolean() allMatching?: boolean;
-  @IsIn(['update', 'refresh', 'retry', 'schedule']) action!: FanfictionSourceBatchAction;
+  @IsIn(['update', 'refresh', 'retry', 'schedule', 'policy']) action!: FanfictionSourceBatchAction;
   @IsOptional() @IsInt() @Min(60) @Max(525600) intervalMinutes?: number | null;
 }

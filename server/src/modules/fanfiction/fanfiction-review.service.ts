@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import type { FanfictionMetadataField } from '@bookorbit/types';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { FanfictionImportReviewRequest, FanfictionMetadataResolution, FanfictionPreview } from '@bookorbit/types';
@@ -35,9 +36,11 @@ export class FanfictionReviewService {
       throw error;
     }
   }
-  prepare(job: Job, preview: FanfictionPreview, noChange: boolean, reuseApproval = false) {
+  prepare(job: Job, preview: FanfictionPreview, noChange: boolean, reuseApproval = false, deferMetadata = false) {
     preview = validateFanfictionPreview(preview);
-    return this.operation('fanfiction.prepare_review', job.libraryId, job.id, () => this.prepareInternal(job, preview, noChange, reuseApproval));
+    return this.operation('fanfiction.prepare_review', job.libraryId, job.id, () =>
+      this.prepareInternal(job, preview, noChange, reuseApproval, deferMetadata),
+    );
   }
   decide(libraryId: number, sourceId: string, dto: FanfictionMetadataResolution, user: RequestUser, action: 'apply' | 'later' | 'discard') {
     return this.operation(`fanfiction.review_${action}`, libraryId, dto.jobId, () => this.decideInternal(libraryId, sourceId, dto, user, action));
@@ -54,7 +57,7 @@ export class FanfictionReviewService {
     private readonly jobService: FanfictionJobService,
   ) {}
 
-  private async prepareInternal(job: Job, preview: FanfictionPreview, noChange: boolean, reuseApproval: boolean) {
+  private async prepareInternal(job: Job, preview: FanfictionPreview, noChange: boolean, reuseApproval: boolean, deferMetadata: boolean) {
     return this.db.transaction(async (tx) => {
       await this.jobService.assertOwnership(job, tx);
       const [source] = await tx
@@ -78,7 +81,7 @@ export class FanfictionReviewService {
             sql`${jobs.id} <> ${job.id}`,
             sql`(${jobs.result}->>'revisionId' is not null or ${jobs.result}->>'bookId' is not null or ${jobs.result}->>'reviewDiscarded' = 'true')`,
             sql`${jobs.result}->'preview' is not null`,
-            sql`${jobs.result}->'metadataReview' is null`,
+            sql`${jobs.state} in ('succeeded', 'no_change')`,
             sql`coalesce(${jobs.result}->>'reviewDiscarded', 'false') <> 'true'`,
           ),
         )
@@ -93,9 +96,21 @@ export class FanfictionReviewService {
         source.tagPolicy,
       );
       const remote = storyTags(preview.tags);
+      if (deferMetadata) {
+        for (const field of previous?.result?.metadataReview?.fields ?? []) {
+          if (
+            !snapshot.lockedFields.includes(field) &&
+            JSON.stringify(snapshot.current[field]) !== JSON.stringify(preview[field]) &&
+            !plan.fields.includes(field)
+          )
+            plan.fields.push(field);
+        }
+      }
       const previousState = previousPlan?.previousState ?? (source.state === 'paused' ? 'paused' : 'active');
       const result: NonNullable<Job['result']> = {
         ...(stored.result?.changes ? { changes: stored.result.changes } : {}),
+        ...(stored.result?.contentReview ? { contentReview: stored.result.contentReview } : {}),
+        ...(deferMetadata && plan.fields.length ? { metadataDeferred: true } : {}),
         preview,
         sourceId: source.id,
         bookId: source.bookId,
@@ -104,9 +119,11 @@ export class FanfictionReviewService {
           noChange,
           previousState,
           values: plan.values,
-          fields: ['title', 'description', 'authors', 'tags', 'genres'],
+          fields: (['title', 'description', 'authors', 'tags', 'genres'] as FanfictionMetadataField[]).filter(
+            (field) => !deferMetadata || !plan.fields.includes(field),
+          ),
           fingerprint: snapshot.fingerprint,
-          approved: !plan.fields.length,
+          approved: deferMetadata || !plan.fields.length,
           baseline: previous?.result?.preview,
         },
         ...(plan.fields.length
@@ -118,7 +135,7 @@ export class FanfictionReviewService {
                 lockedFields: snapshot.lockedFields,
                 fingerprint: snapshot.fingerprint,
                 previousState,
-                beforeUpdate: true,
+                beforeUpdate: !deferMetadata,
                 tags: {
                   custom: snapshot.customTags,
                   managed: snapshot.managedTags,
@@ -209,6 +226,8 @@ export class FanfictionReviewService {
   async assertApproved(job: Job, tx: DatabaseTransaction) {
     const [stored] = await tx.select().from(jobs).where(eq(jobs.id, job.id)).limit(1);
     const plan = stored.result?.preparedUpdate;
+    if (stored.result?.contentReview && !stored.result.contentReview.approved)
+      throw new ConflictException({ message: 'Review the changed chapters before updating', errorCode: 'content_review_required' });
     if (!plan) return; // Publications created before review staging retain their recovery path.
     if (!plan.approved) throw new ConflictException({ message: 'Review the update before applying it.', errorCode: 'metadata_review_required' });
     if (stored.result?.revisionId || plan.metadataApplied) return;
@@ -233,7 +252,7 @@ export class FanfictionReviewService {
       plan.metadataApplied = true;
     }
     const result = { ...stored.result };
-    delete result.metadataReview;
+    if (!result.metadataDeferred) delete result.metadataReview;
     if (plan) await tx.update(jobs).set({ result }).where(eq(jobs.id, job.id));
     return result;
   }

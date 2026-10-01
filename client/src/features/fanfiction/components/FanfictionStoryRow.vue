@@ -9,7 +9,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import StoryReadingActions from './StoryReadingActions.vue'
 import ImportProgress from './ImportProgress.vue'
-import { sourcePresetForUrl } from '../lib/source-presets'
 
 const props = defineProps<{
   source: FanfictionSource
@@ -27,9 +26,12 @@ const canCheck = computed(
   () => props.source.bookFileId && props.source.attentionCode !== 'destination_profile_required' && ['active', 'paused'].includes(props.source.state),
 )
 const needsAttention = computed(
-  () => Boolean(props.source.attentionCode) || ['review_required', 'configuration_blocked'].includes(props.source.state),
+  () =>
+    Boolean(props.source.attentionCode) ||
+    props.source.metadataReviewPending ||
+    ['review_required', 'configuration_blocked'].includes(props.source.state),
 )
-const canFixLogin = computed(() => sourcePresetForUrl(props.source.canonicalUrl)?.login && props.source.attentionCode === 'source_not_found')
+const canFixLogin = computed(() => ['authentication_required', 'access_denied'].includes(props.source.attentionCode ?? ''))
 const canRetry = computed(
   () =>
     canCheck.value && ['source_failed', 'source_unavailable', 'source_rate_limited', 'download_timeout'].includes(props.source.attentionCode ?? ''),
@@ -91,7 +93,7 @@ function handlePause() {
             ><span v-if="source.storyStatus"> · {{ source.storyStatus }}</span>
           </p>
         </div>
-        <DropdownMenu v-if="canCheck">
+        <DropdownMenu v-if="source.state !== 'unlinked'">
           <DropdownMenuTrigger as-child
             ><Button
               variant="ghost"
@@ -104,11 +106,9 @@ function handlePause() {
             <DropdownMenuItem v-if="source.bookId" as-child>
               <RouterLink :to="details">{{ t('fanfiction.storyUpdates') }}</RouterLink>
             </DropdownMenuItem>
-            <DropdownMenuItem v-if="source.attentionCode !== 'metadata_review_required'" @select="handleRefresh">{{
-              t('fanfiction.refreshChapters')
-            }}</DropdownMenuItem>
-            <DropdownMenuItem v-if="source.attentionCode !== 'metadata_review_required'" @select="handlePause">{{
-              source.state === 'paused' ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates')
+            <DropdownMenuItem v-if="canCheck" @select="handleRefresh">{{ t('fanfiction.refreshChapters') }}</DropdownMenuItem>
+            <DropdownMenuItem @select="handlePause">{{
+              !(source.tracking?.enabled ?? source.state !== 'paused') ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates')
             }}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -141,7 +141,11 @@ function handlePause() {
         <Button v-else-if="canRetry" variant="outline" :disabled="disabled || active" @click="handleCheck">{{ t('fanfiction.retry') }}</Button>
         <Button v-else-if="needsAttention && source.bookId" variant="outline" as-child
           ><RouterLink :to="details">{{
-            t(source.attentionCode === 'metadata_review_required' ? 'fanfiction.metadataReview.title' : 'fanfiction.reviewStory')
+            t(
+              source.metadataReviewPending || source.attentionCode === 'metadata_review_required'
+                ? 'fanfiction.metadataReview.title'
+                : 'fanfiction.reviewStory',
+            )
           }}</RouterLink></Button
         >
         <Button v-else-if="source.attentionCode === 'import_review_required'" variant="outline" as-child
@@ -156,7 +160,9 @@ function handlePause() {
         <Button v-if="needsAttention" variant="ghost" as-child>
           <a :href="source.canonicalUrl" target="_blank" rel="noopener noreferrer">{{ t('fanfiction.openWebsite') }}</a>
         </Button>
-        <span class="text-xs text-muted-foreground">{{ t(`fanfiction.sourceStates.${source.state}`) }}</span>
+        <span class="text-xs text-muted-foreground">{{
+          t((source.tracking?.enabled ?? source.state !== 'paused') ? 'fanfiction.maintenance.enabled' : 'fanfiction.maintenance.paused')
+        }}</span>
         <span class="text-xs text-muted-foreground">{{ t('fanfiction.lastChecked') }}: {{ lastChecked }}</span>
       </div>
     </div>

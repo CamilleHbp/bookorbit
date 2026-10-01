@@ -12242,7 +12242,7 @@
     "currentRevision": "Current revision",
     "rollback": "Restore this revision",
     "recentChanges": "Recent story changes",
-    "operations": "Tasks",
+    "operations": "Task history",
     "activityKinds": {
       "rolled_back": "Restored",
       "imported": "Imported",
@@ -12284,7 +12284,7 @@
     "profile": "Profile",
     "noProfile": "Use website login",
     "preview": "Preview story",
-    "activity": "Activity",
+    "activity": "Updates",
     "chapterCount": "{count, plural, one {# chapter} other {# chapters}}",
     "wordCount": "{count} words",
     "states": {
@@ -12293,7 +12293,7 @@
       "succeeded": "Succeeded",
       "no_change": "No change",
       "review_required": "Review required",
-      "configuration_blocked": "Configuration blocked",
+      "configuration_blocked": "Needs attention",
       "failed": "Failed",
       "cancelled": "Cancelled"
     },
@@ -12321,7 +12321,7 @@
       "authentication_required": "Website sign-in failed. Update your login details or cookies, then retry.",
       "access_revoked": "Library administration access was revoked.",
       "source_failed": "The story could not be downloaded. Try again, or open the website to check access.",
-      "source_not_found": "The website returned “not found”. The story may have moved, been removed, or require a website login.",
+      "source_not_found": "The original story was not found. Check its URL or open the website. Your saved copy is still available.",
       "source_rate_limited": "The website is limiting requests. Wait a few minutes before trying again.",
       "source_unavailable": "The website is temporarily unavailable. Try again later.",
       "runtime_failed": "This task could not finish. Retry it. If it fails again, contact your administrator.",
@@ -12345,7 +12345,9 @@
       "access_denied": "The website blocked access. Try again later or upload an EPUB.",
       "metadata_review_required": "Review the incoming story metadata.",
       "import_review_required": "Review the story before importing it.",
-      "profile_ambiguous": "More than one profile matches. Choose a profile before continuing."
+      "profile_ambiguous": "More than one profile matches. Choose a profile before continuing.",
+      "content_review_required": "Existing chapters changed. Review before replacing your saved copy.",
+      "maintainer_required": "This story uses another manager’s website login. Ask them to check it, or choose your own login in story settings."
     },
     "title": "Fanfiction",
     "pageNumber": "Page {page}",
@@ -12389,7 +12391,7 @@
       "active": "Updates enabled",
       "paused": "Updates paused",
       "review_required": "Review required",
-      "configuration_blocked": "Configuration blocked",
+      "configuration_blocked": "Needs attention",
       "unlinked": "Unlinked"
     },
     "kinds": {
@@ -12404,7 +12406,7 @@
       "replacement": "Uploaded replacement"
     },
     "discovery": {
-      "title": "Existing books",
+      "title": "From library",
       "help": "Find and link story sources to keep your existing EPUBs updated.",
       "scan": "Scan existing EPUBs",
       "uncertain": "Could not confirm the task status. Retry to check.",
@@ -12519,7 +12521,8 @@
       "saveLogin": "Save login",
       "saveLoginAndCheck": "Save and retry affected stories",
       "sharedLoginHelp": "Used by stories from this website in this library. Saving retries stories with access errors.",
-      "skipped": "not checked"
+      "skipped": "not checked",
+      "policy": "Use safe automatic updates"
     },
     "replacementTitle": "Replace from an EPUB",
     "replacementHelp": "Upload an EPUB, up to 128 MiB. Your book details and reading history are kept. Updates will pause. Review the upload within 7 days.",
@@ -12564,7 +12567,7 @@
       "pending": "Waiting to submit"
     },
     "allowAdultStories": "I am an adult. Allow adult stories.",
-    "configureSource": "Sign in or configure source",
+    "configureSource": "Website login",
     "existingStoryTitle": "Story already exists",
     "existingStoryDescription": "“{title}” is already in this library. Update the existing story?",
     "updateStory": "Update story",
@@ -12681,7 +12684,9 @@
       "added": "Added {count} chapters",
       "changed": "Updated {count} existing chapters",
       "metadata": "Metadata changed",
-      "readNew": "Read new chapters"
+      "readNew": "Read new chapters",
+      "removed": "{count} chapters removed on the website",
+      "reordered": "Chapter order changed on the website"
     },
     "restoreConfirm": "Restore the story from {date} and pause automatic updates? Your reading history and annotations are kept.",
     "importCollection": "Add imported stories to collection",
@@ -12718,6 +12723,48 @@
       "websiteProfile": "Use the website profile",
       "moreWebsites": "More websites",
       "notChecked": "Not compared"
+    },
+    "connections": {
+      "title": "Website logins",
+      "help": "Your private logins work across the libraries you manage. Public stories need no login.",
+      "attention": "Website access needs attention",
+      "website": "Website",
+      "choose": "Choose a website",
+      "affected": "{count} stories need access",
+      "success": "Last successful access: {date}",
+      "unverified": "Saved, not yet verified",
+      "username": "Username or email",
+      "password": "Password",
+      "cookies": "Browser cookies",
+      "cookieHelp": "Copy a login cookie from this website in your browser. Enter one cookie at a time.",
+      "cookieName": "Cookie name",
+      "cookieValue": "Cookie value",
+      "savedHelp": "Leave fields blank to keep saved access.",
+      "takeOver": "Use your website login to maintain “{title}”. Existing download settings stay in place.",
+      "saved": "Login saved. Successful access will be confirmed after a story check.",
+      "saveRetry": "Save and retry affected stories",
+      "loadFailed": "Story could not be loaded. Refresh and try again.",
+      "remove": "Remove saved login",
+      "removeHelp": "Remove this website login? Saved stories remain readable. Future checks may need you to sign in again."
+    },
+    "maintenance": {
+      "fromWeb": "From a URL",
+      "fromLibrary": "From library",
+      "keepUpdated": "Keep updated",
+      "enabled": "Updates on",
+      "paused": "Updates paused",
+      "legacy": "Legacy download settings",
+      "personal": "My website login, when needed",
+      "policy": "When the website changes",
+      "safe": "Add verified new chapters automatically",
+      "review": "Keep the existing review policy",
+      "safeHelp": "Unchanged chapters must match before new chapters are added. Rewritten or removed chapters need your review. Your metadata choices stay intact.",
+      "useMine": "Use my website login",
+      "contentReview": "The website changed existing chapters or their order. Your saved copy is still available. Review the changes before replacing it.",
+      "acceptContent": "Accept changed chapters",
+      "keepCopy": "Keep saved copy and pause",
+      "attention": "Stories needing attention",
+      "noAttention": "No stories need your attention."
     }
   },
   "koreaderCopies": {

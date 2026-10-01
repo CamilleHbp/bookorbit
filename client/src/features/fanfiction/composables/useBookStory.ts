@@ -31,6 +31,8 @@ export function useBookStory(
   permitted: MaybeRefOrGetter<boolean>,
   onBookUpdated?: (bookId: number) => void | Promise<void>,
 ) {
+  const updatePolicy = ref<'safe' | 'review'>('review')
+  const keepUpdated = ref(true)
   const tagPolicy = ref<'review' | 'automatic'>('review')
   const allowed = ref(false)
   const denied = ref(false)
@@ -151,6 +153,8 @@ export function useBookStory(
     sources.value = page.items
     sourceCursor.value = page.nextCursor
     if (!page.items.some((row) => row.id === sourceId.value)) sourceId.value = page.items[0]?.id ?? ''
+    updatePolicy.value = source.value?.tracking?.policy ?? 'review'
+    keepUpdated.value = source.value?.tracking?.enabled ?? source.value?.state !== 'paused'
     tagPolicy.value = source.value?.tagPolicy ?? 'review'
     profileId.value = source.value?.profileId ?? ''
     interval.value = source.value?.intervalMinutes === null ? 'manual' : String(source.value?.intervalMinutes ?? 1440)
@@ -159,7 +163,7 @@ export function useBookStory(
   async function loadMetadataReview(id: number) {
     metadataReview.value = null
     const current = source.value
-    if (!current?.attentionCode) return
+    if (!current?.attentionCode && !current?.metadataReviewPending) return
     const result = await request<FanfictionMetadataReviewView | null>(`${base.value}/sources/${current.id}/metadata-review`)
     if (!valid(id) || source.value?.id !== current.id) return
     metadataReview.value = result
@@ -182,15 +186,20 @@ export function useBookStory(
   const discardMetadata = () => decideMetadata('discard')
   async function decideMetadata(action: 'apply' | 'later' | 'discard') {
     if (busy.value || !metadataReview.value || !source.value) return
+    if (action === 'later' && !metadataReview.value.review.beforeUpdate) {
+      reviewDeferred.value = true
+      return
+    }
     await perform(async (id) => {
       const review = metadataReview.value!
       const current = source.value!
       const result = await request<FanfictionJob | { resolved: true }>(
-        `${base.value}/sources/${current.id}/metadata-review${action === 'apply' ? '' : `/${action}`}`,
+        `${base.value}/sources/${current.id}/metadata-review${action === 'apply' || !review.review.beforeUpdate ? '' : `/${action}`}`,
         {
           jobId: review.jobId,
           fingerprint: review.review.fingerprint,
           ...metadataChoices.value,
+          ...(action === 'discard' && !review.review.beforeUpdate ? { keepAll: true } : {}),
         } satisfies FanfictionMetadataResolution,
       )
       if (!valid(id) || source.value?.id !== current.id) return
@@ -246,6 +255,8 @@ export function useBookStory(
     if (candidate && ['review_required', 'failed', 'cancelled', 'configuration_blocked'].includes(candidate.state)) job.value = candidate
   }
   async function selectSource() {
+    updatePolicy.value = source.value?.tracking?.policy ?? 'review'
+    keepUpdated.value = source.value?.tracking?.enabled ?? source.value?.state !== 'paused'
     tagPolicy.value = source.value?.tagPolicy ?? 'review'
     profileId.value = source.value?.profileId ?? ''
     interval.value = source.value?.intervalMinutes === null ? 'manual' : String(source.value?.intervalMinutes ?? 1440)
@@ -320,7 +331,16 @@ export function useBookStory(
         throw new Error('Use an interval between 60 and 525600 minutes.')
       await request(
         `${base.value}/sources/${current.id}`,
-        { version: current.version, profileId: profileId.value || null, intervalMinutes: minutes, tagPolicy: tagPolicy.value },
+        {
+          version: current.version,
+          ...(profileId.value !== (current.profileId ?? '') || current.attentionCode === 'destination_profile_required'
+            ? { profileId: profileId.value || null }
+            : {}),
+          intervalMinutes: minutes,
+          tagPolicy: tagPolicy.value,
+          updatePolicy: updatePolicy.value,
+          keepUpdated: keepUpdated.value,
+        },
         'PATCH',
       )
       if (valid(id)) await loadSources(id)
@@ -334,7 +354,10 @@ export function useBookStory(
       if (valid(id)) await loadSources(id)
     })
   }
-  const pause = () => setState(source.value?.state === 'paused' ? 'active' : 'paused')
+  const pause = async () => {
+    keepUpdated.value = !(source.value?.tracking?.enabled ?? source.value?.state !== 'paused')
+    await updateSettings()
+  }
   const unlink = () => setState('unlinked')
   async function enqueue(kind: 'update' | 'refresh' | 'rollback', revisionId?: string) {
     await perform(async (id) => {
@@ -488,7 +511,23 @@ export function useBookStory(
     window.removeEventListener('online', resumePolling)
     window.removeEventListener('offline', resumePolling)
   })
+  async function reviewContent(action: 'apply' | 'discard') {
+    if (!job.value) return
+    await perform(async (id) => {
+      const result = await request<FanfictionJob>(`${base.value}/jobs/${job.value!.id}/content-review`, { action })
+      if (!valid(id)) return
+      job.value = result
+      await loadSources(id)
+      poll(id)
+    })
+  }
+  const approveContent = () => reviewContent('apply')
+  const discardContent = () => reviewContent('discard')
   return {
+    updatePolicy,
+    keepUpdated,
+    approveContent,
+    discardContent,
     metadataReview,
     metadataChoices,
     resolveMetadata,

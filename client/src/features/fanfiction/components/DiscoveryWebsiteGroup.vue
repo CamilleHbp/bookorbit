@@ -119,18 +119,22 @@ function retry() {
     </div>
     <div v-show="open" :id="panelId" class="space-y-4 px-4 pb-4">
       <div v-if="!finished" class="flex flex-wrap items-end gap-3">
-        <label class="min-w-0 flex-1 space-y-1 text-sm">
-          <span>{{ t('fanfiction.profile') }}</span>
-          <select
-            v-model="profile"
-            :disabled="busy"
-            class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
-            @change="changeProfile"
-          >
-            <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
-            <option v-for="option in profiles" :key="option.id" :value="option.id">{{ option.name }}</option>
-          </select>
-        </label>
+        <details class="min-w-0 flex-1 space-y-2">
+          <summary class="min-h-11 cursor-pointer py-3 text-sm">{{ t('fanfiction.advanced') }}</summary>
+          <label class="block space-y-1 text-sm">
+            <span>{{ t('fanfiction.profile') }}</span>
+            <select
+              v-model="profile"
+              :disabled="busy"
+              class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
+              @change="changeProfile"
+            >
+              <option value="public">{{ t('fanfiction.maintenance.personal') }}</option>
+              <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
+              <option v-for="option in profiles" :key="option.id" :value="option.id">{{ option.name }}</option>
+            </select>
+          </label>
+        </details>
         <StorySchedule v-model="schedule" :disabled="busy" />
         <Button v-if="moreProfiles" variant="ghost" :disabled="busy" @click="loadMoreProfiles">{{ t('fanfiction.moreProfiles') }}</Button>
       </div>

@@ -6,6 +6,7 @@ import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { withFanfictionDefaults } from './fanfiction-defaults';
 import { FanfictionProfileService } from './fanfiction-profile.service';
+import { FanfictionConnectionService } from './fanfiction-connection.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionImportService } from './fanfiction-import.service';
 import { FanfictionUpdateService } from './fanfiction-update.service';
@@ -28,6 +29,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
     private readonly jobs: FanfictionJobService,
     private readonly access: FanfictionAccessService,
     private readonly profiles: FanfictionProfileService,
+    private readonly connections: FanfictionConnectionService,
     private readonly runtime: FanficfareRuntimeService,
     private readonly users: UserService,
     private readonly imports: FanfictionImportService,
@@ -78,6 +80,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
 
   private async run(job: ClaimedJob, controller: AbortController): Promise<void> {
     const startedAt = Date.now();
+    let connection: { id: string; generation: number } | null = null;
     let renewing = false;
     const timer = setInterval(() => {
       if (renewing) return;
@@ -104,12 +107,22 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const downloads =
         !job.result?.preparedUpdate?.approved && !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind);
       // Resolve at execution time so already queued stories use a repaired website login.
-      const match = downloads && !job.profileId ? await this.profiles.match(job.libraryId, job.url, user) : null;
+      const personal = downloads && job.accessMode === 'personal';
+      const match = downloads && !personal && !job.profileId ? await this.profiles.match(job.libraryId, job.url, user) : null;
       if (match?.ambiguous) throw new BadRequestException({ message: 'Choose a website login for this story', errorCode: 'configuration_blocked' });
       const profileId = downloads ? (job.profileId ?? match?.profile?.id) : null;
-      const { document, saveCookies } = profileId
-        ? await this.profiles.session(job.libraryId, profileId, user, authorizeCookies)
-        : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
+      const session = personal ? await this.connections.session(job.url, user, authorizeCookies) : null;
+      connection = session?.connection ?? null;
+      const { document, saveCookies } =
+        session ??
+        (profileId
+          ? await this.profiles.session(job.libraryId, profileId, user, authorizeCookies)
+          : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined });
+      if (personal && profileId) {
+        const { document: legacy } = await this.profiles.document(job.libraryId, profileId, user);
+        document.configuration = await this.runtime.personalConfiguration(legacy.configuration, document.configuration);
+        document.tagRules = legacy.tagRules;
+      }
       const result: FanfictionJob['result'] =
         job.kind === 'replacement'
           ? await this.replacements.run(job, () => this.authorized(job), controller.signal)
@@ -135,13 +148,16 @@ export class FanfictionWorkerService implements OnModuleDestroy {
                       ? await this.updates.run(job, document, () => this.authorized(job), controller.signal, saveCookies)
                       : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
       await this.authorized(job);
+      if (connection) await this.connections.outcome(connection, job.userId);
       const continuation = result?.discovery?.finished === false || result?.selection?.finished === false;
       const storyReview =
-        result?.metadataReview && !result.preparedUpdate?.approved
-          ? 'metadata_review_required'
-          : result?.importReview && !result.importReview.approved
-            ? 'import_review_required'
-            : null;
+        result?.contentReview && !result.contentReview.approved
+          ? 'content_review_required'
+          : result?.metadataReview && !result.preparedUpdate?.approved
+            ? 'metadata_review_required'
+            : result?.importReview && !result.importReview.approved
+              ? 'import_review_required'
+              : null;
       const needsReview = !!storyReview || (result?.selection?.failed ?? 0) > 0;
       const committed = continuation
         ? await this.jobs.yieldBatch(job, result)
@@ -165,6 +181,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const blocked =
         error instanceof ForbiddenException ||
         ['configuration_blocked', 'authentication_required', 'adult_confirmation_required', 'access_denied'].includes(code);
+      if (connection) await this.connections.outcome(connection, job.userId, code);
       await this.jobs.finish(
         job,
         blocked
@@ -172,6 +189,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
           : [
                 'review_required',
                 'metadata_review_required',
+                'content_review_required',
                 'replacement_identity_mismatch',
                 'replacement_chapter_reduction',
                 'replacement_revision_changed',

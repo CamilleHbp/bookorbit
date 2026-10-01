@@ -283,7 +283,7 @@ describe('managed Fanfiction page requests', () => {
     expect(state.visibleCandidates.value[0]?.job?.kind).toBe('update')
   })
 
-  it('imports mixed sources directly using a matching profile for each URL', async () => {
+  it('imports public stories without selecting or matching legacy profiles', async () => {
     const state = create()
     state.libraryId.value = 5
     state.folderId.value = 8
@@ -296,7 +296,8 @@ describe('managed Fanfiction page requests', () => {
     const imports = mockApi.mock.calls.filter(([url]) => String(url).endsWith('/sources')).map(([, options]) => JSON.parse(options!.body as string))
     expect(imports).toHaveLength(2)
     expect(imports[0]).not.toHaveProperty('profileId')
-    expect(imports[1].profileId).toBe('ao3-profile')
+    expect(imports[1].profileId).toBeUndefined()
+    expect(mockApi.mock.calls.some(([url]) => String(url).includes('profile-match'))).toBe(false)
     expect(mockApi.mock.calls.some(([url]) => String(url).includes('/previews'))).toBe(false)
     await state.importStories()
     expect(mockApi.mock.calls.filter(([url]) => String(url).endsWith('/sources'))).toHaveLength(2)

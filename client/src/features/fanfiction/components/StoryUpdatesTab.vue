@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BookFileRevisionSummary } from '@bookorbit/types'
+import WebsiteConnections from './WebsiteConnections.vue'
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -12,6 +13,10 @@ import type { useBookStory } from '../composables/useBookStory'
 const props = defineProps<{ state: ReturnType<typeof useBookStory> }>()
 const { t } = useI18n()
 const {
+  updatePolicy,
+  keepUpdated,
+  approveContent,
+  discardContent,
   allowed,
   metadataReview,
   metadataChoices,
@@ -57,6 +62,17 @@ const {
   moreProfiles,
   moreSources,
 } = props.state
+const connecting = ref(false)
+function showLogin() {
+  connecting.value = true
+}
+function closeLogin() {
+  connecting.value = false
+}
+async function loginSaved() {
+  connecting.value = false
+  await refresh()
+}
 const restore = ref<BookFileRevisionSummary | null>(null)
 function requestRestore(revision: BookFileRevisionSummary) {
   restore.value = revision
@@ -116,7 +132,7 @@ onMounted(() => {
         }}</a>
         <p>
           {{ source.storyStatus }} · {{ t('fanfiction.chapterCount', { count: source.chapterCount }) }} ·
-          {{ t(`fanfiction.sourceStates.${source.state}`) }}
+          {{ t((source.tracking?.enabled ?? source.state !== 'paused') ? 'fanfiction.maintenance.enabled' : 'fanfiction.maintenance.paused') }}
           <span v-if="source.wordCount !== null"> · {{ t('fanfiction.wordCount', { count: source.wordCount }) }}</span>
         </p>
         <p v-if="source.attentionCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
@@ -138,37 +154,67 @@ onMounted(() => {
           <Button v-if="canUpdate" :disabled="updating" @click="checkNow">{{ t('fanfiction.checkNow') }}</Button>
           <Button v-if="canUpdate" variant="outline" :disabled="updating" @click="refreshChapters">{{ t('fanfiction.refreshChapters') }}</Button>
           <Button v-if="canUpdate" variant="outline" :disabled="busy" @click="pause">{{
-            source.state === 'paused' ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates')
+            !(source.tracking?.enabled ?? source.state !== 'paused') ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates')
           }}</Button>
           <Button variant="outline" :disabled="updating" @click="unlink">{{ t('fanfiction.unlink') }}</Button>
         </div>
         <p class="text-muted-foreground text-xs">{{ t('fanfiction.unlinkHelp') }}</p>
       </div>
-      <form class="border-border space-y-3 rounded-xl border p-4" @submit.prevent="updateSettings">
+      <Button v-if="['authentication_required', 'access_denied'].includes(source.attentionCode ?? '')" variant="outline" @click="showLogin">{{
+        t('fanfiction.bulk.fixLogin')
+      }}</Button>
+      <WebsiteConnections
+        v-if="connecting"
+        :library-id="source.libraryId"
+        :source="source"
+        :focus-site="source.site"
+        repairs-only
+        @saved="loginSaved"
+        @cancel="closeLogin"
+      />
+      <form class="border-border space-y-4 rounded-xl border p-4" @submit.prevent="updateSettings">
+        <label class="flex min-h-11 items-center gap-3 text-sm"
+          ><input v-model="keepUpdated" type="checkbox" :disabled="updating" class="size-4 accent-primary" />{{
+            t('fanfiction.maintenance.keepUpdated')
+          }}</label
+        >
+        <StorySchedule v-if="keepUpdated" v-model="interval" :disabled="updating" />
         <label class="block space-y-1 text-sm"
-          >{{ t('fanfiction.profile') }}
-          <select v-model="profileId" :disabled="updating" class="border-input bg-background block w-full rounded-md border p-2">
-            <option value="">{{ t('fanfiction.noProfile') }}</option>
-            <option v-if="profileMissing" :value="profileId">{{ t('fanfiction.currentProfile') }}</option>
-            <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+          >{{ t('fanfiction.maintenance.policy') }}
+          <select v-model="updatePolicy" :disabled="updating" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
+            <option value="safe">{{ t('fanfiction.maintenance.safe') }}</option>
+            <option value="review">{{ t('fanfiction.maintenance.review') }}</option>
           </select>
         </label>
-        <Button v-if="profileCursor" type="button" variant="outline" :disabled="busy" @click="moreProfiles">{{
-          t('fanfiction.moreProfiles')
-        }}</Button>
-        <StorySchedule v-model="interval" :disabled="updating" />
-        <label class="block space-y-1 text-sm"
-          >{{ t('fanfiction.tagPolicy')
-          }}<select v-model="tagPolicy" :disabled="updating" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
-            <option value="review">{{ t('fanfiction.tagPolicyReview') }}</option>
-            <option value="automatic">{{ t('fanfiction.tagPolicyAutomatic') }}</option>
-          </select></label
-        >
-        <p class="text-sm text-muted-foreground">{{ t('fanfiction.tagPolicyHelp') }}</p>
+        <p class="max-w-prose text-sm text-muted-foreground">{{ t('fanfiction.maintenance.safeHelp') }}</p>
+        <details class="space-y-3">
+          <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">{{ t('fanfiction.advanced') }}</summary>
+          <Button type="button" variant="outline" :disabled="updating" @click="showLogin">{{ t('fanfiction.maintenance.useMine') }}</Button>
+          <label class="block space-y-1 text-sm"
+            >{{ t('fanfiction.maintenance.legacy') }}
+            <select v-model="profileId" :disabled="updating" class="border-input bg-background block w-full rounded-md border p-2">
+              <option value="">{{ t('fanfiction.noProfile') }}</option>
+              <option v-if="profileMissing" :value="profileId">{{ t('fanfiction.currentProfile') }}</option>
+              <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+            </select>
+          </label>
+          <Button v-if="profileCursor" type="button" variant="outline" :disabled="busy" @click="moreProfiles">{{
+            t('fanfiction.moreProfiles')
+          }}</Button>
+
+          <label class="block space-y-1 text-sm"
+            >{{ t('fanfiction.tagPolicy')
+            }}<select v-model="tagPolicy" :disabled="updating" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
+              <option value="review">{{ t('fanfiction.tagPolicyReview') }}</option>
+              <option value="automatic">{{ t('fanfiction.tagPolicyAutomatic') }}</option>
+            </select></label
+          >
+          <p class="text-sm text-muted-foreground">{{ t('fanfiction.tagPolicyHelp') }}</p>
+        </details>
         <div class="flex flex-wrap items-center gap-3">
           <Button type="submit" :disabled="updating">{{ t('common.save') }}</Button>
           <Button variant="outline" as-child
-            ><RouterLink :to="{ name: 'settings-fanfiction' }">{{ t('fanfiction.settingsTitle') }}</RouterLink></Button
+            ><RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.settingsTitle') }}</RouterLink></Button
           >
         </div>
       </form>
@@ -176,6 +222,13 @@ onMounted(() => {
         {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }}
         <StoryUpdateOutcome :job="job" />
         <p v-if="job.errorCode" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
+        <div v-if="job.result?.contentReview && !job.result.contentReview.approved" class="space-y-3 py-3">
+          <p>{{ t('fanfiction.maintenance.contentReview') }}</p>
+          <div class="flex flex-wrap gap-2">
+            <Button :disabled="updating" @click="approveContent">{{ t('fanfiction.maintenance.acceptContent') }}</Button
+            ><Button variant="outline" :disabled="updating" @click="discardContent">{{ t('fanfiction.maintenance.keepCopy') }}</Button>
+          </div>
+        </div>
         <div v-if="job.result?.replacement" class="my-3 space-y-2">
           <p>{{ job.result.replacement.title }}</p>
           <p>
@@ -189,7 +242,12 @@ onMounted(() => {
           <Button v-if="canApproveReplacement" :disabled="updating" @click="approveReplacement">{{ t('fanfiction.replacementApprove') }}</Button>
         </div>
         <Button
-          v-if="!metadataReview && !canApproveReplacement && ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)"
+          v-if="
+            !job.result?.contentReview &&
+            !metadataReview &&
+            !canApproveReplacement &&
+            ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)
+          "
           variant="outline"
           :disabled="updating"
           @click="retryJob"

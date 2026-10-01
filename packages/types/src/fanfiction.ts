@@ -2,6 +2,43 @@ export interface FanfictionPreferences {
   isAdult: boolean;
 }
 
+export type FanfictionUpdatePolicy = "review" | "safe";
+export interface FanfictionWebsite {
+  id: string;
+  name: string;
+  examples: string[];
+  access: "login" | "cookies";
+}
+export interface FanfictionConnection {
+  id: string;
+  website: FanfictionWebsite;
+  version: number;
+  hasPassword: boolean;
+  cookieCount: number;
+  lastSuccessfulAt: string | null;
+  errorCode: string | null;
+  updatedAt: string;
+}
+export interface FanfictionConnectionRequest {
+  site: string;
+  version?: number;
+  username?: string;
+  password?: string;
+  cookies?: FanfictionCookie[];
+}
+export interface FanfictionStoryTracking {
+  enabled: boolean;
+  policy: FanfictionUpdatePolicy;
+  maintainerUserId: number;
+  access: "legacy" | "personal";
+  needsAttention: boolean;
+}
+export interface FanfictionConnectionIssue {
+  site: string;
+  count: number;
+  connectionId: string | null;
+}
+
 export interface FanfictionProfileMatch {
   ambiguous?: boolean;
   profile: FanfictionProfileSummary | null;
@@ -117,6 +154,8 @@ export interface FanfictionJob {
   attempts: number;
   cancellationRequested: boolean;
   result: {
+    contentReview?: { approved: boolean; previousState: "active" | "paused" };
+    metadataDeferred?: boolean;
     changes?: FanfictionChapterChanges;
     progress?: FanfictionImportProgress;
     existingStory?: FanfictionExistingStory;
@@ -250,9 +289,12 @@ export interface FanfictionDiscoverySelection {
   retryFailedOnly?: boolean;
 }
 
-export type FanfictionSourceBatchAction = "update" | "refresh" | "retry" | "schedule";
+export type FanfictionSourceBatchAction = "update" | "refresh" | "retry" | "schedule" | "policy";
 
 export interface FanfictionSourceSelection {
+  repairConnectionSite?: string;
+  updatePolicy?: FanfictionUpdatePolicy;
+  excludePaused?: boolean;
   repairProfileId?: string;
   repairRootUrls?: string[];
   total?: number;
@@ -283,6 +325,7 @@ export interface FanfictionSourceBatchFailurePage {
 }
 
 export interface FanfictionSourceBatchScope {
+  eligible?: number;
   total: number;
   matching: number;
 }
@@ -301,6 +344,7 @@ export interface FanfictionSourceBatchStatus {
 }
 
 export interface FanfictionSource {
+  tracking?: FanfictionStoryTracking;
   sourceTitle?: string;
   categories?: FanfictionCategories | null;
   tagPolicy?: "review" | "automatic";
@@ -324,6 +368,7 @@ export interface FanfictionSource {
   lastCheckedAt: string | null;
   lastUpdatedAt: string | null;
   attentionCode: string | null;
+  metadataReviewPending?: boolean;
   version: number;
   createdAt: string;
 }
@@ -339,6 +384,7 @@ export interface FanfictionFolderPage {
 }
 
 export interface FanfictionImportRequest {
+  accessMode?: "legacy" | "personal";
   collectionId?: number;
   url: string;
   idempotencyKey: string;
@@ -466,6 +512,9 @@ export interface FanfictionLinkRequest {
 }
 
 export interface FanfictionChapterChanges {
+  safety?: "append_only" | "unchanged" | "review_required";
+  removed?: number;
+  reordered?: boolean;
   added: { href: string; title: string }[];
   changed: number;
   metadataChanged: boolean;

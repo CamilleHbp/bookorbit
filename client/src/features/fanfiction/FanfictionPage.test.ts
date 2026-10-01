@@ -36,6 +36,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/fanfiction', name: 'fanfiction', component: FanfictionPage },
+        { path: '/website-logins', name: 'settings-website-logins', component: { template: '<div />' } },
         { path: '/settings', name: 'settings-fanfiction', component: { template: '<div />' } },
         { path: '/book/:bookId', name: 'book-detail', component: { template: '<div />' } },
       ],
@@ -46,7 +47,14 @@ describe('Fanfiction navigation and story hierarchy', () => {
       attachTo: document.body,
       global: {
         plugins: [router],
-        stubs: { DialogPortal: { template: '<div><slot /></div>' }, SourceProfileEditor: true, SourceProfiles: true, ExistingStories: true },
+        stubs: {
+          DialogPortal: { template: '<div><slot /></div>' },
+          StoryAttentionList: true,
+          WebsiteConnections: true,
+          SourceProfileEditor: true,
+          SourceProfiles: true,
+          ExistingStories: true,
+        },
       },
     })
     await flushPromises()
@@ -143,7 +151,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
       return new Response(JSON.stringify({ items: [], nextCursor: null }))
     })
     await wrapper!
-      .findAll('details select')
+      .findAll('select')
       .find((select) => select.text().includes('Weekly'))!
       .setValue('manual')
     await wrapper!.get('textarea').setValue('https://archiveofourown.org/works/1')
@@ -166,7 +174,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await flushPromises()
     expect(wrapper!.get('textarea').element).toHaveProperty('value', '')
     expect(document.activeElement).toBe(wrapper!.get('textarea').element)
-    expect(wrapper!.findAll('details select').find((select) => select.text().includes('Weekly'))!.element).toHaveProperty('value', 'manual')
+    expect(wrapper!.get('input[type=checkbox]').element).toHaveProperty('checked', false)
     expect(wrapper!.findAll('article')).toHaveLength(0)
   })
 
@@ -219,12 +227,12 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.findAll('button').filter((button) => button.text() === 'Import another batch')).toHaveLength(2)
   })
 
-  it('renders Profiles exclusively and exposes the active destination', async () => {
+  it('keeps the legacy Profiles route available outside primary navigation', async () => {
     await open('/fanfiction?tab=profiles')
     expect(wrapper!.find('source-profiles-stub').exists()).toBe(true)
     expect(wrapper!.text()).not.toContain('Recent story changes')
     expect(wrapper!.text()).not.toContain('No activity yet.')
-    expect(wrapper!.get('nav a[aria-current="page"]').text()).toBe('Profiles')
+    expect(wrapper!.findAll('nav a').map((link) => link.text())).toEqual(['Stories', 'Updates'])
   })
 
   it('starts with an actionable empty state instead of bulk configuration', async () => {
@@ -246,7 +254,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.text()).toContain('No stories yet.')
     await router.push('/fanfiction?tab=activity')
     await flushPromises()
-    expect(wrapper!.get('nav a[aria-current="page"]').text()).toBe('Activity')
+    expect(wrapper!.get('nav a[aria-current="page"]').text()).toBe('Updates')
     expect(wrapper!.text()).toContain('Recent story changes')
   })
 })

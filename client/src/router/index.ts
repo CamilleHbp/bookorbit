@@ -334,6 +334,13 @@ export const routes: RouteRecordRaw[] = [
             meta: { title: () => t('titles.reader.general') },
           },
 
+          {
+            path: 'website-logins',
+            name: 'settings-website-logins',
+            component: () => import('@/features/settings/WebsiteLoginsSettings.vue'),
+            meta: { title: () => t('fanfiction.connections.title') },
+          },
+
           // ── Library ────────────────────────────────────────────────────────
           {
             path: 'fanfiction',

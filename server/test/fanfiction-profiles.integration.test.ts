@@ -1,3 +1,5 @@
+import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
+import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
@@ -41,7 +43,8 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('encrypted F
   const access = { administer: vi.fn(async () => {}) };
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation') throw new Error('An isolated validation database is required');
+    if (!/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database)))
+      throw new Error('An isolated validation database is required');
     pool = new Pool(config);
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
@@ -53,6 +56,8 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('encrypted F
         FanfictionVaultService,
         FanfictionJobService,
         FanfictionSourceService,
+        { provide: FanfictionReviewService, useValue: {} },
+        { provide: FanfictionReaderService, useValue: { project: (rows: unknown[]) => Promise.resolve(rows) } },
         { provide: RevisionCatalogService, useValue: {} },
         ManagedTagService,
         { provide: ManagedMetadataService, useValue: {} },

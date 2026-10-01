@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FanfictionWorkerService } from './fanfiction-worker.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
+import { FanfictionConnectionService } from './fanfiction-connection.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionImportService } from './fanfiction-import.service';
@@ -49,6 +50,7 @@ describe('Fanfiction queued execution', () => {
     const module = await Test.createTestingModule({
       providers: [
         FanfictionWorkerService,
+        { provide: FanfictionConnectionService, useValue: {} },
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionAccessService, useValue: access },
         { provide: FanfictionImportService, useValue: imports },
@@ -64,7 +66,7 @@ describe('Fanfiction queued execution', () => {
           FanfictionReplacementService,
         ].map((provide) => ({
           provide,
-          useValue: provide === FanfictionProfileService ? { match: vi.fn().mockResolvedValue({ profile: null }) } : {},
+          useValue: {},
         })),
       ],
     }).compile();
@@ -104,6 +106,7 @@ describe('Fanfiction queued execution', () => {
       const module = await Test.createTestingModule({
         providers: [
           FanfictionWorkerService,
+          { provide: FanfictionConnectionService, useValue: {} },
           { provide: FanfictionJobService, useValue: jobs },
           { provide: FanfictionProfileService, useValue: profiles },
           { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
@@ -157,6 +160,7 @@ describe('Fanfiction queued execution', () => {
     const module = await Test.createTestingModule({
       providers: [
         FanfictionWorkerService,
+        { provide: FanfictionConnectionService, useValue: {} },
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
         { provide: FanficfareRuntimeService, useValue: { preview: vi.fn().mockRejectedValue(new BadRequestException({ errorCode: code })) } },

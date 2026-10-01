@@ -12,6 +12,7 @@ import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionSourceService } from './fanfiction-source.service';
 import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanfictionSourceBatchScopeDto, SelectFanfictionSourcesDto } from './dto/fanfiction-source-batch.dto';
+import { personalAccessIssueFilter, storyStateFilter } from './fanfiction-source-filters';
 
 const jobs = schema.fanfictionJobs;
 const sources = schema.fanfictionSources;
@@ -31,6 +32,18 @@ export class FanfictionSourceBatchService {
 
   async repairProfile(profile: FanfictionProfileSummary, user: RequestUser) {
     return this.start(profile.libraryId, { action: 'retry', allMatching: true, idempotencyKey: randomUUID() }, user, profile);
+  }
+
+  async repairConnection(libraryId: number, site: string, user: RequestUser) {
+    return this.start(libraryId, { action: 'retry', allMatching: true, idempotencyKey: randomUUID() }, user, undefined, site);
+  }
+
+  private connectionFilter(site: string | undefined, userId: number) {
+    return site ? personalAccessIssueFilter(userId, site) : undefined;
+  }
+
+  private enabledFilter(exclude?: boolean) {
+    return exclude ? and(ne(sources.state, 'unlinked'), sql`coalesce(${sources.updatesEnabled}, ${sources.state} <> 'paused')`) : undefined;
   }
 
   private repairFilter(profileId?: string, roots: string[] = []) {
@@ -58,11 +71,13 @@ export class FanfictionSourceBatchService {
 
   async scope(libraryId: number, dto: FanfictionSourceBatchScopeDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
-    const match =
-      and(dto.state ? eq(sources.state, dto.state) : undefined, dto.search?.trim() ? ilike(sources.title, `%${dto.search.trim()}%`) : undefined) ??
-      sql`true`;
+    const match = and(storyStateFilter(dto.state), dto.search?.trim() ? ilike(sources.title, `%${dto.search.trim()}%`) : undefined) ?? sql`true`;
     const [counts] = await this.db
-      .select({ total: sql<number>`count(*)::int`, matching: sql<number>`count(*) filter (where ${match})::int` })
+      .select({
+        total: sql<number>`count(*)::int`,
+        matching: sql<number>`count(*) filter (where ${match})::int`,
+        eligible: sql<number>`count(*) filter (where ${this.enabledFilter(true)})::int`,
+      })
       .from(sources)
       .where(eq(sources.libraryId, libraryId));
     return counts;
@@ -94,7 +109,7 @@ export class FanfictionSourceBatchService {
       .from(items)
       .leftJoin(jobs, eq(jobs.id, items.childJobId))
       .where(and(eq(items.batchId, jobId), eq(items.userId, batch.userId)));
-    const scheduling = batch.sourceSelection?.action === 'schedule';
+    const scheduling = ['schedule', 'policy'].includes(batch.sourceSelection?.action ?? '');
     const needsAttention = scheduling ? (job.result?.selection?.failed ?? 0) : counts.tracked - counts.running - counts.updated - counts.unchanged;
     const checked = scheduling ? (job.result?.selection?.processed ?? 0) : counts.updated + counts.unchanged + needsAttention;
     const selecting = ['queued', 'running'].includes(job.state);
@@ -113,10 +128,18 @@ export class FanfictionSourceBatchService {
     };
   }
 
-  async start(libraryId: number, dto: SelectFanfictionSourcesDto, user: RequestUser, repair?: FanfictionProfileSummary) {
+  async start(
+    libraryId: number,
+    dto: SelectFanfictionSourcesDto,
+    user: RequestUser,
+    repair?: FanfictionProfileSummary,
+    repairConnectionSite?: string,
+  ) {
     await this.access.administer(user, libraryId);
     if (Boolean(dto.ids?.length) === Boolean(dto.allMatching)) throw new BadRequestException('Choose selected stories or all matching stories');
     if (dto.action === 'schedule' && dto.intervalMinutes === undefined) throw new BadRequestException('Choose an update schedule');
+    if ((dto.action === 'policy') !== (dto.updatePolicy !== undefined))
+      throw new BadRequestException('Choose an update policy only for a policy action');
     if (dto.action !== 'schedule' && dto.intervalMinutes !== undefined)
       throw new BadRequestException('A schedule is only valid for a schedule action');
     const ids = dto.ids ? [...new Set(dto.ids)].sort() : null;
@@ -126,6 +149,9 @@ export class FanfictionSourceBatchService {
       state: dto.state ?? null,
       action: dto.action,
       intervalMinutes: dto.intervalMinutes ?? null,
+      ...(dto.updatePolicy ? { updatePolicy: dto.updatePolicy } : {}),
+      ...(repairConnectionSite ? { repairConnectionSite } : {}),
+      excludePaused: !ids && !['schedule', 'policy'].includes(dto.action),
       ...(repair ? { repairProfileId: repair.id, repairRootUrls: repair.rootUrls ?? [] } : {}),
     };
     const reuse = (existing: typeof jobs.$inferSelect | undefined) => {
@@ -138,6 +164,8 @@ export class FanfictionSourceBatchService {
         previous.state !== input.state ||
         previous.intervalMinutes !== input.intervalMinutes ||
         previous.repairProfileId !== input.repairProfileId ||
+        previous.repairConnectionSite !== input.repairConnectionSite ||
+        previous.updatePolicy !== input.updatePolicy ||
         JSON.stringify(previous.ids) !== JSON.stringify(ids)
       )
         throw new ConflictException('Operation identity was reused with different input');
@@ -168,10 +196,10 @@ export class FanfictionSourceBatchService {
           and(
             eq(sources.libraryId, libraryId),
             this.repairFilter(repair?.id, repair?.rootUrls),
+            this.connectionFilter(repairConnectionSite, user.id),
+            this.enabledFilter(input.excludePaused),
             sql`${sources.createdAt} <= ${cutoff}::timestamptz`,
-            ids
-              ? inArray(sources.id, ids)
-              : and(input.state ? eq(sources.state, input.state) : undefined, input.search ? ilike(sources.title, `%${input.search}%`) : undefined),
+            ids ? inArray(sources.id, ids) : and(storyStateFilter(input.state), input.search ? ilike(sources.title, `%${input.search}%`) : undefined),
           ),
         );
       const [inserted] = await tx
@@ -262,6 +290,8 @@ export class FanfictionSourceBatchService {
           and(
             eq(sources.libraryId, job.libraryId),
             this.repairFilter(selection.repairProfileId, selection.repairRootUrls),
+            this.connectionFilter(selection.repairConnectionSite, user.id),
+            this.enabledFilter(selection.excludePaused),
             sql`${sources.createdAt} <= ${selection.cutoff}::timestamptz`,
             selection.cursor ? gt(sources.id, selection.cursor) : undefined,
             selection.retryFailedOnly
@@ -273,10 +303,7 @@ export class FanfictionSourceBatchService {
                 )
               : selection.ids
                 ? inArray(sources.id, selection.ids)
-                : and(
-                    selection.state ? eq(sources.state, selection.state) : undefined,
-                    selection.search ? ilike(sources.title, `%${selection.search}%`) : undefined,
-                  ),
+                : and(storyStateFilter(selection.state), selection.search ? ilike(sources.title, `%${selection.search}%`) : undefined),
           ),
         )
         .orderBy(asc(sources.id))
@@ -341,8 +368,8 @@ export class FanfictionSourceBatchService {
     user: RequestUser,
     matchedProfileId?: string,
   ) {
-    if (selection.repairProfileId) {
-      if (!source.profileId && matchedProfileId !== selection.repairProfileId)
+    if (selection.repairProfileId || selection.repairConnectionSite) {
+      if (selection.repairProfileId && !source.profileId && matchedProfileId !== selection.repairProfileId)
         throw new ConflictException('Choose the website login before retrying');
       const [current] = await tx
         .select()
@@ -360,11 +387,19 @@ export class FanfictionSourceBatchService {
       if (current.bookFileId) {
         const [ready] = await tx
           .update(sources)
-          .set({ state: current.state === 'configuration_blocked' ? 'paused' : current.state, attentionCode: null, updatedAt: sql`now()` })
+          .set({
+            state: current.state === 'configuration_blocked' ? ((current.updatesEnabled ?? true) ? 'active' : 'paused') : current.state,
+            attentionCode: null,
+            updatedAt: sql`now()`,
+          })
           .where(eq(sources.id, current.id))
           .returning();
         return this.jobs.updateStory(ready, 'update', randomUUID(), user, false, undefined, tx);
       }
+    }
+    if (selection.action === 'policy') {
+      await this.sources.setUpdatePolicy(tx, source, selection.updatePolicy!);
+      return;
     }
     if (selection.action === 'schedule') {
       await this.sources.setSchedule(tx, source, selection.intervalMinutes);

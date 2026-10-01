@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 
-from controlled_config import merge_configuration, validate_ini
+from controlled_config import merge_configuration, personal_configuration, validate_ini
 from epub_policy import validate_epub
 from fanficfare_wrapper import run, execute_request
 from safe_transport import PolicyError
@@ -285,6 +285,15 @@ class ConfigurationTest(unittest.TestCase):
     def test_preserves_explicit_advanced_sections(self):
         value = '[defaults]\ninclude_titlepage: true\n[archiveofourown.org]\nusername: reader\npassword: hidden\n'
         self.assertEqual(validate_ini(value), value)
+
+    def test_personal_login_keeps_download_settings_but_never_shared_credentials(self):
+        legacy = '[defaults]\npassword: shared\n[archiveofourown.org]\nusername: someone-else\npassword: legacy\ninclude_images: false\n'
+        result = personal_configuration(legacy, '[archiveofourown.org]\nusername: me\npassword: mine\n')
+        self.assertNotIn('shared', result)
+        self.assertNotIn('legacy', result)
+        self.assertNotIn('someone-else', result)
+        self.assertIn('include_images = false', result)
+        self.assertIn('password = mine', result)
 
     def test_masked_secrets_are_unchanged_and_structured_edits_preserve_advanced_sections(self):
         previous = '[defaults]\ninclude_titlepage: true\n[archiveofourown.org]\npassword: secret\n'

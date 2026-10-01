@@ -188,9 +188,48 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
     await expect(batches.status(libraryId + 1, repair.id, user)).rejects.toThrow();
   });
 
+  it('excludes paused stories from library-wide checks and requires explicit selection to check them', async () => {
+    const selected = await createSources(2, true);
+    await db.update(schema.fanfictionSources).set({ state: 'paused', updatesEnabled: false }).where(eq(schema.fanfictionSources.id, selected[1].id));
+    const queued = await batches.start(libraryId, { idempotencyKey: randomUUID(), allMatching: true, action: 'update' }, user);
+    const job = (await jobs.claim())!;
+    await jobs.finish(job, 'succeeded', await run(job));
+    expect((await batches.status(libraryId, queued.id, user)).total).toBe(1);
+    const explicit = await batches.start(libraryId, { idempotencyKey: randomUUID(), ids: [selected[1].id], action: 'update' }, user);
+    expect((await batches.status(libraryId, explicit.id, user)).total).toBe(1);
+    expect(await batches.scope(libraryId, {}, user)).toMatchObject({ total: 2, eligible: 1 });
+  }, 60000);
+
+  it('keeps enabled preference independent of access errors and limits personal repairs to eligible owned stories', async () => {
+    const selected = await createSources(5, true);
+    await db
+      .update(schema.fanfictionSources)
+      .set({
+        accessMode: 'personal',
+        maintainerUserId: user.id,
+        updatesEnabled: true,
+        state: 'configuration_blocked',
+        attentionCode: 'authentication_required',
+      })
+      .where(eq(schema.fanfictionSources.libraryId, libraryId));
+    await db.update(schema.fanfictionSources).set({ updatesEnabled: false }).where(eq(schema.fanfictionSources.id, selected[1].id));
+    await db.update(schema.fanfictionSources).set({ attentionCode: 'source_not_found' }).where(eq(schema.fanfictionSources.id, selected[2].id));
+    await db.update(schema.fanfictionSources).set({ accessMode: 'legacy' }).where(eq(schema.fanfictionSources.id, selected[3].id));
+    await db.update(schema.fanfictionSources).set({ maintainerUserId: null }).where(eq(schema.fanfictionSources.id, selected[4].id));
+    expect(await batches.scope(libraryId, { state: 'active' }, user)).toEqual({ total: 5, matching: 4, eligible: 4 });
+    expect(await batches.scope(libraryId, { state: 'paused' }, user)).toEqual({ total: 5, matching: 1, eligible: 4 });
+    const repair = await batches.repairConnection(libraryId, 'example.org', user);
+    expect((await batches.status(libraryId, repair.id, user)).total).toBe(1);
+    const job = (await jobs.claim())!;
+    await jobs.finish(job, 'succeeded', await run(job));
+    const children = (await jobs.list(libraryId, { kind: 'update', limit: 10 }, user)).items;
+    expect(children).toHaveLength(1);
+    expect((await fresh(children[0].id)).sourceId).toBe(selected[0].id);
+  }, 60000);
+
   it('counts only the selected library and tracks child updates until they finish', async () => {
     const selected = await createSources(3, true);
-    expect(await batches.scope(libraryId, { state: 'paused' }, user)).toEqual({ total: 3, matching: 0 });
+    expect(await batches.scope(libraryId, { state: 'paused' }, user)).toEqual({ total: 3, matching: 0, eligible: 3 });
     const queued = await batches.start(libraryId, { idempotencyKey: randomUUID(), allMatching: true, action: 'update' }, user);
     const job = (await jobs.claim())!;
     const result = await run(job);
@@ -235,7 +274,7 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
   it('restricts batch mutations to the owner and preserves outcomes when a superuser retries', async () => {
     const selected = await createSources(2, true);
     await db.update(schema.fanfictionSources).set({ state: 'unlinked' }).where(eq(schema.fanfictionSources.id, selected[1].id));
-    const queued = await batches.start(libraryId, { idempotencyKey: randomUUID(), allMatching: true, action: 'update' }, user);
+    const queued = await batches.start(libraryId, { idempotencyKey: randomUUID(), ids: selected.map((source) => source.id), action: 'update' }, user);
     const job = (await jobs.claim())!;
     const result = await run(job);
     await jobs.finish(job, 'review_required', result);

@@ -79,6 +79,7 @@ const failureGroups = computed(() => {
             <option value="update">{{ t('fanfiction.bulk.update') }}</option>
             <option value="refresh">{{ t('fanfiction.bulk.refresh') }}</option>
             <option value="retry">{{ t('fanfiction.bulk.retry') }}</option>
+            <option value="policy">{{ t('fanfiction.bulk.policy') }}</option>
             <option value="schedule">{{ t('fanfiction.bulk.schedule') }}</option>
           </select>
         </label>
@@ -92,6 +93,7 @@ const failureGroups = computed(() => {
         <input v-model="allMatching" type="checkbox" class="size-4 accent-primary" :disabled="loading || bulk.busy" />
         {{ t('fanfiction.bulk.allMatchingCount', { count: matchingCount }) }}
       </label>
+      <p v-if="bulk.action === 'policy'" class="text-sm text-muted-foreground">{{ t('fanfiction.maintenance.safeHelp') }}</p>
       <p v-if="bulk.action === 'refresh'" class="text-sm text-muted-foreground">{{ t('fanfiction.bulk.refreshHelp') }}</p>
       <p v-if="bulk.action === 'schedule'" class="text-sm text-muted-foreground">{{ t('fanfiction.bulk.scheduleHelp') }}</p>
     </template>

@@ -11,6 +11,12 @@ import { ComicMetadataRepository } from '../src/modules/metadata/comic-metadata.
 import { NarratorService } from '../src/modules/narrator/narrator.service';
 import { MetadataScoreService } from '../src/modules/metadata-score/metadata-score.service';
 import { MetadataExtractionService } from '../src/modules/metadata/metadata-extraction.service';
+import { BookCoverStore } from '../src/modules/book-cover-store/book-cover-store.service';
+import { BookEmbedderService } from '../src/modules/embedding/book-embedder.service';
+import { MetadataEventsService } from '../src/modules/metadata/metadata-events.service';
+import { SeriesIdentityService } from '../src/common/services/series-identity.service';
+import { SeriesMembershipService } from '../src/common/services/series-membership.service';
+import { SeriesExpectedCountService } from '../src/common/services/series-expected-count.service';
 import { MetadataService } from '../src/modules/metadata/metadata.service';
 import { ManagedMetadataService } from '../src/modules/metadata/managed-metadata.service';
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
@@ -129,7 +135,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
     if (
-      config.database !== 'bookorbit_revision_validation' &&
+      !/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database)) &&
       !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? '') &&
       !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? '')
     )
@@ -162,6 +168,14 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         BookMetadataLockService,
         BookMetadataLockRepository,
         MetadataService,
+        ...[
+          BookCoverStore,
+          BookEmbedderService,
+          MetadataEventsService,
+          SeriesIdentityService,
+          SeriesMembershipService,
+          SeriesExpectedCountService,
+        ].map((provide) => ({ provide, useValue: {} })),
         { provide: ConfigService, useValue: { get: () => '/unused-managed-metadata-test' } },
         { provide: MetadataExtractionService, useValue: { supports: () => false } },
         ...[MetadataScoreService, NarratorService, ComicMetadataRepository].map((provide) => ({ provide, useValue: {} })),
@@ -275,6 +289,114 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
   }
   const runReplacement = (job: NonNullable<Awaited<ReturnType<typeof jobs.claim>>>) =>
     module.get(FanfictionReplacementService).run(job, authorize, new AbortController().signal);
+  async function chapterEpub(path: string, texts: string[]) {
+    await new Promise<void>((resolve, reject) => {
+      const stream = createWriteStream(path);
+      const zip = new ZipArchive({ zlib: { level: 6 } });
+      stream.on('close', resolve).on('error', reject);
+      zip.on('error', reject);
+      zip.pipe(stream);
+      zip.append('application/epub+zip', { name: 'mimetype', store: true });
+      zip.append('<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>', { name: 'META-INF/container.xml' });
+      zip.append(
+        `<package><metadata><title>Story</title></metadata><manifest>${texts.map((_, i) => `<item id="c${i}" href="c${i}.xhtml" media-type="application/xhtml+xml"/>`).join('')}</manifest><spine>${texts.map((_, i) => `<itemref idref="c${i}"/>`).join('')}</spine></package>`,
+        { name: 'book.opf' },
+      );
+      texts.forEach((text, i) =>
+        zip.append(`<html><head><meta name="chapterurl" content="https://example.org/chapters/${i}"/></head><body><p>${text}</p></body></html>`, {
+          name: `c${i}.xhtml`,
+        }),
+      );
+      void zip.finalize();
+    });
+  }
+  it('publishes verified new chapters while keeping a custom title, personal tags and independent metadata review', async () => {
+    await chapterEpub(target, ['Original chapter']);
+    await chapterEpub(output, ['Original chapter', 'New chapter']);
+    await revisions.observeFile(fileId, {});
+    await db
+      .update(schema.fanfictionSources)
+      .set({ updatePolicy: 'safe', tagPolicy: 'automatic', updatesEnabled: true })
+      .where(eq(schema.fanfictionSources.id, source.id));
+    await db.insert(schema.fanfictionJobs).values({
+      libraryId,
+      userId: user.id,
+      tokenVersion: user.tokenVersion,
+      kind: 'update',
+      state: 'succeeded',
+      sourceId: source.id,
+      url: preview.canonicalUrl,
+      site: preview.site,
+      idempotencyKey: randomUUID(),
+      result: { bookId: source.bookId!, preview },
+    });
+    await db.update(schema.bookMetadata).set({ title: 'My title' }).where(eq(schema.bookMetadata.bookId, source.bookId!));
+    const [personal] = await db
+      .insert(schema.tags)
+      .values({ name: `personal-${randomUUID()}` })
+      .returning();
+    await db.insert(schema.bookTags).values({ bookId: source.bookId!, tagId: personal.id });
+    const incoming = { ...preview, title: 'Website title changed', tags: ['Source tag', 'New website tag'] };
+    runtime.update.mockImplementationOnce(async (_operation, _url, _document, prepare, consume) => {
+      await prepare(join(directory, 'safe-input.epub'));
+      return consume(output, incoming);
+    });
+    const job = await claim();
+    const result = await run(job);
+    expect(result?.changes?.safety).toBe('append_only');
+    expect(result?.metadataReview?.beforeUpdate).toBe(false);
+    await jobs.finish(job, 'succeeded', result);
+    expect(await readFile(target)).toEqual(await readFile(output));
+    expect((await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, source.bookId!)))[0].title).toBe('My title');
+    const tags = await db
+      .select({ name: schema.tags.name })
+      .from(schema.bookTags)
+      .innerJoin(schema.tags, eq(schema.tags.id, schema.bookTags.tagId))
+      .where(eq(schema.bookTags.bookId, source.bookId!));
+    expect(tags.map((tag) => tag.name)).toContain(personal.name);
+    expect(tags.map((tag) => tag.name)).toContain('New website tag');
+    expect(await sources.get(libraryId, source.id, user)).toMatchObject({
+      state: 'active',
+      metadataReviewPending: true,
+      tracking: { enabled: true },
+    });
+    const pending = (await sources.metadataReview(libraryId, source.id, user))!;
+    expect(pending.review.fields).toContain('title');
+    await sources.resolveMetadata(
+      libraryId,
+      source.id,
+      {
+        jobId: pending.jobId,
+        fingerprint: pending.review.fingerprint,
+        keepAll: true,
+        title: 'keep',
+        description: 'keep',
+        authors: 'keep',
+        tags: 'keep',
+      },
+      user,
+    );
+    expect(await sources.metadataReview(libraryId, source.id, user)).toBeNull();
+  }, 180000);
+  it('keeps rewritten chapters staged until explicit review and publishes once after approval', async () => {
+    await chapterEpub(target, ['Original chapter']);
+    await chapterEpub(output, ['Rewritten chapter', 'New chapter']);
+    await revisions.observeFile(fileId, {});
+    await db.update(schema.fanfictionSources).set({ updatePolicy: 'safe', updatesEnabled: true }).where(eq(schema.fanfictionSources.id, source.id));
+    const original = await readFile(target);
+    const job = await claim();
+    const result = await run(job);
+    expect(result?.contentReview?.approved).toBe(false);
+    await jobs.finish(job, 'review_required', result, 'content_review_required');
+    expect(await readFile(target)).toEqual(original);
+    await expect(jobs.retry(libraryId, job.id, user)).rejects.toThrow('Review');
+    await jobs.reviewContent(libraryId, job.id, 'apply', user);
+    const approved = (await jobs.claim())!;
+    const installed = await run(approved);
+    await jobs.finish(approved, 'succeeded', installed);
+    expect(await readFile(target)).toEqual(await readFile(output));
+    expect(runtime.update).toHaveBeenCalledTimes(1);
+  }, 180000);
   it('uploaded replacement preserves book identity and metadata, retains rollback, and releases staging', async () => {
     await db.update(schema.bookMetadata).set({ title: 'Original title' }).where(eq(schema.bookMetadata.bookId, source.bookId!));
     const original = await readFile(target);

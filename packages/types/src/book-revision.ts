@@ -1,4 +1,5 @@
 export interface RevisionChapter {
+  generated?: boolean;
   href: string;
   title: string;
   sourceUrl?: string;

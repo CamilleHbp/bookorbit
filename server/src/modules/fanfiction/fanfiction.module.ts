@@ -37,6 +37,8 @@ import { FanfictionReplacementService } from './fanfiction-replacement.service';
 import { FanfictionReplacementController } from './fanfiction-replacement.controller';
 import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
 import { FanfictionSourceBatchController } from './fanfiction-source-batch.controller';
+import { FanfictionConnectionService } from './fanfiction-connection.service';
+import { FanfictionConnectionController } from './fanfiction-connection.controller';
 
 @Module({
   imports: [
@@ -54,6 +56,7 @@ import { FanfictionSourceBatchController } from './fanfiction-source-batch.contr
     NotificationModule,
   ],
   providers: [
+    FanfictionConnectionService,
     FanfictionReaderService,
     FanfictionReviewService,
     FanfictionAccessService,
@@ -75,6 +78,7 @@ import { FanfictionSourceBatchController } from './fanfiction-source-batch.contr
     FanfictionReplacementService,
   ],
   controllers: [
+    FanfictionConnectionController,
     FanfictionReaderController,
     FanfictionController,
     FanfictionLibraryController,

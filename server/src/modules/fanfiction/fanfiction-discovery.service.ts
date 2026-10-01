@@ -1,5 +1,5 @@
 import { FanfictionProfileService } from './fanfiction-profile.service';
-import { withFanfictionDefaults } from './fanfiction-defaults';
+import { FanfictionConnectionService } from './fanfiction-connection.service';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, count, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -34,6 +34,7 @@ export class FanfictionDiscoveryService {
     private readonly manifests: EpubManifestService,
     private readonly runtime: FanficfareRuntimeService,
     private readonly profiles: FanfictionProfileService,
+    private readonly connections: FanfictionConnectionService,
   ) {}
 
   async previewBook(libraryId: number, input: FanfictionLinkRequest, user: RequestUser): Promise<FanfictionLinkPreview> {
@@ -61,7 +62,7 @@ export class FanfictionDiscoveryService {
         throw new ConflictException('This URL does not match the story source recorded in the EPUB');
       const session = input.profileId
         ? await this.profiles.session(libraryId, input.profileId, user, () => this.access.administer(user, libraryId))
-        : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
+        : await this.connections.session(url.canonicalUrl, user, () => this.access.administer(user, libraryId));
       const remote = await this.runtime.preview(url.canonicalUrl, session.document, signal, session.saveCookies);
       if (remote.canonicalUrl !== url.canonicalUrl) throw new ConflictException('The source URL changed. Check the story URL again.');
       await this.access.administer(user, libraryId);
@@ -194,13 +195,13 @@ export class FanfictionDiscoveryService {
     const canonicalUrl = dto.canonicalUrl ?? (urls.length === 1 ? urls[0] : undefined);
     if (!canonicalUrl || !urls.includes(canonicalUrl)) throw new BadRequestException('Choose one of the recorded story URLs');
     const match =
-      dto.autoProfile !== false && !dto.profileId ? (await this.profiles.matchMany(libraryId, [canonicalUrl], user)).get(canonicalUrl) : undefined;
+      dto.autoProfile === true && !dto.profileId ? (await this.profiles.matchMany(libraryId, [canonicalUrl], user)).get(canonicalUrl) : undefined;
     if (match?.ambiguous) throw new BadRequestException('Choose a profile to compare this story');
     const profileId = dto.profileId ?? match?.profile?.id;
     const profile = profileId ? await this.profiles.get(libraryId, profileId, user) : null;
     const session = profileId
       ? await this.profiles.session(libraryId, profileId, user, () => this.access.administer(user, libraryId))
-      : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
+      : await this.connections.session(canonicalUrl, user, () => this.access.administer(user, libraryId));
     const started = Date.now();
     this.logger.log(`[fanfiction.compare] [start] userId=${user.id} libraryId=${libraryId} candidateId=${id} - fetching remote story details`);
     try {
