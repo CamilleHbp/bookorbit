@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsIn, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Length, Matches, Max, MaxLength, Min } from 'class-validator';
 
 export class ScanDuplicatesDto {
   @IsOptional()
@@ -28,7 +28,44 @@ export class ScanDuplicatesDto {
   pageSize?: number;
 }
 
+export class BrowseTagGroupsDto {
+  @IsString()
+  @Length(1, 8)
+  @Matches(/^[^\s\p{Cc}]+$/u)
+  separator!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  search?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(1000000)
+  page?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number;
+}
+
 export class BrowseEntitiesDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 8)
+  @Matches(/^[^\s\p{Cc}]+$/u)
+  tagSeparator?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  tagPrefix?: string;
+
   @IsOptional()
   @IsString()
   search?: string;

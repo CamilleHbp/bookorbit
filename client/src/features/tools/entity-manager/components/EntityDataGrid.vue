@@ -199,7 +199,7 @@ function handleClearFilters(): void {
               </span>
             </td>
             <td class="px-3" :class="cellPadding">
-              <div class="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              <div class="flex items-center justify-end gap-0.5">
                 <button
                   type="button"
                   class="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-surface-4 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

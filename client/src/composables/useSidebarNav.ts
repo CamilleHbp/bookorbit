@@ -1,7 +1,7 @@
 import { computed, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, type RouteLocationNormalizedLoaded, type RouteLocationRaw } from 'vue-router'
-import { BookOpen, BookPlus, Highlighter, LayoutDashboard, Library, ListMusic, PackageOpen, Users, Wrench } from '@lucide/vue'
+import { BookOpen, BookPlus, Highlighter, LayoutDashboard, Library, ListMusic, PackageOpen, Tags, Users, Wrench } from '@lucide/vue'
 import { Permission, type BrowseCounts, type LibraryType, type SidebarSectionId } from '@bookorbit/types'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useBookDockSummary } from '@/features/book-dock/composables/useBookDockSummary'
@@ -137,9 +137,15 @@ export const SIDEBAR_NAV_REGISTRY: readonly SidebarNavEntry[] = [
     icon: Wrench,
     zone: 'primary',
     modes: ['books'],
-    to: (context) => ({ name: context.hasPermission('manage_libraries') ? 'tools-entity-manager' : 'tools-duplicate-books' }),
+    to: (context) => ({
+      name: context.hasPermission('library_edit_metadata')
+        ? 'tools-entity-manager'
+        : context.hasPermission('manage_libraries')
+          ? 'tools-bulk-rename'
+          : 'tools-duplicate-books',
+    }),
     isActive: (route) => routeNameStartsWith(route, 'tools-'),
-    permission: ['manage_libraries', 'library_delete_books'],
+    permission: ['library_edit_metadata', 'manage_libraries', 'library_delete_books'],
   },
   {
     id: 'podcast-queue',
@@ -171,6 +177,15 @@ export const SIDEBAR_NAV_REGISTRY: readonly SidebarNavEntry[] = [
     to: { name: 'series' },
     isActive: (route) => route.name === 'series' || route.name === 'series-detail',
     badge: browseBadge('series'),
+  },
+  {
+    id: 'tags',
+    labelKey: 'tagBrowser.title',
+    icon: Tags,
+    zone: 'browse',
+    modes: ['books'],
+    to: { name: 'tags' },
+    isActive: (route) => route.name === 'tags',
   },
   {
     id: 'annotations',

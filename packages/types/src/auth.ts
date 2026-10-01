@@ -33,6 +33,7 @@ export const ProvisioningMethod = {
 export type ProvisioningMethod = (typeof ProvisioningMethod)[keyof typeof ProvisioningMethod];
 
 export interface UserSettings {
+  tagGrouping?: import("./tag-grouping").TagGroupingPreferences;
   showBookRequests?: boolean;
   syncReaderPreferences?: boolean;
   syncThemePreferences?: boolean;

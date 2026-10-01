@@ -64,6 +64,7 @@ export * from "./series-index";
 export * from "./table-layout";
 export * from "./series-collapse";
 export * from "./entity-manager";
+export * from "./tag-grouping";
 export * from "./font";
 export * from "./dictionary";
 export * from "./achievement";

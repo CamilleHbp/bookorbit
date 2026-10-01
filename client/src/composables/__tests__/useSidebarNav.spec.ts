@@ -71,7 +71,7 @@ describe('sidebar nav registry', () => {
   })
 
   it('shows only ungated destinations to a user with no permissions', () => {
-    expect(allowedIds(makeContext())).toEqual(['dashboard', 'authors', 'series', 'annotations'])
+    expect(allowedIds(makeContext())).toEqual(['dashboard', 'authors', 'series', 'tags', 'annotations'])
   })
 
   it('places Dashboard, Fanfiction, Book Dock, Requests, Tools and the podcast Queue in the primary zone, above the entity sections', () => {
@@ -111,15 +111,20 @@ describe('sidebar nav registry', () => {
     expect(resolved.isActive).toBe(true)
   })
 
-  it.each(['manage_libraries', 'library_delete_books'])('shows Tools for the any-of permission %s', (permission) => {
+  it.each(['library_edit_metadata', 'manage_libraries', 'library_delete_books'])('shows Tools for the any-of permission %s', (permission) => {
     expect(allowedIds(makeContext({ permissions: [permission] }))).toContain('tools')
   })
 
-  it('resolves Tools to the entity manager when the user can manage libraries', () => {
+  it('resolves Tools to bulk rename when the user can manage libraries without metadata access', () => {
     const context = makeContext({ permissions: ['manage_libraries'] })
 
     const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
 
+    expect(resolved.to).toEqual({ name: 'tools-bulk-rename' })
+  })
+
+  it('resolves Tools to tags for metadata editors', () => {
+    const resolved = resolveNavEntry(entry('tools'), makeContext({ permissions: ['library_edit_metadata'] }), makeRoute('dashboard'), 'Tools')
     expect(resolved.to).toEqual({ name: 'tools-entity-manager' })
   })
 
@@ -188,7 +193,7 @@ describe('sidebar nav registry', () => {
   it('leaves the browse rows unbadged before the counts load and while they are zero', () => {
     const zeroed = makeContext({ browseCounts: { authors: 0, series: 0, annotations: 0 } })
 
-    for (const id of ['authors', 'series', 'annotations']) {
+    for (const id of ['authors', 'series', 'tags', 'annotations']) {
       expect(resolveNavEntry(entry(id), makeContext(), makeRoute('dashboard'), id).badge).toBeNull()
       expect(resolveNavEntry(entry(id), zeroed, makeRoute('dashboard'), id).badge).toBeNull()
     }
@@ -226,6 +231,6 @@ describe('sidebar nav registry', () => {
     const booksModeIds = SIDEBAR_NAV_REGISTRY.filter((candidate) => entryVisibleInMode(candidate, 'books')).map((candidate) => candidate.id)
 
     expect(podcastModeIds).toEqual(['dashboard', 'podcast-queue'])
-    expect(booksModeIds).toEqual(['dashboard', 'fanfiction', 'book-dock', 'book-requests', 'tools', 'authors', 'series', 'annotations'])
+    expect(booksModeIds).toEqual(['dashboard', 'fanfiction', 'book-dock', 'book-requests', 'tools', 'authors', 'series', 'tags', 'annotations'])
   })
 })

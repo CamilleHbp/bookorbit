@@ -19,6 +19,7 @@ import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { FileWriteService } from '../file-write/file-write.service';
 import { LibraryService } from '../library/library.service';
 import { MetadataScoreService } from '../metadata-score/metadata-score.service';
+import type { BrowseTagGroupsParams, BrowseTagGroupsResponse } from '@bookorbit/types';
 import { EntityManagerRepository } from './entity-manager.repository';
 import { DuplicateComputeService } from './duplicate-compute.service';
 import type { EntityBookScope, EntityStrategy, RawCandidatePair } from './strategies/entity-strategy.interface';
@@ -53,7 +54,7 @@ export class EntityManagerService {
     private readonly duplicateCompute: DuplicateComputeService,
     authorStrategy: AuthorStrategy,
     genreStrategy: GenreStrategy,
-    tagStrategy: TagStrategy,
+    private readonly tagStrategy: TagStrategy,
     narratorStrategy: NarratorStrategy,
     publisherStrategy: PublisherStrategy,
     languageStrategy: LanguageStrategy,
@@ -205,15 +206,53 @@ export class EntityManagerService {
     return this.getDuplicateScanStatus(entityType);
   }
 
+  async browseTagGroups(user: RequestUser, params: BrowseTagGroupsParams, usedOnly = false): Promise<BrowseTagGroupsResponse> {
+    const libraryIds = await this.libraryService.findAccessibleLibraryIds(user);
+    return this.tagStrategy.browseGroups({ libraryIds, contentFilters: user.isSuperuser ? undefined : user.contentFilters }, params, usedOnly);
+  }
+
+  async browseTags(user: RequestUser, params: import('@bookorbit/types').BrowseTagsParams): Promise<BrowseEntitiesResponse> {
+    const libraryIds = await this.libraryService.findAccessibleLibraryIds(user);
+    if (params.tagPrefix !== undefined && !params.tagSeparator) throw new BadRequestException('Tag prefix filtering requires a tag separator');
+    const page = params.page ?? 1;
+    const pageSize = params.pageSize ?? 30;
+    const result = await this.tagStrategy.browse({
+      ...params,
+      page,
+      pageSize,
+      libraryIds,
+      usedOnly: true,
+      sortBy: 'name',
+      sortOrder: 'asc',
+      bookCount: 'any',
+      contentFilters: user.isSuperuser ? undefined : user.contentFilters,
+    });
+    return { ...result, page, pageSize };
+  }
+
   async browse(
     entityType: EntityType,
     user: RequestUser,
-    params: { search?: string; page?: number; pageSize?: number; sortBy?: string; sortOrder?: string; bookCount?: string },
+    params: {
+      search?: string;
+      page?: number;
+      pageSize?: number;
+      sortBy?: string;
+      sortOrder?: string;
+      bookCount?: string;
+      tagSeparator?: string;
+      tagPrefix?: string;
+    },
   ): Promise<BrowseEntitiesResponse> {
     const strategy = this.getStrategy(entityType);
     const libraryIds = await this.libraryService.findAccessibleLibraryIds(user);
 
+    if (params.tagPrefix !== undefined && (entityType !== 'tag' || !params.tagSeparator)) {
+      throw new BadRequestException('Tag prefix filtering requires a tag separator');
+    }
     const result = await strategy.browse({
+      tagSeparator: params.tagSeparator,
+      tagPrefix: params.tagPrefix,
       libraryIds,
       search: params.search,
       page: params.page ?? 1,
