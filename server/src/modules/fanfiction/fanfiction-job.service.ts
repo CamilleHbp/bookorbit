@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, gt, inArray, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
@@ -302,7 +302,9 @@ export class FanfictionJobService {
 
   async cancel(libraryId: number, id: string, user: RequestUser) {
     await this.access.administer(user, libraryId);
-    await this.find(libraryId, id);
+    const job = await this.find(libraryId, id);
+    if (job.kind === 'source_batch' && job.userId !== user.id && !user.isSuperuser)
+      throw new ForbiddenException('This story check belongs to another user');
     await this.db
       .update(jobs)
       .set({ cancellationRequested: true, updatedAt: new Date() })
@@ -323,6 +325,8 @@ export class FanfictionJobService {
         .where(and(eq(jobs.libraryId, libraryId), eq(jobs.id, id)))
         .for('update');
       if (!job) throw new NotFoundException('Fanfiction job not found in this library');
+      if (job.kind === 'source_batch' && job.userId !== user.id && !user.isSuperuser)
+        throw new ForbiddenException('This story check belongs to another user');
       if (['queued', 'running', 'succeeded', 'no_change'].includes(job.state)) return this.view(job);
       if (
         (job.result?.metadataReview?.beforeUpdate || job.result?.importReview) &&
@@ -355,6 +359,8 @@ export class FanfictionJobService {
             .where(eq(schema.fanfictionSources.id, source.id));
       }
       await this.access.administer(user, libraryId);
+      if (job.kind === 'source_batch' && job.userId !== user.id)
+        await tx.update(schema.fanfictionSourceBatchItems).set({ userId: user.id }).where(eq(schema.fanfictionSourceBatchItems.batchId, job.id));
       const [updated] = await tx
         .update(jobs)
         .set({
