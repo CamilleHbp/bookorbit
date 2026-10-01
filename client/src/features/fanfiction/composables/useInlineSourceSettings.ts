@@ -96,31 +96,6 @@ export function useInlineSourceSettings(
       if (generation === repairGeneration) repairing.value = false
     }
   }
-  async function applyStoryLogin(profile: FanfictionProfileSummary) {
-    const source = repairingSource.value
-    if (!source || profile.libraryId !== libraryId.value || source.libraryId !== libraryId.value) return
-    const generation = repairGeneration
-    repairing.value = true
-    sourceSettings.error = ''
-    try {
-      const updated = await request<FanfictionSource>(`/api/v1/libraries/${source.libraryId}/fanfiction/sources/${source.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          version: source.version,
-          profileId: profile.id,
-          ...(source.bookFileId && source.state === 'configuration_blocked' ? { state: 'paused' } : {}),
-        }),
-      })
-      if (generation !== repairGeneration) return
-      repairingSource.value = null
-      return updated
-    } catch (failure) {
-      if (generation === repairGeneration) sourceSettings.error = failure instanceof Error ? failure.message : 'Request failed'
-    } finally {
-      if (generation === repairGeneration) repairing.value = false
-    }
-  }
   function editSource() {
     repairingSource.value = null
     if (selectedProfile.value) void sourceSettings.editProfile(selectedProfile.value)
@@ -135,7 +110,6 @@ export function useInlineSourceSettings(
     repairingSource,
     repairing,
     editStoryLogin,
-    applyStoryLogin,
     cancelStoryLogin,
   }
 }

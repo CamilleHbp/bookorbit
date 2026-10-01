@@ -36,15 +36,14 @@ describe('profile matching during direct linking', () => {
     await flushPromises()
     expect(JSON.parse(mockApi.mock.calls[2]![1]!.body as string)).toMatchObject({ profileId: 'matched' })
   })
-  it('allows public access to override automatic matching', async () => {
-    mockApi.mockResolvedValueOnce(response(preview))
-    await wrapper.find('select').setValue('public')
+  it('uses public access when the website has no saved login', async () => {
+    mockApi.mockResolvedValueOnce(response({ profile: null, ambiguous: false })).mockResolvedValueOnce(response(preview))
     await wrapper.find('input[type="url"]').setValue('https://example.com/story/1')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
-    expect(mockApi).toHaveBeenCalledOnce()
-    expect(String(mockApi.mock.calls[0]![0])).toContain('/discovery/book')
-    expect(JSON.parse(mockApi.mock.calls[0]![1]!.body as string)).not.toHaveProperty('profileId')
+    expect(mockApi).toHaveBeenCalledTimes(2)
+    expect(String(mockApi.mock.calls[1]![0])).toContain('/discovery/book')
+    expect(JSON.parse(mockApi.mock.calls[1]![1]!.body as string)).not.toHaveProperty('profileId')
   })
   it('asks for an explicit choice when matching is ambiguous', async () => {
     mockApi.mockResolvedValueOnce(response({ profile: null, ambiguous: true }))

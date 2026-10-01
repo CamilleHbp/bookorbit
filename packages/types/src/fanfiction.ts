@@ -81,6 +81,7 @@ export interface EncryptedFanfictionDocument {
 }
 
 export interface FanfictionProfileSummary {
+  repairJobId?: string;
   rootUrls?: string[];
   id: string;
   libraryId: number;
@@ -252,6 +253,8 @@ export interface FanfictionDiscoverySelection {
 export type FanfictionSourceBatchAction = "update" | "refresh" | "retry" | "schedule";
 
 export interface FanfictionSourceSelection {
+  repairProfileId?: string;
+  repairRootUrls?: string[];
   total?: number;
   tracksOutcomes?: boolean;
   cutoff: string;

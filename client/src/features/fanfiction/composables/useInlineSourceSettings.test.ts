@@ -59,7 +59,7 @@ const mockApi = vi.mocked(api)
 describe('website login recovery', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('opens an AO3 login form without an existing profile and applies saved credentials before another check', async () => {
+  it('opens and saves the shared AO3 login without changing individual stories', async () => {
     const scope = effectScope()
     const state = scope.run(() => useInlineSourceSettings(ref(5), ref([]), ref(''), ref('')))!
     mockApi.mockResolvedValueOnce(response(source)).mockResolvedValueOnce(response({ profile: null }))
@@ -88,10 +88,8 @@ describe('website login recovery', () => {
     const saved = wrapper.emitted('saved')![0]![0] as FanfictionProfileSummary
     const save = mockApi.mock.calls.find(([, init]) => init?.method === 'POST')!
     expect(JSON.parse(save[1]!.body as string).credentials).toEqual({ section: 'archiveofourown.org', username: 'reader' })
-    mockApi.mockResolvedValueOnce(response({ ...source, profileId: profile.id, state: 'paused', version: 4 }))
-    expect(await state.applyStoryLogin(saved)).toMatchObject({ profileId: profile.id, state: 'paused', version: 4 })
-    expect(mockApi.mock.lastCall![0]).toBe('/api/v1/libraries/5/fanfiction/sources/story')
-    expect(JSON.parse(mockApi.mock.lastCall![1]!.body as string)).toEqual({ version: 3, profileId: 'login', state: 'paused' })
+    expect(saved.id).toBe(profile.id)
+    expect(mockApi.mock.calls.filter(([, init]) => init?.method)).toHaveLength(1)
     wrapper.unmount()
     scope.stop()
   })
@@ -133,7 +131,6 @@ describe('website login recovery', () => {
       await pending
       expect(state.sourceSettings.showEditor).toBe(false)
       expect(state.repairingSource.value).toBeNull()
-      await state.applyStoryLogin(profile)
       expect(mockApi).toHaveBeenCalledTimes(1)
     } finally {
       scope.stop()

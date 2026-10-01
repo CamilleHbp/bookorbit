@@ -1,4 +1,4 @@
-import { ForbiddenException, HttpException, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import type { FanfictionJob } from '@bookorbit/types';
 import { UserService } from '../user/user.service';
@@ -101,12 +101,15 @@ export class FanfictionWorkerService implements OnModuleDestroy {
         if (controller.signal.aborted || !(await this.jobs.renew(job))) throw new ForbiddenException('Queued operation lease was lost');
         return current;
       };
-      const { document, saveCookies } =
-        job.profileId &&
-        !job.result?.preparedUpdate?.approved &&
-        !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind)
-          ? await this.profiles.session(job.libraryId, job.profileId, user, authorizeCookies)
-          : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
+      const downloads =
+        !job.result?.preparedUpdate?.approved && !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind);
+      // Resolve at execution time so already queued stories use a repaired website login.
+      const match = downloads && !job.profileId ? await this.profiles.match(job.libraryId, job.url, user) : null;
+      if (match?.ambiguous) throw new BadRequestException({ message: 'Choose a website login for this story', errorCode: 'configuration_blocked' });
+      const profileId = downloads ? (job.profileId ?? match?.profile?.id) : null;
+      const { document, saveCookies } = profileId
+        ? await this.profiles.session(job.libraryId, profileId, user, authorizeCookies)
+        : { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined };
       const result: FanfictionJob['result'] =
         job.kind === 'replacement'
           ? await this.replacements.run(job, () => this.authorized(job), controller.signal)
@@ -175,7 +178,8 @@ export class FanfictionWorkerService implements OnModuleDestroy {
                 'replacement_upload_missing',
               ].includes(code)
             ? 'review_required'
-            : job.attempts < 3 && !['download_limit', 'response_too_large', 'source_policy_blocked', 'invalid_epub'].includes(code)
+            : job.attempts < 3 &&
+                !['download_limit', 'response_too_large', 'source_policy_blocked', 'invalid_epub', 'source_not_found'].includes(code)
               ? 'queued'
               : 'failed',
         null,

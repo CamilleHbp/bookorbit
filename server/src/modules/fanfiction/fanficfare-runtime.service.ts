@@ -26,7 +26,8 @@ type RuntimeRequest = {
   edits?: { section?: string; username?: string; password?: string; isAdult?: boolean };
   redact?: boolean;
 };
-type RuntimeResponse = { ok: true; result: unknown; cookies?: unknown } | { ok: false; code: string; errorClass: string; errorLocation?: string };
+type RuntimeResponse =
+  { ok: true; result: unknown; cookies?: unknown } | { ok: false; code: string; errorClass: string; errorLocation?: string; httpStatus?: number };
 
 @Injectable()
 export class FanficfareRuntimeService {
@@ -215,7 +216,7 @@ export class FanficfareRuntimeService {
             if (response.ok !== true) {
               const diagnostic = (value: unknown) => (typeof value === 'string' ? value.replace(/[^a-zA-Z0-9_.:]/g, '').slice(0, 160) : 'unknown');
               this.logger.warn(
-                `[fanfiction.runtime] [fail] operation=${request.operation} durationMs=${Date.now() - startedAt} errorClass=${diagnostic(response.errorClass)} errorCode=${diagnostic(response.code)} location=${diagnostic(response.errorLocation)} - story operation failed`,
+                `[fanfiction.runtime] [fail] operation=${request.operation} durationMs=${Date.now() - startedAt} errorClass=${diagnostic(response.errorClass)} errorCode=${diagnostic(response.code)} location=${diagnostic(response.errorLocation)} httpStatus=${Number.isInteger(response.httpStatus) && response.httpStatus! >= 400 && response.httpStatus! <= 599 ? response.httpStatus : 'unknown'} - story operation failed`,
               );
               return reject(new BadRequestException({ message: 'FanFicFare could not complete the operation', errorCode: response.code }));
             }

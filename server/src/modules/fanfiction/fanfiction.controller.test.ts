@@ -41,7 +41,7 @@ describe('Fanfiction HTTP contracts', () => {
   };
   const discovery = { start: vi.fn(), list: vi.fn(), websites: vi.fn(), compare: vi.fn() };
   const adoption = { start: vi.fn() };
-  const batches = { start: vi.fn(), listFailures: vi.fn() };
+  const batches = { start: vi.fn(), listFailures: vi.fn(), repairProfile: vi.fn().mockResolvedValue({ id: 'repair' }) };
   const activity = { list: vi.fn() };
   const reviews = { decide: vi.fn(), importDecision: vi.fn() };
   const uuid = '97e5bb69-36e8-43a2-9e3b-0fb924d1ca2f';
@@ -322,7 +322,8 @@ describe('Fanfiction HTTP contracts', () => {
     };
     const response = await app.inject({ method: 'POST', url: `${base}/profiles`, payload });
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toEqual(summary);
+    expect(response.json()).toEqual({ ...summary, repairJobId: 'repair' });
+    expect(batches.repairProfile).toHaveBeenCalledWith(summary, undefined);
     expect(profiles.create).toHaveBeenCalledWith(5, expect.objectContaining(payload), undefined);
     expect((await app.inject({ method: 'POST', url: `${base}/profiles`, payload: { ...payload, libraryId: 99 } })).statusCode).toBe(400);
     expect((await app.inject({ method: 'PATCH', url: `${base}/profiles/${uuid}`, payload })).statusCode).toBe(400);

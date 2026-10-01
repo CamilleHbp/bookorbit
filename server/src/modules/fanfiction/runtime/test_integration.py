@@ -159,8 +159,9 @@ class ConfigurationTest(unittest.TestCase):
         for status in [401]:
             self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/private', status, 'secret response')), 'authentication_required')
         self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/private', 403, 'secret response')), 'access_denied')
-        for status in [429, 500, 503]:
-            self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/story', status, 'server error')), 'source_failed')
+        for status, code in [(404, 'source_not_found'), (410, 'source_not_found'),
+                             (429, 'source_rate_limited'), (500, 'source_unavailable'), (503, 'source_unavailable')]:
+            self.assertEqual(failure_code(HTTPErrorFFF('https://example.org/story', status, 'server error')), code)
         from safe_transport import ConfigurationError, DownloadLimitError, ResponseLimitError, DownloadTimeoutError
         self.assertEqual(failure_code(ConfigurationError('Unsafe setting')), 'configuration_blocked')
         self.assertEqual(failure_code(PolicyError('Unsafe destination')), 'source_policy_blocked')
@@ -168,6 +169,20 @@ class ConfigurationTest(unittest.TestCase):
         self.assertEqual(failure_code(DownloadLimitError('Expanded download limit exceeded')), 'download_limit')
         self.assertEqual(failure_code(ResponseLimitError('Expanded HTTP response limit exceeded')), 'response_too_large')
         self.assertEqual(failure_code(DownloadTimeoutError('Download deadline exceeded')), 'download_timeout')
+
+    def test_wrapped_website_errors_keep_the_http_status_without_exposing_the_response(self):
+        from fanficfare.exceptions import HTTPErrorFFF, FailedToDownload, StoryDoesNotExist
+        from fanficfare_wrapper import failure_code, http_error_status
+        for status, code in [(404, 'source_not_found'), (429, 'source_rate_limited'), (503, 'source_unavailable')]:
+            try:
+                try:
+                    raise HTTPErrorFFF('https://example.org/private', status, 'private response')
+                except HTTPErrorFFF:
+                    raise FailedToDownload('Adapter hid the HTTP error')
+            except FailedToDownload as error:
+                self.assertEqual(http_error_status(error), status)
+                self.assertEqual(failure_code(error), code)
+        self.assertEqual(failure_code(StoryDoesNotExist('https://example.org/missing')), 'source_not_found')
 
     def test_large_illustrations_are_resized_before_epub_storage(self):
         from io import BytesIO

@@ -26,12 +26,10 @@ onScopeDispose(() => controller.abort())
 const error = ref('')
 const key = ref(crypto.randomUUID())
 const profileId = ref('')
-const autoProfile = ref(true)
 const profileChoice = computed({
-  get: () => profileId.value || (autoProfile.value ? 'auto' : 'public'),
+  get: () => profileId.value || 'auto',
   set: (value: string) => {
-    profileId.value = value === 'auto' || value === 'public' ? '' : value
-    autoProfile.value = value !== 'public'
+    profileId.value = value === 'auto' ? '' : value
   },
 })
 const matchedProfile = ref<FanfictionProfileSummary | null>(null)
@@ -39,7 +37,7 @@ const resolvedProfileId = ref('')
 const profiles = ref<FanfictionProfileSummary[]>([])
 const profileCursor = ref<string | null>(null)
 const profilesLoaded = ref(false)
-watch([url, profileId, autoProfile], () => {
+watch([url, profileId], () => {
   preview.value = null
   matchedProfile.value = null
   job.value = null
@@ -85,7 +83,7 @@ async function inspect() {
   job.value = null
   try {
     resolvedProfileId.value = profileId.value
-    if (!profileId.value && autoProfile.value) {
+    if (!profileId.value) {
       const response = await api(`/api/v1/libraries/${props.libraryId}/fanfiction/profile-match?${new URLSearchParams({ url: url.value })}`, {
         signal: controller.signal,
       })
@@ -148,7 +146,6 @@ async function link() {
         >{{ t('fanfiction.profile')
         }}<select v-model="profileChoice" :disabled="locked" class="border-input bg-background block min-h-11 w-full rounded-md border p-2">
           <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
-          <option value="public">{{ t('fanfiction.noProfile') }}</option>
           <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
         </select></label
       >

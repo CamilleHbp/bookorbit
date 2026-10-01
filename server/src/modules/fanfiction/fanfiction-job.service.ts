@@ -334,7 +334,7 @@ export class FanfictionJobService {
       )
         throw new ConflictException('Review or discard this proposal before continuing');
       if (job.errorCode === 'profile_deleted')
-        throw new ConflictException('This profile was deleted. Start again with another profile or Public access.');
+        throw new ConflictException('This profile was deleted. Start again with another profile or the website login.');
       if (job.sourceId) {
         const [source] = await tx
           .select()

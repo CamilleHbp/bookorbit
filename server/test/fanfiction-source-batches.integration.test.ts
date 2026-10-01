@@ -37,6 +37,7 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
   let user: RequestUser;
   const access = { administer: vi.fn(async () => {}) };
   const authorize = vi.fn(async () => {});
+  const profiles = { matchMany: vi.fn() };
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
     if (!/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database)))
@@ -51,8 +52,8 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
         FanfictionSourceService,
         { provide: DB, useValue: db },
         { provide: FanfictionAccessService, useValue: access },
+        { provide: FanfictionProfileService, useValue: profiles },
         ...[
-          FanfictionProfileService,
           LibraryService,
           AppSettingsService,
           UploadValidatorService,
@@ -137,6 +138,55 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
   }
   const fresh = async (id: string) => (await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, id)))[0];
   const run = (job: typeof schema.fanfictionJobs.$inferSelect, signal = new AbortController().signal) => batches.run(job, user, authorize, signal);
+
+  it('retries every affected story for the saved website without changing other websites or duplicating queued checks', async () => {
+    const selected = await createSources(5, true);
+    const [profile] = await db
+      .insert(schema.fanfictionProfiles)
+      .values({
+        id: randomUUID(),
+        libraryId,
+        createdBy: user.id,
+        name: 'Website',
+        document: { version: 1, keyId: 'test', iv: '', tag: '', ciphertext: '' },
+      })
+      .returning();
+    const summary = { ...profile, updatedAt: profile.updatedAt.toISOString(), rootUrls: ['https://example.org'] };
+    profiles.matchMany.mockImplementation(
+      (_libraryId: number, urls: string[]) => new Map(urls.map((url) => [url, { profile: summary, ambiguous: false }])),
+    );
+    const queued = await jobs.updateStory(selected[1], 'update', randomUUID(), user);
+    await db
+      .update(schema.fanfictionSources)
+      .set({ state: 'configuration_blocked', attentionCode: 'authentication_required' })
+      .where(eq(schema.fanfictionSources.libraryId, libraryId));
+    await db
+      .update(schema.fanfictionSources)
+      .set({ canonicalUrl: 'https://other.example/story', site: 'other.example' })
+      .where(eq(schema.fanfictionSources.id, selected[2].id));
+    await db
+      .update(schema.fanfictionSources)
+      .set({ attentionCode: 'metadata_review_required', state: 'review_required' })
+      .where(eq(schema.fanfictionSources.id, selected[3].id));
+    await db
+      .update(schema.fanfictionSources)
+      .set({ canonicalUrl: 'https://example.org.evil.test/story' })
+      .where(eq(schema.fanfictionSources.id, selected[4].id));
+    const repair = await batches.repairProfile(summary, user);
+    // Claim the local repair independently from the already queued website check.
+    const first = (await jobs.claim())!;
+    const job = first.id === repair.id ? first : (await jobs.claim())!;
+    expect(job.id).toBe(repair.id);
+    const result = await run(job);
+    await jobs.finish(job, 'succeeded', result);
+    expect(await batches.status(libraryId, repair.id, user)).toMatchObject({ total: 2, running: 2, needsAttention: 0 });
+    const children = (await jobs.list(libraryId, { kind: 'update', limit: 10 }, user)).items;
+    expect(children).toHaveLength(2);
+    expect(children.some((child) => child.id === queued.id)).toBe(true);
+    const unaffected = await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.id, selected[2].id));
+    expect(unaffected[0].state).toBe('configuration_blocked');
+    await expect(batches.status(libraryId + 1, repair.id, user)).rejects.toThrow();
+  });
 
   it('counts only the selected library and tracks child updates until they finish', async () => {
     const selected = await createSources(3, true);
