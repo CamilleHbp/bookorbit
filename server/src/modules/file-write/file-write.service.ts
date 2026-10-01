@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readdir, readFile, stat } from 'fs/promises';
-import { basename, extname, join } from 'path';
+import { readFile } from 'fs/promises';
+import { basename, extname } from 'path';
 
 import type { BookFileWriteDisabledReason, BookFileWriteField, BookFileWriteStatus, BookFormat, CoverMedium, WriteResult } from '@bookorbit/types';
 import { BOOK_FORMATS, getBookFileWriteFormatFields, isAudioFormat, NotificationType } from '@bookorbit/types';

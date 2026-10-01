@@ -85,6 +85,8 @@ describe('Architecture boundaries', () => {
       'src/modules/fanfiction/fanfiction-discovery.service.ts',
       'src/modules/fanfiction/fanfiction-job.service.ts',
       'src/modules/fanfiction/fanfiction-profile.service.ts',
+      'src/modules/fanfiction/fanfiction-reader.service.ts',
+      'src/modules/fanfiction/fanfiction-review.service.ts',
       'src/modules/fanfiction/fanfiction-recovery.service.ts',
       'src/modules/fanfiction/fanfiction-replacement.service.ts',
       'src/modules/fanfiction/fanfiction-source-batch.service.ts',

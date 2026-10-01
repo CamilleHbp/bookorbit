@@ -15,7 +15,23 @@ import { MetadataService } from './metadata.service';
 
 @Module({
   imports: [BookMetadataLockModule, BookCoverStoreModule, EmbeddingModule, MetadataScoreModule, NarratorModule],
-  providers: [ManagedMetadataService, ManagedTagService, MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository, CoverSlotReconciler],
-  exports: [ManagedMetadataService, ManagedTagService, MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository, CoverSlotReconciler],
+  providers: [
+    ManagedMetadataService,
+    ManagedTagService,
+    MetadataService,
+    MetadataExtractionService,
+    MetadataEventsService,
+    ComicMetadataRepository,
+    CoverSlotReconciler,
+  ],
+  exports: [
+    ManagedMetadataService,
+    ManagedTagService,
+    MetadataService,
+    MetadataExtractionService,
+    MetadataEventsService,
+    ComicMetadataRepository,
+    CoverSlotReconciler,
+  ],
 })
 export class MetadataModule {}

@@ -226,6 +226,6 @@ describe('sidebar nav registry', () => {
     const booksModeIds = SIDEBAR_NAV_REGISTRY.filter((candidate) => entryVisibleInMode(candidate, 'books')).map((candidate) => candidate.id)
 
     expect(podcastModeIds).toEqual(['dashboard', 'podcast-queue'])
-    expect(booksModeIds).toEqual(['dashboard', 'book-dock', 'book-requests', 'tools', 'authors', 'series', 'annotations'])
+    expect(booksModeIds).toEqual(['dashboard', 'fanfiction', 'book-dock', 'book-requests', 'tools', 'authors', 'series', 'annotations'])
   })
 })

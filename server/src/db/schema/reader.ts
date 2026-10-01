@@ -15,7 +15,14 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { ReadingAnchor, ReadStatus, ReadStatusSource, ReadingAttemptOrigin, ReadingAttemptOutcome, ReadingSessionSource } from '@bookorbit/types';
+import type {
+  ReadingAnchor,
+  ReadStatus,
+  ReadStatusSource,
+  ReadingAttemptOrigin,
+  ReadingAttemptOutcome,
+  ReadingSessionSource,
+} from '@bookorbit/types';
 
 import { bookFiles, books } from './books';
 import { timestamptz } from './columns';

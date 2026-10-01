@@ -98,6 +98,7 @@ export const SIDEBAR_NAV_REGISTRY: readonly SidebarNavEntry[] = [
   {
     id: 'fanfiction',
     labelKey: 'fanfiction.title',
+    modes: ['books'],
     icon: BookOpen,
     zone: 'primary',
     to: { name: 'fanfiction' },

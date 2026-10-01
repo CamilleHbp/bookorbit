@@ -408,12 +408,25 @@ export class EpubService {
       const file = await this.bookReadService.findFileById(fileId);
       if (!file || file.bookId !== bookId) throw new NotFoundException(`File ${fileId} not found for book ${bookId}`);
       if (file.format !== 'epub') throw new NotFoundException(`File ${fileId} is not an EPUB file`);
-      return { revisionId: file.currentRevisionId ?? null, fileId: file.id, absolutePath: file.absolutePath, readerPath: file.absolutePath, fileHash: file.fileHash, sizeBytes: file.sizeBytes };
+      return {
+        revisionId: file.currentRevisionId ?? null,
+        fileId: file.id,
+        absolutePath: file.absolutePath,
+        readerPath: file.absolutePath,
+        fileHash: file.fileHash,
+        sizeBytes: file.sizeBytes,
+      };
     }
 
     const [file] = await this.bookReadService.findPrimaryFilesByBookIds([bookId]);
     if (!file || file.format !== 'epub') throw new NotFoundException(`No primary EPUB file for book ${bookId}`);
-    return { revisionId: file.currentRevisionId ?? null, fileId: null, absolutePath: file.absolutePath, readerPath: file.absolutePath, sizeBytes: file.sizeBytes };
+    return {
+      revisionId: file.currentRevisionId ?? null,
+      fileId: null,
+      absolutePath: file.absolutePath,
+      readerPath: file.absolutePath,
+      sizeBytes: file.sizeBytes,
+    };
   }
 
   private parseRange(rangeHeader: string | undefined, size: number): ByteRange | null {

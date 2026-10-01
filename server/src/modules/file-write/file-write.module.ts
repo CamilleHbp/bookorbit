@@ -26,7 +26,17 @@ import { PdfFormatWriter } from './formats/pdf/pdf-format-writer';
 import { FORMAT_WRITERS } from './interfaces/format-writer.interface';
 
 @Module({
-  imports: [FanfictionLocationModule, KoboFileStateModule, BookRevisionModule, forwardRef(() => NotificationModule), AppSettingsModule, BookCoverStoreModule, MetadataModule, SelfWriteRegistryModule, FileLockModule],
+  imports: [
+    FanfictionLocationModule,
+    KoboFileStateModule,
+    BookRevisionModule,
+    forwardRef(() => NotificationModule),
+    AppSettingsModule,
+    BookCoverStoreModule,
+    MetadataModule,
+    SelfWriteRegistryModule,
+    FileLockModule,
+  ],
   providers: [
     FileWriteService,
     FileWriteRepository,

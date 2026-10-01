@@ -17,6 +17,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createReadStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
 
+import { AudiolessEpubService } from '../../book/audioless-epub.service';
 import { KoboDownloadService } from './kobo-download.service';
 
 const statMock = vi.mocked(stat);
@@ -96,6 +97,7 @@ describe('KoboDownloadService', () => {
         KoboDownloadService,
         { provide: DB, useValue: deps.db },
         { provide: KepubConversionService, useValue: deps.kepubConversionService },
+        { provide: AudiolessEpubService, useValue: deps.audiolessEpubService },
         { provide: KoboSettingsService, useValue: deps.settingsService },
         { provide: KoboBookAccessService, useValue: deps.bookAccessService },
       ],
@@ -215,7 +217,18 @@ describe('KoboDownloadService', () => {
     await service.streamBook(7, 11, makeReply() as never);
 
     expect(deps.audiolessEpubService.writeArchive).toHaveBeenCalledWith('/books/narrated.epub', '/tmp/kobo-epub/book.epub');
-    expect(streamKepubSpy).toHaveBeenCalledWith('/tmp/kobo-epub/book.epub', 'h1', 11, 22, false, true, expect.anything(), 7, '/books/narrated.epub', expect.any(Function));
+    expect(streamKepubSpy).toHaveBeenCalledWith(
+      '/tmp/kobo-epub/book.epub',
+      'h1',
+      11,
+      22,
+      false,
+      true,
+      expect.anything(),
+      7,
+      '/books/narrated.epub',
+      expect.any(Function),
+    );
   });
 
   it('streams the stripped copy when kepub conversion is turned off', async () => {
@@ -393,7 +406,8 @@ describe('KoboDownloadService', () => {
     deps.kepubConversionService.getKepubPath.mockResolvedValue('/app-data/.kepub-cache/44/abc-noaudio.kepub.epub');
     const streamFileSpy = vi.spyOn(service as any, 'streamFile').mockResolvedValue(undefined);
 
-    await (service as any).streamKepub('/tmp/kobo-epub/book.epub', 'abc', 44, 55, false, true, makeReply(), cleanup);
+    deps.db.query.bookFiles.findFirst.mockResolvedValue({ id: 55 });
+    await (service as any).streamKepub('/tmp/kobo-epub/book.epub', 'abc', 44, 55, false, true, makeReply(), 7, '/books/source.epub', cleanup);
 
     expect(deps.kepubConversionService.getKepubPath).toHaveBeenCalledWith(expect.objectContaining({ audioless: true }));
     // The temp rebuild outlives the conversion: whichever file is sent carries the cleanup.
