@@ -15,7 +15,7 @@ const props = defineProps<{
   matchingCount?: number
   allowAllMatching?: boolean
 }>()
-const emit = defineEmits<{ fixLogin: [profileId: string] }>()
+const emit = defineEmits<{ fixLogin: [sourceId: string] }>()
 const { t } = useI18n()
 function fixLogin(id: string) {
   emit('fixLogin', id)
@@ -148,9 +148,10 @@ const failureGroups = computed(() => {
                 >{{ t('fanfiction.retry') }}</Button
               >
               <Button
-                v-if="failure.errorCode === 'authentication_required' && failure.profileId"
+                v-if="failure.errorCode === 'authentication_required'"
                 variant="outline"
-                @click="fixLogin(failure.profileId)"
+                :disabled="loading || bulk.busy || bulk.active"
+                @click="fixLogin(failure.sourceId)"
                 >{{ t('fanfiction.bulk.fixLogin') }}</Button
               >
               <Button v-else variant="ghost" as-child>
