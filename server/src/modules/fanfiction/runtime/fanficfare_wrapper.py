@@ -12,7 +12,7 @@ import time
 import traceback
 
 from tag_rules import apply_tag_rules
-from controlled_config import make_configuration, merge_configuration, validate_ini
+from controlled_config import make_configuration, merge_configuration, personal_configuration, validate_ini
 from epub_policy import validate_epub
 from image_processing import install_image_processing
 from safe_transport import PolicyError, SafeTransport, install_network_guard, validate_url
@@ -130,6 +130,8 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
         return recognize_urls(request.get('urls'))
     if operation == 'merge':
         return {'configuration': merge_configuration(request.get('previous', ''), request.get('configuration'), request.get('edits'), request.get('redact', False))}
+    if operation == 'personal':
+        return {'configuration': personal_configuration(request.get('previous', ''), request.get('configuration', ''))}
     ini = validate_ini(request.get('configuration', ''))
     if operation == 'validate':
         return {'valid': True}
@@ -161,7 +163,7 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
         previous_url, previous_count = old[:2]
         if adapters.getNormalStoryURL(previous_url) != adapters.getNormalStoryURL(canonical):
             return finish({'reviewRequired': 'identity_mismatch', 'preview': preview})
-        if previous_count > chapter_count:
+        if previous_count > chapter_count and request.get('reviewChanges') is not True:
             return finish({'reviewRequired': 'chapter_reduction', 'preview': preview})
         if operation == 'update':
             (adapter.oldchapters, adapter.oldimgs, adapter.oldcover, adapter.calibrebookmark,

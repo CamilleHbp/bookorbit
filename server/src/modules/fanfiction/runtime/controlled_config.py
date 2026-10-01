@@ -19,6 +19,18 @@ dedup_img_files include_appendices legend_spoilers show_spoiler_tags show_timest
 MASK = '********'
 
 
+def personal_configuration(legacy, personal):
+    parser = configparser.ConfigParser(interpolation=None, strict=True)
+    parser.read_string(validate_ini(legacy))
+    for section in parser.sections():
+        for option in ('username', 'password', 'always_login'):
+            parser.remove_option(section, option)
+    parser.read_string(validate_ini(personal))
+    output = io.StringIO()
+    parser.write(output)
+    return validate_ini(output.getvalue())
+
+
 def merge_configuration(previous, incoming=None, edits=None, redact=False):
     old = configparser.ConfigParser(interpolation=None, strict=True)
     old.read_string(validate_ini(previous))

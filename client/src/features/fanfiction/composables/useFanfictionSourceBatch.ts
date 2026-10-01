@@ -186,6 +186,7 @@ export function useFanfictionSourceBatch(
             ? { allMatching: true, ...(toValue(search) ? { search: toValue(search) } : {}), ...(toValue(state) ? { state: toValue(state) } : {}) }
             : { ids: [...selectedIds.value].sort() }),
         ...(!checkLibrary && action.value === 'schedule' ? { intervalMinutes: minutes } : {}),
+        ...(!checkLibrary && action.value === 'policy' ? { updatePolicy: 'safe' } : {}),
       }
       const identity = JSON.stringify(input)
       if (pending?.input !== identity) pending = { input: identity, key: crypto.randomUUID() }

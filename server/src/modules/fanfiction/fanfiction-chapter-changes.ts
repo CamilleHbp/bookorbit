@@ -8,3 +8,28 @@ export function storyChapterChanges(previous: EpubRevisionManifest, next: EpubRe
     metadataChanged: previous.metadataHash !== next.metadataHash,
   };
 }
+
+export function storyUpdateSafety(
+  previous: EpubRevisionManifest,
+  next: EpubRevisionManifest,
+): Pick<FanfictionChapterChanges, 'safety' | 'removed' | 'reordered'> {
+  const before = previous.chapters.filter((chapter) => !chapter.generated);
+  const after = next.chapters.filter((chapter) => !chapter.generated);
+  const oldIds = before.map((chapter) => chapter.sourceUrl);
+  const newIds = after.map((chapter) => chapter.sourceUrl);
+  const identifiable =
+    before.length > 0 &&
+    after.length > 0 &&
+    [...before, ...after].every((chapter) => !!chapter.sourceUrl && !!chapter.textHash) &&
+    new Set(oldIds).size === before.length &&
+    new Set(newIds).size === after.length;
+  const nextIds = new Set(newIds);
+  const removed = oldIds.filter((id) => !nextIds.has(id)).length;
+  const reordered = before.some((chapter, index) => newIds[index] !== chapter.sourceUrl);
+  const changed = before.some((chapter, index) => after[index]?.textHash !== chapter.textHash);
+  return {
+    safety: !identifiable || removed > 0 || reordered || changed ? 'review_required' : after.length > before.length ? 'append_only' : 'unchanged',
+    removed,
+    reordered,
+  };
+}

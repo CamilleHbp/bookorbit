@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, gt, inArray, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
@@ -23,6 +23,7 @@ const jobs = schema.fanfictionJobs;
 
 @Injectable()
 export class FanfictionJobService {
+  private readonly logger = new Logger(FanfictionJobService.name);
   constructor(
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly access: FanfictionAccessService,
@@ -71,7 +72,7 @@ export class FanfictionJobService {
           throw new ConflictException('Operation identity was reused with different input');
         return this.view(existing);
       }
-      if (current?.attentionCode === 'metadata_review_required' && current.bookId && current.state !== 'unlinked')
+      if (current?.attentionCode === 'metadata_review_required' && current.updatePolicy !== 'safe' && current.bookId && current.state !== 'unlinked')
         throw new ConflictException({
           message: 'Review and save the story metadata before updating again.',
           errorCode: 'metadata_review_required',
@@ -81,7 +82,7 @@ export class FanfictionJobService {
         !current ||
         current.version !== source.version ||
         !current.bookFileId ||
-        current.attentionCode === 'metadata_review_required' ||
+        (current.attentionCode === 'metadata_review_required' && current.updatePolicy !== 'safe') ||
         (!['rollback', 'replacement'].includes(kind) && current.attentionCode === 'destination_profile_required') ||
         !(
           ['rollback', 'replacement'].includes(kind) ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']
@@ -89,6 +90,8 @@ export class FanfictionJobService {
         (scheduled && current.state !== 'active')
       )
         throw new ConflictException('Story source changed or requires attention before updating');
+      if (current.accessMode === 'personal' && (current.maintainerUserId ?? current.createdBy) !== user.id)
+        throw new ConflictException({ message: 'Use your own website login before maintaining this story', errorCode: 'maintainer_required' });
       const [active] = await tx
         .select({ id: jobs.id })
         .from(jobs)
@@ -105,6 +108,7 @@ export class FanfictionJobService {
           sourceId: source.id,
           sourceVersion: current.version,
           profileId: current.profileId,
+          accessMode: current.accessMode,
           ...(rollback ? { rollbackRevisionId: rollback.revisionId, expectedRevisionId: rollback.expectedRevisionId } : {}),
           ...(replacement
             ? { replacementUploadId: replacement.uploadId, replacementSha256: replacement.sha256, expectedRevisionId: replacement.expectedRevisionId }
@@ -158,10 +162,11 @@ export class FanfictionJobService {
       const due = await tx
         .select({ source: sources, tokenVersion: schema.users.tokenVersion })
         .from(sources)
-        .innerJoin(schema.users, eq(schema.users.id, sources.createdBy))
+        .innerJoin(schema.users, eq(schema.users.id, sql`coalesce(${sources.maintainerUserId}, ${sources.createdBy})`))
         .where(
           and(
             eq(sources.state, 'active'),
+            sql`coalesce(${sources.updatesEnabled}, true)`,
             lte(sources.nextCheckAt, sql`now()`),
             sql`${sources.intervalMinutes} is not null`,
             sql`not exists (select 1 from ${jobs} where ${jobs.sourceId} = ${sources.id} and ${jobs.state} in ('queued', 'running'))`,
@@ -182,10 +187,11 @@ export class FanfictionJobService {
           .insert(jobs)
           .values({
             libraryId: source.libraryId,
-            userId: source.createdBy,
+            userId: source.maintainerUserId ?? source.createdBy,
             tokenVersion,
             idempotencyKey: randomUUID(),
             profileId: source.profileId,
+            accessMode: source.accessMode,
             sourceId: source.id,
             sourceVersion: source.version,
             kind: 'update',
@@ -233,6 +239,7 @@ export class FanfictionJobService {
         tokenVersion: user.tokenVersion,
         idempotencyKey: dto.idempotencyKey,
         profileId: dto.profileId,
+        accessMode: dto.profileId ? 'legacy' : (dto.accessMode ?? 'personal'),
         kind,
         input,
         url: url.href,
@@ -250,6 +257,7 @@ export class FanfictionJobService {
       !existing ||
       existing.url !== url.href ||
       existing.profileId !== (dto.profileId ?? null) ||
+      existing.accessMode !== (dto.profileId ? 'legacy' : (dto.accessMode ?? 'personal')) ||
       existing.kind !== kind ||
       existing.input?.folderId !== input?.folderId ||
       existing.input?.collectionId !== input?.collectionId ||
@@ -325,6 +333,8 @@ export class FanfictionJobService {
         .where(and(eq(jobs.libraryId, libraryId), eq(jobs.id, id)))
         .for('update');
       if (!job) throw new NotFoundException('Fanfiction job not found in this library');
+      if (job.accessMode === 'personal' && job.userId !== user.id) throw new ForbiddenException('This operation uses another person’s website login');
+      if (job.result?.contentReview && !job.result.contentReview.approved) throw new ConflictException('Review the changed chapters before retrying');
       if (job.kind === 'source_batch' && job.userId !== user.id && !user.isSuperuser)
         throw new ForbiddenException('This story check belongs to another user');
       if (['queued', 'running', 'succeeded', 'no_change'].includes(job.state)) return this.view(job);
@@ -353,7 +363,7 @@ export class FanfictionJobService {
           await tx
             .update(schema.fanfictionSources)
             .set({
-              state: source.bookFileId ? 'paused' : 'pending',
+              state: source.bookFileId ? (source.updatesEnabled ? 'active' : 'paused') : 'pending',
               attentionCode: source.attentionCode === 'destination_profile_required' ? source.attentionCode : null,
             })
             .where(eq(schema.fanfictionSources.id, source.id));
@@ -401,6 +411,79 @@ export class FanfictionJobService {
       return this.view(updated);
     };
     return transaction ? operation(transaction) : this.db.transaction(operation);
+  }
+
+  async reviewContent(libraryId: number, id: string, action: 'apply' | 'discard', user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    const startedAt = Date.now();
+    this.logger.log(
+      `[fanfiction.content_review] [start] libraryId=${libraryId} jobId=${id} userId=${user.id} action=${action} - resolving chapter review`,
+    );
+    try {
+      const result = await this.db.transaction(async (tx) => {
+        const [job] = await tx
+          .select()
+          .from(jobs)
+          .where(and(eq(jobs.id, id), eq(jobs.libraryId, libraryId)))
+          .for('update');
+        if (!job?.sourceId || !job.result?.contentReview || job.result.contentReview.approved || job.state !== 'review_required')
+          throw new ConflictException('Refresh this chapter review before continuing');
+        if (job.accessMode === 'personal' && job.userId !== user.id) throw new ForbiddenException('This update belongs to another maintainer');
+        const sources = schema.fanfictionSources;
+        const [source] = await tx
+          .select()
+          .from(sources)
+          .where(and(eq(sources.id, job.sourceId), eq(sources.libraryId, libraryId)))
+          .for('update');
+        if (!source || source.state === 'unlinked' || source.version !== job.sourceVersion)
+          throw new ConflictException('Story settings changed; check the story again');
+        const result: NonNullable<FanfictionJob['result']> = {
+          ...job.result,
+          contentReview: { ...job.result.contentReview, approved: action === 'apply' },
+        };
+        if (action === 'discard') {
+          delete result.contentReview;
+          delete result.metadataReview;
+          result.reviewDiscarded = true;
+        }
+        const [updated] = await tx
+          .update(jobs)
+          .set({
+            result,
+            state: action === 'apply' ? 'queued' : 'cancelled',
+            cancellationRequested: action === 'discard',
+            tokenVersion: user.tokenVersion,
+            userId: user.id,
+            scheduled: false,
+            attempts: 0,
+            errorCode: null,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            runAfter: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(jobs.id, id))
+          .returning();
+        await tx
+          .update(sources)
+          .set({
+            state: action === 'discard' ? 'paused' : job.result.contentReview.previousState,
+            ...(action === 'discard' ? { updatesEnabled: false, nextCheckAt: null } : {}),
+            attentionCode: null,
+          })
+          .where(eq(sources.id, source.id));
+        return this.view(updated);
+      });
+      this.logger.log(
+        `[fanfiction.content_review] [end] libraryId=${libraryId} jobId=${id} userId=${user.id} durationMs=${Date.now() - startedAt} action=${action} - chapter review resolved`,
+      );
+      return result;
+    } catch (error) {
+      this.logger.warn(
+        `[fanfiction.content_review] [fail] libraryId=${libraryId} jobId=${id} userId=${user.id} durationMs=${Date.now() - startedAt} errorClass=ReviewError error="chapter review could not be resolved" - saved copy remains available`,
+      );
+      throw error;
+    }
   }
 
   async claim() {
@@ -584,6 +667,7 @@ export class FanfictionJobService {
       await tx
         .update(schema.fanfictionSources)
         .set({
+          updatesEnabled: sql`coalesce(${schema.fanfictionSources.updatesEnabled}, ${schema.fanfictionSources.state} <> 'paused')`,
           ...(job.state === 'configuration_blocked' || job.state === 'review_required' ? { state: job.state } : {}),
           attentionCode: sql`case when ${schema.fanfictionSources.attentionCode} = 'destination_profile_required' then ${schema.fanfictionSources.attentionCode} else ${job.errorCode ?? job.state} end`,
           nextCheckAt: null,

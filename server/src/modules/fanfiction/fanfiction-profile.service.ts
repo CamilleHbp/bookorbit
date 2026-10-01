@@ -134,6 +134,7 @@ export class FanfictionProfileService {
     const configuration = await this.runtime.mergeConfiguration('', dto.configuration, dto.credentials);
     const id = randomUUID();
     const [existing] = await this.db.select({ id: profiles.id }).from(profiles).limit(1);
+    const [connection] = await this.db.select({ id: schema.fanfictionConnections.id }).from(schema.fanfictionConnections).limit(1);
     const document = await this.vault.encrypt(
       libraryId,
       id,
@@ -143,7 +144,7 @@ export class FanfictionProfileService {
         tagRules: dto.tagRules ?? [],
         cookies: mergeFanfictionCookies([], dto.cookies),
       }),
-      !existing,
+      !existing && !connection,
     );
     await this.access.administer(user, libraryId);
     const [row] = await this.db.insert(profiles).values({ id, libraryId, name: dto.name, createdBy: user.id, document }).returning(summaryFields);

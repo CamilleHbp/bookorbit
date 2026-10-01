@@ -16,7 +16,12 @@ export class FanfictionVaultService {
     @Optional() @Inject(fanficfareConfig.KEY) private readonly config?: ConfigType<typeof fanficfareConfig>,
   ) {}
 
-  async encrypt(libraryId: number, profileId: string, value: string, allowProvision: boolean): Promise<EncryptedFanfictionDocument> {
+  async encrypt(
+    libraryId: number | `user:${number}`,
+    profileId: string,
+    value: string,
+    allowProvision: boolean,
+  ): Promise<EncryptedFanfictionDocument> {
     if (Buffer.byteLength(value) > 128 * 1024) throw new BadRequestException('Fanfiction profile storage limit exceeded');
     const key = await this.key(allowProvision);
     const iv = randomBytes(12);
@@ -32,7 +37,7 @@ export class FanfictionVaultService {
     };
   }
 
-  async decrypt(libraryId: number, profileId: string, value: EncryptedFanfictionDocument): Promise<string> {
+  async decrypt(libraryId: number | `user:${number}`, profileId: string, value: EncryptedFanfictionDocument): Promise<string> {
     const key = await this.key(false);
     try {
       if (value.version !== 1 || value.keyId !== key.id) throw new ServiceUnavailableException();
@@ -48,7 +53,7 @@ export class FanfictionVaultService {
     }
   }
 
-  private context(libraryId: number, profileId: string, keyId: string): Buffer {
+  private context(libraryId: number | `user:${number}`, profileId: string, keyId: string): Buffer {
     return Buffer.from(JSON.stringify(['bookorbit-fanfiction-profile', 1, keyId, libraryId, profileId]));
   }
 

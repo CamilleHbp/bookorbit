@@ -1,4 +1,4 @@
-import { storyChapterChanges } from './fanfiction-chapter-changes';
+import { storyChapterChanges, storyUpdateSafety } from './fanfiction-chapter-changes';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createWriteStream } from 'node:fs';
@@ -64,7 +64,8 @@ export class FanfictionUpdateService {
     };
     const owned = await this.publications.ownedPublication(fileId, source.libraryId, authority);
     if (job.result?.preparedUpdate && job.result.preview && !job.result.revisionId && (job.result.preparedUpdate.noChange || owned)) {
-      job.result = await this.reviews.prepare(job, job.result.preview, job.result.preparedUpdate.noChange, true);
+      job.result = await this.reviews.prepare(job, job.result.preview, job.result.preparedUpdate.noChange, true, source.updatePolicy === 'safe');
+      if (job.result.contentReview && !job.result.contentReview.approved) return job.result;
       if (job.result.metadataReview && !job.result.preparedUpdate?.approved) return job.result;
       if (job.result.preparedUpdate!.noChange) return finish(job.expectedRevisionId!, true, job.result.preview);
     }
@@ -86,6 +87,13 @@ export class FanfictionUpdateService {
     await this.catalog.requireFile(fileId, source.libraryId);
     await this.revisions.observeFile(fileId, {});
     const current = await this.catalog.current(fileId, source.libraryId);
+    let previousManifest = {
+      version: 1 as const,
+      chapters: current.chapters ?? [],
+      contentHash: current.contentHash ?? '',
+      metadataHash: current.metadataHash ?? '',
+      coverHash: current.coverHash,
+    };
     const expected = await this.sources.expectRevision(job, current.id);
     if (expected !== current.id)
       throw new ConflictException({ message: 'Installed EPUB changed before the update could resume', errorCode: 'review_required' });
@@ -97,21 +105,25 @@ export class FanfictionUpdateService {
       async (path) => {
         const snapshot = await this.downloads.download(fileId, source.libraryId, expected, access);
         await pipeline(snapshot.stream, createWriteStream(path, { flags: 'wx', mode: 0o600 }), { signal });
+        if (source.updatePolicy === 'safe') previousManifest = await this.manifests.inspect(path);
       },
       async (path, preview) => {
         await access();
-        if (this.sources.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl || preview.chapterCount < source.chapterCount)
+        if (
+          this.sources.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl ||
+          (source.updatePolicy !== 'safe' && preview.chapterCount < source.chapterCount)
+        )
           throw new BadRequestException({ message: 'Story identity or chapter count requires review', errorCode: 'review_required' });
         const next = await this.manifests.inspect(path);
         if (current.contentHash === next.contentHash && current.metadataHash === next.metadataHash && current.coverHash === next.coverHash) {
           await this.revisions.observeFile(fileId, {});
           if ((await this.catalog.current(fileId, source.libraryId)).id !== expected)
             throw new ConflictException('Installed EPUB changed during update');
-          job.result = await this.reviews.prepare(job, preview, true);
+          job.result = await this.reviews.prepare(job, preview, true, false, source.updatePolicy === 'safe');
           if (job.result.metadataReview && !job.result.preparedUpdate?.approved) return job.result;
           return finish(expected, true, preview);
         }
-        job.result = await this.reviews.prepare(job, preview, false);
+        job.result = await this.reviews.prepare(job, preview, false, false, source.updatePolicy === 'safe');
         job.result.changes = storyChapterChanges(
           {
             version: 1,
@@ -122,14 +134,20 @@ export class FanfictionUpdateService {
           },
           next,
         );
+        const safety = storyUpdateSafety(previousManifest, next);
+        job.result.changes = { ...job.result.changes, ...safety };
+        if (source.updatePolicy === 'safe' && safety.safety === 'review_required')
+          job.result.contentReview = { approved: false, previousState: source.state === 'paused' ? 'paused' : 'active' };
         const prepared = await this.publications.prepare(fileId, source.libraryId, expected, path, 'fanficfare', authority);
         await this.sources.recordChapterChanges(job);
+        if (job.result.contentReview && !job.result.contentReview.approved) return job.result;
         if (job.result.metadataReview && !job.result.preparedUpdate?.approved) return job.result;
         const installed = await this.publications.resume(prepared.publicationId, source.libraryId, approvedAuthority);
         return finish(installed.revisionId, false, preview);
       },
       signal,
       saveCookies,
+      source.updatePolicy === 'safe',
     );
   }
 }

@@ -6,6 +6,7 @@ import {
   IsBoolean,
   IsDefined,
   IsInt,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -66,6 +67,7 @@ export class ListFanfictionProfilesDto {
 }
 
 export class PreviewFanfictionDto {
+  @IsOptional() @IsIn(['legacy', 'personal']) accessMode?: 'legacy' | 'personal';
   @IsString() @MaxLength(4096) @Matches(/^https:\/\/[^\s]+$/) url!: string;
   @IsOptional() @IsUUID() profileId?: string;
   @IsUUID() idempotencyKey!: string;

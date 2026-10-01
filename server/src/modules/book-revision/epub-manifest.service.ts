@@ -144,6 +144,7 @@ export class EpubManifestService {
       else if (item['@_id'] !== 'log_page' && item['@_id'] !== 'cover')
         generatedMetadata.push(digest(generatedPageText(html, item['@_id'] === 'title_page')));
       chapters.push({
+        ...(generated ? { generated: true } : {}),
         href,
         title,
         ...(sourceUrl && sourceUrl.length <= 2048 && /^https?:\/\//i.test(sourceUrl) ? { sourceUrl } : {}),

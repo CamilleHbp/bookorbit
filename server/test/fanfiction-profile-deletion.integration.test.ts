@@ -29,7 +29,8 @@ describe.skipIf(!configPath)('profile deletion with PostgreSQL', () => {
   const access = { administer: vi.fn(async () => {}) };
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation') throw new Error('An isolated validation database is required');
+    if (!/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database)))
+      throw new Error('An isolated validation database is required');
     pool = new Pool(config);
     db = drizzle(pool, { schema });
     const module = await Test.createTestingModule({

@@ -16,7 +16,7 @@ import { validateRuntimeCookies, type FanfictionCookieSink } from './fanfiction-
 import { FanfictionRuntimeProgress, type FanfictionProgressSink } from './fanfiction-runtime-progress';
 
 type RuntimeRequest = {
-  operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
+  operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'personal' | 'preview' | 'download' | 'update' | 'refresh';
   urls?: string[];
   url?: string;
   configuration?: string;
@@ -25,6 +25,7 @@ type RuntimeRequest = {
   previous?: string;
   edits?: { section?: string; username?: string; password?: string; isAdult?: boolean };
   redact?: boolean;
+  reviewChanges?: boolean;
 };
 type RuntimeResponse =
   { ok: true; result: unknown; cookies?: unknown } | { ok: false; code: string; errorClass: string; errorLocation?: string; httpStatus?: number };
@@ -100,6 +101,13 @@ export class FanficfareRuntimeService {
     return result.configuration;
   }
 
+  async personalConfiguration(previous: string, configuration: string): Promise<string> {
+    const result = (await this.temporary({ operation: 'personal', previous, configuration })) as { configuration: string };
+    if (typeof result.configuration !== 'string' || Buffer.byteLength(result.configuration) > 65536)
+      throw new ServiceUnavailableException('Invalid configuration response');
+    return result.configuration;
+  }
+
   async preview(
     url: string,
     document: FanfictionProfileDocument,
@@ -135,10 +143,16 @@ export class FanficfareRuntimeService {
     consume: (path: string, preview: FanfictionPreview) => Promise<T>,
     signal?: AbortSignal,
     saveCookies?: FanfictionCookieSink,
+    reviewChanges = false,
   ): Promise<T> {
     return this.workspace(async (directory) => {
       await prepare(join(directory, 'input.epub'));
-      const result = (await this.execute({ operation, url, ...document }, directory, signal, saveCookies)) as {
+      const result = (await this.execute(
+        { operation: reviewChanges ? 'refresh' : operation, url, ...document, reviewChanges },
+        directory,
+        signal,
+        saveCookies,
+      )) as {
         output?: string;
         reviewRequired?: string;
         preview?: FanfictionPreview;

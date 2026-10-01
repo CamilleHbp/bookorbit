@@ -1,3 +1,5 @@
+import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
+import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -46,7 +48,7 @@ describe.skipIf(!configPath)('managed story relocation', () => {
 
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation') throw new Error('Isolated validation database required');
+    if (!/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database))) throw new Error('Isolated validation database required');
     pool = new Pool({ ...config, connectionTimeoutMillis: 10_000, statement_timeout: 20_000 });
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
@@ -59,6 +61,8 @@ describe.skipIf(!configPath)('managed story relocation', () => {
       providers: [
         FanfictionLocationService,
         FanfictionSourceService,
+        { provide: FanfictionReviewService, useValue: {} },
+        { provide: FanfictionReaderService, useValue: { project: (rows: unknown[]) => Promise.resolve(rows) } },
         { provide: RevisionCatalogService, useValue: {} },
         ManagedTagService,
         { provide: ManagedMetadataService, useValue: {} },

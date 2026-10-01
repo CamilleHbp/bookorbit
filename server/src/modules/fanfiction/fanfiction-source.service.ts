@@ -1,3 +1,4 @@
+import { personalAccessIssueFilter, storyStateFilter } from './fanfiction-source-filters';
 import { FanfictionReaderService } from './fanfiction-reader.service';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
@@ -72,7 +73,7 @@ export class FanfictionSourceService {
   async metadataReview(libraryId: number, id: string, user: RequestUser): Promise<FanfictionMetadataReviewView | null> {
     await this.access.administer(user, libraryId);
     const source = await this.find(libraryId, id);
-    if (!source.attentionCode || source.state === 'unlinked') return null;
+    if ((!source.metadataReviewPending && source.attentionCode !== 'metadata_review_required') || source.state === 'unlinked') return null;
     return this.db.transaction(async (tx) => {
       const [job] = await tx
         .select({ id: schema.fanfictionJobs.id, result: schema.fanfictionJobs.result, state: schema.fanfictionJobs.state })
@@ -88,7 +89,7 @@ export class FanfictionSourceService {
         .limit(1)
         .for('update');
       if (!job?.result?.metadataReview || !source.bookId) return null;
-      if (!job.result.metadataReview.beforeUpdate && job.result.noChange && job.result.revisionId)
+      if (!job.result.metadataDeferred && !job.result.metadataReview.beforeUpdate && job.result.noChange && job.result.revisionId)
         return this.reviews.upgradeUnchangedReview(tx, job, source);
       if (job.result.metadataReview.beforeUpdate && ['queued', 'running'].includes(job.state)) return null;
       if (job.result.metadataReview.beforeUpdate && job.result.preparedUpdate) return this.reviews.refresh(tx, job, source);
@@ -96,7 +97,7 @@ export class FanfictionSourceService {
         tx,
         source.bookId,
         libraryId,
-        job.result.metadataReview.beforeUpdate ? `fanfiction:${source.id}` : undefined,
+        job.result.metadataReview.beforeUpdate || job.result.metadataDeferred ? `fanfiction:${source.id}` : undefined,
       );
       return { jobId: job.id, review: { ...job.result.metadataReview, ...snapshot } };
     });
@@ -144,13 +145,18 @@ export class FanfictionSourceService {
           .for('update');
         if (
           !source ||
-          source.state !== 'review_required' ||
-          source.attentionCode !== 'metadata_review_required' ||
+          (!job.result.metadataDeferred && source.state !== 'review_required') ||
+          (!source.metadataReviewPending && source.attentionCode !== 'metadata_review_required') ||
           source.bookId !== file.bookId ||
           source.bookFileId !== job.result.bookFileId
         )
           throw new ConflictException('The story source changed; reload it before editing');
-        const snapshot = await this.managedMetadata.snapshot(tx, file.bookId, libraryId);
+        const snapshot = await this.managedMetadata.snapshot(
+          tx,
+          file.bookId,
+          libraryId,
+          job.result.metadataDeferred ? `fanfiction:${id}` : undefined,
+        );
         if (snapshot.fingerprint !== dto.fingerprint) throw new ConflictException('Book metadata changed; refresh the review before saving');
         const fields = dto.keepAll ? [] : review.fields.filter((field) => dto[field] !== 'keep' && dto[field] !== undefined);
         if (fields.some((field) => snapshot.lockedFields.includes(field)))
@@ -182,10 +188,11 @@ export class FanfictionSourceService {
         await tx
           .update(sources)
           .set({
-            state: review.previousState,
-            attentionCode: null,
+            state: job.result.metadataDeferred ? source.state : review.previousState,
+            metadataReviewPending: false,
+            attentionCode: source.attentionCode === 'metadata_review_required' ? null : source.attentionCode,
             nextCheckAt:
-              review.previousState === 'active' && source.intervalMinutes !== null
+              (job.result.metadataDeferred ? source.state : review.previousState) === 'active' && source.intervalMinutes !== null
                 ? sql`now() + (${source.intervalMinutes} * interval '1 minute')`
                 : null,
             version: sql`${sources.version} + 1`,
@@ -266,7 +273,7 @@ export class FanfictionSourceService {
       await tx
         .update(schema.fanfictionJobs)
         .set({
-          result: sql`jsonb_set(coalesce(${schema.fanfictionJobs.result}, '{}'::jsonb), '{changes}', ${JSON.stringify(job.result?.changes)}::jsonb)`,
+          result: sql`coalesce(${schema.fanfictionJobs.result}, '{}'::jsonb) || ${JSON.stringify({ changes: job.result?.changes, ...(job.result?.contentReview ? { contentReview: job.result.contentReview } : {}) })}::jsonb`,
         })
         .where(and(eq(schema.fanfictionJobs.id, job.id), eq(schema.fanfictionJobs.libraryId, job.libraryId)));
     });
@@ -288,7 +295,7 @@ export class FanfictionSourceService {
       if (source.bookFileId !== result.bookFileId || source.bookId !== file.bookId) throw new ConflictException('The managed book identity changed');
       const reviewed = await this.reviews.apply(tx, job, source.bookId!);
       result = { ...reviewed, ...result, ...(preview ? { preview } : {}) };
-      delete result.metadataReview;
+      if (!result.metadataDeferred) delete result.metadataReview;
       await tx
         .update(sources)
         .set({
@@ -308,18 +315,21 @@ export class FanfictionSourceService {
                 authors: result.replacement.authors,
                 chapterCount: result.replacement.chapterCount,
                 state: 'paused' as const,
+                updatesEnabled: false,
               }
             : {}),
           ...(result.preparedUpdate ? { state: result.preparedUpdate.previousState } : {}),
-          attentionCode: result.metadataReview
-            ? 'metadata_review_required'
-            : job.kind === 'replacement' && source.attentionCode === 'destination_profile_required'
-              ? source.attentionCode
-              : null,
+          metadataReviewPending: !!result.metadataReview,
+          attentionCode:
+            result.metadataReview && !result.metadataDeferred
+              ? 'metadata_review_required'
+              : job.kind === 'replacement' && source.attentionCode === 'destination_profile_required'
+                ? source.attentionCode
+                : null,
           lastCheckedAt: job.kind === 'replacement' ? source.lastCheckedAt : sql`now()`,
           ...(!result.noChange ? { lastUpdatedAt: sql`now()` } : {}),
           nextCheckAt:
-            job.kind === 'replacement' || result.metadataReview
+            job.kind === 'replacement' || (result.metadataReview && !result.metadataDeferred)
               ? null
               : sql`case when ${sources.state} <> 'active' or ${sources.intervalMinutes} is null then null else now() + (${sources.intervalMinutes} * interval '1 minute') end`,
           updatedAt: sql`now()`,
@@ -334,7 +344,7 @@ export class FanfictionSourceService {
           sourceId: source.id,
           jobId: job.id,
           eventKey: `${job.id}:updated`,
-          kind: result.metadataReview ? 'attention' : 'updated',
+          kind: result.metadataReview && result.noChange ? 'attention' : 'updated',
           errorCode: result.metadataReview ? 'metadata_review_required' : null,
           title: preview?.title ?? source.title,
           bookId: source.bookId,
@@ -351,6 +361,8 @@ export class FanfictionSourceService {
         .update(sources)
         .set({
           state: 'paused',
+          updatesEnabled: false,
+          metadataReviewPending: false,
           nextCheckAt: null,
           attentionCode: source.attentionCode === 'destination_profile_required' ? source.attentionCode : null,
           lastUpdatedAt: sql`now()`,
@@ -387,7 +399,10 @@ export class FanfictionSourceService {
         and(
           eq(sources.libraryId, libraryId),
           dto.bookId ? eq(sources.bookId, dto.bookId) : undefined,
-          dto.state ? eq(sources.state, dto.state) : sql`${sources.state} <> 'unlinked'`,
+          dto.state ? storyStateFilter(dto.state) : sql`${sources.state} <> 'unlinked'`,
+          dto.excludeSharedAccess
+            ? sql`(${sources.metadataReviewPending} or not coalesce((${personalAccessIssueFilter(user.id)}), false))`
+            : undefined,
           dto.search
             ? sql`(${sources.title} ilike ${'%' + dto.search.replace(/[\\%_]/g, '\\$&') + '%'} or ${sources.authors}::text ilike ${'%' + dto.search.replace(/[\\%_]/g, '\\$&') + '%'} or exists (select 1 from ${schema.bookMetadata} m where m.book_id = ${sources.bookId} and m.title ilike ${'%' + dto.search.replace(/[\\%_]/g, '\\$&') + '%'}) or exists (select 1 from ${schema.bookAuthors} ba join ${schema.authors} a on a.id = ba.author_id where ba.book_id = ${sources.bookId} and a.name ilike ${'%' + dto.search.replace(/[\\%_]/g, '\\$&') + '%'}))`
             : undefined,
@@ -409,7 +424,7 @@ export class FanfictionSourceService {
             ? sql`not exists (select 1 from ${schema.readingEventHeads} h where h.book_file_id = ${sources.bookFileId} and h.user_id = ${user.id} and h.event_id is not null)`
             : undefined,
           dto.view === 'attention'
-            ? sql`(${sources.attentionCode} is not null or ${sources.state} in ('review_required', 'configuration_blocked'))`
+            ? sql`(${sources.metadataReviewPending} or ${sources.attentionCode} is not null or ${sources.state} in ('review_required', 'configuration_blocked'))`
             : undefined,
           dto.view === 'new'
             ? sql`exists (select 1 from ${schema.readingEventHeads} h join ${schema.canonicalReadingEvents} e on e.user_id = h.user_id and e.book_file_id = h.book_file_id and e.id = h.event_id join ${schema.bookFileRevisions} old on old.id::text = e.anchor->>'revision' join ${schema.bookFiles} bf on bf.id = h.book_file_id join ${schema.bookFileRevisions} current on current.id::text = bf.current_revision_id where h.user_id = ${user.id} and h.book_file_id = ${sources.bookFileId} and (select count(*) from jsonb_array_elements(current.chapters) c where c->>'sourceUrl' is not null) > (select count(*) from jsonb_array_elements(old.chapters) c where c->>'sourceUrl' is not null))`
@@ -440,9 +455,16 @@ export class FanfictionSourceService {
     await this.access.administer(user, libraryId);
     if (dto.profileId) await this.profiles.document(libraryId, dto.profileId, user);
     const previous = await this.find(libraryId, id);
-    if (previous.attentionCode === 'metadata_review_required' && dto.state && dto.state !== 'unlinked')
+    if (
+      previous.attentionCode === 'metadata_review_required' &&
+      previous.updatePolicy !== 'safe' &&
+      dto.updatePolicy !== 'safe' &&
+      dto.state &&
+      dto.state !== 'unlinked'
+    )
       throw new ConflictException('Review story metadata before resuming updates');
-    const state = dto.state ?? previous.state;
+    const state =
+      dto.state ?? (dto.keepUpdated === false ? 'paused' : dto.keepUpdated === true && previous.state === 'paused' ? 'active' : previous.state);
     const needsProfile = previous.attentionCode === 'destination_profile_required';
     if (needsProfile && state === 'active' && dto.profileId === undefined)
       throw new ConflictException('Choose a destination library profile before resuming updates');
@@ -455,9 +477,18 @@ export class FanfictionSourceService {
         .update(sources)
         .set({
           state,
+          ...(dto.keepUpdated !== undefined
+            ? { updatesEnabled: dto.keepUpdated }
+            : dto.state === 'paused' || dto.state === 'active' || dto.state === 'unlinked'
+              ? { updatesEnabled: dto.state === 'active' }
+              : {}),
+          ...(dto.updatePolicy ? { updatePolicy: dto.updatePolicy } : {}),
+          ...(dto.usePersonalConnection
+            ? { accessMode: 'personal' as const, maintainerUserId: user.id, updatesEnabled: previous.updatesEnabled ?? previous.state !== 'paused' }
+            : {}),
           ...(dto.tagPolicy ? { tagPolicy: dto.tagPolicy } : {}),
           ...(needsProfile && dto.profileId !== undefined ? { attentionCode: null } : {}),
-          ...(dto.profileId !== undefined ? { profileId: dto.profileId } : {}),
+          ...(dto.profileId !== undefined && !dto.usePersonalConnection ? { profileId: dto.profileId, accessMode: 'legacy' as const } : {}),
           intervalMinutes: interval,
           nextCheckAt: state === 'active' && interval !== null ? sql`now() + (${interval} * interval '1 minute')` : null,
           version: sql`${sources.version} + 1`,
@@ -468,6 +499,11 @@ export class FanfictionSourceService {
       if (!updated) throw new ConflictException('The story source changed; reload it before editing');
       if (updated.state === 'unlinked' && updated.bookId)
         await this.managedTags.release(tx, updated.bookId, { key: `fanfiction:${updated.id}`, libraryId });
+      if (dto.updatePolicy === 'safe' && updated.state === 'review_required' && updated.attentionCode === 'metadata_review_required') {
+        await this.setUpdatePolicy(tx, updated, 'safe');
+        const [resumed] = await tx.select().from(sources).where(eq(sources.id, id));
+        return this.view(resumed);
+      }
       return this.view(updated);
     });
   }
@@ -488,6 +524,32 @@ export class FanfictionSourceService {
       .where(and(eq(sources.id, source.id), eq(sources.libraryId, source.libraryId), eq(sources.version, source.version)))
       .returning({ id: sources.id });
     if (!changed.length) throw new ConflictException('The story source changed before scheduling');
+  }
+
+  async setUpdatePolicy(tx: DatabaseTransaction, source: typeof sources.$inferSelect, policy: 'review' | 'safe') {
+    if (source.state === 'unlinked') throw new ConflictException('This story is no longer linked');
+    let state = source.state;
+    if (policy === 'safe' && source.attentionCode === 'metadata_review_required' && state === 'review_required') {
+      const [pending] = await tx
+        .select({ result: schema.fanfictionJobs.result })
+        .from(schema.fanfictionJobs)
+        .where(and(eq(schema.fanfictionJobs.sourceId, source.id), eq(schema.fanfictionJobs.errorCode, 'metadata_review_required')))
+        .orderBy(desc(schema.fanfictionJobs.createdAt), desc(schema.fanfictionJobs.id))
+        .limit(1);
+      state = pending?.result?.preparedUpdate?.previousState ?? 'paused';
+    }
+    const [changed] = await tx
+      .update(sources)
+      .set({
+        updatePolicy: policy,
+        state,
+        nextCheckAt: state === 'active' && source.intervalMinutes !== null ? sql`now() + (${source.intervalMinutes} * interval '1 minute')` : null,
+        version: sql`${sources.version} + 1`,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(sources.id, source.id), eq(sources.version, source.version)))
+      .returning({ id: sources.id });
+    if (!changed) throw new ConflictException('Story settings changed before updating the policy');
   }
 
   async reserve(job: Job, preview: FanfictionPreview, user: RequestUser) {
@@ -518,6 +580,11 @@ export class FanfictionSourceService {
         .values({
           libraryId: job.libraryId,
           createdBy: job.userId,
+          maintainerUserId: job.userId,
+          accessMode: job.accessMode,
+          updatesEnabled: job.input!.intervalMinutes !== null,
+          updatePolicy: job.accessMode === 'personal' ? 'safe' : 'review',
+          tagPolicy: job.accessMode === 'personal' ? 'automatic' : 'review',
           folderId: job.input!.folderId,
           profileId: job.profileId,
           canonicalUrl,
@@ -615,12 +682,12 @@ export class FanfictionSourceService {
         .set({
           bookId: installed.bookId,
           bookFileId: installed.bookFileId,
-          state: 'active',
+          state: sql`case when ${sources.updatesEnabled} = false then 'paused' else 'active' end`,
           attentionCode: null,
           lastCheckedAt: sql`now()`,
           lastUpdatedAt: sql`now()`,
           updatedAt: sql`now()`,
-          nextCheckAt: sql`case when ${sources.intervalMinutes} is null then null else now() + (${sources.intervalMinutes} * interval '1 minute') end`,
+          nextCheckAt: sql`case when ${sources.updatesEnabled} = false or ${sources.intervalMinutes} is null then null else now() + (${sources.intervalMinutes} * interval '1 minute') end`,
           version: sql`${sources.version} + 1`,
         })
         .where(and(eq(sources.id, sourceId), eq(sources.libraryId, job.libraryId)))
@@ -664,6 +731,13 @@ export class FanfictionSourceService {
 
   private view(row: typeof sources.$inferSelect): FanfictionSource {
     return {
+      tracking: {
+        enabled: row.updatesEnabled ?? (row.state !== 'paused' && row.state !== 'unlinked'),
+        policy: row.updatePolicy,
+        maintainerUserId: row.maintainerUserId ?? row.createdBy,
+        access: row.accessMode,
+        needsAttention: !!row.attentionCode || row.metadataReviewPending,
+      },
       id: row.id,
       libraryId: row.libraryId,
       folderId: row.folderId,
@@ -685,6 +759,7 @@ export class FanfictionSourceService {
       lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
       lastUpdatedAt: row.lastUpdatedAt?.toISOString() ?? null,
       attentionCode: row.attentionCode,
+      metadataReviewPending: row.metadataReviewPending,
       version: row.version,
       createdAt: row.createdAt.toISOString(),
     };

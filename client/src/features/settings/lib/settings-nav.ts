@@ -421,6 +421,15 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
     icon: Link2,
     items: [
       {
+        id: 'website-logins',
+        routeName: 'settings-website-logins',
+        labelKey: 'fanfiction.connections.title',
+        descriptionKey: 'fanfiction.connections.help',
+        icon: Link2,
+        keywords: 'fanfiction website login cookies account',
+        isVisible: anyPermission(Permission.ManageLibraries),
+      },
+      {
         id: 'hardcover',
         routeName: 'settings-hardcover',
         labelKey: 'settings.integrations.tabs.hardcover',

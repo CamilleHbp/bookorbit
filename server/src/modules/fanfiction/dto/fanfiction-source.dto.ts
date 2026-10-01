@@ -28,6 +28,10 @@ export class CheckFanfictionSourceDto {
   @IsIn(['update', 'refresh']) kind!: 'update' | 'refresh';
 }
 
+export class ReviewFanfictionContentDto {
+  @IsIn(['apply', 'discard']) action!: 'apply' | 'discard';
+}
+
 export class RollbackFanfictionSourceDto {
   @IsUUID() idempotencyKey!: string;
   @IsUUID() revisionId!: string;
@@ -60,6 +64,7 @@ export class ImportStoryReviewDto {
 }
 
 export class ListFanfictionSourcesDto {
+  @IsOptional() @IsIn(['true']) excludeSharedAccess?: 'true';
   @IsOptional() @IsIn(['ongoing', 'complete']) publication?: 'ongoing' | 'complete';
   @IsOptional() @IsIn(['added', 'updated']) sort?: 'added' | 'updated';
   @IsOptional() @IsString() @MaxLength(200) tag?: string;
@@ -74,6 +79,9 @@ export class ListFanfictionSourcesDto {
 }
 
 export class UpdateFanfictionSourceDto {
+  @IsOptional() @IsBoolean() keepUpdated?: boolean;
+  @IsOptional() @IsIn(['review', 'safe']) updatePolicy?: 'review' | 'safe';
+  @IsOptional() @IsBoolean() usePersonalConnection?: boolean;
   @IsOptional() @IsIn(['review', 'automatic']) tagPolicy?: 'review' | 'automatic';
   @IsInt() @Min(1) version!: number;
   @IsOptional() @IsUUID() profileId?: string | null;

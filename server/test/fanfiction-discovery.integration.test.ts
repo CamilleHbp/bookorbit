@@ -1,3 +1,4 @@
+import { FanfictionConnectionService } from '../src/modules/fanfiction/fanfiction-connection.service';
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import 'reflect-metadata';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -52,7 +53,10 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
   const signal = () => new AbortController().signal;
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation' && !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? ''))
+    if (
+      !/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database)) &&
+      !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? '')
+    )
       throw new Error('Isolated validation database required');
     pool = new Pool({ ...config, connectionTimeoutMillis: 10_000, statement_timeout: 20_000 });
     db = drizzle(pool, { schema });
@@ -65,6 +69,7 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
     module = await Test.createTestingModule({
       providers: [
         FanfictionDiscoveryService,
+        { provide: FanfictionConnectionService, useValue: { session: () => Promise.resolve({ document: { configuration: '', cookies: [] } }) } },
         FanfictionAdoptionService,
         FanfictionJobService,
         BookRevisionService,

@@ -19,7 +19,7 @@ import { FanfictionJobService } from './fanfiction-job.service';
 import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { FanfictionActivityService } from './fanfiction-activity.service';
 import { FanfictionReviewService } from './fanfiction-review.service';
-import { ImportStoryReviewDto } from './dto/fanfiction-source.dto';
+import { ImportStoryReviewDto, ReviewFanfictionContentDto } from './dto/fanfiction-source.dto';
 import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
 
 @Controller('libraries/:libraryId/fanfiction')
@@ -83,6 +83,16 @@ export class FanfictionController {
   async health(@Param('libraryId', ParseIntPipe) libraryId: number, @CurrentUser() user: RequestUser) {
     await this.access.administer(user, libraryId);
     return this.runtime.health();
+  }
+
+  @Post('jobs/:jobId/content-review')
+  reviewContent(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('jobId', ParseUUIDPipe) id: string,
+    @Body() dto: ReviewFanfictionContentDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.jobs.reviewContent(libraryId, id, dto.action, user);
   }
 
   @Post('jobs/:jobId/retry')

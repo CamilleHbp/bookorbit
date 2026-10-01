@@ -49,6 +49,13 @@ describe('Fanfiction profile encryption', () => {
     await expect(vault.decrypt(1, profile, { ...value, ciphertext: 'AAAA' })).rejects.toThrow('authenticate');
     await expect(vault.decrypt(1, profile, { ...value, keyId: randomUUID() })).rejects.toThrow('authenticate');
   });
+
+  it('binds personal access to its owner and keeps the legacy encryption context distinct', async () => {
+    const value = await vault.encrypt('user:7', profile, 'private login', true);
+    expect(await vault.decrypt('user:7', profile, value)).toBe('private login');
+    await expect(vault.decrypt('user:8', profile, value)).rejects.toThrow('authenticate');
+    await expect(vault.decrypt(7, profile, value)).rejects.toThrow('authenticate');
+  });
   it('never replaces a lost or corrupt referenced key', async () => {
     const value = await vault.encrypt(1, profile, 'secret', true);
     await unlink(keyPath());

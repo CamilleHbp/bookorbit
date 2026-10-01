@@ -6,7 +6,6 @@ import type {
   FanfictionJobPage,
   FanfictionLibraryPage,
   FanfictionPreview,
-  FanfictionProfileMatch,
   FanfictionProfilePage,
   FanfictionProfileSummary,
   FanfictionSource,
@@ -350,16 +349,7 @@ export function useFanfiction(
       folderId: folderId.value,
       intervalMinutes: schedule.value === 'manual' ? null : Number(schedule.value),
     }
-    if (candidate.resolvedProfileId === undefined) {
-      if (candidate.profileId) candidate.resolvedProfileId = candidate.profileId
-      else {
-        const match = await request<FanfictionProfileMatch>(`${path}/profile-match?${new URLSearchParams({ url: candidate.url })}`)
-        if (!currentScope(current)) return
-        if (match.ambiguous) throw new Error('More than one profile matches. Choose a profile before continuing.')
-        candidate.resolvedProfileId = match.profile?.id ?? ''
-        if (match.profile) profiles.value = [match.profile, ...profiles.value.filter((item) => item.id !== match.profile!.id)].slice(0, 50)
-      }
-    }
+    candidate.resolvedProfileId ??= candidate.profileId || ''
     if (!currentScope(current)) return
     let job: FanfictionJob
     try {
@@ -603,7 +593,11 @@ export function useFanfiction(
   }
   async function togglePaused(source: FanfictionSource) {
     await perform(async (current, path) => {
-      await request(`${path}/sources/${source.id}`, { version: source.version, state: source.state === 'paused' ? 'active' : 'paused' }, 'PATCH')
+      await request(
+        `${path}/sources/${source.id}`,
+        { version: source.version, keepUpdated: !(source.tracking?.enabled ?? source.state !== 'paused') },
+        'PATCH',
+      )
       if (currentScope(current)) await loadSources(current, path, sourcePage)
     })
   }
