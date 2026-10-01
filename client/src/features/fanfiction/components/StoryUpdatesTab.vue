@@ -39,9 +39,6 @@ const {
   uploadReplacement,
   approveReplacement,
   sourceCursor,
-  profiles,
-  profileCursor,
-  profileId,
   tagPolicy,
   interval,
   revisions,
@@ -59,7 +56,6 @@ const {
   retryJob,
   rollback,
   olderRevisions,
-  moreProfiles,
   moreSources,
 } = props.state
 const connecting = ref(false)
@@ -84,7 +80,6 @@ async function confirmRestore() {
   if (restore.value) await rollback(restore.value)
   restore.value = null
 }
-const profileMissing = computed(() => profileId.value && !profiles.value.some((profile) => profile.id === profileId.value))
 const updating = computed(() => busy.value || (job.value !== null && ['queued', 'running'].includes(job.value.state)))
 function dateLabel(value: string | null) {
   return value ? new Date(value).toLocaleString() : t('fanfiction.never')
@@ -190,17 +185,6 @@ onMounted(() => {
         <details class="space-y-3">
           <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">{{ t('fanfiction.advanced') }}</summary>
           <Button type="button" variant="outline" :disabled="updating" @click="showLogin">{{ t('fanfiction.maintenance.useMine') }}</Button>
-          <label class="block space-y-1 text-sm"
-            >{{ t('fanfiction.maintenance.legacy') }}
-            <select v-model="profileId" :disabled="updating" class="border-input bg-background block w-full rounded-md border p-2">
-              <option value="">{{ t('fanfiction.noProfile') }}</option>
-              <option v-if="profileMissing" :value="profileId">{{ t('fanfiction.currentProfile') }}</option>
-              <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
-            </select>
-          </label>
-          <Button v-if="profileCursor" type="button" variant="outline" :disabled="busy" @click="moreProfiles">{{
-            t('fanfiction.moreProfiles')
-          }}</Button>
 
           <label class="block space-y-1 text-sm"
             >{{ t('fanfiction.tagPolicy')

@@ -12,7 +12,6 @@ import { UserModule } from '../user/user.module';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionVaultService } from './fanfiction-vault.service';
-import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanfictionController } from './fanfiction.controller';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionWorkerService } from './fanfiction-worker.service';
@@ -62,7 +61,6 @@ import { FanfictionConnectionController } from './fanfiction-connection.controll
     FanfictionAccessService,
     FanficfareRuntimeService,
     FanfictionVaultService,
-    FanfictionProfileService,
     FanfictionJobService,
     FanfictionWorkerService,
     FanfictionSourceService,

@@ -30,6 +30,11 @@ export class FanfictionConnectionController {
     return this.connections.issues(libraryId, user);
   }
 
+  @Get(':id/settings')
+  settings(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+    return this.connections.settings(id, user);
+  }
+
   @Post()
   @HttpCode(200)
   save(@Body() dto: SaveFanfictionConnectionDto, @CurrentUser() user: RequestUser) {

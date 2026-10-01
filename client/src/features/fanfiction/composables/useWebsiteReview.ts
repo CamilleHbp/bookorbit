@@ -28,10 +28,8 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
   const loading = ref(false)
   const error = ref('')
   const selectionError = ref('')
-  const profile = ref('public')
-  const schedule = ref('manual')
+  const schedule = ref('1440')
   const sourceChoices = ref<Record<string, string>>({})
-  const profileChoices = ref<Record<string, string>>({})
   const comparisons = ref<Record<string, Comparison>>({})
   const selected = ref<string[]>([])
   const excluded = ref<string[]>([])
@@ -65,9 +63,6 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
   function urlFor(book: FanfictionDiscoveryCandidate) {
     return sourceChoices.value[book.id] || (discoverySources(book).length === 1 ? discoverySources(book)[0] : '')
   }
-  function profileFor(book: FanfictionDiscoveryCandidate) {
-    return profileChoices.value[book.id] ?? profile.value
-  }
   function stopComparisons() {
     epoch++
     controllers.forEach((controller) => controller.abort())
@@ -79,14 +74,9 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
     const current = epoch
     const controller = new AbortController()
     controllers.push(controller)
-    const choice = profileFor(book)
     comparisons.value[book.id] = { state: 'loading' }
     try {
-      const remote = await review.compare(
-        book.id,
-        { canonicalUrl: url, autoProfile: choice === 'auto', profileId: ['auto', 'public'].includes(choice) ? null : choice },
-        controller.signal,
-      )
+      const remote = await review.compare(book.id, { canonicalUrl: url }, controller.signal)
       if (disposed || current !== epoch || controller.signal.aborted) return
       comparisons.value[book.id] = { state: 'ready', remote }
       compared.value.add(book.id)
@@ -176,18 +166,8 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
     selected.value = []
     excluded.value = []
   }
-  async function changeProfile() {
-    stopComparisons()
-    comparisons.value = {}
-    clearSelection()
-    touched.clear()
-    autoSelect = true
-    profileChoices.value = {}
-    compared.value.clear()
-    comparePage()
-  }
   function changeBook(book: FanfictionDiscoveryCandidate) {
-    // A new URL/account invalidates the previous comparison before it can select the book.
+    // A new URL invalidates the previous comparison before it can select the book.
     stopComparisons()
     selected.value = selected.value.filter((id) => id !== book.id)
     touched.delete(book.id)
@@ -198,13 +178,10 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
   async function link() {
     if (busy.value || !selectedCount.value) return
     const ids = new Set(selected.value)
-    const overrides = [...new Set([...Object.keys(profileChoices.value), ...Object.keys(sourceChoices.value)])]
+    const overrides = Object.keys(sourceChoices.value)
       .filter((id) => (all.value ? !excluded.value.includes(id) : ids.has(id)))
       .map((id) => ({
         id,
-        ...(profileChoices.value[id] && profileChoices.value[id] !== 'auto'
-          ? { profileId: profileChoices.value[id] === 'public' ? null : profileChoices.value[id] }
-          : {}),
         ...(sourceChoices.value[id] ? { canonicalUrl: sourceChoices.value[id] } : {}),
       }))
     if (overrides.length > 100) {
@@ -216,8 +193,6 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
       review: true,
       website: source().website,
       cutoff: cutoff(),
-      autoProfile: profile.value === 'auto',
-      profileId: ['auto', 'public'].includes(profile.value) ? null : profile.value,
       intervalMinutes: schedule.value === 'manual' ? null : Number(schedule.value),
       ...(all.value ? { allMatching: true, excludedIds: [...excluded.value] } : { ids: [...selected.value] }),
       ...(overrides.length ? { overrides } : {}),
@@ -272,10 +247,8 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
     loading,
     error,
     selectionError,
-    profile,
     schedule,
     sourceChoices,
-    profileChoices,
     comparisons,
     selectedCount,
     all,
@@ -287,14 +260,12 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
     reviewable,
     isSelected,
     urlFor,
-    profileFor,
     toggleOpen,
     nextPage,
     previousPage,
     toggleAll,
     toggleBook,
     clearSelection,
-    changeProfile,
     changeBook,
     compareBook,
     link,

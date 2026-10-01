@@ -343,12 +343,6 @@ export const routes: RouteRecordRaw[] = [
 
           // ── Library ────────────────────────────────────────────────────────
           {
-            path: 'fanfiction',
-            name: 'settings-fanfiction',
-            component: () => import('@/features/settings/FanfictionSettings.vue'),
-            meta: { title: () => t('fanfiction.settingsTitle') },
-          },
-          {
             path: 'libraries',
             name: 'settings-libraries',
             component: () => import('@/features/settings/LibrariesSettings.vue'),

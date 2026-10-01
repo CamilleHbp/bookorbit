@@ -15,7 +15,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import type { FanfictionImportRequest, FanfictionSourceState, FanfictionMetadataResolution } from '@bookorbit/types';
-import { PreviewFanfictionDto } from './fanfiction-profile.dto';
+import { PreviewFanfictionDto } from './fanfiction.dto';
 
 export class ImportFanfictionDto extends PreviewFanfictionDto implements FanfictionImportRequest {
   @IsOptional() @IsInt() @Min(1) collectionId?: number;
@@ -81,10 +81,9 @@ export class ListFanfictionSourcesDto {
 export class UpdateFanfictionSourceDto {
   @IsOptional() @IsBoolean() keepUpdated?: boolean;
   @IsOptional() @IsIn(['review', 'safe']) updatePolicy?: 'review' | 'safe';
-  @IsOptional() @IsBoolean() usePersonalConnection?: boolean;
+  @IsOptional() @IsBoolean() takeOverMaintenance?: boolean;
   @IsOptional() @IsIn(['review', 'automatic']) tagPolicy?: 'review' | 'automatic';
   @IsInt() @Min(1) version!: number;
-  @IsOptional() @IsUUID() profileId?: string | null;
   @IsOptional() @IsInt() @Min(60) @Max(525600) intervalMinutes?: number | null;
   @IsOptional() @IsIn(['active', 'paused', 'unlinked']) state?: 'active' | 'paused' | 'unlinked';
 }

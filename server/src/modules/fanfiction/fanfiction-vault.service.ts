@@ -16,17 +16,12 @@ export class FanfictionVaultService {
     @Optional() @Inject(fanficfareConfig.KEY) private readonly config?: ConfigType<typeof fanficfareConfig>,
   ) {}
 
-  async encrypt(
-    libraryId: number | `user:${number}`,
-    profileId: string,
-    value: string,
-    allowProvision: boolean,
-  ): Promise<EncryptedFanfictionDocument> {
-    if (Buffer.byteLength(value) > 128 * 1024) throw new BadRequestException('Fanfiction profile storage limit exceeded');
+  async encrypt(owner: `user:${number}`, connectionId: string, value: string, allowProvision: boolean): Promise<EncryptedFanfictionDocument> {
+    if (Buffer.byteLength(value) > 128 * 1024) throw new BadRequestException('Website connection storage limit exceeded');
     const key = await this.key(allowProvision);
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', Buffer.from(key.key, 'base64'), iv);
-    cipher.setAAD(this.context(libraryId, profileId, key.id));
+    cipher.setAAD(this.context(owner, connectionId, key.id));
     const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
     return {
       version: 1,
@@ -37,31 +32,31 @@ export class FanfictionVaultService {
     };
   }
 
-  async decrypt(libraryId: number | `user:${number}`, profileId: string, value: EncryptedFanfictionDocument): Promise<string> {
+  async decrypt(owner: `user:${number}`, connectionId: string, value: EncryptedFanfictionDocument): Promise<string> {
     const key = await this.key(false);
     try {
       if (value.version !== 1 || value.keyId !== key.id) throw new ServiceUnavailableException();
       const decipher = createDecipheriv('aes-256-gcm', Buffer.from(key.key, 'base64'), Buffer.from(value.iv, 'base64'));
-      decipher.setAAD(this.context(libraryId, profileId, key.id));
+      decipher.setAAD(this.context(owner, connectionId, key.id));
       decipher.setAuthTag(Buffer.from(value.tag, 'base64'));
       return Buffer.concat([decipher.update(Buffer.from(value.ciphertext, 'base64')), decipher.final()]).toString('utf8');
     } catch {
       throw new ServiceUnavailableException({
-        message: 'Fanfiction profile key is missing, mismatched, or unable to authenticate this profile',
+        message: 'Website connection key is missing, mismatched, or unable to authenticate this website connection',
         errorCode: 'configuration_blocked',
       });
     }
   }
 
-  private context(libraryId: number | `user:${number}`, profileId: string, keyId: string): Buffer {
-    return Buffer.from(JSON.stringify(['bookorbit-fanfiction-profile', 1, keyId, libraryId, profileId]));
+  private context(owner: `user:${number}`, connectionId: string, keyId: string): Buffer {
+    return Buffer.from(JSON.stringify(['bookorbit-fanfiction-profile', 1, keyId, owner, connectionId]));
   }
 
   private async key(allowProvision: boolean): Promise<ProfileKey> {
     if (this.config?.encryptionKey) {
       const key = Buffer.from(this.config.encryptionKey, 'base64');
       if (key.length !== 32 || key.toString('base64') !== this.config.encryptionKey)
-        throw new ServiceUnavailableException({ message: 'Invalid operator profile key', errorCode: 'configuration_blocked' });
+        throw new ServiceUnavailableException({ message: 'Invalid operator connection key', errorCode: 'configuration_blocked' });
       return { version: 1, id: `operator-${createHash('sha256').update(key).digest('hex').slice(0, 32)}`, key: key.toString('base64') };
     }
     const directory = join(this.storage.appDataPath, 'fanfiction', 'keys');
@@ -71,7 +66,7 @@ export class FanfictionVaultService {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !allowProvision) {
         throw new ServiceUnavailableException({
-          message: 'Fanfiction profile key is unavailable; restore the existing key',
+          message: 'Website connection key is unavailable; restore the existing key',
           errorCode: 'configuration_blocked',
         });
       }
@@ -105,10 +100,10 @@ export class FanfictionVaultService {
     const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const stat = await handle.stat();
-      if (!stat.isFile() || stat.size > 4096 || (stat.mode & 0o077) !== 0) throw new ServiceUnavailableException('Invalid profile key file');
+      if (!stat.isFile() || stat.size > 4096 || (stat.mode & 0o077) !== 0) throw new ServiceUnavailableException('Invalid connection key file');
       const key = JSON.parse(await handle.readFile('utf8')) as ProfileKey;
       if (key.version !== 1 || !/^[a-f0-9-]{36}$/.test(key.id) || typeof key.key !== 'string' || Buffer.from(key.key, 'base64').length !== 32) {
-        throw new ServiceUnavailableException('Invalid profile key');
+        throw new ServiceUnavailableException('Invalid connection key');
       }
       return key;
     } finally {

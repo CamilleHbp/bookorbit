@@ -31,7 +31,6 @@ describe('story root URL matching', () => {
       idempotencyKey: 'd452f465-edda-4fd0-ae52-696bce547e4a',
       decision: 'approve',
       allMatching: true,
-      autoProfile: true,
       urlPrefixes: Array(21).fill('https://example.com'),
     };
     expect((await validate(plainToInstance(SelectFanfictionDiscoveryDto, selection))).length).toBeGreaterThan(0);

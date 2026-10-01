@@ -9,7 +9,7 @@ import type { RequestUser } from '../../common/types/request-user';
 import { NotificationService } from '../notification/notification.service';
 import { UserService } from '../user/user.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
-import { ListFanfictionProfilesDto } from './dto/fanfiction-profile.dto';
+import { FanfictionPageDto } from './dto/fanfiction.dto';
 
 const activity = schema.fanfictionActivity;
 const notificationTypes = {
@@ -40,7 +40,7 @@ export class FanfictionActivityService {
     private readonly notifications: NotificationService,
   ) {}
 
-  async list(libraryId: number, dto: ListFanfictionProfilesDto, user: RequestUser): Promise<FanfictionActivityPage> {
+  async list(libraryId: number, dto: FanfictionPageDto, user: RequestUser): Promise<FanfictionActivityPage> {
     await this.access.administer(user, libraryId);
     const [before] = dto.cursor
       ? await this.db

@@ -1,3 +1,4 @@
+import { installPostgresExtensions } from '../src/scripts/postgres-extensions';
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
@@ -38,6 +39,7 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('private web
     if (!/^bookorbit_revision_validation_[a-z0-9]+$/.test(String(config.database))) throw new Error('Isolated validation database required');
     pool = new Pool(config);
     db = drizzle(pool, { schema });
+    await installPostgresExtensions(pool);
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
     directory = await mkdtemp(join(tmpdir(), 'bookorbit-connections-'));
     const module = await Test.createTestingModule({
@@ -101,6 +103,43 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('private web
     await service.remove(connection.id, owner);
     expect(await service.list(owner)).toEqual([]);
   }, 60000);
+  it('edits advanced website settings without exposing or clearing credentials, cookies, or tag rules', async () => {
+    const saved = await service.save(
+      {
+        site: 'fiction.live',
+        configuration: '[fiction.live]\ndedup_img_files: false\n',
+        tagRules: [{ remoteTag: 'fantasy', targetTag: 'My fantasy' }],
+      },
+      owner,
+    );
+    const settings = await service.settings(saved.id, owner);
+    expect(settings.configuration).toContain('dedup_img_files = false');
+    expect(settings.tagRules).toEqual([{ remoteTag: 'fantasy', targetTag: 'My fantasy' }]);
+    const changed = await service.save(
+      {
+        site: saved.website.id,
+        version: saved.version,
+        cookies: [{ name: 'session', value: 'private', domain: 'fiction.live', path: '/', secure: true }],
+      },
+      owner,
+    );
+    expect((await service.settings(changed.id, owner)).tagRules).toEqual(settings.tagRules);
+    await expect(service.settings(changed.id, other)).rejects.toBeInstanceOf(ForbiddenException);
+    const login = await service.save({ site: 'archiveofourown.org', username: 'reader', password: 'private-test-password' }, owner);
+    const redacted = await service.settings(login.id, owner);
+    expect(redacted.configuration).not.toContain('reader');
+    expect(redacted.configuration).not.toContain('private-test-password');
+    const updated = await service.save(
+      { site: login.website.id, version: login.version, configuration: redacted.configuration + '\n[defaults]\ninclude_images: false\n' },
+      owner,
+    );
+    const session = await service.session('https://archiveofourown.org/works/123', owner, async () => {});
+    expect(session.document.configuration).toContain('private-test-password');
+    expect(session.document.configuration).toContain('include_images = false');
+    expect(updated.hasPassword).toBe(true);
+    await service.remove(saved.id, owner);
+    await service.remove(login.id, owner);
+  });
   it('rejects unsupported password forms and cookies outside the website', async () => {
     await expect(service.save({ site: 'fiction.live', password: 'not-supported' }, owner)).rejects.toThrow('browser cookies');
     await expect(

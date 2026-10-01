@@ -19,26 +19,15 @@ dedup_img_files include_appendices legend_spoilers show_spoiler_tags show_timest
 MASK = '********'
 
 
-def personal_configuration(legacy, personal):
-    parser = configparser.ConfigParser(interpolation=None, strict=True)
-    parser.read_string(validate_ini(legacy))
-    for section in parser.sections():
-        for option in ('username', 'password', 'always_login'):
-            parser.remove_option(section, option)
-    parser.read_string(validate_ini(personal))
-    output = io.StringIO()
-    parser.write(output)
-    return validate_ini(output.getvalue())
-
-
 def merge_configuration(previous, incoming=None, edits=None, redact=False):
     old = configparser.ConfigParser(interpolation=None, strict=True)
     old.read_string(validate_ini(previous))
     parser = configparser.ConfigParser(interpolation=None, strict=True)
     parser.read_string(validate_ini(previous if incoming is None else incoming))
     for section in parser.sections():
-        if parser.get(section, 'password', fallback=None) == MASK:
-            parser.set(section, 'password', old.get(section, 'password', fallback=''))
+        for option in ('username', 'password'):
+            if parser.get(section, option, fallback=None) == MASK:
+                parser.set(section, option, old.get(section, option, fallback=''))
     if edits is not None:
         if not isinstance(edits, dict) or set(edits) - {'section', 'username', 'password', 'isAdult'}:
             raise ConfigurationError('Invalid structured configuration edit')
@@ -60,8 +49,9 @@ def merge_configuration(previous, incoming=None, edits=None, redact=False):
             parser.set(section, option, value)
     if redact:
         for section in parser.sections():
-            if parser.get(section, 'password', fallback=''):
-                parser.set(section, 'password', MASK)
+            for option in ('username', 'password'):
+                if parser.get(section, option, fallback=''):
+                    parser.set(section, option, MASK)
     output = io.StringIO()
     parser.write(output)
     return validate_ini(output.getvalue())
@@ -100,7 +90,7 @@ def make_configuration(url, ini, transport):
             return transport.cookies
 
         def set_cookiejar(self, cookiejar):
-            raise PolicyError('Cookie storage must use the managed profile')
+            raise PolicyError('Cookie storage must use the website connection')
 
         def request(self, method, url, headers=None, parameters=None):
             status, content, redirected = transport.request(method, url, parameters, headers)

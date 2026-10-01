@@ -19,7 +19,13 @@ export interface FanfictionConnection {
   errorCode: string | null;
   updatedAt: string;
 }
+export interface FanfictionConnectionSettings {
+  configuration: string;
+  tagRules: FanfictionTagRule[];
+}
 export interface FanfictionConnectionRequest {
+  configuration?: string;
+  tagRules?: FanfictionTagRule[];
   site: string;
   version?: number;
   username?: string;
@@ -29,19 +35,13 @@ export interface FanfictionConnectionRequest {
 export interface FanfictionStoryTracking {
   enabled: boolean;
   policy: FanfictionUpdatePolicy;
-  maintainerUserId: number;
-  access: "legacy" | "personal";
+  maintainerUserId: number | null;
   needsAttention: boolean;
 }
 export interface FanfictionConnectionIssue {
   site: string;
   count: number;
   connectionId: string | null;
-}
-
-export interface FanfictionProfileMatch {
-  ambiguous?: boolean;
-  profile: FanfictionProfileSummary | null;
 }
 
 export interface FanficfareRuntimeHealth {
@@ -102,8 +102,7 @@ export interface FanfictionTagRule {
   targetTag: string;
 }
 
-export interface FanfictionProfileDocument {
-  rootUrls?: string[];
+export interface FanfictionConnectionDocument {
   configuration: string;
   tagRules?: FanfictionTagRule[];
   cookies: FanfictionCookie[];
@@ -115,23 +114,6 @@ export interface EncryptedFanfictionDocument {
   iv: string;
   tag: string;
   ciphertext: string;
-}
-
-export interface FanfictionProfileSummary {
-  repairJobId?: string;
-  rootUrls?: string[];
-  id: string;
-  libraryId: number;
-  name: string;
-  version: number;
-  updatedAt: string;
-}
-
-export interface FanfictionProfileView extends FanfictionProfileSummary {
-  configuration: string;
-  tagRules?: FanfictionTagRule[];
-  cookieCount: number;
-  cookies: FanfictionCookie[];
 }
 
 export type FanfictionJobKind = "preview" | "discovery" | "adopt" | "import" | "update" | "refresh" | "rollback" | "source_batch" | "replacement";
@@ -221,7 +203,6 @@ export interface FanfictionDiscoveryProgress {
 export type FanfictionCandidateState = "pending" | "ambiguous" | "rejected" | "linked" | "failed";
 
 export interface FanfictionDiscoveryCandidate {
-  profileMatch?: FanfictionProfileMatch;
   id: string;
   libraryId: number;
   bookId: number;
@@ -255,7 +236,6 @@ export interface FanfictionDiscoveryComparison {
   title: string;
   authors: string[];
   chapterCount: number;
-  profile: FanfictionProfileSummary | null;
 }
 export interface FanfictionDiscoveryPage {
   total?: number;
@@ -265,7 +245,6 @@ export interface FanfictionDiscoveryPage {
 
 export interface FanfictionDiscoveryOverride {
   id: string;
-  profileId?: string | null;
   canonicalUrl?: string;
 }
 
@@ -275,13 +254,11 @@ export interface FanfictionDiscoverySelection {
   excludedIds?: string[];
   overrides?: FanfictionDiscoveryOverride[];
   urlPrefixes?: string[];
-  autoProfile?: boolean;
   cutoff: string;
   cursor: string | null;
   ids: string[] | null;
   state: FanfictionCandidateState;
   decision: "approve" | "reject";
-  profileId: string | null;
   intervalMinutes: number | null;
   canonicalUrl?: string;
   processed: number;
@@ -295,8 +272,6 @@ export interface FanfictionSourceSelection {
   repairConnectionSite?: string;
   updatePolicy?: FanfictionUpdatePolicy;
   excludePaused?: boolean;
-  repairProfileId?: string;
-  repairRootUrls?: string[];
   total?: number;
   tracksOutcomes?: boolean;
   cutoff: string;
@@ -319,7 +294,6 @@ export interface FanfictionSourceBatchFailurePage {
     jobId?: string | null;
     bookId?: number | null;
     site?: string;
-    profileId?: string | null;
   }[];
   nextCursor: string | null;
 }
@@ -352,7 +326,6 @@ export interface FanfictionSource {
   id: string;
   libraryId: number;
   folderId: number | null;
-  profileId: string | null;
   bookId: number | null;
   bookFileId: number | null;
   canonicalUrl: string;
@@ -384,11 +357,9 @@ export interface FanfictionFolderPage {
 }
 
 export interface FanfictionImportRequest {
-  accessMode?: "legacy" | "personal";
   collectionId?: number;
   url: string;
   idempotencyKey: string;
-  profileId?: string;
   folderId: number;
   intervalMinutes?: number | null;
 }
@@ -396,11 +367,6 @@ export interface FanfictionImportRequest {
 export interface FanfictionLibraryPage {
   items: { id: number; name: string }[];
   nextCursor: number | null;
-}
-
-export interface FanfictionProfilePage {
-  items: FanfictionProfileSummary[];
-  nextCursor: string | null;
 }
 
 export interface FanfictionJobPage {
@@ -505,7 +471,6 @@ export interface FanfictionLinkPreview {
   state: "pending" | "ambiguous";
 }
 export interface FanfictionLinkRequest {
-  profileId?: string;
   bookId: number;
   bookFileId: number;
   url: string;

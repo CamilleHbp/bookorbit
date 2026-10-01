@@ -16,16 +16,13 @@ import FanfictionStoryRow from './components/FanfictionStoryRow.vue'
 import FanfictionPagination from './components/FanfictionPagination.vue'
 import { useFanfictionNavigation } from './composables/useFanfictionNavigation'
 import { useI18n } from 'vue-i18n'
-import { Permission, type FanfictionJob, type FanfictionProfileSummary, type FanfictionSource, type FanfictionConnection } from '@bookorbit/types'
+import { Permission, type FanfictionJob, type FanfictionSource, type FanfictionConnection } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import StoryBulkActions from './components/StoryBulkActions.vue'
 import { useFanfictionBatchScope } from './composables/useFanfictionBatchScope'
 import { useFanfictionSourceBatch } from './composables/useFanfictionSourceBatch'
 import ExistingStories from './components/ExistingStories.vue'
-import SourceProfiles from './components/SourceProfiles.vue'
-import SourceProfileEditor from './components/SourceProfileEditor.vue'
-import { useInlineSourceSettings } from './composables/useInlineSourceSettings'
 import { useFanfictionPreferences } from './composables/useFanfictionPreferences'
 import { useFanfiction } from './composables/useFanfiction'
 
@@ -58,9 +55,6 @@ const {
   folders,
   folderCursor,
   folderId,
-  profiles,
-  profileCursor,
-  profileId,
   sources,
   sourceCursor,
   jobs,
@@ -78,7 +72,6 @@ const {
   loadLibraries,
   changeLibrary,
   moreFolders,
-  moreProfiles,
   refresh: refreshStories,
   moreSources,
   moreJobs,
@@ -102,7 +95,6 @@ const {
   updateExistingStory,
   retryImport,
   acceptImportReview,
-  useSavedProfile,
   cancelJob,
   retryJob,
   togglePaused,
@@ -146,15 +138,8 @@ const navigation = computed(() => [
   { id: 'stories' as const, label: t('fanfiction.stories') },
   { id: 'activity' as const, label: t('fanfiction.activity') },
 ])
-const { sourceSettings, detectedSite, selectedProfile, addSource, editSource, repairingSource, repairing, cancelStoryLogin } =
-  useInlineSourceSettings(libraryId, profiles, profileId, urls)
-watch(tab, () => cancelStoryLogin())
 const preferences = reactive(useFanfictionPreferences())
 const configuring = ref<(typeof page.candidates.value)[number] | null>(null)
-function handleAddSource() {
-  configuring.value = null
-  addSource()
-}
 async function configureImport(candidate: (typeof page.candidates.value)[number]) {
   configuring.value = candidate
   loginSource.value = undefined
@@ -179,36 +164,16 @@ async function handleConnectionSaved(_connection: FanfictionConnection, job?: Fa
   closeLogin()
   await refresh()
 }
-async function handleProfileSaved(profile: FanfictionProfileSummary) {
-  const candidate = configuring.value
-  configuring.value = null
-  if (profile.libraryId !== libraryId.value) return
-  if (repairingSource.value) {
-    cancelStoryLogin()
-    useSavedProfile(profile)
-    if (profile.repairJobId) await bulk.open(profile.repairJobId)
-    await refresh()
-  } else if (candidate) await retryImport(candidate, profile)
-  else useSavedProfile(profile)
-}
 async function allowAdultImport(candidate: (typeof page.candidates.value)[number]) {
   if (await preferences.allowAdult()) await retryImport(candidate)
 }
 function handleRefresh() {
   void batchScope.reload()
-  if (tab.value === 'profiles') void sourceSettings.reload()
-  else void refresh()
+  void refresh()
 }
 watch(libraryId, () => {
   configuring.value = null
 })
-watch([tab, libraryId], ([activeTab, id]) => {
-  if (activeTab === 'profiles' && id !== null) void sourceSettings.reload()
-})
-function handleProfileDeleted(id: string) {
-  profiles.value = profiles.value.filter((profile) => profile.id !== id)
-  if (profileId.value === id) profileId.value = ''
-}
 const batchScope = reactive(useFanfictionBatchScope(libraryId, page.appliedSearch, page.appliedState))
 const libraryName = computed(() => libraries.value.find((library) => library.id === libraryId.value)?.name ?? '')
 const bulk = reactive(
@@ -330,7 +295,7 @@ onMounted(() => {
         variant="ghost"
         class="size-11 sm:size-9"
         :aria-label="t('fanfiction.bulk.reload')"
-        :disabled="busy || sourceSettings.busy || libraryId === null"
+        :disabled="busy || libraryId === null"
         @click="handleRefresh"
         ><RefreshCw class="size-4" :class="{ 'motion-safe:animate-spin': busy }" aria-hidden="true"
       /></Button>
@@ -371,11 +336,7 @@ onMounted(() => {
           t('fanfiction.maintenance.fromLibrary')
         }}</RouterLink>
       </nav>
-      <div v-if="tab === 'profiles'" class="space-y-4">
-        <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
-        <SourceProfiles :settings="sourceSettings" @saved="useSavedProfile" @deleted="handleProfileDeleted" />
-      </div>
-      <section v-else-if="tab === 'stories'" class="space-y-3 rounded-xl bg-card p-3 sm:p-4" :aria-label="t('fanfiction.stories')" :aria-busy="busy">
+      <section v-if="tab === 'stories'" class="space-y-3 rounded-xl bg-card p-3 sm:p-4" :aria-label="t('fanfiction.stories')" :aria-busy="busy">
         <form class="flex flex-wrap items-center gap-2" @submit.prevent="applyFilters">
           <Input
             v-model="search"
@@ -401,40 +362,18 @@ onMounted(() => {
             <option value="review_required">{{ t('fanfiction.states.review_required') }}</option>
             <option value="configuration_blocked">{{ t('fanfiction.states.configuration_blocked') }}</option>
           </select>
-          <Button
-            v-if="sources.length"
-            variant="ghost"
-            :aria-pressed="selecting"
-            :disabled="busy || bulk.active || repairing || sourceSettings.busy"
-            @click="toggleSelection"
-            >{{ selectionLabel }}</Button
-          >
-          <StoryFilters v-model="page.filters.value" :disabled="busy || bulk.active || repairing || sourceSettings.busy" />
+          <Button v-if="sources.length" variant="ghost" :aria-pressed="selecting" :disabled="busy || bulk.active" @click="toggleSelection">{{
+            selectionLabel
+          }}</Button>
+          <StoryFilters v-model="page.filters.value" :disabled="busy || bulk.active" />
         </form>
-        <div
-          v-show="repairing || sourceSettings.showEditor || sourceSettings.error"
-          ref="sourceRepair"
-          tabindex="-1"
-          :aria-busy="repairing"
-          class="focus:outline-none"
-        >
-          <p v-if="repairing" role="status" class="text-sm text-muted-foreground">{{ t('common.loading') }}</p>
-          <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
-          <SourceProfileEditor
-            :settings="sourceSettings"
-            :login-site="repairingSource?.site"
-            :save-label="t(repairingSource?.bookFileId ? 'fanfiction.bulk.saveLoginAndCheck' : 'fanfiction.bulk.saveLogin')"
-            compact
-            @saved="handleProfileSaved"
-          />
-        </div>
         <StoryBulkActions
           v-if="showBulk"
           v-model:all-matching="bulk.allMatching"
           v-model:action="bulk.action"
           v-model:interval="bulk.interval"
           :bulk="bulk"
-          :loading="busy || repairing || sourceSettings.busy"
+          :loading="busy"
           :selecting="selecting || bulk.selectedIds.length > 0 || bulk.allMatching"
           :library-name="libraryName"
           :matching-count="batchScope.counts?.matching"
@@ -455,7 +394,7 @@ onMounted(() => {
             :job="sourceJobs[source.id]"
             :error="sourceErrors[source.id]"
             :pending="checkingSourceId === source.id"
-            :disabled="busy || bulk.active || repairing || sourceSettings.busy"
+            :disabled="busy || bulk.active"
             :selected="bulk.selectedIds.includes(source.id) || bulk.allMatching"
             :selection-disabled="busy || bulk.busy || bulk.active || bulk.allMatching"
             @select="selectStory(source.id, $event)"
@@ -479,7 +418,7 @@ onMounted(() => {
         <header v-if="importBatchStarted" class="space-y-3 rounded-lg border border-border bg-card p-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 ref="importHeading" tabindex="-1" class="text-lg font-medium focus:outline-none">{{ importBatchTitle }}</h2>
-            <Button v-if="importBatchFinished" :disabled="sourceSettings.busy || sourceSettings.showEditor" @click="handleAnotherBatch">
+            <Button v-if="importBatchFinished" @click="handleAnotherBatch">
               <Plus aria-hidden="true" />{{ t('fanfiction.importBatch.another') }}
             </Button>
           </div>
@@ -510,7 +449,6 @@ onMounted(() => {
             }}</label
           >
           <StorySchedule v-if="keepUpdated" v-model="schedule" :disabled="busy" />
-          <p v-if="detectedSite" class="text-sm text-muted-foreground">{{ detectedSite.name }}</p>
           <details class="space-y-3 rounded-lg border border-border p-3">
             <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.importOptions') }}</summary>
             <div class="grid gap-4 pt-3 sm:grid-cols-2">
@@ -518,13 +456,6 @@ onMounted(() => {
                 >{{ t('fanfiction.folder') }}
                 <select v-model="folderId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
                   <option v-for="folder in folders" :key="folder.id" :value="folder.id">{{ folder.path }}</option>
-                </select>
-              </label>
-              <label class="space-y-1 text-sm"
-                >{{ t('fanfiction.maintenance.legacy') }}
-                <select v-model="profileId" :disabled="busy" class="border-input bg-background block w-full rounded-md border p-2">
-                  <option value="">{{ t('fanfiction.maintenance.personal') }}</option>
-                  <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
                 </select>
               </label>
               <label class="space-y-1 text-sm"
@@ -543,23 +474,10 @@ onMounted(() => {
               <Button type="button" v-if="folderCursor !== null" variant="outline" :disabled="busy" @click="moreFolders">{{
                 t('fanfiction.moreFolders')
               }}</Button>
-              <Button type="button" v-if="profileCursor" variant="outline" :disabled="busy" @click="moreProfiles">{{
-                t('fanfiction.moreProfiles')
-              }}</Button>
-              <Button type="button" variant="outline" :disabled="busy || sourceSettings.busy" @click="handleAddSource">{{
-                t('fanfiction.addProfile')
-              }}</Button>
-              <Button type="button" v-if="selectedProfile" variant="outline" :disabled="busy || sourceSettings.busy" @click="editSource">{{
-                t('fanfiction.editSource')
-              }}</Button>
             </div>
           </details>
-          <Button type="submit" :disabled="busy || sourceSettings.busy || sourceSettings.showEditor || !urls.trim() || folderId === null">{{
-            t('fanfiction.importStories')
-          }}</Button>
+          <Button type="submit" :disabled="busy || !urls.trim() || folderId === null">{{ t('fanfiction.importStories') }}</Button>
         </form>
-        <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
-        <SourceProfileEditor :settings="sourceSettings" compact @saved="handleProfileSaved" />
         <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
         <section v-if="existingCandidate" class="border-border rounded-lg border p-4 space-y-3">
           <p class="font-medium">{{ existingCandidate.existingStory?.title }}</p>
@@ -614,7 +532,7 @@ onMounted(() => {
             >
             <Button
               v-else-if="['authentication_required', 'configuration_blocked', 'access_denied'].includes(candidate.job.errorCode ?? '')"
-              :disabled="busy || sourceSettings.busy"
+              :disabled="busy"
               @click="configureImport(candidate)"
               >{{ t('fanfiction.configureSource') }}</Button
             >
@@ -633,19 +551,10 @@ onMounted(() => {
           >
         </article>
         <div v-if="importBatchFinished && visibleCandidates.length > 3" class="flex justify-end">
-          <Button :disabled="sourceSettings.busy || sourceSettings.showEditor" @click="handleAnotherBatch"
-            ><Plus aria-hidden="true" />{{ t('fanfiction.importBatch.another') }}</Button
-          >
+          <Button @click="handleAnotherBatch"><Plus aria-hidden="true" />{{ t('fanfiction.importBatch.another') }}</Button>
         </div>
       </section>
-      <ExistingStories
-        v-else-if="tab === 'discovery'"
-        :key="libraryId"
-        :library-id="libraryId"
-        :profiles="profiles"
-        :profile-cursor="profileCursor"
-        @more-profiles="moreProfiles"
-      />
+      <ExistingStories v-else-if="tab === 'discovery'" :key="libraryId" :library-id="libraryId" />
       <section v-else-if="tab === 'activity'" class="space-y-3" :aria-label="t('fanfiction.activity')">
         <StoryBulkActions
           v-if="bulk.job"
@@ -720,7 +629,6 @@ onMounted(() => {
                 !job.result?.contentReview &&
                 !job.result?.metadataReview &&
                 !job.result?.importReview &&
-                job.errorCode !== 'profile_deleted' &&
                 ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)
               "
               variant="outline"

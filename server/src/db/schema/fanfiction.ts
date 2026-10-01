@@ -39,24 +39,6 @@ export const fanfictionConnections = pgTable(
   (t) => [uniqueIndex('fanfiction_connections_user_site_idx').on(t.userId, t.site)],
 );
 
-export const fanfictionProfiles = pgTable(
-  'fanfiction_profiles',
-  {
-    id: uuid('id').primaryKey(),
-    libraryId: integer('library_id')
-      .notNull()
-      .references(() => libraries.id, { onDelete: 'cascade' }),
-    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
-    name: varchar('name', { length: 120 }).notNull(),
-    document: jsonb('document').$type<EncryptedFanfictionDocument>().notNull(),
-    version: integer('version').notNull().default(1),
-    credentialGeneration: integer('credential_generation').notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [index('fanfiction_profiles_library_id_idx').on(t.libraryId, t.id), index('fanfiction_profiles_created_by_idx').on(t.createdBy)],
-);
-
 export const fanfictionSources = pgTable(
   'fanfiction_sources',
   {
@@ -68,11 +50,9 @@ export const fanfictionSources = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     folderId: integer('folder_id').references(() => libraryFolders.id, { onDelete: 'set null' }),
-    profileId: uuid('profile_id').references(() => fanfictionProfiles.id, { onDelete: 'restrict' }),
     maintainerUserId: integer('maintainer_user_id').references(() => users.id, { onDelete: 'set null' }),
-    updatesEnabled: boolean('updates_enabled'),
-    updatePolicy: varchar('update_policy', { length: 20 }).$type<'review' | 'safe'>().notNull().default('review'),
-    accessMode: varchar('access_mode', { length: 20 }).$type<'legacy' | 'personal'>().notNull().default('legacy'),
+    updatesEnabled: boolean('updates_enabled').notNull().default(true),
+    updatePolicy: varchar('update_policy', { length: 20 }).$type<'review' | 'safe'>().notNull().default('safe'),
     bookId: integer('book_id').references(() => books.id, { onDelete: 'cascade' }),
     bookFileId: integer('book_file_id').references(() => bookFiles.id, { onDelete: 'cascade' }),
     canonicalUrl: text('canonical_url').notNull(),
@@ -108,7 +88,6 @@ export const fanfictionSources = pgTable(
     index('fanfiction_sources_schedule_idx').on(t.state, t.nextCheckAt, t.id),
     index('fanfiction_sources_user_idx').on(t.createdBy),
     index('fanfiction_sources_folder_idx').on(t.folderId),
-    index('fanfiction_sources_profile_idx').on(t.profileId),
     index('fanfiction_sources_maintainer_site_idx').on(t.maintainerUserId, t.site, t.libraryId),
     index('fanfiction_sources_book_idx').on(t.bookId),
     check('fanfiction_sources_state_chk', sql`${t.state} in ('pending', 'active', 'paused', 'review_required', 'configuration_blocked', 'unlinked')`),
@@ -130,8 +109,6 @@ export const fanfictionJobs = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     tokenVersion: integer('token_version').notNull(),
     idempotencyKey: uuid('idempotency_key').notNull(),
-    profileId: uuid('profile_id').references(() => fanfictionProfiles.id, { onDelete: 'restrict' }),
-    accessMode: varchar('access_mode', { length: 20 }).$type<'legacy' | 'personal'>().notNull().default('legacy'),
     sourceId: uuid('source_id').references(() => fanfictionSources.id, { onDelete: 'set null' }),
     input: jsonb('input').$type<FanfictionImportRequest>(),
     sourceVersion: integer('source_version'),
@@ -169,7 +146,6 @@ export const fanfictionJobs = pgTable(
       .on(t.libraryId, t.kind, t.createdAt, t.id)
       .where(sql`${t.state} in ('queued', 'running')`),
     index('fanfiction_jobs_user_idx').on(t.userId),
-    index('fanfiction_jobs_profile_idx').on(t.profileId),
     uniqueIndex('fanfiction_jobs_active_source_idx')
       .on(t.sourceId)
       .where(sql`${t.sourceId} is not null and ${t.state} in ('queued', 'running')`),

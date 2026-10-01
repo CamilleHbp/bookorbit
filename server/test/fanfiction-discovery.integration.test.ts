@@ -1,3 +1,4 @@
+import { installPostgresExtensions } from '../src/scripts/postgres-extensions';
 import { FanfictionConnectionService } from '../src/modules/fanfiction/fanfiction-connection.service';
 import { RevisionCoordinationService } from '../src/modules/book-revision/revision-coordination.service';
 import 'reflect-metadata';
@@ -26,7 +27,6 @@ import { FanfictionDiscoveryService } from '../src/modules/fanfiction/fanfiction
 import { FanfictionAdoptionService } from '../src/modules/fanfiction/fanfiction-adoption.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
-import { FanfictionProfileService } from '../src/modules/fanfiction/fanfiction-profile.service';
 import { FanficfareRuntimeService } from '../src/modules/fanfiction/fanficfare-runtime.service';
 
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
@@ -43,7 +43,6 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
   let user: RequestUser;
   const authorize = vi.fn(() => Promise.resolve());
   const access = { administer: vi.fn(() => Promise.resolve()) };
-  const profiles = { get: vi.fn(), matchMany: vi.fn(() => Promise.resolve(new Map())) };
   const runtime = {
     preview: vi.fn((url: string) => Promise.resolve({ canonicalUrl: url, title: 'Remote story', authors: ['Writer'], chapterCount: 2 })),
     recognize: vi.fn((urls: string[]): Promise<FanfictionRecognizedUrl[]> =>
@@ -60,6 +59,7 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
       throw new Error('Isolated validation database required');
     pool = new Pool({ ...config, connectionTimeoutMillis: 10_000, statement_timeout: 20_000 });
     db = drizzle(pool, { schema });
+    await installPostgresExtensions(pool);
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
     const [created] = await db
       .insert(schema.users)
@@ -79,7 +79,6 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
         RevisionFileService,
         { provide: DB, useValue: db },
         { provide: FanfictionAccessService, useValue: access },
-        { provide: FanfictionProfileService, useValue: profiles },
         { provide: FanficfareRuntimeService, useValue: runtime },
       ],
     }).compile();
@@ -102,7 +101,6 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
     authorize.mockReset();
     access.administer.mockReset();
     runtime.recognize.mockClear();
-    profiles.matchMany.mockReset().mockResolvedValue(new Map());
     await db.delete(schema.libraries).where(eq(schema.libraries.id, libraryId));
     await rm(directory, { recursive: true, force: true });
   });
@@ -386,58 +384,7 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
     expect((await adoption.run(job, user, authorize, signal())).selection.processed).toBe(2);
     expect((await pending()).items).toHaveLength(2);
   });
-  it('assigns automatic profiles in a batch and allows a reviewed override', async () => {
-    await epub();
-    await scan();
-    const [profile] = await db
-      .insert(schema.fanfictionProfiles)
-      .values({
-        id: randomUUID(),
-        libraryId,
-        name: 'Matched',
-        createdBy: user.id,
-        document: { version: 1, keyId: 'test', iv: '', tag: '', ciphertext: '' },
-      })
-      .returning();
-    profiles.matchMany.mockResolvedValue(new Map([['https://archiveofourown.org/works/123', { profile: { id: profile.id }, ambiguous: false }]]));
-    await adoption.start(
-      libraryId,
-      { idempotencyKey: randomUUID(), decision: 'approve', state: 'pending', allMatching: true, autoProfile: true },
-      user,
-    );
-    const job = (await jobs.claim())!;
-    expect((await adoption.run(job, user, authorize, signal())).selection.failed).toBe(0);
-    const [source] = await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.libraryId, libraryId));
-    expect(source.profileId).toBe(profile.id);
-    await jobs.finish(job, 'succeeded', {});
-    await epub(['https://archiveofourown.org/works/456']);
-    await scan();
-    profiles.matchMany.mockResolvedValue(new Map([['https://archiveofourown.org/works/456', { profile: null, ambiguous: true }]]));
-    await adoption.start(
-      libraryId,
-      { idempotencyKey: randomUUID(), decision: 'approve', state: 'pending', allMatching: true, autoProfile: true, profileId: profile.id },
-      user,
-    );
-    const override = (await jobs.claim())!;
-    expect(override.selection?.autoProfile).toBe(false);
-    expect((await adoption.run(override, user, authorize, signal())).selection.failed).toBe(0);
-  }, 30_000);
-  it('holds overlapping profiles for an explicit review choice', async () => {
-    await epub();
-    await scan();
-    profiles.matchMany.mockResolvedValue(new Map([['https://archiveofourown.org/works/123', { profile: null, ambiguous: true }]]));
-    await adoption.start(
-      libraryId,
-      { idempotencyKey: randomUUID(), decision: 'approve', state: 'pending', allMatching: true, autoProfile: true },
-      user,
-    );
-    const job = (await jobs.claim())!;
-    expect((await adoption.run(job, user, authorize, signal())).selection).toMatchObject({ processed: 1, failed: 1 });
-    const page = await discovery.list(libraryId, { state: 'failed', limit: 50 }, user);
-    expect(page.items[0].errorCode).toBe('profile_ambiguous');
-    expect(await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.libraryId, libraryId))).toHaveLength(0);
-  });
-  it('links several reviewed exceptions with independent sources and profiles', async () => {
+  it('links several reviewed exceptions with independent original story URLs', async () => {
     const firstUrl = 'https://archiveofourown.org/works/123';
     const secondUrl = 'https://archiveofourown.org/works/789';
     await epub([firstUrl, 'https://archiveofourown.org/works/456']);
@@ -445,52 +392,31 @@ describe.skipIf(!configPath)('bounded existing EPUB discovery and adoption', () 
     await scan();
     const page = await discovery.list(libraryId, { state: 'ambiguous', limit: 50 }, user);
     expect(page.total).toBe(2);
-    const [profile] = await db
-      .insert(schema.fanfictionProfiles)
-      .values({
-        id: randomUUID(),
-        libraryId,
-        name: 'Chosen',
-        createdBy: user.id,
-        document: { version: 1, keyId: 'test', iv: '', tag: '', ciphertext: '' },
-      })
-      .returning();
     const overrides = page.items.map((item) => ({
       id: item.id,
       canonicalUrl: item.urls.some((url) => url.recognized && url.canonicalUrl === firstUrl) ? firstUrl : secondUrl,
-      profileId: item.urls.some((url) => url.recognized && url.canonicalUrl === firstUrl) ? profile.id : null,
     }));
     const dto = {
       idempotencyKey: randomUUID(),
       decision: 'approve' as const,
       state: 'ambiguous' as const,
       ids: page.items.map((item) => item.id),
-      autoProfile: true,
       overrides,
     };
-    await expect(adoption.start(libraryId, { ...dto, overrides: [{ id: randomUUID(), profileId: null }] }, user)).rejects.toThrow(
+    await expect(adoption.start(libraryId, { ...dto, overrides: [{ id: randomUUID(), canonicalUrl: firstUrl }] }, user)).rejects.toThrow(
       'explicit selection',
     );
     await expect(adoption.start(libraryId, { ...dto, overrides: [overrides[0], overrides[0]] }, user)).rejects.toThrow('only one');
-    profiles.get.mockRejectedValueOnce(new ForbiddenException('Profile belongs to another library'));
-    await expect(adoption.start(libraryId, dto, user)).rejects.toBeInstanceOf(ForbiddenException);
-    profiles.get.mockReset();
-    profiles.matchMany.mockResolvedValue(
-      new Map([
-        [firstUrl, { profile: null, ambiguous: true }],
-        [secondUrl, { profile: null, ambiguous: true }],
-      ]),
-    );
     const started = await adoption.start(libraryId, dto, user);
     expect((await adoption.start(libraryId, { ...dto, overrides: [...overrides].reverse() }, user)).id).toBe(started.id);
-    await expect(adoption.start(libraryId, { ...dto, overrides: overrides.map((item) => ({ ...item, profileId: null })) }, user)).rejects.toThrow(
-      'reused',
-    );
+    await expect(
+      adoption.start(libraryId, { ...dto, overrides: overrides.map((item) => ({ ...item, canonicalUrl: secondUrl })) }, user),
+    ).rejects.toThrow('reused');
     const job = (await jobs.claim())!;
     expect((await adoption.run(job, user, authorize, signal())).selection).toMatchObject({ processed: 2, failed: 0 });
     const linked = await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.libraryId, libraryId));
-    expect(linked.find((source) => source.canonicalUrl === firstUrl)?.profileId).toBe(profile.id);
-    expect(linked.find((source) => source.canonicalUrl === secondUrl)?.profileId).toBeNull();
+    expect(linked.find((source) => source.canonicalUrl === firstUrl)?.maintainerUserId).toBe(user.id);
+    expect(linked.find((source) => source.canonicalUrl === secondUrl)?.maintainerUserId).toBe(user.id);
   }, 45_000);
   it('groups the whole library by website and keeps full-source selection inside its snapshot', async () => {
     await epub(['https://www.royalroad.com/fiction/1']);

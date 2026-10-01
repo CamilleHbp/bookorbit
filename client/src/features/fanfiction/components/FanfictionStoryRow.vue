@@ -22,9 +22,7 @@ const props = defineProps<{
 const emit = defineEmits<{ select: [selected: boolean]; check: []; refresh: []; pause: []; fixLogin: [sourceId: string] }>()
 const { t, locale } = useI18n()
 const active = computed(() => props.pending || ['queued', 'running'].includes(props.job?.state ?? ''))
-const canCheck = computed(
-  () => props.source.bookFileId && props.source.attentionCode !== 'destination_profile_required' && ['active', 'paused'].includes(props.source.state),
-)
+const canCheck = computed(() => props.source.bookFileId && ['active', 'paused'].includes(props.source.state))
 const needsAttention = computed(
   () =>
     Boolean(props.source.attentionCode) ||
@@ -154,7 +152,7 @@ function handlePause() {
           }}</RouterLink></Button
         >
         <Button v-else-if="needsAttention" variant="outline" as-child
-          ><RouterLink :to="{ name: 'settings-fanfiction' }">{{ t('fanfiction.configureSource') }}</RouterLink></Button
+          ><RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.configureSource') }}</RouterLink></Button
         >
         <Button v-else-if="canCheck" variant="outline" :disabled="disabled || active" @click="handleCheck">{{ t('fanfiction.checkNow') }}</Button>
         <Button v-if="needsAttention" variant="ghost" as-child>

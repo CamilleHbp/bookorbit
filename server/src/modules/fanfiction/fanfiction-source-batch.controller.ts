@@ -6,7 +6,7 @@ import { RequireLibraryAccess } from '../../common/decorators/require-library-ac
 import type { RequestUser } from '../../common/types/request-user';
 import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
 import { FanfictionSourceBatchScopeDto, SelectFanfictionSourcesDto } from './dto/fanfiction-source-batch.dto';
-import { ListFanfictionProfilesDto } from './dto/fanfiction-profile.dto';
+import { FanfictionPageDto } from './dto/fanfiction.dto';
 
 @Controller('libraries/:libraryId/fanfiction/source-batches')
 @RequirePermission(Permission.ManageLibraries)
@@ -34,7 +34,7 @@ export class FanfictionSourceBatchController {
   listFailures(
     @Param('libraryId', ParseIntPipe) libraryId: number,
     @Param('jobId', ParseUUIDPipe) jobId: string,
-    @Query() dto: ListFanfictionProfilesDto,
+    @Query() dto: FanfictionPageDto,
     @CurrentUser() user: RequestUser,
   ) {
     return this.batches.listFailures(libraryId, jobId, dto.cursor, dto.limit, user);

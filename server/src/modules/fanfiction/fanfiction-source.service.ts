@@ -16,7 +16,6 @@ import { AppSettingsService } from '../app-settings/app-settings.service';
 import { UploadValidatorService } from '../upload/upload-validator.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
-import { FanfictionProfileService } from './fanfiction-profile.service';
 import { ImportFanfictionDto, ListFanfictionSourcesDto, UpdateFanfictionSourceDto, RollbackFanfictionSourceDto } from './dto/fanfiction-source.dto';
 import { ManagedMetadataService } from '../metadata/managed-metadata.service';
 import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
@@ -37,7 +36,6 @@ export class FanfictionSourceService {
     private readonly access: FanfictionAccessService,
     private readonly libraries: LibraryService,
     private readonly jobs: FanfictionJobService,
-    private readonly profiles: FanfictionProfileService,
     private readonly settings: AppSettingsService,
     private readonly validator: UploadValidatorService,
     private readonly managedTags: ManagedTagService,
@@ -218,8 +216,6 @@ export class FanfictionSourceService {
   async check(libraryId: number, id: string, kind: 'update' | 'refresh', idempotencyKey: string, user: RequestUser) {
     await this.access.administer(user, libraryId);
     const source = await this.find(libraryId, id);
-    if (source.attentionCode === 'destination_profile_required')
-      throw new ConflictException('Choose a destination library profile before checking this story');
     return this.jobs.updateStory(source, kind, idempotencyKey, user);
   }
 
@@ -243,9 +239,8 @@ export class FanfictionSourceService {
     if (
       !source ||
       !source.bookFileId ||
-      (!['rollback', 'replacement'].includes(job.kind) && source.attentionCode === 'destination_profile_required') ||
       source.version !== job.sourceVersion ||
-      source.profileId !== job.profileId ||
+      source.maintainerUserId !== job.userId ||
       !(
         ['rollback', 'replacement'].includes(job.kind) ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']
       ).includes(source.state) ||
@@ -320,12 +315,7 @@ export class FanfictionSourceService {
             : {}),
           ...(result.preparedUpdate ? { state: result.preparedUpdate.previousState } : {}),
           metadataReviewPending: !!result.metadataReview,
-          attentionCode:
-            result.metadataReview && !result.metadataDeferred
-              ? 'metadata_review_required'
-              : job.kind === 'replacement' && source.attentionCode === 'destination_profile_required'
-                ? source.attentionCode
-                : null,
+          attentionCode: result.metadataReview && !result.metadataDeferred ? 'metadata_review_required' : null,
           lastCheckedAt: job.kind === 'replacement' ? source.lastCheckedAt : sql`now()`,
           ...(!result.noChange ? { lastUpdatedAt: sql`now()` } : {}),
           nextCheckAt:
@@ -364,7 +354,7 @@ export class FanfictionSourceService {
           updatesEnabled: false,
           metadataReviewPending: false,
           nextCheckAt: null,
-          attentionCode: source.attentionCode === 'destination_profile_required' ? source.attentionCode : null,
+          attentionCode: null,
           lastUpdatedAt: sql`now()`,
           updatedAt: sql`now()`,
           version: sql`${sources.version} + 1`,
@@ -453,7 +443,6 @@ export class FanfictionSourceService {
 
   async update(libraryId: number, id: string, dto: UpdateFanfictionSourceDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
-    if (dto.profileId) await this.profiles.document(libraryId, dto.profileId, user);
     const previous = await this.find(libraryId, id);
     if (
       previous.attentionCode === 'metadata_review_required' &&
@@ -465,9 +454,6 @@ export class FanfictionSourceService {
       throw new ConflictException('Review story metadata before resuming updates');
     const state =
       dto.state ?? (dto.keepUpdated === false ? 'paused' : dto.keepUpdated === true && previous.state === 'paused' ? 'active' : previous.state);
-    const needsProfile = previous.attentionCode === 'destination_profile_required';
-    if (needsProfile && state === 'active' && dto.profileId === undefined)
-      throw new ConflictException('Choose a destination library profile before resuming updates');
     if (state === 'active' && (!previous.bookFileId || previous.state === 'unlinked'))
       throw new ConflictException('This source must finish importing or be linked again before updates can resume');
     const interval = dto.intervalMinutes === undefined ? previous.intervalMinutes : dto.intervalMinutes;
@@ -483,12 +469,8 @@ export class FanfictionSourceService {
               ? { updatesEnabled: dto.state === 'active' }
               : {}),
           ...(dto.updatePolicy ? { updatePolicy: dto.updatePolicy } : {}),
-          ...(dto.usePersonalConnection
-            ? { accessMode: 'personal' as const, maintainerUserId: user.id, updatesEnabled: previous.updatesEnabled ?? previous.state !== 'paused' }
-            : {}),
+          ...(dto.takeOverMaintenance ? { maintainerUserId: user.id } : {}),
           ...(dto.tagPolicy ? { tagPolicy: dto.tagPolicy } : {}),
-          ...(needsProfile && dto.profileId !== undefined ? { attentionCode: null } : {}),
-          ...(dto.profileId !== undefined && !dto.usePersonalConnection ? { profileId: dto.profileId, accessMode: 'legacy' as const } : {}),
           intervalMinutes: interval,
           nextCheckAt: state === 'active' && interval !== null ? sql`now() + (${interval} * interval '1 minute')` : null,
           version: sql`${sources.version} + 1`,
@@ -581,12 +563,10 @@ export class FanfictionSourceService {
           libraryId: job.libraryId,
           createdBy: job.userId,
           maintainerUserId: job.userId,
-          accessMode: job.accessMode,
           updatesEnabled: job.input!.intervalMinutes !== null,
-          updatePolicy: job.accessMode === 'personal' ? 'safe' : 'review',
-          tagPolicy: job.accessMode === 'personal' ? 'automatic' : 'review',
+          updatePolicy: 'safe',
+          tagPolicy: 'automatic',
           folderId: job.input!.folderId,
-          profileId: job.profileId,
           canonicalUrl,
           canonicalKey,
           site: new URL(canonicalUrl).hostname.replace(/^www\./, ''),
@@ -734,14 +714,12 @@ export class FanfictionSourceService {
       tracking: {
         enabled: row.updatesEnabled ?? (row.state !== 'paused' && row.state !== 'unlinked'),
         policy: row.updatePolicy,
-        maintainerUserId: row.maintainerUserId ?? row.createdBy,
-        access: row.accessMode,
+        maintainerUserId: row.maintainerUserId,
         needsAttention: !!row.attentionCode || row.metadataReviewPending,
       },
       id: row.id,
       libraryId: row.libraryId,
       folderId: row.folderId,
-      profileId: row.profileId,
       bookId: row.bookId,
       bookFileId: row.bookFileId,
       canonicalUrl: row.canonicalUrl,

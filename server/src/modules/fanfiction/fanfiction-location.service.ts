@@ -53,15 +53,7 @@ export class FanfictionLocationService {
         libraryId,
         folderId,
         updatedAt: sql`now()`,
-        ...(acrossLibraries
-          ? {
-              profileId: null,
-              state: 'paused' as const,
-              nextCheckAt: null,
-              attentionCode: 'destination_profile_required',
-              version: sql`${sources.version} + 1`,
-            }
-          : {}),
+        ...(acrossLibraries ? { version: sql`${sources.version} + 1` } : {}),
       })
       .where(and(eq(sources.bookId, bookId), ne(sources.state, 'unlinked')));
   }

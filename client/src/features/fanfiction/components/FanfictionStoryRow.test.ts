@@ -41,7 +41,6 @@ describe('story row feedback', () => {
           storyStatus: '',
           state: 'configuration_blocked',
           attentionCode: 'authentication_required',
-          profileId: 'profile',
         },
       },
       global,
@@ -58,7 +57,7 @@ describe('story row feedback', () => {
 
   it('offers the same direct login action when a story has no saved profile', async () => {
     const wrapper = mount(FanfictionStoryRow, {
-      props: { ...props, source: { ...source, profileId: null, state: 'configuration_blocked', attentionCode: 'authentication_required' } },
+      props: { ...props, source: { ...source, state: 'configuration_blocked', attentionCode: 'authentication_required' } },
       global,
     })
     await wrapper

@@ -1,3 +1,4 @@
+import { installPostgresExtensions } from '../src/scripts/postgres-extensions';
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
@@ -16,7 +17,6 @@ import { FanfictionSourceBatchService } from '../src/modules/fanfiction/fanficti
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
-import { FanfictionProfileService } from '../src/modules/fanfiction/fanfiction-profile.service';
 import { LibraryService } from '../src/modules/library/library.service';
 import { AppSettingsService } from '../src/modules/app-settings/app-settings.service';
 import { UploadValidatorService } from '../src/modules/upload/upload-validator.service';
@@ -37,13 +37,13 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
   let user: RequestUser;
   const access = { administer: vi.fn(async () => {}) };
   const authorize = vi.fn(async () => {});
-  const profiles = { matchMany: vi.fn() };
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
     if (!/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database)))
       throw new Error('An isolated validation database is required');
     pool = new Pool(config);
     db = drizzle(pool, { schema });
+    await installPostgresExtensions(pool);
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
     const module = await Test.createTestingModule({
       providers: [
@@ -52,7 +52,6 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
         FanfictionSourceService,
         { provide: DB, useValue: db },
         { provide: FanfictionAccessService, useValue: access },
-        { provide: FanfictionProfileService, useValue: profiles },
         ...[
           LibraryService,
           AppSettingsService,
@@ -124,6 +123,8 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
         paths.map((path, index) => ({
           libraryId,
           createdBy: user.id,
+          maintainerUserId: user.id,
+          updatePolicy: 'review',
           folderId,
           canonicalUrl: `https://example.org/story/${path}`,
           canonicalKey: createHash('sha256').update(path).digest('hex'),
@@ -141,20 +142,6 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
 
   it('retries every affected story for the saved website without changing other websites or duplicating queued checks', async () => {
     const selected = await createSources(5, true);
-    const [profile] = await db
-      .insert(schema.fanfictionProfiles)
-      .values({
-        id: randomUUID(),
-        libraryId,
-        createdBy: user.id,
-        name: 'Website',
-        document: { version: 1, keyId: 'test', iv: '', tag: '', ciphertext: '' },
-      })
-      .returning();
-    const summary = { ...profile, updatedAt: profile.updatedAt.toISOString(), rootUrls: ['https://example.org'] };
-    profiles.matchMany.mockImplementation(
-      (_libraryId: number, urls: string[]) => new Map(urls.map((url) => [url, { profile: summary, ambiguous: false }])),
-    );
     const queued = await jobs.updateStory(selected[1], 'update', randomUUID(), user);
     await db
       .update(schema.fanfictionSources)
@@ -170,9 +157,9 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
       .where(eq(schema.fanfictionSources.id, selected[3].id));
     await db
       .update(schema.fanfictionSources)
-      .set({ canonicalUrl: 'https://example.org.evil.test/story' })
+      .set({ canonicalUrl: 'https://example.org.evil.test/story', site: 'example.org.evil.test' })
       .where(eq(schema.fanfictionSources.id, selected[4].id));
-    const repair = await batches.repairProfile(summary, user);
+    const repair = await batches.repairConnection(libraryId, 'example.org', user);
     // Claim the local repair independently from the already queued website check.
     const first = (await jobs.claim())!;
     const job = first.id === repair.id ? first : (await jobs.claim())!;
@@ -205,7 +192,6 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
     await db
       .update(schema.fanfictionSources)
       .set({
-        accessMode: 'personal',
         maintainerUserId: user.id,
         updatesEnabled: true,
         state: 'configuration_blocked',
@@ -214,7 +200,7 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
       .where(eq(schema.fanfictionSources.libraryId, libraryId));
     await db.update(schema.fanfictionSources).set({ updatesEnabled: false }).where(eq(schema.fanfictionSources.id, selected[1].id));
     await db.update(schema.fanfictionSources).set({ attentionCode: 'source_not_found' }).where(eq(schema.fanfictionSources.id, selected[2].id));
-    await db.update(schema.fanfictionSources).set({ accessMode: 'legacy' }).where(eq(schema.fanfictionSources.id, selected[3].id));
+    await db.update(schema.fanfictionSources).set({ attentionCode: 'access_revoked' }).where(eq(schema.fanfictionSources.id, selected[3].id));
     await db.update(schema.fanfictionSources).set({ maintainerUserId: null }).where(eq(schema.fanfictionSources.id, selected[4].id));
     expect(await batches.scope(libraryId, { state: 'active' }, user)).toEqual({ total: 5, matching: 4, eligible: 4 });
     expect(await batches.scope(libraryId, { state: 'paused' }, user)).toEqual({ total: 5, matching: 1, eligible: 4 });

@@ -1,4 +1,3 @@
-import { FanfictionProfileService } from './fanfiction-profile.service';
 import { FanfictionConnectionService } from './fanfiction-connection.service';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, count, eq, gt, inArray, sql } from 'drizzle-orm';
@@ -33,7 +32,6 @@ export class FanfictionDiscoveryService {
     private readonly files: RevisionFileService,
     private readonly manifests: EpubManifestService,
     private readonly runtime: FanficfareRuntimeService,
-    private readonly profiles: FanfictionProfileService,
     private readonly connections: FanfictionConnectionService,
   ) {}
 
@@ -60,9 +58,7 @@ export class FanfictionDiscoveryService {
       const known = existingUrls.filter((value) => value.recognized);
       if (known.length && !known.some((value) => value.canonicalUrl === url.canonicalUrl))
         throw new ConflictException('This URL does not match the story source recorded in the EPUB');
-      const session = input.profileId
-        ? await this.profiles.session(libraryId, input.profileId, user, () => this.access.administer(user, libraryId))
-        : await this.connections.session(url.canonicalUrl, user, () => this.access.administer(user, libraryId));
+      const session = await this.connections.session(url.canonicalUrl, user, () => this.access.administer(user, libraryId));
       const remote = await this.runtime.preview(url.canonicalUrl, session.document, signal, session.saveCookies);
       if (remote.canonicalUrl !== url.canonicalUrl) throw new ConflictException('The source URL changed. Check the story URL again.');
       await this.access.administer(user, libraryId);
@@ -194,14 +190,7 @@ export class FanfictionDiscoveryService {
     const urls = [...new Set(candidate.urls.flatMap((url) => (url.recognized ? [url.canonicalUrl] : [])))];
     const canonicalUrl = dto.canonicalUrl ?? (urls.length === 1 ? urls[0] : undefined);
     if (!canonicalUrl || !urls.includes(canonicalUrl)) throw new BadRequestException('Choose one of the recorded story URLs');
-    const match =
-      dto.autoProfile === true && !dto.profileId ? (await this.profiles.matchMany(libraryId, [canonicalUrl], user)).get(canonicalUrl) : undefined;
-    if (match?.ambiguous) throw new BadRequestException('Choose a profile to compare this story');
-    const profileId = dto.profileId ?? match?.profile?.id;
-    const profile = profileId ? await this.profiles.get(libraryId, profileId, user) : null;
-    const session = profileId
-      ? await this.profiles.session(libraryId, profileId, user, () => this.access.administer(user, libraryId))
-      : await this.connections.session(canonicalUrl, user, () => this.access.administer(user, libraryId));
+    const session = await this.connections.session(canonicalUrl, user, () => this.access.administer(user, libraryId));
     const started = Date.now();
     this.logger.log(`[fanfiction.compare] [start] userId=${user.id} libraryId=${libraryId} candidateId=${id} - fetching remote story details`);
     try {
@@ -216,9 +205,6 @@ export class FanfictionDiscoveryService {
         title: remote.title,
         authors: remote.authors,
         chapterCount: remote.chapterCount,
-        profile: profile
-          ? { id: profile.id, name: profile.name, libraryId, version: profile.version, updatedAt: profile.updatedAt, rootUrls: profile.rootUrls }
-          : null,
       };
     } catch (error) {
       this.logger.warn(
@@ -273,16 +259,7 @@ export class FanfictionDiscoveryService {
       .orderBy(asc(candidates.id))
       .limit(dto.limit + 1);
     const page = rows.slice(0, dto.limit);
-    const singleUrl = (row: (typeof page)[number]) => {
-      const urls = [...new Set(row.urls.flatMap((url) => (url.recognized ? [url.canonicalUrl] : [])))];
-      return urls.length === 1 ? urls[0] : undefined;
-    };
-    const matches = await this.profiles.matchMany(
-      libraryId,
-      page.flatMap((row) => (singleUrl(row) ? [singleUrl(row)!] : [])),
-      user,
-    );
-    const items = page.map((row) => ({ ...row, createdAt: row.createdAt.toISOString(), profileMatch: matches.get(singleUrl(row) ?? '') }));
+    const items = page.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
     return { items, total: summary.total, nextCursor: rows.length > dto.limit ? items.at(-1)!.id : null };
   }
 

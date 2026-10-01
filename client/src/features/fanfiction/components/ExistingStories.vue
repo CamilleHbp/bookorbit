@@ -1,18 +1,13 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { FanfictionProfileSummary } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import DiscoveryWebsiteGroup from './DiscoveryWebsiteGroup.vue'
 import { useDiscoveryReview } from '../composables/useDiscoveryReview'
-const props = defineProps<{ libraryId: number; profiles: FanfictionProfileSummary[]; profileCursor: string | null }>()
-const emit = defineEmits<{ moreProfiles: [] }>()
+const props = defineProps<{ libraryId: number }>()
 const { t } = useI18n()
 const review = useDiscoveryReview(props.libraryId)
 const { websites, cutoff, cursor, busy, error, job, pending, active, locked, recover, moreWebsites, scan, submitPending, cancel } = review
-function moreProfiles() {
-  emit('moreProfiles')
-}
 onMounted(recover)
 </script>
 <template>
@@ -37,16 +32,7 @@ onMounted(recover)
     </div>
     <p v-if="busy && !websites.length" role="status" class="text-muted-foreground py-8 text-sm">{{ t('fanfiction.discovery.loading') }}</p>
     <p v-else-if="!websites.length" class="text-muted-foreground py-8 text-sm">{{ t('fanfiction.sourceReview.empty') }}</p>
-    <DiscoveryWebsiteGroup
-      v-for="source in websites"
-      :key="`${cutoff}:${source.website}`"
-      :source="source"
-      :cutoff="cutoff"
-      :review="review"
-      :profiles="profiles"
-      :more-profiles="profileCursor !== null"
-      @more-profiles="moreProfiles"
-    />
+    <DiscoveryWebsiteGroup v-for="source in websites" :key="`${cutoff}:${source.website}`" :source="source" :cutoff="cutoff" :review="review" />
     <Button v-if="cursor !== null" variant="outline" :disabled="locked" @click="moreWebsites">{{ t('fanfiction.sourceReview.moreWebsites') }}</Button>
   </section>
 </template>

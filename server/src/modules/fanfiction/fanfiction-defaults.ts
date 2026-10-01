@@ -1,7 +1,7 @@
-import type { FanfictionProfileDocument } from '@bookorbit/types';
+import type { FanfictionConnectionDocument } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 
-export function withFanfictionDefaults(document: FanfictionProfileDocument, user: RequestUser): FanfictionProfileDocument {
+export function withFanfictionDefaults(document: FanfictionConnectionDocument, user: RequestUser): FanfictionConnectionDocument {
   const isAdult = user.settings?.fanfictionIsAdult;
   if (typeof isAdult !== 'boolean') return document;
   const lines = document.configuration.split(/\r?\n/);

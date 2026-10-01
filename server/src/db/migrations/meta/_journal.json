@@ -974,6 +974,20 @@
       "when": 1790870487791,
       "tag": "0138_story_maintenance",
       "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1790874159458,
+      "tag": "0139_personal_story_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1790874161471,
+      "tag": "0140_remove_source_profiles",
+      "breakpoints": true
     }
   ]
 }

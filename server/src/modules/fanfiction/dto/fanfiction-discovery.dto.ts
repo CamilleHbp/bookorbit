@@ -30,8 +30,6 @@ export class ListFanfictionWebsitesDto {
 }
 
 export class CompareFanfictionDiscoveryDto {
-  @IsOptional() @IsUUID() profileId?: string | null;
-  @IsOptional() @IsBoolean() autoProfile?: boolean;
   @IsOptional() @IsString() @MaxLength(4096) canonicalUrl?: string;
 }
 
@@ -60,7 +58,6 @@ export class ListFanfictionDiscoveryDto {
 
 export class FanfictionDiscoveryOverrideDto {
   @IsUUID() id!: string;
-  @IsOptional() @IsUUID() profileId?: string | null;
   @IsOptional() @IsString() @MaxLength(4096) canonicalUrl?: string;
 }
 
@@ -75,20 +72,17 @@ export class SelectFanfictionDiscoveryDto {
   @ValidateNested({ each: true })
   @Type(() => FanfictionDiscoveryOverrideDto)
   overrides?: FanfictionDiscoveryOverrideDto[];
-  @IsOptional() @IsBoolean() autoProfile?: boolean;
   @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @MaxLength(4096, { each: true }) urlPrefixes?: string[];
   @IsUUID() idempotencyKey!: string;
   @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @IsUUID(undefined, { each: true }) ids?: string[];
   @IsOptional() @IsBoolean() allMatching?: boolean;
   @IsIn(['pending', 'ambiguous', 'failed']) state: FanfictionCandidateState = 'pending';
   @IsIn(['approve', 'reject']) decision!: 'approve' | 'reject';
-  @IsOptional() @IsUUID() profileId?: string | null;
   @ValidateIf((_object, value: unknown) => value !== null && value !== undefined) @IsInt() @Min(60) @Max(525600) intervalMinutes?: number | null;
   @IsOptional() @IsString() @MaxLength(4096) canonicalUrl?: string;
 }
 
 export class PreviewStoryLinkDto {
-  @IsOptional() @IsUUID() profileId?: string;
   @IsInt() @Min(1) bookId!: number;
   @IsInt() @Min(1) bookFileId!: number;
   @IsString() @MaxLength(4096) url!: string;

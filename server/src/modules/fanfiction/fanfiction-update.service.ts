@@ -3,7 +3,7 @@ import { FanfictionReviewService } from './fanfiction-review.service';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import type { FanfictionJob, FanfictionPreview, FanfictionProfileDocument } from '@bookorbit/types';
+import type { FanfictionJob, FanfictionPreview, FanfictionConnectionDocument } from '@bookorbit/types';
 import type * as schema from '../../db/schema';
 import { BookRevisionService } from '../book-revision/book-revision.service';
 import { EpubManifestService } from '../book-revision/epub-manifest.service';
@@ -35,7 +35,7 @@ export class FanfictionUpdateService {
 
   async run(
     job: Job,
-    document: FanfictionProfileDocument,
+    document: FanfictionConnectionDocument,
     authorize: () => Promise<unknown>,
     signal: AbortSignal,
     saveCookies?: FanfictionCookieSink,

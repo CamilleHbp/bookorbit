@@ -97,7 +97,7 @@ describe('stable website review', () => {
     await flushPromises()
     expect(source.isSelected(source.items.value[0]!)).toBe(false)
   })
-  it('ignores stale comparisons after changing the website profile and bounds concurrent requests', async () => {
+  it('ignores stale comparisons after changing the original story URL and bounds concurrent requests', async () => {
     const { source } = await setup()
     const waiting: (() => void)[] = []
     let active = 0
@@ -114,8 +114,9 @@ describe('stable website review', () => {
     await source.toggleOpen()
     await flushPromises()
     expect(active).toBe(2)
-    source.profile.value = 'public'
-    await source.changeProfile()
+    const book = source.items.value[0]!
+    source.sourceChoices.value[book.id] = 'https://archiveofourown.org/works/987'
+    source.changeBook(book)
     await source.toggleOpen()
     while (waiting.length) {
       waiting.shift()!()

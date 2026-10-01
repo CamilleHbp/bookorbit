@@ -3,6 +3,8 @@ import type {
   FanfictionConnection,
   FanfictionConnectionIssue,
   FanfictionConnectionRequest,
+  FanfictionConnectionSettings,
+  FanfictionTagRule,
   FanfictionJob,
   FanfictionSource,
   FanfictionWebsite,
@@ -18,6 +20,10 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
   const password = ref('')
   const cookieName = ref('')
   const cookieValue = ref('')
+  const configuration = ref('')
+  const tagRules = ref<FanfictionTagRule[]>([])
+  const settingsLoaded = ref(false)
+  const settingsLoading = ref(false)
   const error = ref('')
   const busy = ref(false)
   const saved = ref(false)
@@ -79,7 +85,37 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
     cookieName.value = ''
     cookieValue.value = ''
     saved.value = false
+    settingsLoaded.value = false
+    configuration.value = ''
+    tagRules.value = []
   })
+  async function loadSettings() {
+    if (settingsLoaded.value || settingsLoading.value) return
+    const selectedSite = site.value
+    const current = generation
+    settingsLoading.value = true
+    error.value = ''
+    try {
+      const settings = connection.value
+        ? await request<FanfictionConnectionSettings>(`${base}/${connection.value.id}/settings`)
+        : { configuration: '', tagRules: [] }
+      if (disposed || current !== generation || selectedSite !== site.value) return
+      configuration.value = settings.configuration
+      tagRules.value = settings.tagRules
+      settingsLoaded.value = true
+    } catch (failure) {
+      if (!disposed && current === generation && selectedSite === site.value)
+        error.value = failure instanceof Error ? failure.message : 'Settings could not be loaded'
+    } finally {
+      settingsLoading.value = false
+    }
+  }
+  function addTagRule() {
+    if (tagRules.value.length < 100) tagRules.value.push({ remoteTag: '', targetTag: '' })
+  }
+  function removeTagRule(index: number) {
+    tagRules.value.splice(index, 1)
+  }
   async function save(source?: FanfictionSource): Promise<{ connection: FanfictionConnection; job?: FanfictionJob } | undefined> {
     if (busy.value || !website.value) return
     const current = generation
@@ -91,6 +127,7 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
       if (!!cookieName.value !== !!cookieValue.value) throw new Error('Enter both the cookie name and value')
       const body: FanfictionConnectionRequest = {
         site: site.value,
+        ...(settingsLoaded.value ? { configuration: configuration.value, tagRules: tagRules.value } : {}),
         version: connection.value?.version,
         ...(username.value ? { username: username.value } : {}),
         ...(password.value ? { password: password.value } : {}),
@@ -104,7 +141,7 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
       cookieValue.value = ''
       cookieName.value = ''
       if (source && id)
-        await request(`/api/v1/libraries/${id}/fanfiction/sources/${source.id}`, { version: source.version, usePersonalConnection: true }, 'PATCH')
+        await request(`/api/v1/libraries/${id}/fanfiction/sources/${source.id}`, { version: source.version, takeOverMaintenance: true }, 'PATCH')
       const job =
         id && (affected.value > 0 || (source && (source.tracking?.enabled ?? source.state !== 'paused')))
           ? await request<FanfictionJob>(`${base}/${result.id}/retry`, { libraryId: id })
@@ -143,6 +180,13 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
     for (const controller of controllers) controller.abort()
   })
   return {
+    configuration,
+    tagRules,
+    settingsLoaded,
+    settingsLoading,
+    loadSettings,
+    addTagRule,
+    removeTagRule,
     websites,
     connections,
     issues,
