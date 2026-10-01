@@ -21,6 +21,16 @@ describe('cover query DTOs', () => {
     expect(dto.strict).toBe(expected);
   });
 
+  it.each(['true', 'false'])('accepts hideSensitive=%s with a cover medium under strict validation', async (value) => {
+    const dto = plainToInstance(CoverReadQueryDto, { hideSensitive: value, medium: 'audio', t: '123' });
+    await expect(validate(dto, { whitelist: true, forbidNonWhitelisted: true })).resolves.toHaveLength(0);
+    expect(dto.hideSensitive).toBe(value === 'true');
+  });
+
+  it('rejects non-boolean privacy values', async () => {
+    await expect(validate(plainToInstance(CoverReadQueryDto, { hideSensitive: 'yes' }))).resolves.not.toHaveLength(0);
+  });
+
   it('rejects non-boolean strict values', async () => {
     await expect(validate(plainToInstance(CoverReadQueryDto, { strict: 'yes' }))).resolves.not.toHaveLength(0);
   });

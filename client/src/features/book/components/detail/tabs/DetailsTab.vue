@@ -2259,7 +2259,7 @@ watch(
     @confirm="handleResetReadingState"
   />
 
-  <BookCoverLightbox :open="coverLightboxOpen" :book="book" @update:open="handleCoverLightboxOpenChange" />
+  <BookCoverLightbox :open="coverLightboxOpen" :book="book" :revealed="coverRevealed" @update:open="handleCoverLightboxOpenChange" />
 </template>
 
 <style scoped>

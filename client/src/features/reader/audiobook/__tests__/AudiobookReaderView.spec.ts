@@ -110,6 +110,7 @@ vi.mock('../../shared/composables/useFullscreen', () => ({
 function bookDetail(overrides: Partial<BookDetail> = {}): BookDetail {
   return {
     id: BOOK_ID,
+    sensitiveCover: false,
     libraryId: 1,
     libraryName: 'Library',
     status: 'present',

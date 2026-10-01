@@ -5694,8 +5694,8 @@ describe('sensitive cover access', () => {
     const { service, bookRepo, libraryService } = makeService();
     bookRepo.findLibraryIdByBookId.mockResolvedValue(4);
     libraryService.verifyUserAccess.mockRejectedValue(new ForbiddenException());
-    await expect(service.updateSensitiveCover(7, true, makeUser())).rejects.toThrow(ForbiddenException);
-    await expect(service.shouldHideSensitiveCover(7, makeUser())).rejects.toThrow(ForbiddenException);
+    await expect(service.updateSensitiveCover(7, true, makeUser())).rejects.toThrow(NotFoundException);
+    await expect(service.shouldHideSensitiveCover(7, makeUser())).rejects.toThrow(NotFoundException);
     expect(bookRepo.updateSensitiveCover).not.toHaveBeenCalled();
     expect(bookRepo.isSensitiveCover).not.toHaveBeenCalled();
   });
