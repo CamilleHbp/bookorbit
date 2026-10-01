@@ -1299,6 +1299,32 @@ export class BookService {
     }
   }
 
+  async updateSensitiveCover(id: number, sensitiveCover: boolean, user: RequestUser): Promise<void> {
+    const startedAt = Date.now();
+    this.logger.log(
+      `[book.sensitive_cover] [start] bookId=${id} userId=${user.id} sensitiveCover=${sensitiveCover} - update sensitive cover started`,
+    );
+    try {
+      await this.verifyBookAccess(id, user);
+      await this.bookRepo.updateSensitiveCover(id, sensitiveCover);
+      this.logger.log(
+        `[book.sensitive_cover] [end] bookId=${id} userId=${user.id} durationMs=${Date.now() - startedAt} sensitiveCover=${sensitiveCover} - sensitive cover updated`,
+      );
+    } catch (error) {
+      const errorClass = error instanceof Error ? error.name : 'Error';
+      const message = sanitizeLogValue(error instanceof Error ? error.message : String(error));
+      this.logger.warn(
+        `[book.sensitive_cover] [fail] bookId=${id} userId=${user.id} durationMs=${Date.now() - startedAt} errorClass=${errorClass} error="${message}" - update sensitive cover failed`,
+      );
+      throw error;
+    }
+  }
+
+  async shouldHideSensitiveCover(id: number, user: RequestUser): Promise<boolean> {
+    await this.verifyBookAccess(id, user);
+    return this.bookRepo.isSensitiveCover(id);
+  }
+
   async getCoverPath(id: number, user: RequestUser, options: { medium?: CoverMedium; strict?: boolean } = {}): Promise<string | null> {
     await this.verifyBookAccess(id, user);
     return this.coverStore.resolve(id, { variant: 'cover', ...options });
@@ -3291,6 +3317,7 @@ export class BookService {
       personalNote: personalNote?.note ?? null,
       personalNoteUpdatedAt: personalNote ? new Date(personalNote.updatedAt) : null,
       communityRatings: this.mapCommunityRatingRows(communityRatingRows),
+      sensitiveCover: book.books.sensitiveCover,
       coverSource: (meta?.coverSource as 'extracted' | 'custom' | null) ?? null,
       coverMedia: [...(coverContext?.media.hasEbook ? (['ebook'] as const) : []), ...(coverContext?.media.hasAudio ? (['audio'] as const) : [])],
       covers: coverContext ? this.coverStore.slotDtos(coverContext) : { ebook: null, audio: null },

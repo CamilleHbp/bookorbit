@@ -1,6 +1,6 @@
 {
-  "id": "8cb05652-9c80-4723-9f42-0c344a24f9c0",
-  "prevId": "c8f7c2bc-9162-42df-914d-cf85888376a4",
+  "id": "c8f7c2bc-9162-42df-914d-cf85888376a4",
+  "prevId": "6e3f296e-0e4d-4d6b-87ef-a9473eeef893",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2866,6 +2866,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -17801,6 +17808,12 @@
           "notNull": true,
           "default": false
         },
+        "client_hash": {
+          "name": "client_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "status": {
           "name": "status",
           "type": "varchar(20)",
@@ -17919,12 +17932,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "client_key": {
-          "name": "client_key",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -17989,7 +17996,7 @@
               "nulls": "last"
             },
             {
-              "expression": "client_key",
+              "expression": "client_hash",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -18046,7 +18053,7 @@
       "checkConstraints": {
         "book_request_downloads_source_chk": {
           "name": "book_request_downloads_source_chk",
-          "value": "\"book_request_downloads\".\"source\" in ('magnet', 'torrent_file', 'direct_url', 'nzb_file')"
+          "value": "\"book_request_downloads\".\"source\" in ('magnet', 'torrent_file', 'direct_url')"
         },
         "book_request_downloads_status_chk": {
           "name": "book_request_downloads_status_chk",
@@ -18300,7 +18307,7 @@
       "checkConstraints": {
         "download_clients_adapter_type_chk": {
           "name": "download_clients_adapter_type_chk",
-          "value": "\"download_clients\".\"adapter_type\" in ('qbittorrent', 'transmission', 'deluge', 'nzbget')"
+          "value": "\"download_clients\".\"adapter_type\" in ('qbittorrent', 'transmission', 'deluge')"
         },
         "download_clients_priority_range_chk": {
           "name": "download_clients_priority_range_chk",

@@ -1,6 +1,6 @@
 {
-  "id": "c8f7c2bc-9162-42df-914d-cf85888376a4",
-  "prevId": "6e3f296e-0e4d-4d6b-87ef-a9473eeef893",
+  "id": "6e3f296e-0e4d-4d6b-87ef-a9473eeef893",
+  "prevId": "f96bfaca-d450-4347-a10c-2e48daf12322",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2600,13 +2600,6 @@
           "type": "varchar(36)",
           "primaryKey": false,
           "notNull": false
-        },
-        "public_id": {
-          "name": "public_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
         }
       },
       "indexes": {
@@ -2741,21 +2734,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "book_files_public_id_uidx": {
-          "name": "book_files_public_id_uidx",
-          "columns": [
-            {
-              "expression": "public_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -2866,6 +2844,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -5715,32 +5700,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "captured_at": {
-          "name": "captured_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "operation_id": {
-          "name": "operation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "manifest_revision": {
-          "name": "manifest_revision",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -5835,10 +5794,6 @@
         "audiobook_progress_position_seconds_nonnegative_chk": {
           "name": "audiobook_progress_position_seconds_nonnegative_chk",
           "value": "\"audiobook_progress\".\"position_seconds\" >= 0"
-        },
-        "audiobook_progress_revision_positive_chk": {
-          "name": "audiobook_progress_revision_positive_chk",
-          "value": "\"audiobook_progress\".\"revision\" >= 1"
         }
       },
       "isRLSEnabled": false
@@ -5919,25 +5874,6 @@
         "deleted_at": {
           "name": "deleted_at",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chapter_id": {
-          "name": "chapter_id",
-          "type": "varchar(80)",
           "primaryKey": false,
           "notNull": false
         }
@@ -6047,33 +5983,6 @@
           ],
           "isUnique": false,
           "where": "\"bookmarks\".\"deleted_at\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "bookmarks_user_book_client_id_uidx": {
-          "name": "bookmarks_user_book_client_id_uidx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "book_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}

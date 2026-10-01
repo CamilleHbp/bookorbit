@@ -9,6 +9,7 @@ import { COVER_ASPECT_RATIO_KEY, DEFAULT_COVER_ASPECT_RATIO } from '../../lib/co
 import { useBookDetail } from '../../composables/useBookDetail'
 import { useMetadataLocks } from '../../composables/useMetadataLocks'
 import { useCoverVersions } from '../../composables/useCoverVersions'
+import { useCoverReveal } from '@/features/book/composables/useCoverReveal'
 import BookCoverPlaceholder from '../BookCoverPlaceholder.vue'
 import CoverEditorPanel from '../detail/tabs/CoverEditorPanel.vue'
 
@@ -30,6 +31,10 @@ const mode = ref<'view' | 'edit'>('view')
 
 const { detail, loading, fetch } = useBookDetail()
 const { lockedFields, toggle, load: loadLocks } = useMetadataLocks()
+const { coverRevealed, canRevealCover, toggleCoverReveal } = useCoverReveal(
+  computed(() => props.book?.id),
+  computed(() => detail.value?.sensitiveCover),
+)
 const { coverUrl } = useCoverVersions()
 const coverAspectRatio = inject(COVER_ASPECT_RATIO_KEY, ref(DEFAULT_COVER_ASPECT_RATIO))
 const editor = ref<InstanceType<typeof CoverEditorPanel> | null>(null)
@@ -43,7 +48,9 @@ watch(
   () => {
     mode.value = 'view'
     detail.value = null
+    if (props.book) fetch(props.book.id)
   },
+  { immediate: true },
 )
 
 watch(detail, (d) => {
@@ -59,6 +66,10 @@ function switchToEdit() {
 
 function switchToView() {
   mode.value = 'view'
+}
+
+function handleSensitiveCoverChanged(sensitiveCover: boolean) {
+  if (detail.value) detail.value = { ...detail.value, sensitiveCover }
 }
 
 // The other tile may still hold an unsaved image, so the editor stays open until nothing is pending.
@@ -122,7 +133,7 @@ async function handleToggleCoverLock(field: 'cover' | 'audioCover') {
               <div class="overflow-hidden rounded-lg bg-muted shadow-md" :style="{ aspectRatio: coverAspectRatio, width: 'min(100%, 280px)' }">
                 <img
                   v-if="hasCoverResolved && book"
-                  :src="coverUrl(book.id, 'cover', coverVersion)"
+                  :src="coverUrl(book.id, 'cover', coverVersion, undefined, coverRevealed)"
                   :alt="book.title ?? ''"
                   class="h-full w-full object-contain"
                 />
@@ -136,6 +147,15 @@ async function handleToggleCoverLock(field: 'cover' | 'audioCover') {
                 />
               </div>
             </div>
+            <button
+              v-if="canRevealCover"
+              type="button"
+              class="mt-2 rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground hover:bg-muted"
+              :aria-pressed="coverRevealed"
+              @click.stop="toggleCoverReveal"
+            >
+              {{ coverRevealed ? t('book.sensitiveCover.hide') : t('book.sensitiveCover.reveal') }}
+            </button>
             <button
               v-if="isEditEnabled"
               class="flex w-full items-center justify-center gap-2 h-9 rounded-lg border border-input bg-background text-sm font-medium transition-colors hover:bg-muted"
@@ -155,6 +175,7 @@ async function handleToggleCoverLock(field: 'cover' | 'audioCover') {
               :book="currentDetail"
               :locked-fields="lockedFields"
               @cover-changed="handleCoverChanged"
+              @sensitive-cover-changed="handleSensitiveCoverChanged"
               @toggle-lock="handleToggleCoverLock"
             />
             <div v-else-if="loading" class="flex items-center justify-center py-12">

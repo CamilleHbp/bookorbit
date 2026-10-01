@@ -11,6 +11,7 @@ import {
   NotFoundException,
   Param,
   ParseIntPipe,
+  ParseBoolPipe,
   Patch,
   Post,
   Query,
@@ -45,6 +46,8 @@ import { SaveProgressDto } from './dto/save-progress.dto';
 import { UpsertAudioProgressDto } from './dto/upsert-audio-progress.dto';
 import { UpdateBookMetadataAndLocksDto } from './dto/update-book-metadata-and-locks.dto';
 import { UpdateBookMetadataDto } from './dto/update-book-metadata.dto';
+import { UpdateSensitiveCoverDto } from './dto/update-sensitive-cover.dto';
+import { SENSITIVE_COVER_PLACEHOLDER } from './utils/sensitive-cover-placeholder';
 import { UpdateBookAddedAtDto } from './dto/update-book-added-at.dto';
 import { CoverReadQueryDto } from './dto/cover-read-query.dto';
 import { CoverMediumQueryDto } from '../cover/dto/cover-medium-query.dto';
@@ -337,6 +340,13 @@ export class BookController {
     }
   }
 
+  @Patch(':id/sensitive-cover')
+  @RequirePermission(Permission.LibraryEditMetadata)
+  @HttpCode(204)
+  async updateSensitiveCover(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateSensitiveCoverDto, @CurrentUser() user: RequestUser) {
+    await this.bookService.updateSensitiveCover(id, dto.sensitiveCover, user);
+  }
+
   @Get(':id/cover')
   async getCover(
     @Param('id', ParseIntPipe) id: number,
@@ -344,13 +354,18 @@ export class BookController {
     @Res() reply: FastifyReply,
     @Query() query: CoverReadQueryDto = {},
     @Headers('if-none-match') ifNoneMatch?: string,
+    @Query('hideSensitive', new ParseBoolPipe({ optional: true })) hideSensitive?: boolean,
   ) {
+    if (hideSensitive && (await this.bookService.shouldHideSensitiveCover(id, user))) {
+      reply.header('Cache-Control', 'private, no-store').type('image/svg+xml').send(SENSITIVE_COVER_PLACEHOLDER);
+      return;
+    }
     const coverPath = await this.bookService.getCoverPath(id, user, { medium: query.medium, strict: query.strict });
     if (!coverPath) throw new NotFoundException(`No cover for book ${id}`);
 
     const { mtimeMs } = await stat(coverPath);
     const etag = `"${Math.floor(mtimeMs)}"`;
-    const cacheControl = query.t ? 'public, max-age=31536000, immutable' : 'private, max-age=86400';
+    const cacheControl = hideSensitive ? 'private, no-store' : query.t ? 'public, max-age=31536000, immutable' : 'private, max-age=86400';
 
     if (ifNoneMatch === etag) {
       reply.status(304).header('Cache-Control', cacheControl).header('ETag', etag).send();
@@ -371,13 +386,18 @@ export class BookController {
     @Res() reply: FastifyReply,
     @Query() query: CoverReadQueryDto = {},
     @Headers('if-none-match') ifNoneMatch?: string,
+    @Query('hideSensitive', new ParseBoolPipe({ optional: true })) hideSensitive?: boolean,
   ) {
+    if (hideSensitive && (await this.bookService.shouldHideSensitiveCover(id, user))) {
+      reply.header('Cache-Control', 'private, no-store').type('image/svg+xml').send(SENSITIVE_COVER_PLACEHOLDER);
+      return;
+    }
     const thumbnailPath = await this.bookService.getThumbnailPath(id, user, { medium: query.medium, strict: query.strict });
     if (!thumbnailPath) throw new NotFoundException(`No thumbnail for book ${id}`);
 
     const { mtimeMs } = await stat(thumbnailPath);
     const etag = `"${Math.floor(mtimeMs)}"`;
-    const cacheControl = query.t ? 'public, max-age=31536000, immutable' : 'private, max-age=86400';
+    const cacheControl = hideSensitive ? 'private, no-store' : query.t ? 'public, max-age=31536000, immutable' : 'private, max-age=86400';
 
     if (ifNoneMatch === etag) {
       reply.status(304).header('Cache-Control', cacheControl).header('ETag', etag).send();

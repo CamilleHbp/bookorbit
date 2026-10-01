@@ -1,6 +1,6 @@
 {
-  "id": "1bedf149-afb9-406f-9f25-9ea996117f43",
-  "prevId": "1251f1e4-09ec-48b3-b018-b18f0826b76e",
+  "id": "3e38912e-0908-47bc-abb6-caf04a39f348",
+  "prevId": "5a908057-8ea7-4571-b52c-b692177a9fcc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2164,7 +2164,7 @@
         },
         "mark_as_finished_percent_complete": {
           "name": "mark_as_finished_percent_complete",
-          "type": "integer",
+          "type": "double precision",
           "primaryKey": false,
           "notNull": true,
           "default": 98
@@ -4759,6 +4759,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "bm_subtitle_unaccent_trgm_idx": {
+          "name": "bm_subtitle_unaccent_trgm_idx",
+          "columns": [
+            {
+              "expression": "public.bookorbit_unaccent(\"subtitle\") gin_trgm_ops",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -6199,7 +6214,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"bookmarks\".\"position_seconds\" is not null and \"bookmarks\".\"cfi\" is null",
+          "where": "\"bookmarks\".\"position_seconds\" is not null and \"bookmarks\".\"cfi\" is null and \"bookmarks\".\"deleted_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -7019,7 +7034,7 @@
         },
         "reading_sessions_source_chk": {
           "name": "reading_sessions_source_chk",
-          "value": "\"reading_sessions\".\"source\" in ('web', 'ios', 'watchos', 'koreader', 'manual', 'kobo')"
+          "value": "\"reading_sessions\".\"source\" in ('web', 'ios', 'watchos', 'android', 'koreader', 'manual', 'kobo')"
         }
       },
       "isRLSEnabled": false
@@ -18699,7 +18714,7 @@
       "checkConstraints": {
         "download_clients_adapter_type_chk": {
           "name": "download_clients_adapter_type_chk",
-          "value": "\"download_clients\".\"adapter_type\" in ('qbittorrent', 'transmission', 'deluge', 'nzbget')"
+          "value": "\"download_clients\".\"adapter_type\" in ('qbittorrent', 'transmission', 'deluge', 'nzbget', 'sabnzbd')"
         },
         "download_clients_priority_range_chk": {
           "name": "download_clients_priority_range_chk",
@@ -18869,6 +18884,37 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
+        },
+        "manager_id": {
+          "name": "manager_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manager_external_id": {
+          "name": "manager_external_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manager_available": {
+          "name": "manager_available",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "manager_last_seen_at": {
+          "name": "manager_last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manager_metadata": {
+          "name": "manager_metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -18901,9 +18947,55 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "request_indexers_manager_external_uidx": {
+          "name": "request_indexers_manager_external_uidx",
+          "columns": [
+            {
+              "expression": "manager_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "manager_external_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "request_indexers_manager_idx": {
+          "name": "request_indexers_manager_idx",
+          "columns": [
+            {
+              "expression": "manager_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "request_indexers_manager_id_request_indexer_managers_id_fk": {
+          "name": "request_indexers_manager_id_request_indexer_managers_id_fk",
+          "tableFrom": "request_indexers",
+          "tableTo": "request_indexer_managers",
+          "columnsFrom": ["manager_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -18919,6 +19011,10 @@
         "request_indexers_seed_time_minutes_chk": {
           "name": "request_indexers_seed_time_minutes_chk",
           "value": "\"request_indexers\".\"seed_time_minutes\" is null or \"request_indexers\".\"seed_time_minutes\" > 0"
+        },
+        "request_indexers_manager_fields_chk": {
+          "name": "request_indexers_manager_fields_chk",
+          "value": "(\"request_indexers\".\"manager_id\" is null and \"request_indexers\".\"manager_external_id\" is null and \"request_indexers\".\"manager_metadata\" is null) or (\"request_indexers\".\"manager_id\" is not null and \"request_indexers\".\"manager_external_id\" is not null and \"request_indexers\".\"manager_metadata\" is not null and \"request_indexers\".\"credentials_enc\" is null and \"request_indexers\".\"adapter_type\" in ('torznab', 'newznab'))"
         }
       },
       "isRLSEnabled": false
@@ -25983,6 +26079,293 @@
         "book_duplicate_dismissals_order_chk": {
           "name": "book_duplicate_dismissals_order_chk",
           "value": "\"book_duplicate_dismissals\".\"book_id_a\" < \"book_duplicate_dismissals\".\"book_id_b\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.request_indexer_managers": {
+      "name": "request_indexer_managers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "color": {
+          "name": "color",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "varchar(30)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "base_url": {
+          "name": "base_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credentials_enc": {
+          "name": "credentials_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allow_private_address": {
+          "name": "allow_private_address",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "sync_new_indexers": {
+          "name": "sync_new_indexers",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "per_indexer_timeout_seconds": {
+          "name": "per_indexer_timeout_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 20
+        },
+        "overall_search_budget_seconds": {
+          "name": "overall_search_budget_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 60
+        },
+        "auto_expand_categories": {
+          "name": "auto_expand_categories",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "inherit_seed_limits": {
+          "name": "inherit_seed_limits",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "network_profile": {
+          "name": "network_profile",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_tested_at": {
+          "name": "last_tested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_test_ok": {
+          "name": "last_test_ok",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error_message": {
+          "name": "last_error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_synced_at": {
+          "name": "last_synced_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_sync_ok": {
+          "name": "last_sync_ok",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_sync_error": {
+          "name": "last_sync_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "request_indexer_managers_name_lower_uidx": {
+          "name": "request_indexer_managers_name_lower_uidx",
+          "columns": [
+            {
+              "expression": "lower(\"name\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "request_indexer_managers_type_chk": {
+          "name": "request_indexer_managers_type_chk",
+          "value": "\"request_indexer_managers\".\"type\" in ('prowlarr')"
+        },
+        "request_indexer_managers_timeout_chk": {
+          "name": "request_indexer_managers_timeout_chk",
+          "value": "\"request_indexer_managers\".\"per_indexer_timeout_seconds\" between 5 and 180"
+        },
+        "request_indexer_managers_budget_chk": {
+          "name": "request_indexer_managers_budget_chk",
+          "value": "\"request_indexer_managers\".\"overall_search_budget_seconds\" between 5 and 300"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.book_covers": {
+      "name": "book_covers",
+      "schema": "",
+      "columns": {
+        "book_id": {
+          "name": "book_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "medium": {
+          "name": "medium",
+          "type": "varchar(5)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "varchar(9)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "origin": {
+          "name": "origin",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "dormant_since": {
+          "name": "dormant_since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "book_covers_book_id_books_id_fk": {
+          "name": "book_covers_book_id_books_id_fk",
+          "tableFrom": "book_covers",
+          "tableTo": "books",
+          "columnsFrom": ["book_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "book_covers_book_id_medium_pk": {
+          "name": "book_covers_book_id_medium_pk",
+          "columns": ["book_id", "medium"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "book_covers_medium_chk": {
+          "name": "book_covers_medium_chk",
+          "value": "\"book_covers\".\"medium\" in ('ebook', 'audio')"
+        },
+        "book_covers_source_chk": {
+          "name": "book_covers_source_chk",
+          "value": "\"book_covers\".\"source\" in ('extracted', 'custom')"
+        },
+        "book_covers_origin_chk": {
+          "name": "book_covers_origin_chk",
+          "value": "\"book_covers\".\"origin\" in ('embedded', 'folder_image', 'opf', 'provider', 'dock', 'upload', 'legacy')"
+        },
+        "book_covers_width_positive_chk": {
+          "name": "book_covers_width_positive_chk",
+          "value": "\"book_covers\".\"width\" is null or \"book_covers\".\"width\" > 0"
+        },
+        "book_covers_height_positive_chk": {
+          "name": "book_covers_height_positive_chk",
+          "value": "\"book_covers\".\"height\" is null or \"book_covers\".\"height\" > 0"
         }
       },
       "isRLSEnabled": false

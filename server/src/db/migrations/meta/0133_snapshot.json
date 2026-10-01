@@ -1,6 +1,6 @@
 {
-  "id": "acd3f77e-f219-4e1c-b9cd-a8fc5e253e33",
-  "prevId": "eb343249-d6a3-43a5-9515-a9a9a19b4ece",
+  "id": "eb343249-d6a3-43a5-9515-a9a9a19b4ece",
+  "prevId": "ec7ea477-6e96-4a59-bab6-8f0ead7280bd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2964,6 +2964,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -4751,21 +4758,6 @@
           "isUnique": false,
           "concurrently": false,
           "method": "btree",
-          "with": {}
-        },
-        "bm_subtitle_unaccent_trgm_idx": {
-          "name": "bm_subtitle_unaccent_trgm_idx",
-          "columns": [
-            {
-              "expression": "public.bookorbit_unaccent(\"subtitle\") gin_trgm_ops",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
           "with": {}
         }
       },

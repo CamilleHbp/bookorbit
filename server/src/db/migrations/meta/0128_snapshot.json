@@ -1,6 +1,6 @@
 {
-  "id": "1251f1e4-09ec-48b3-b018-b18f0826b76e",
-  "prevId": "ed7997d4-e581-4073-b20e-5e0cb61d16ea",
+  "id": "ed7997d4-e581-4073-b20e-5e0cb61d16ea",
+  "prevId": "e041b915-d96c-4ab4-b16d-9aaa4e7dd59d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -651,12 +651,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'legacy'"
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -689,21 +683,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "refresh_tokens_session_id_idx": {
-          "name": "refresh_tokens_session_id_idx",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -712,15 +691,6 @@
           "tableFrom": "refresh_tokens",
           "tableTo": "users",
           "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "refresh_tokens_session_id_auth_sessions_id_fk": {
-          "name": "refresh_tokens_session_id_auth_sessions_id_fk",
-          "tableFrom": "refresh_tokens",
-          "tableTo": "auth_sessions",
-          "columnsFrom": ["session_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -2964,6 +2934,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -7905,12 +7882,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -7995,21 +7966,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "oidc_sessions_session_id_idx": {
-          "name": "oidc_sessions_session_id_idx",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -8029,15 +7985,6 @@
           "columnsFrom": ["provider_id"],
           "columnsTo": ["id"],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "oidc_sessions_session_id_auth_sessions_id_fk": {
-          "name": "oidc_sessions_session_id_auth_sessions_id_fk",
-          "tableFrom": "oidc_sessions",
-          "tableTo": "auth_sessions",
-          "columnsFrom": ["session_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -25679,125 +25626,6 @@
         "user_podcast_queue_position_nonnegative_chk": {
           "name": "user_podcast_queue_position_nonnegative_chk",
           "value": "\"user_podcast_queue\".\"position\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.auth_sessions": {
-      "name": "auth_sessions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_version": {
-          "name": "token_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "authentication_method": {
-          "name": "authentication_method",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_kind": {
-          "name": "client_kind",
-          "type": "varchar(10)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'web'"
-        },
-        "device_label": {
-          "name": "device_label",
-          "type": "varchar(100)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "auth_sessions_user_id_idx": {
-          "name": "auth_sessions_user_id_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "auth_sessions_expires_at_idx": {
-          "name": "auth_sessions_expires_at_idx",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "auth_sessions_user_id_users_id_fk": {
-          "name": "auth_sessions_user_id_users_id_fk",
-          "tableFrom": "auth_sessions",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "auth_sessions_client_kind_chk": {
-          "name": "auth_sessions_client_kind_chk",
-          "value": "\"auth_sessions\".\"client_kind\" in ('web', 'native')"
-        },
-        "auth_sessions_authentication_method_chk": {
-          "name": "auth_sessions_authentication_method_chk",
-          "value": "\"auth_sessions\".\"authentication_method\" in ('password', 'oidc', 'magic_link', 'setup', 'legacy')"
         }
       },
       "isRLSEnabled": false

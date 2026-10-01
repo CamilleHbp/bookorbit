@@ -12,18 +12,31 @@ import { coverFieldMedium, coverLockField, coverTileState, editorTiles } from '.
 import { nextRovingIndex } from '@/lib/roving-index'
 import BookCoverLightbox from '@/features/book/components/BookCoverLightbox.vue'
 import BookCoverPlaceholder from '@/features/book/components/BookCoverPlaceholder.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import { useSensitiveCoverSetting } from '@/features/book/composables/useSensitiveCoverSetting'
+import { useCoverReveal } from '@/features/book/composables/useCoverReveal'
 import CoverSearchDrawer from './CoverSearchDrawer.vue'
 
 type TileKey = CoverMedium | 'none'
 type CoverLockField = ReturnType<typeof coverLockField>
 
 const props = defineProps<{ book: BookDetail; lockedFields: readonly BookMetadataLockField[]; disabled?: boolean }>()
-const emit = defineEmits<{ coverChanged: [medium: CoverMedium | null]; toggleLock: [field: CoverLockField] }>()
+const emit = defineEmits<{ coverChanged: [medium: CoverMedium | null]; toggleLock: [field: CoverLockField]; sensitiveCoverChanged: [boolean] }>()
 
 const { t } = useI18n()
 const { coverUrl } = useCoverVersions()
 const { hasPermission } = usePermissions()
 const coverAspectRatio = inject(COVER_ASPECT_RATIO_KEY, ref(DEFAULT_COVER_ASPECT_RATIO))
+
+const { sensitiveCover, savingSensitiveCover, saveSensitiveCover } = useSensitiveCoverSetting(computed(() => props.book))
+const { coverRevealed, canRevealCover, toggleCoverReveal } = useCoverReveal(
+  computed(() => props.book.id),
+  sensitiveCover,
+)
+async function handleSensitiveCoverChange(value: boolean) {
+  if (props.disabled || !hasPermission('library_edit_metadata')) return
+  if (await saveSensitiveCover(value)) emit('sensitiveCoverChanged', value)
+}
 
 const bookIdRef = computed(() => props.book.id)
 // One editor per slot, so a pending image on one tile survives selecting the other.
@@ -86,7 +99,7 @@ const tiles = computed(() =>
       lockField,
       locked,
       hasImage: state.hasImage || Boolean(editor.previewSrc),
-      src: editor.previewSrc ?? coverUrl(props.book.id, 'cover', state.version, medium ?? undefined),
+      src: editor.previewSrc ?? coverUrl(props.book.id, 'cover', state.version, medium ?? undefined, coverRevealed.value),
       source: state.source,
       label: medium === 'audio' ? t('book.detail.coverEditor.slotAudio') : t('book.detail.coverEditor.slotEbook'),
       name: medium === 'audio' ? t('book.detail.coverEditor.slotAudioName') : t('book.detail.coverEditor.slotEbookName'),
@@ -384,6 +397,7 @@ onUnmounted(() => clearTimeout(debounceTimer))
         :book="book"
         :medium="lightboxMedium"
         :previews="lightboxPreviews"
+        :revealed="coverRevealed"
         @update:open="handleLightboxOpenChange"
       />
 
@@ -393,6 +407,28 @@ onUnmounted(() => clearTimeout(debounceTimer))
         :role="isMultiSlot ? 'group' : undefined"
         :aria-labelledby="isMultiSlot ? captionId : undefined"
       >
+        <button
+          v-if="canRevealCover"
+          type="button"
+          class="rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground hover:bg-muted"
+          :aria-pressed="coverRevealed"
+          @click="toggleCoverReveal"
+        >
+          {{ coverRevealed ? t('book.sensitiveCover.hide') : t('book.sensitiveCover.reveal') }}
+        </button>
+        <div v-if="hasPermission('library_edit_metadata')" class="flex items-center justify-between gap-3">
+          <div>
+            <label :for="`sensitive-cover-${book.id}`" class="text-xs font-medium">{{ t('book.sensitiveCover.label') }}</label>
+            <p class="text-xs text-muted-foreground">{{ t('book.sensitiveCover.hint') }}</p>
+          </div>
+          <ToggleSwitch
+            :id="`sensitive-cover-${book.id}`"
+            :model-value="sensitiveCover"
+            :disabled="disabled || savingSensitiveCover"
+            @update:model-value="handleSensitiveCoverChange"
+          />
+        </div>
+
         <p v-if="isMultiSlot" :id="captionId" class="text-xs font-medium text-muted-foreground">{{ editingCaption }}</p>
 
         <div class="flex gap-1 p-0.5 rounded-lg bg-muted" role="group" :aria-label="t('book.detail.coverEditor.sourceMode')">

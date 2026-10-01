@@ -1,5 +1,6 @@
 import type { CoverMedium } from '@bookorbit/types'
 import { ref } from 'vue'
+import { useDisplaySettings } from '@/composables/useDisplaySettings'
 
 const STORAGE_KEY = 'cover-versions-v2'
 type CoverVersionInput = number | string | Date | null | undefined
@@ -49,6 +50,7 @@ function versionToken(localVersion: number | undefined, serverVersion: string | 
 }
 
 export function useCoverVersions() {
+  const { hideSensitiveCovers } = useDisplaySettings()
   function bumpVersion(bookId: number) {
     const next = new Map(versions.value).set(bookId, Date.now())
     versions.value = next
@@ -59,7 +61,13 @@ export function useCoverVersions() {
     return versions.value.get(bookId)
   }
 
-  function coverUrl(bookId: number, type: 'thumbnail' | 'cover' = 'thumbnail', sourceVersion?: CoverVersionInput, medium?: CoverMedium): string {
+  function coverUrl(
+    bookId: number,
+    type: 'thumbnail' | 'cover' = 'thumbnail',
+    sourceVersion?: CoverVersionInput,
+    medium?: CoverMedium,
+    revealed = false,
+  ): string {
     const base = `/api/v1/books/${bookId}/${type}`
     const localVersion = versions.value.get(bookId)
     const serverVersion = normalizeVersion(sourceVersion)
@@ -67,6 +75,7 @@ export function useCoverVersions() {
     const params = new URLSearchParams()
     if (token) params.set('t', token)
     if (medium) params.set('medium', medium)
+    if (hideSensitiveCovers.value && !revealed) params.set('hideSensitive', 'true')
     const query = params.toString()
     return query ? `${base}?${query}` : base
   }

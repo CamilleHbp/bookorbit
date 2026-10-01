@@ -1,6 +1,6 @@
 {
-  "id": "5a908057-8ea7-4571-b52c-b692177a9fcc",
-  "prevId": "acd3f77e-f219-4e1c-b9cd-a8fc5e253e33",
+  "id": "acd3f77e-f219-4e1c-b9cd-a8fc5e253e33",
+  "prevId": "eb343249-d6a3-43a5-9515-a9a9a19b4ece",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2164,7 +2164,7 @@
         },
         "mark_as_finished_percent_complete": {
           "name": "mark_as_finished_percent_complete",
-          "type": "double precision",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "default": 98
@@ -2964,6 +2964,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {

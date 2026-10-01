@@ -1,6 +1,6 @@
 {
-  "id": "ec7ea477-6e96-4a59-bab6-8f0ead7280bd",
-  "prevId": "9b672c6b-6bf6-4990-94d7-f5402f5aa570",
+  "id": "9b672c6b-6bf6-4990-94d7-f5402f5aa570",
+  "prevId": "1bedf149-afb9-406f-9f25-9ea996117f43",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2964,6 +2964,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -7012,7 +7019,7 @@
         },
         "reading_sessions_source_chk": {
           "name": "reading_sessions_source_chk",
-          "value": "\"reading_sessions\".\"source\" in ('web', 'ios', 'watchos', 'android', 'koreader', 'manual', 'kobo')"
+          "value": "\"reading_sessions\".\"source\" in ('web', 'ios', 'watchos', 'koreader', 'manual', 'kobo')"
         }
       },
       "isRLSEnabled": false
