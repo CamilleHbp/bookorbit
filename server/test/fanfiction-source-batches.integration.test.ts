@@ -182,6 +182,33 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
     await expect(batches.listFailures(libraryId, queued.id, undefined, 25, { ...user, id: user.id + 1 })).rejects.toBeInstanceOf(ForbiddenException);
   }, 60_000);
 
+  it('restricts batch mutations to the owner and preserves outcomes when a superuser retries', async () => {
+    const selected = await createSources(2, true);
+    await db.update(schema.fanfictionSources).set({ state: 'unlinked' }).where(eq(schema.fanfictionSources.id, selected[1].id));
+    const queued = await batches.start(libraryId, { idempotencyKey: randomUUID(), allMatching: true, action: 'update' }, user);
+    const job = (await jobs.claim())!;
+    const result = await run(job);
+    await jobs.finish(job, 'review_required', result);
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ state: 'succeeded' })
+      .where(and(eq(schema.fanfictionJobs.libraryId, libraryId), eq(schema.fanfictionJobs.kind, 'update')));
+    const [account] = await db
+      .insert(schema.users)
+      .values({ username: `batch-takeover-${randomUUID()}`, name: 'Takeover test', passwordHash: 'not-a-login-hash' })
+      .returning();
+    const other = { ...user, id: account.id };
+    try {
+      await expect(jobs.retry(libraryId, queued.id, other)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(jobs.cancel(libraryId, queued.id, other)).rejects.toBeInstanceOf(ForbiddenException);
+      await jobs.retry(libraryId, queued.id, { ...other, isSuperuser: true });
+      expect(await batches.status(libraryId, queued.id, other)).toMatchObject({ total: 2, updated: 1, needsAttention: 1, checked: 2 });
+      expect((await batches.listFailures(libraryId, queued.id, undefined, 10, other)).items).toHaveLength(1);
+    } finally {
+      await db.delete(schema.users).where(eq(schema.users.id, account.id));
+    }
+  }, 60_000);
+
   it('commits child jobs with checkpoints and rolls both back after interruption', async () => {
     const selected = await createSources(2, true);
     const request = { idempotencyKey: randomUUID(), ids: selected.map((source) => source.id), action: 'update' as const };
