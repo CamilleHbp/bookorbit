@@ -8,7 +8,9 @@ import FanfictionPage from './FanfictionPage.vue'
 
 vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
-vi.mock('@/features/collection/composables/useCollections', () => ({ useCollections: () => ({ collections: ref([]), fetchCollections: vi.fn() }) }))
+vi.mock('@/features/collection/composables/useCollections', () => ({
+  useCollections: () => ({ collections: ref([]), fetchCollections: vi.fn<() => Promise<void>>() }),
+}))
 const response = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response
 const source = {
   id: 'story',
