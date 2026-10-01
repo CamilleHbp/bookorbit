@@ -22,6 +22,8 @@ import { AppSettingsService } from '../src/modules/app-settings/app-settings.ser
 import { UploadValidatorService } from '../src/modules/upload/upload-validator.service';
 import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { ManagedMetadataService } from '../src/modules/metadata/managed-metadata.service';
+import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
+import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
 
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
@@ -37,7 +39,8 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
   const authorize = vi.fn(async () => {});
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation') throw new Error('An isolated validation database is required');
+    if (!/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database)))
+      throw new Error('An isolated validation database is required');
     pool = new Pool(config);
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
@@ -56,6 +59,8 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
           ManagedTagService,
           ManagedMetadataService,
           RevisionCatalogService,
+          FanfictionReviewService,
+          FanfictionReaderService,
         ].map((provide) => ({ provide, useValue: {} })),
       ],
     }).compile();
@@ -133,6 +138,50 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
   const fresh = async (id: string) => (await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, id)))[0];
   const run = (job: typeof schema.fanfictionJobs.$inferSelect, signal = new AbortController().signal) => batches.run(job, user, authorize, signal);
 
+  it('counts only the selected library and tracks child updates until they finish', async () => {
+    const selected = await createSources(3, true);
+    expect(await batches.scope(libraryId, { state: 'paused' }, user)).toEqual({ total: 3, matching: 0 });
+    const queued = await batches.start(libraryId, { idempotencyKey: randomUUID(), allMatching: true, action: 'update' }, user);
+    const job = (await jobs.claim())!;
+    const result = await run(job);
+    await jobs.finish(job, 'succeeded', result);
+    expect(await batches.status(libraryId, queued.id, user)).toMatchObject({
+      total: 3,
+      checked: 0,
+      running: 3,
+      finished: false,
+      trackingAvailable: true,
+    });
+    const children = (await jobs.list(libraryId, { kind: 'update', limit: 10 }, user)).items;
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ state: 'succeeded', result: { noChange: false } })
+      .where(eq(schema.fanfictionJobs.id, children[0].id));
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ state: 'no_change', result: { noChange: true } })
+      .where(eq(schema.fanfictionJobs.id, children[1].id));
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ state: 'configuration_blocked', errorCode: 'authentication_required' })
+      .where(eq(schema.fanfictionJobs.id, children[2].id));
+    expect(await batches.status(libraryId, queued.id, user)).toMatchObject({
+      total: 3,
+      checked: 3,
+      running: 0,
+      updated: 1,
+      unchanged: 1,
+      needsAttention: 1,
+      finished: true,
+    });
+    const review = await batches.listFailures(libraryId, queued.id, undefined, 1, user);
+    expect(review.items).toHaveLength(1);
+    expect(review.items[0]).toMatchObject({ errorCode: 'authentication_required', bookId: expect.any(Number), site: 'example.org' });
+    expect(selected.some((source) => source.id === review.items[0].sourceId)).toBe(true);
+    await expect(batches.status(libraryId, queued.id, { ...user, id: user.id + 1 })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(batches.listFailures(libraryId, queued.id, undefined, 25, { ...user, id: user.id + 1 })).rejects.toBeInstanceOf(ForbiddenException);
+  }, 60_000);
+
   it('commits child jobs with checkpoints and rolls both back after interruption', async () => {
     const selected = await createSources(2, true);
     const request = { idempotencyKey: randomUUID(), ids: selected.map((source) => source.id), action: 'update' as const };
@@ -148,6 +197,7 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
     await expect(run(job)).rejects.toThrow('Interrupted before the checkpoint');
     expect((await jobs.list(libraryId, { kind: 'update', limit: 100 }, user)).items).toHaveLength(0);
     expect((await fresh(job.id)).sourceSelection?.processed).toBe(0);
+    expect(await db.select().from(schema.fanfictionSourceBatchItems).where(eq(schema.fanfictionSourceBatchItems.batchId, job.id))).toHaveLength(0);
     interruption.mockRestore();
     const result = await run(await fresh(job.id));
     expect(result?.selection).toMatchObject({ processed: 2, failed: 0, finished: true });

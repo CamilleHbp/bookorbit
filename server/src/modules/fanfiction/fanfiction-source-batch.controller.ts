@@ -5,7 +5,7 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import { RequireLibraryAccess } from '../../common/decorators/require-library-access.decorator';
 import type { RequestUser } from '../../common/types/request-user';
 import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
-import { SelectFanfictionSourcesDto } from './dto/fanfiction-source-batch.dto';
+import { FanfictionSourceBatchScopeDto, SelectFanfictionSourcesDto } from './dto/fanfiction-source-batch.dto';
 import { ListFanfictionProfilesDto } from './dto/fanfiction-profile.dto';
 
 @Controller('libraries/:libraryId/fanfiction/source-batches')
@@ -13,6 +13,16 @@ import { ListFanfictionProfilesDto } from './dto/fanfiction-profile.dto';
 @RequireLibraryAccess('owner')
 export class FanfictionSourceBatchController {
   constructor(private readonly batches: FanfictionSourceBatchService) {}
+
+  @Get('scope')
+  scope(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: FanfictionSourceBatchScopeDto, @CurrentUser() user: RequestUser) {
+    return this.batches.scope(libraryId, dto, user);
+  }
+
+  @Get(':jobId/status')
+  status(@Param('libraryId', ParseIntPipe) libraryId: number, @Param('jobId', ParseUUIDPipe) jobId: string, @CurrentUser() user: RequestUser) {
+    return this.batches.status(libraryId, jobId, user);
+  }
 
   @Post()
   @HttpCode(202)

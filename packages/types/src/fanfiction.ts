@@ -143,7 +143,7 @@ export interface FanfictionJob {
     revisionId?: string;
     noChange?: boolean;
     discovery?: FanfictionDiscoveryProgress;
-    selection?: { processed: number; failed: number; finished: boolean; action?: FanfictionSourceBatchAction };
+    selection?: { tracked?: boolean; processed: number; failed: number; finished: boolean; action?: FanfictionSourceBatchAction };
   } | null;
   errorCode: string | null;
   createdAt: string;
@@ -252,6 +252,8 @@ export interface FanfictionDiscoverySelection {
 export type FanfictionSourceBatchAction = "update" | "refresh" | "retry" | "schedule";
 
 export interface FanfictionSourceSelection {
+  total?: number;
+  tracksOutcomes?: boolean;
   cutoff: string;
   cursor: string | null;
   ids: string[] | null;
@@ -265,8 +267,34 @@ export interface FanfictionSourceSelection {
 }
 
 export interface FanfictionSourceBatchFailurePage {
-  items: { sourceId: string; title: string; errorCode: string }[];
+  items: {
+    sourceId: string;
+    title: string;
+    errorCode: string;
+    jobId?: string | null;
+    bookId?: number | null;
+    site?: string;
+    profileId?: string | null;
+  }[];
   nextCursor: string | null;
+}
+
+export interface FanfictionSourceBatchScope {
+  total: number;
+  matching: number;
+}
+
+export interface FanfictionSourceBatchStatus {
+  job: FanfictionJob;
+  total: number | null;
+  checked: number;
+  updated: number;
+  unchanged: number;
+  needsAttention: number;
+  running: number;
+  waiting: number;
+  finished: boolean;
+  trackingAvailable: boolean;
 }
 
 export interface FanfictionSource {

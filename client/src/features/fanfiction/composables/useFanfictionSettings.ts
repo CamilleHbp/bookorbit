@@ -237,7 +237,7 @@ export function useFanfictionSettings() {
     clearEditor()
     showEditor.value = false
   }
-  async function editProfile(profile: FanfictionProfileSummary) {
+  async function editProfile(profile: Pick<FanfictionProfileSummary, 'id'>) {
     const current = generation
     await perform(async () => {
       const view = await request<FanfictionProfileView>(`${base.value}/profiles/${profile.id}`)

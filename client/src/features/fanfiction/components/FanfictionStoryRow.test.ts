@@ -31,6 +31,31 @@ describe('story row feedback', () => {
     wrapper.unmount()
   })
 
+  it('opens the saved source login directly and pluralizes a single chapter', async () => {
+    const wrapper = mount(FanfictionStoryRow, {
+      props: {
+        ...props,
+        source: {
+          ...source,
+          chapterCount: 1,
+          storyStatus: '',
+          state: 'configuration_blocked',
+          attentionCode: 'authentication_required',
+          profileId: 'profile',
+        },
+      },
+      global,
+    })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Fix source login')!
+      .trigger('click')
+    expect(wrapper.emitted('fixLogin')).toEqual([['profile']])
+    expect(wrapper.text()).toContain('1 chapter')
+    expect(wrapper.text()).not.toContain('1 chapters')
+    wrapper.unmount()
+  })
+
   it('offers blocked stories a direct update-settings destination', () => {
     const wrapper = mount(FanfictionStoryRow, {
       props: { ...props, source: { ...source, state: 'configuration_blocked', attentionCode: 'authentication_required' } },

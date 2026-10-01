@@ -4,6 +4,7 @@ import type {
   FanfictionJobPage,
   FanfictionSource,
   FanfictionSourceBatchAction,
+  FanfictionSourceBatchStatus,
   FanfictionSourceBatchFailurePage,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
@@ -31,11 +32,16 @@ export function useFanfictionSourceBatch(
   const job = ref<FanfictionJob | null>(null)
   const failures = ref<FanfictionSourceBatchFailurePage['items']>([])
   const failureCursor = ref<string | null>(null)
+  const summary = ref<FanfictionSourceBatchStatus | null>(null)
+  const trackingPending = ref(false)
   const busy = ref(false)
   const error = ref('')
-  const active = computed(() => !!job.value && ['queued', 'running'].includes(job.value.state))
+  const selecting = computed(() => !!job.value && ['queued', 'running'].includes(job.value.state))
+  const active = computed(() => selecting.value || trackingPending.value || (summary.value?.running ?? 0) > 0)
   const canStart = computed(() => toValue(libraryId) !== null && !busy.value && !active.value && (allMatching.value || selectedIds.value.length > 0))
-  const canRetry = computed(() => !!job.value && ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.value.state))
+  const canRetry = computed(
+    () => !active.value && !!job.value && ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.value.state),
+  )
   const base = computed(() => `/api/v1/libraries/${toValue(libraryId)}/fanfiction`)
   let generation = 0
   let disposed = false
@@ -103,10 +109,20 @@ export function useFanfictionSourceBatch(
   }
   async function acceptJob(id: number, result: FanfictionJob) {
     if (!valid(id)) return
+    if (job.value?.id !== result.id) summary.value = null
     job.value = result
-    if (result.state === 'review_required') await loadFailures(id)
+    trackingPending.value = result.result?.selection?.tracked === true
+    if (trackingPending.value) {
+      const status = await request<FanfictionSourceBatchStatus>(`${base.value}/source-batches/${result.id}/status`)
+      if (!valid(id)) return
+      summary.value = status
+      trackingPending.value = false
+      result = status.job
+    } else summary.value = null
+    job.value = result
+    if (result.state === 'review_required' || (summary.value?.needsAttention ?? 0) > 0) await loadFailures(id)
     if (!valid(id)) return
-    if (['succeeded', 'review_required'].includes(result.state) && completedJob !== result.id) {
+    if (!active.value && ['succeeded', 'review_required', 'cancelled'].includes(result.state) && completedJob !== result.id) {
       completedJob = result.id
       await onCompleted()
     }
@@ -156,18 +172,20 @@ export function useFanfictionSourceBatch(
       await acceptJob(id, result)
     })
   }
-  async function start() {
-    if (!canStart.value) return
+  async function start(checkLibrary = false) {
+    if (checkLibrary ? toValue(libraryId) === null || busy.value || active.value : !canStart.value) return
     await perform(async (id) => {
       const minutes = interval.value === 'manual' ? null : Number(interval.value)
-      if (action.value === 'schedule' && minutes !== null && (!Number.isInteger(minutes) || minutes < 60 || minutes > 525600))
+      if (!checkLibrary && action.value === 'schedule' && minutes !== null && (!Number.isInteger(minutes) || minutes < 60 || minutes > 525600))
         throw new Error('Use an interval between 60 and 525600 minutes.')
       const input = {
-        action: action.value,
-        ...(allMatching.value
-          ? { allMatching: true, ...(toValue(search) ? { search: toValue(search) } : {}), ...(toValue(state) ? { state: toValue(state) } : {}) }
-          : { ids: [...selectedIds.value].sort() }),
-        ...(action.value === 'schedule' ? { intervalMinutes: minutes } : {}),
+        action: checkLibrary ? 'update' : action.value,
+        ...(checkLibrary
+          ? { allMatching: true }
+          : allMatching.value
+            ? { allMatching: true, ...(toValue(search) ? { search: toValue(search) } : {}), ...(toValue(state) ? { state: toValue(state) } : {}) }
+            : { ids: [...selectedIds.value].sort() }),
+        ...(!checkLibrary && action.value === 'schedule' ? { intervalMinutes: minutes } : {}),
       }
       const identity = JSON.stringify(input)
       if (pending?.input !== identity) pending = { input: identity, key: crypto.randomUUID() }
@@ -188,6 +206,17 @@ export function useFanfictionSourceBatch(
       failures.value = []
       failureCursor.value = null
       await acceptJob(id, result)
+    })
+  }
+  async function retryStory(jobId: string) {
+    if (active.value) return
+    await perform(async (id) => {
+      await request(`${base.value}/jobs/${jobId}/retry`, {})
+      if (!valid(id) || !job.value) return
+      completedJob = null
+      failures.value = []
+      failureCursor.value = null
+      await acceptJob(id, await request<FanfictionJob>(`${base.value}/jobs/${job.value.id}`))
     })
   }
   async function cancel() {
@@ -226,6 +255,8 @@ export function useFanfictionSourceBatch(
       pending = null
       completedJob = null
       job.value = null
+      summary.value = null
+      trackingPending.value = false
       failures.value = []
       failureCursor.value = null
       busy.value = false
@@ -265,12 +296,16 @@ export function useFanfictionSourceBatch(
     busy,
     error,
     active,
+    selecting,
+    summary,
     canStart,
     canRetry,
-    start,
+    start: () => start(),
+    checkAll: () => start(true),
     open,
     refresh,
     retry,
+    retryStory,
     cancel,
     moreFailures,
     selectPage,
