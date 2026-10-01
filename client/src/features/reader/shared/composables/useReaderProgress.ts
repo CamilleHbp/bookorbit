@@ -222,6 +222,7 @@ export function useReaderProgress(
     mediaOverlaySectionIndex.value = section
     positionSeconds.value = seconds
     pendingSource.value = 'narration'
+    restorationPosition = false
     scheduleSave()
   }
 
@@ -231,11 +232,12 @@ export function useReaderProgress(
     mediaOverlaySectionIndex.value = null
   }
 
-  async function save(options: { deliberate?: boolean } = {}) {
+  async function save(saveOptions: { deliberate?: boolean } = {}) {
     if (!unref(trackingEnabled)) return
-    if (options.deliberate) restorationPosition = false
+    if (saveOptions.deliberate) restorationPosition = false
     if (restorationPosition) return
-    if (capturedReading) {
+    if (capturedReading && options.userId !== undefined && capturedReading.owner !== unref(options.userId)) return
+    if (capturedReading && pendingSource.value !== 'narration') {
       if (savingReading) return savingReading
       const captured = capturedReading
       savingReading = (async () => {

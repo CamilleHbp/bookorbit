@@ -30,6 +30,8 @@ export class BookProgressProjectionService {
       koreaderProgress: native?.kind === 'xpointer' ? native.value : null,
       pageNumber: null,
       positionSeconds: null,
+      mediaOverlayFragment: null,
+      mediaOverlaySectionIndex: null,
       koboLocationSource: null,
       koboLocationType: null,
       koboLocationValue: null,
