@@ -199,7 +199,7 @@ export class FanfictionProfileService {
           .limit(1);
         if (source)
           throw new ConflictException(
-            'This profile is assigned to stories. Choose another profile or Public access in each story’s Updates settings before deleting it.',
+            'This profile is assigned to stories. Choose another profile or the website login in each story’s Updates settings before deleting it.',
           );
         await tx
           .update(sources)

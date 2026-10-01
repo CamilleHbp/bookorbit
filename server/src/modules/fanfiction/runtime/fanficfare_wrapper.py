@@ -186,21 +186,39 @@ def execute_request(request, report_progress=lambda progress: None):
     return {'ok': True, 'result': result, 'cookies': cookies}
 
 
+def http_error_status(error):
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        status = getattr(error, 'status_code', None)
+        if type(status) is int and 400 <= status <= 599:
+            return status
+        error = error.__cause__ or error.__context__
+    return None
+
+
 def failure_code(error):
-    if type(error).__name__ == 'AdultCheckRequired':
+    name = type(error).__name__
+    status = http_error_status(error)
+    if name == 'AdultCheckRequired':
         return 'adult_confirmation_required'
-    if type(error).__name__ == 'AccessDenied':
+    if name == 'AccessDenied' or status == 403:
         return 'access_denied'
-    if type(error).__name__ == 'HTTPErrorFFF' and getattr(error, 'status_code', None) == 403:
-        return 'access_denied'
-    if type(error).__name__ == 'FailedToLogin' or (
-            type(error).__name__ == 'HTTPErrorFFF' and getattr(error, 'status_code', None) == 401):
+    if name == 'FailedToLogin' or status == 401:
         return 'authentication_required'
-    if type(error).__name__ == 'PersonalIniFailed':
+    if name == 'PersonalIniFailed':
         return 'configuration_blocked'
+    if isinstance(error, PolicyError):
+        return error.code
     if isinstance(error, TimeoutError):
         return 'download_timeout'
-    return error.code if isinstance(error, PolicyError) else 'source_failed'
+    if status == 429:
+        return 'source_rate_limited'
+    if status is not None and status >= 500:
+        return 'source_unavailable'
+    if name == 'StoryDoesNotExist' or status in (404, 410):
+        return 'source_not_found'
+    return 'source_failed'
 
 
 def main():
@@ -224,7 +242,7 @@ def main():
         frames = traceback.extract_tb(error.__traceback__)
         location = f'{Path(frames[-1].filename).name}:{frames[-1].lineno}:{frames[-1].name}' if frames else ''
         # Exception messages can contain credentials, source content or private URLs.
-        result = {'ok': False, 'code': code, 'errorClass': name, 'errorLocation': location}
+        result = {'ok': False, 'code': code, 'errorClass': name, 'errorLocation': location, 'httpStatus': http_error_status(error)}
     encoded = json.dumps(result, ensure_ascii=True)
     if len(encoded) > 1024 * 1024:
         encoded = '{"ok":false,"code":"output_limit","errorClass":"PolicyError"}'

@@ -17,7 +17,21 @@ import { UserService } from '../user/user.service';
 
 describe('Fanfiction queued execution', () => {
   it('checks import access repeatedly without renewing a row locked by publication', async () => {
-    const job = { id: 'job', kind: 'import', libraryId: 5, userId: 7, tokenVersion: 1, attempts: 1 };
+    const job = {
+      id: 'job',
+      kind: 'import',
+      libraryId: 5,
+      userId: 7,
+      tokenVersion: 1,
+      attempts: 1,
+      profileId: null,
+      url: 'https://archiveofourown.org/works/1',
+    };
+    const document = { configuration: '[archiveofourown.org]\nusername: reader', cookies: [] };
+    const profiles = {
+      match: vi.fn().mockResolvedValue({ profile: { id: 'saved-login' } }),
+      session: vi.fn().mockResolvedValue({ document, saveCookies: undefined }),
+    };
     const jobs = {
       claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null),
       finish: vi.fn().mockResolvedValue(true),
@@ -38,9 +52,9 @@ describe('Fanfiction queued execution', () => {
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionAccessService, useValue: access },
         { provide: FanfictionImportService, useValue: imports },
+        { provide: FanfictionProfileService, useValue: profiles },
         { provide: UserService, useValue: { findByIdWithPermissions: vi.fn().mockResolvedValue({ id: 7, tokenVersion: 1 }) } },
         ...[
-          FanfictionProfileService,
           FanficfareRuntimeService,
           FanfictionUpdateService,
           FanfictionRollbackService,
@@ -48,7 +62,10 @@ describe('Fanfiction queued execution', () => {
           FanfictionAdoptionService,
           FanfictionSourceBatchService,
           FanfictionReplacementService,
-        ].map((provide) => ({ provide, useValue: {} })),
+        ].map((provide) => ({
+          provide,
+          useValue: provide === FanfictionProfileService ? { match: vi.fn().mockResolvedValue({ profile: null }) } : {},
+        })),
       ],
     }).compile();
     const worker = module.get(FanfictionWorkerService);
@@ -56,6 +73,9 @@ describe('Fanfiction queued execution', () => {
       await worker.tick();
       await vi.waitFor(() => expect(jobs.finish).toHaveBeenCalledWith(job, 'succeeded', { bookId: 42, bookFileId: 43 }, null));
       expect(jobs.renew).not.toHaveBeenCalled();
+      expect(profiles.match).toHaveBeenCalledWith(5, job.url, expect.objectContaining({ id: 7 }));
+      expect(profiles.session).toHaveBeenCalledWith(5, 'saved-login', expect.objectContaining({ id: 7 }), expect.any(Function));
+      expect(imports.run.mock.calls[0][2]).toBe(document);
       expect(access.administer).toHaveBeenCalledTimes(4);
     } finally {
       await worker.onModuleDestroy();
@@ -130,6 +150,7 @@ describe('Fanfiction queued execution', () => {
     'response_too_large',
     'source_policy_blocked',
     'invalid_epub',
+    'source_not_found',
   ])('stops a preview requiring %s without repeating an unchanged request', async (code) => {
     const job = { id: 'job', kind: 'preview', libraryId: 5, userId: 7, tokenVersion: 1, attempts: 1 };
     const jobs = { claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null), finish: vi.fn().mockResolvedValue(true) };
@@ -149,7 +170,10 @@ describe('Fanfiction queued execution', () => {
           FanfictionAdoptionService,
           FanfictionReplacementService,
           FanfictionSourceBatchService,
-        ].map((provide) => ({ provide, useValue: {} })),
+        ].map((provide) => ({
+          provide,
+          useValue: provide === FanfictionProfileService ? { match: vi.fn().mockResolvedValue({ profile: null }) } : {},
+        })),
       ],
     }).compile();
     const worker = module.get(FanfictionWorkerService);

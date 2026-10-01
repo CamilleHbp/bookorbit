@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import StoryReadingActions from './StoryReadingActions.vue'
 import ImportProgress from './ImportProgress.vue'
+import { sourcePresetForUrl } from '../lib/source-presets'
 
 const props = defineProps<{
   source: FanfictionSource
@@ -27,6 +28,11 @@ const canCheck = computed(
 )
 const needsAttention = computed(
   () => Boolean(props.source.attentionCode) || ['review_required', 'configuration_blocked'].includes(props.source.state),
+)
+const canFixLogin = computed(() => sourcePresetForUrl(props.source.canonicalUrl)?.login && props.source.attentionCode === 'source_not_found')
+const canRetry = computed(
+  () =>
+    canCheck.value && ['source_failed', 'source_unavailable', 'source_rate_limited', 'download_timeout'].includes(props.source.attentionCode ?? ''),
 )
 const details = computed(() => ({ name: 'book-detail', params: { bookId: props.source.bookId }, query: { tab: 'story-updates' } }))
 const succeeded = computed(() => props.job && ['succeeded', 'no_change'].includes(props.job.state))
@@ -125,9 +131,14 @@ function handlePause() {
       <ImportProgress v-else-if="job" :job="job" />
       <StoryUpdateOutcome v-if="succeeded && job" :job="job" />
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Button v-if="source.attentionCode === 'authentication_required'" variant="outline" :disabled="disabled" @click="handleFixLogin">{{
-          t('fanfiction.bulk.fixLogin')
-        }}</Button>
+        <Button
+          v-if="source.attentionCode === 'authentication_required' || canFixLogin"
+          variant="outline"
+          :disabled="disabled || active"
+          @click="handleFixLogin"
+          >{{ t('fanfiction.bulk.fixLogin') }}</Button
+        >
+        <Button v-else-if="canRetry" variant="outline" :disabled="disabled || active" @click="handleCheck">{{ t('fanfiction.retry') }}</Button>
         <Button v-else-if="needsAttention && source.bookId" variant="outline" as-child
           ><RouterLink :to="details">{{
             t(source.attentionCode === 'metadata_review_required' ? 'fanfiction.metadataReview.title' : 'fanfiction.reviewStory')
@@ -142,6 +153,9 @@ function handlePause() {
           ><RouterLink :to="{ name: 'settings-fanfiction' }">{{ t('fanfiction.configureSource') }}</RouterLink></Button
         >
         <Button v-else-if="canCheck" variant="outline" :disabled="disabled || active" @click="handleCheck">{{ t('fanfiction.checkNow') }}</Button>
+        <Button v-if="needsAttention" variant="ghost" as-child>
+          <a :href="source.canonicalUrl" target="_blank" rel="noopener noreferrer">{{ t('fanfiction.openWebsite') }}</a>
+        </Button>
         <span class="text-xs text-muted-foreground">{{ t(`fanfiction.sourceStates.${source.state}`) }}</span>
         <span class="text-xs text-muted-foreground">{{ t('fanfiction.lastChecked') }}: {{ lastChecked }}</span>
       </div>

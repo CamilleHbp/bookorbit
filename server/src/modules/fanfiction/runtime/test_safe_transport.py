@@ -62,6 +62,39 @@ class FakeResponse:
 
 
 class HttpResponseTest(unittest.TestCase):
+    def test_retries_temporary_website_failures_within_the_request_budget(self):
+        connection = MagicMock()
+        connection.getresponse.side_effect = [FakeResponse(b'Unavailable', status=525), FakeResponse(b'Story')]
+        transport = SafeTransport(max_requests=2)
+        with patch('safe_transport.PinnedConnection', return_value=connection), patch('safe_transport.time.sleep') as sleep:
+            self.assertEqual(transport.request('GET', 'https://example.org/story')[:2], (200, b'Story'))
+            sleep.assert_called_once_with(1)
+            self.assertEqual(transport.remaining_requests, 0)
+            self.assertEqual(connection.close.call_count, 2)
+
+    def test_retry_limit_and_no_replay_of_login_requests(self):
+        for method, status, attempts in [('GET', 503, 3), ('POST', 503, 1), ('GET', 404, 1), ('GET', 429, 1)]:
+            with self.subTest(method=method, status=status):
+                connection = MagicMock()
+                connection.getresponse.side_effect = [FakeResponse(b'', status=status) for _ in range(attempts)]
+                with patch('safe_transport.PinnedConnection', return_value=connection), patch('safe_transport.time.sleep'):
+                    self.assertEqual(SafeTransport().request(method, 'https://example.org/story')[0], status)
+                    self.assertEqual(connection.close.call_count, attempts)
+
+    def test_retries_interrupted_chapter_reads_without_restarting_the_download(self):
+        connection = MagicMock()
+        connection.getresponse.side_effect = [TimeoutError(), ConnectionResetError(), FakeResponse(b'Chapter')]
+        with patch('safe_transport.PinnedConnection', return_value=connection), patch('safe_transport.time.sleep'):
+            self.assertEqual(SafeTransport().request('GET', 'https://example.org/chapter')[1], b'Chapter')
+            self.assertEqual(connection.close.call_count, 3)
+
+    def test_retry_cannot_extend_deadlines_or_request_budgets(self):
+        for transport, error in [(SafeTransport(timeout=0.1), DownloadTimeoutError), (SafeTransport(max_requests=1), DownloadLimitError)]:
+            connection = MagicMock()
+            connection.getresponse.return_value = FakeResponse(b'', status=525)
+            with patch('safe_transport.PinnedConnection', return_value=connection), patch('safe_transport.time.sleep'), self.assertRaises(error):
+                transport.request('GET', 'https://example.org/story')
+
     def request(self, response, transport=None, **kwargs):
         connection = MagicMock()
         connection.getresponse.return_value = response

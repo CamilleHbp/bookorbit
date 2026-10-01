@@ -74,6 +74,7 @@ describe('private FanFicFare runtime session output', () => {
     output.response = {
       ok: false,
       code: 'download_limit',
+      httpStatus: 429,
       errorClass: 'DownloadLimitError',
       errorLocation: 'safe_transport.py:240:read_body\n',
       message: 'private-secret',
@@ -83,7 +84,7 @@ describe('private FanFicFare runtime session output', () => {
       response: { errorCode: 'download_limit' },
     });
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('errorClass=DownloadLimitError errorCode=download_limit location=safe_transport.py:240:read_body'),
+      expect.stringContaining('errorClass=DownloadLimitError errorCode=download_limit location=safe_transport.py:240:read_body httpStatus=429'),
     );
     expect(JSON.stringify(warn.mock.calls)).not.toContain('private-secret');
     expect(JSON.stringify(warn.mock.calls)).not.toContain('private-renewal');

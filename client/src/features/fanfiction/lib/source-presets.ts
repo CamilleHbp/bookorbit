@@ -1,5 +1,14 @@
 export const sourcePresets = [
   {
+    id: 'storiesonline',
+    name: 'StoriesOnline',
+    section: 'storiesonline.net',
+    hosts: ['storiesonline.net', 'www.storiesonline.net'],
+    url: 'https://storiesonline.net',
+    login: true,
+    configuration: '[storiesonline.net]\nalways_login: true\n',
+  },
+  {
     id: 'fictionlive',
     name: 'Fiction.live',
     section: 'fiction.live',

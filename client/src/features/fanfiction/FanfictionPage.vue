@@ -140,18 +140,8 @@ const navigation = computed(() => [
   { id: 'activity' as const, label: t('fanfiction.activity') },
   { id: 'profiles' as const, label: t('fanfiction.profiles') },
 ])
-const {
-  sourceSettings,
-  detectedSite,
-  selectedProfile,
-  addSource,
-  editSource,
-  repairingSource,
-  repairing,
-  editStoryLogin,
-  applyStoryLogin,
-  cancelStoryLogin,
-} = useInlineSourceSettings(libraryId, profiles, profileId, urls)
+const { sourceSettings, detectedSite, selectedProfile, addSource, editSource, repairingSource, repairing, editStoryLogin, cancelStoryLogin } =
+  useInlineSourceSettings(libraryId, profiles, profileId, urls)
 watch(tab, () => cancelStoryLogin())
 const preferences = reactive(useFanfictionPreferences())
 const configuring = ref<(typeof page.candidates.value)[number] | null>(null)
@@ -170,14 +160,9 @@ async function handleProfileSaved(profile: FanfictionProfileSummary) {
   configuring.value = null
   if (profile.libraryId !== libraryId.value) return
   if (repairingSource.value) {
-    const source = await applyStoryLogin(profile)
-    if (!source) return
+    cancelStoryLogin()
     useSavedProfile(profile)
-    if (source.bookFileId) await checkNow(source)
-    else {
-      urls.value = source.canonicalUrl
-      showAdd()
-    }
+    if (profile.repairJobId) await bulk.open(profile.repairJobId)
     await refresh()
   } else if (candidate) await retryImport(candidate, profile)
   else useSavedProfile(profile)
@@ -369,7 +354,7 @@ onMounted(() => {
           <StoryFilters v-model="page.filters.value" :disabled="busy || bulk.active || repairing || sourceSettings.busy" />
         </form>
         <div
-          v-if="repairing || sourceSettings.showEditor || sourceSettings.error"
+          v-show="repairing || sourceSettings.showEditor || sourceSettings.error"
           ref="sourceRepair"
           tabindex="-1"
           :aria-busy="repairing"

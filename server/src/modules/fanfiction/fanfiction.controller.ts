@@ -20,6 +20,7 @@ import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { FanfictionActivityService } from './fanfiction-activity.service';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { ImportStoryReviewDto } from './dto/fanfiction-source.dto';
+import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
 
 @Controller('libraries/:libraryId/fanfiction')
 @RequirePermission(Permission.ManageLibraries)
@@ -32,6 +33,7 @@ export class FanfictionController {
     private readonly jobs: FanfictionJobService,
     private readonly activity: FanfictionActivityService,
     private readonly reviews: FanfictionReviewService,
+    private readonly batches: FanfictionSourceBatchService,
   ) {}
 
   @Post('previews')
@@ -111,18 +113,20 @@ export class FanfictionController {
   }
 
   @Post('profiles')
-  create(@Param('libraryId', ParseIntPipe) libraryId: number, @Body() dto: CreateFanfictionProfileDto, @CurrentUser() user: RequestUser) {
-    return this.profiles.create(libraryId, dto, user);
+  async create(@Param('libraryId', ParseIntPipe) libraryId: number, @Body() dto: CreateFanfictionProfileDto, @CurrentUser() user: RequestUser) {
+    const profile = await this.profiles.create(libraryId, dto, user);
+    return { ...profile, repairJobId: (await this.batches.repairProfile(profile, user)).id };
   }
 
   @Patch('profiles/:profileId')
-  update(
+  async update(
     @Param('libraryId', ParseIntPipe) libraryId: number,
     @Param('profileId', ParseUUIDPipe) id: string,
     @Body() dto: UpdateFanfictionProfileDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.profiles.update(libraryId, id, dto, user);
+    const profile = await this.profiles.update(libraryId, id, dto, user);
+    return { ...profile, repairJobId: (await this.batches.repairProfile(profile, user)).id };
   }
 
   @Delete('profiles/:profileId')

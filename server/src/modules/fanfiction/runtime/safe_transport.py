@@ -156,7 +156,18 @@ class SafeTransport:
         if self.failure is not None:
             raise self.failure
         try:
-            return self._request(method, url, parameters, headers)
+            for attempt in range(3):
+                try:
+                    result = self._request(method, url, parameters, headers)
+                    if method != 'GET' or result[0] < 500 or result[0] >= 600 or attempt == 2:
+                        return result
+                except (TimeoutError, ConnectionError, http.client.RemoteDisconnected):
+                    if method != 'GET' or attempt == 2:
+                        raise
+                delay = 2 ** attempt
+                if time.monotonic() + delay >= self.deadline:
+                    raise DownloadTimeoutError('Download deadline exceeded')
+                time.sleep(delay)
         except (DownloadLimitError, DownloadTimeoutError) as error:
             # FanFicFare catches image errors. A spent job budget must still stop publication.
             self.failure = error

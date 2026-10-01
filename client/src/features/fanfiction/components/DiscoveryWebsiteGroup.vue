@@ -128,7 +128,6 @@ function retry() {
             @change="changeProfile"
           >
             <option value="auto">{{ t('fanfiction.automaticProfile') }}</option>
-            <option value="public">{{ t('fanfiction.noProfile') }}</option>
             <option v-for="option in profiles" :key="option.id" :value="option.id">{{ option.name }}</option>
           </select>
         </label>
@@ -263,7 +262,6 @@ function retry() {
                       @change="changeBookProfile(book, $event)"
                     >
                       <option value="">{{ t('fanfiction.sourceReview.websiteProfile') }}</option>
-                      <option value="public">{{ t('fanfiction.noProfile') }}</option>
                       <option v-for="option in profiles" :key="option.id" :value="option.id">{{ option.name }}</option>
                     </select>
                   </label>

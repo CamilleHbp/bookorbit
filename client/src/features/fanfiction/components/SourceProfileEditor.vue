@@ -61,6 +61,7 @@ async function save() {
         <h2 class="text-lg font-medium">
           {{ loginSite ? t('fanfiction.bulk.loginTitle', { site: loginSite }) : t(editing ? 'fanfiction.editSource' : 'fanfiction.addProfile') }}
         </h2>
+        <p v-if="loginSite" class="text-sm text-muted-foreground">{{ t('fanfiction.bulk.sharedLoginHelp') }}</p>
         <label v-if="!editing && !compact" class="block space-y-1 text-sm">
           <span>{{ t('fanfiction.chooseSite') }}</span>
           <select v-model="presetId" class="w-full rounded-md border border-input bg-background p-2" @change="applyPreset">
