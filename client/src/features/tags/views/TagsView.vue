@@ -89,15 +89,15 @@ function handleQuickAction(action: 'add-to-collection' | 'delete') {
         {{ t('tagBrowser.manage') }}
       </button>
     </header>
-    <div class="flex min-h-0 flex-1 flex-col gap-4 md:flex-row md:gap-6">
+    <div class="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-6">
       <aside
-        class="flex min-h-0 shrink-0 flex-col md:w-72 md:border-e md:border-border md:pe-5"
-        :class="pickerExpanded ? 'flex-1 md:flex-none' : ''"
+        class="flex min-h-0 shrink-0 flex-col lg:w-72 lg:border-e lg:border-border lg:pe-5"
+        :class="pickerExpanded ? 'flex-1 lg:flex-none' : ''"
         :aria-label="t('tagBrowser.choose')"
       >
         <button
           type="button"
-          class="flex min-h-11 items-center justify-between rounded-md border border-input px-3 text-sm font-medium md:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          class="flex min-h-11 items-center justify-between rounded-md border border-input px-3 text-sm font-medium lg:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           :aria-expanded="pickerExpanded"
           aria-controls="tag-picker"
           @click="togglePicker"
@@ -107,7 +107,7 @@ function handleQuickAction(action: 'add-to-collection' | 'delete') {
             }}<span v-if="selected.length" class="ms-2 text-muted-foreground">{{ t('tagBrowser.selected', { count: selected.length }) }}</span></span
           ><ChevronDown :size="16" aria-hidden="true" />
         </button>
-        <div id="tag-picker" class="min-h-0 flex-col gap-3 pt-2 md:flex md:flex-1 md:pt-0" :class="pickerExpanded ? 'flex flex-1' : 'hidden'">
+        <div id="tag-picker" class="min-h-0 flex-col gap-3 pt-2 lg:flex lg:flex-1 lg:pt-0" :class="pickerExpanded ? 'flex flex-1' : 'hidden'">
           <TagGroupPanel :revision="0" :prefix="prefix" reader compact @filter="browser.setGroup" />
           <div v-if="activeGroup" class="flex items-center justify-between gap-2 text-xs">
             <span class="break-all">{{ t('tools.tagManager.activeGroup', { group: activeGroup }) }}</span
@@ -169,14 +169,14 @@ function handleQuickAction(action: 'add-to-collection' | 'delete') {
               <ChevronRight :size="16" class="mx-auto" />
             </button>
           </nav>
-          <button type="button" class="min-h-10 rounded-md bg-primary px-3 text-sm text-primary-foreground md:hidden" @click="showBooks">
+          <button type="button" class="min-h-10 rounded-md bg-primary px-3 text-sm text-primary-foreground lg:hidden" @click="showBooks">
             {{ t('tagBrowser.viewBooks') }}
           </button>
         </div>
       </aside>
       <section
         class="min-h-0 min-w-0 flex-1 flex-col gap-3"
-        :class="pickerExpanded ? 'hidden md:flex' : 'flex'"
+        :class="pickerExpanded ? 'hidden lg:flex' : 'flex'"
         :aria-label="t('tagBrowser.viewBooks')"
       >
         <div class="flex flex-wrap items-center gap-2">
