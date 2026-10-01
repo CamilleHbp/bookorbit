@@ -238,7 +238,7 @@ export class BookDockRepository {
 
   async findByIds(ids: number[], userId?: number, canManageAll?: boolean): Promise<BookDockFileRow[]> {
     if (ids.length === 0) return [];
-    const conditions: SQL[] = [inArray(bookDockFiles.id, ids)];
+    const conditions: SQL[] = [inArray(bookDockFiles.id, ids), eq(bookDockFiles.ingestionMode, 'standard')];
     if (userId !== undefined && !canManageAll) {
       conditions.push(eq(bookDockFiles.uploadedBy, userId));
     }
@@ -292,7 +292,7 @@ export class BookDockRepository {
     userId?: number,
     canManageAll?: boolean,
   ): Promise<{ pending: number; working: number; ready: number; error: number; needsReview: number; readyToFile: number; total: number }> {
-    const visibilityCondition = userId !== undefined ? this.buildVisibilityCondition(userId, canManageAll ?? true) : undefined;
+    const visibilityCondition = this.buildVisibilityCondition(userId ?? 0, userId === undefined || (canManageAll ?? true));
 
     // A filtered aggregate keeps this to one round trip: only the 'ready' group can
     // contribute, since needing review presupposes the file is otherwise done.
@@ -331,7 +331,7 @@ export class BookDockRepository {
     totalSizeBytes: number;
     byFormat: { format: string; count: number; sizeBytes: number }[];
   }> {
-    const visibilityCondition = userId !== undefined ? this.buildVisibilityCondition(userId, canManageAll ?? true) : undefined;
+    const visibilityCondition = this.buildVisibilityCondition(userId ?? 0, userId === undefined || (canManageAll ?? true));
     const rows = await this.db
       .select({
         format: bookDockFiles.format,
@@ -353,8 +353,7 @@ export class BookDockRepository {
   }
 
   private buildVisibilityCondition(userId: number, canManageAll: boolean): SQL | undefined {
-    if (canManageAll) return undefined;
-    return eq(bookDockFiles.uploadedBy, userId);
+    return and(eq(bookDockFiles.ingestionMode, 'standard'), canManageAll ? undefined : eq(bookDockFiles.uploadedBy, userId));
   }
 
   private buildSelectionConditions(
@@ -365,7 +364,7 @@ export class BookDockRepository {
     needsReview?: boolean,
     readyToFile?: boolean,
   ): SQL[] {
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(bookDockFiles.ingestionMode, 'standard')];
     if (status === 'pending') {
       conditions.push(inArray(bookDockFiles.status, ['pending', 'extracting', 'fetching']));
     } else if (status) {

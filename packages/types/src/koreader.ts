@@ -194,6 +194,8 @@ export interface KoreaderCatalogEntry {
 
 export interface KoreaderCatalogFile {
   id: number;
+  revisionId?: string | null;
+  sha256?: string | null;
   format: string;
   role: string;
   downloadVariant: "original" | "audioless_epub";
@@ -368,6 +370,8 @@ export interface KoreaderCatalogDashboardSectionResponse {
 // as the digest that keys local match state.
 export interface KoreaderCatalogManifestFile {
   id: number;
+  revisionId?: string | null;
+  sha256?: string | null;
   format: string;
   downloadVariant: "original" | "audioless_epub";
   sizeBytes: number | null;
@@ -401,7 +405,7 @@ export interface KoreaderCatalogManifestPage {
   restartRequired: boolean;
 }
 
-export type KoreaderPluginCapability = "catalogBulkManifest" | "catalogDashboardSections" | "bookmarkSync";
+export type KoreaderPluginCapability = "catalogBulkManifest" | "catalogDashboardSections" | "bookmarkSync" | "annotationAnchorsV1";
 
 export interface KoreaderPluginVersionInfo {
   pluginVersion: string;

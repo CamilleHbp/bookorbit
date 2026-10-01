@@ -43,6 +43,14 @@ describe('ChipInput', () => {
     expect((wrapper.find('input').element as HTMLInputElement).value).toBe(' azw')
   })
 
+  it('preserves punctuation in story tags when separator splitting is disabled', async () => {
+    const wrapper = mountInput({ splitOnSeparators: false })
+    await typeInto(wrapper, 'Friendship, Love; and Adventure')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await wrapper.find('input').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['Friendship, Love; and Adventure']])
+  })
+
   it('refuses an entry the field says is not valid', async () => {
     const normalize = vi.fn<(raw: string) => string | null>((raw) => (/^\d+$/.test(raw) ? raw : null))
     const wrapper = mountInput({ normalize })
@@ -80,5 +88,54 @@ describe('ChipInput', () => {
 
     expect(searchFn).toHaveBeenCalledWith('fic')
     vi.useRealTimers()
+  })
+})
+
+describe('tag editing and suggestions', () => {
+  it('waits for three characters and selects suggestions with the keyboard', async () => {
+    vi.useFakeTimers()
+    const searchFn = vi.fn<(query: string) => Promise<string[]>>().mockResolvedValue(['Adventure'])
+    const wrapper = mountInput({ searchFn, minSearchLength: 3 })
+    try {
+      await typeInto(wrapper, 'Ad')
+      await vi.advanceTimersByTimeAsync(250)
+      expect(searchFn).not.toHaveBeenCalled()
+      await typeInto(wrapper, 'Adv')
+      await vi.advanceTimersByTimeAsync(250)
+      await wrapper.get('input').trigger('keydown', { key: 'ArrowDown' })
+      await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['Adventure']])
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+  it('ignores stale results after the search is cleared', async () => {
+    vi.useFakeTimers()
+    let resolve!: (value: string[]) => void
+    const wrapper = mountInput({
+      searchFn: () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    })
+    try {
+      await typeInto(wrapper, 'Adv')
+      await vi.advanceTimersByTimeAsync(250)
+      await typeInto(wrapper, '')
+      resolve(['Adventure'])
+      await vi.advanceTimersByTimeAsync(1)
+      expect(wrapper.get('input').attributes('aria-expanded')).toBe('false')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+  it('commits a pending tag when the field loses focus', async () => {
+    const wrapper = mountInput({ modelValue: ['Adventure'] })
+    await typeInto(wrapper, 'Fantasy')
+    await wrapper.get('input').trigger('blur')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['Adventure', 'Fantasy']])
+    wrapper.unmount()
   })
 })

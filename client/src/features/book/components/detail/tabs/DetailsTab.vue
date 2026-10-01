@@ -70,6 +70,7 @@ import BookReadingActivityCard from '@/features/book/components/detail/details/B
 import { useBookReadingLog } from '@/features/book/composables/useBookReadingLog'
 import { useProviderLinkSettings } from '@/features/book/composables/useProviderLinkSettings'
 import { hasReadAlong } from '@/features/book/lib/file-capabilities'
+import BookDeviceCopies from '@/features/koreader/components/BookDeviceCopies.vue'
 
 type FileProgress = {
   percentage: number
@@ -2209,6 +2210,8 @@ watch(
       <DiscoverRow class="h-full" :book-id="book.id" :series-name="book.seriesName" :author-count="book.authors.length" size="lg" flush />
     </div>
   </div>
+
+  <BookDeviceCopies v-if="canViewKoreader" :files="book.files" />
 
   <AddToCollectionSheet
     :open="addToCollectionOpen"

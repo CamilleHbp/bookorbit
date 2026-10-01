@@ -386,6 +386,8 @@ export class KoreaderCatalogService {
         sizeBytes: downloadVariant === 'audioless_epub' ? null : file.sizeBytes,
         contentVersion: file.contentVersion.toISOString(),
         fileHash: downloadVariant === 'audioless_epub' ? null : file.fileHash,
+        revisionId: file.revisionId ?? null,
+        sha256: downloadVariant === 'audioless_epub' ? null : (file.sha256 ?? null),
         downloadUrl: `${CATALOG_BASE}/files/${file.id}/download`,
         devicePath: this.variantDevicePath(devicePath, downloadVariant, hasSameFormatSibling),
       };

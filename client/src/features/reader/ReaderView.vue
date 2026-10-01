@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { useFoliate, type RelocateDetail } from './epub/composables/useFoliate'
 import type { SelectionDetail } from './epub/composables/useFoliateSelection'
+import { useAuth } from '@/features/auth/composables/useAuth'
 import { useReaderProgress } from './shared/composables/useReaderProgress'
 import { useReadingSession } from './shared/composables/useReadingSession'
 import { useReaderPageTitle } from './shared/composables/useReaderPageTitle'
@@ -60,6 +61,7 @@ import { useCoverVersions } from '@/features/book/composables/useCoverVersions'
 const PdfV4ReaderView = defineAsyncComponent(() => import('./pdf-v4/PdfV4ReaderView.vue'))
 
 const { t } = useI18n()
+const { user } = useAuth()
 const route = useRoute()
 const router = useRouter()
 const { coverUrl } = useCoverVersions()
@@ -135,8 +137,21 @@ const { onActivity, elapsedMinutes } = useReadingSession(
 
 const progress = useReaderProgress(bookId, fileId, elapsedMinutes, 0, {
   trackingEnabled,
+  userId: computed(() => user.value?.id ?? null),
 })
-const { cfi, chapterTitle, sectionIndex, totalSections, fraction, locationTotal, footerMode, cycleFooterMode, updateHeadsFeet } = progress
+const {
+  synchronizationError,
+  retrySynchronization,
+  cfi,
+  chapterTitle,
+  sectionIndex,
+  totalSections,
+  fraction,
+  locationTotal,
+  footerMode,
+  cycleFooterMode,
+  updateHeadsFeet,
+} = progress
 
 const visibility = useVisibility()
 const { headerVisible, footerVisible, isPinned, handleMiddleTap, togglePinned, hideOverlays, setVisibilityLock } = visibility
@@ -146,6 +161,7 @@ useWakeLock()
 
 const bookmarks = useBookmarks()
 const annotations = useAnnotations()
+const annotationsAwaitingVerification = computed(() => annotations.hasUnverifiedForFile(fileId))
 
 const toc = useToc()
 const { chapters, expandedHrefs, activeHref, setChapters, toggleExpand } = toc
@@ -196,7 +212,11 @@ async function startTrackedReading() {
   delete query.mode
   await router.replace({ name: 'reader', params: route.params, query })
   await nextTick()
-  await progress.save()
+  if (fileFormat === 'epub') {
+    await reopenEpubAtCurrentLocation()
+    await goToFraction(fraction.value)
+  }
+  await progress.save({ deliberate: true })
   onActivity()
 }
 
@@ -755,7 +775,7 @@ function onRelocateHandler(detail: RelocateDetail) {
       pendingManualNavigationClearTimer = null
     }
   }
-  onActivity()
+  if (!detail.restoration) onActivity()
   bookmarks.setCfi(detail?.cfi ?? null)
   toc.setActiveHref(detail?.tocItem?.href ?? '')
   const renderer = getRenderer()
@@ -815,6 +835,7 @@ const {
   getRenderer,
   addAnnotation,
   addAnnotations,
+  pendingAnnotationCount,
   deleteAnnotation,
   redrawAnnotation,
   setTextSelectedHandler,
@@ -823,6 +844,8 @@ const {
   view: foliateView,
   bookLanguage,
   isFixedLayout,
+  captureAnnotationAnchor,
+  annotationProjector,
   hasMediaOverlay,
   getMediaOverlay,
   getMediaActiveClass,
@@ -834,6 +857,7 @@ const { handleHighlight, handleOpenNoteDialog, handleSaveNote } = useReaderAnnot
   chapterTitle,
   annotations,
   selection,
+  captureAnnotationAnchor,
   addAnnotation,
   redrawAnnotation,
 })
@@ -889,6 +913,10 @@ onMounted(async () => {
     shouldApplyStyles.value = false
   }
 
+  const chapterHref =
+    typeof route.query.chapter === 'string' && route.query.chapter.length <= 4096 && !/^[a-z]+:|^\/\//i.test(route.query.chapter)
+      ? route.query.chapter
+      : null
   const deepLinkCfi = typeof route.query.cfi === 'string' ? route.query.cfi : null
   const hadProgress = progress.percentage.value > 0
   const resumeTarget = resolveReaderResumeTarget(deepLinkCfi ? undefined : route.query.checkpoint, progress.cfi.value, progress.percentage.value)
@@ -896,23 +924,36 @@ onMounted(async () => {
   await open(bookId, fileId, fileFormat, {
     cfi: resumeTarget.cfi,
     fallbackFraction: resumeTarget.fraction,
+    trackReading: trackingEnabled.value,
+    restoreCanonical: route.query.checkpoint === undefined && !chapterHref,
+    onPositionRecovery: (quality) => toast.info(t(`fanfiction.reading.recovery.${quality}`)),
     fixedLayoutSpread: state.value.fixedLayoutSpread,
     mediaOverlayFragment: savedNarration?.fragment,
     mediaOverlaySectionIndex: savedNarration?.section,
     preferMediaOverlay: savedNarration != null,
   })
   initialOpenCompleted = true
+  if (chapterHref) {
+    try {
+      await goTo(chapterHref)
+    } catch {
+      toast.error(t('fanfiction.reading.chapterUnavailable'))
+    }
+  }
   setChapters(getChapters())
   sectionFractions.value = getSectionFractions()
   await bookmarks.load(bookId)
   await annotations.load(bookId)
-  const drawableAnnotations = annotations.annotations.value.filter((a): a is typeof a & { cfi: string } => a.cfi != null)
+  const projector = annotationProjector()
+  if (projector) await annotations.projectForFile(fileId, projector)
+  const drawableAnnotations = annotations.drawableForFile(fileId)
   if (drawableAnnotations.length > 0) {
     addAnnotations(
       drawableAnnotations.map((a) => ({
         cfi: a.cfi,
         color: a.color,
         style: a.style,
+        text: a.text,
       })),
     )
   }
@@ -920,7 +961,9 @@ onMounted(async () => {
 
   if (deepLinkCfi) {
     try {
-      await goTo(deepLinkCfi)
+      const target = annotations.projectedTarget(deepLinkCfi)
+      if (target) await goTo(target)
+      else toast.error(t('reader.toast.linkedHighlightError'))
     } catch {
       toast.error(t('reader.toast.linkedHighlightError'))
     }
@@ -978,6 +1021,8 @@ function seedState(partial: Partial<ReaderState>) {
 async function reopenEpubAtCurrentLocation() {
   const fallbackFraction = fraction.value > 0 ? fraction.value : progress.percentage.value > 0 ? progress.percentage.value / 100 : undefined
   await open(bookId, fileId, fileFormat, null, fallbackFraction, {
+    trackReading: trackingEnabled.value,
+    restoreCanonical: false,
     fixedLayoutSpread: state.value.fixedLayoutSpread,
   })
   setChapters(getChapters())
@@ -1556,6 +1601,18 @@ onUnmounted(() => {
           </div>
         </div>
       </Transition>
+    </div>
+
+    <div
+      v-if="synchronizationError || pendingAnnotationCount || annotationsAwaitingVerification"
+      role="alert"
+      class="absolute bottom-16 inset-x-4 z-30 mx-auto max-w-xl rounded-lg border border-border bg-card p-3 text-sm text-card-foreground"
+    >
+      <p v-if="pendingAnnotationCount || annotationsAwaitingVerification">{{ t('reader.annotationVerificationPending') }}</p>
+      <p v-if="synchronizationError">{{ synchronizationError }}</p>
+      <button v-if="synchronizationError" type="button" class="mt-2 text-primary underline" @click="retrySynchronization">
+        {{ t('common.retry') }}
+      </button>
     </div>
 
     <ReaderFooter

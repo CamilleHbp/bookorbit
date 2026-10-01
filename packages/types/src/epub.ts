@@ -73,3 +73,12 @@ export interface EpubMediaOverlayPlaylist {
   sections: EpubMediaOverlayPlaylistSection[];
   resources: EpubMediaOverlayPlaylistResource[];
 }
+
+export interface EpubReadingRevision {
+  bookId: number;
+  bookFileId: number;
+  libraryId: number;
+  revision: string;
+  sha256: string;
+  sizeBytes: number;
+}

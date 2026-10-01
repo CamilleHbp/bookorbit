@@ -181,7 +181,7 @@ type ExportCandidateFile = {
   absolutePath: string;
   format: string | null;
   sizeBytes: number | null;
-  sortOrder?: number;
+  sortOrder?: number | null;
   mediaOverlayAvailable: boolean;
 };
 

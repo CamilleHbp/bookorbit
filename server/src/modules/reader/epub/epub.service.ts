@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { stat } from 'fs/promises';
 import * as unzipper from 'unzipper';
 import { XMLParser } from 'fast-xml-parser';
@@ -49,12 +49,14 @@ const OPTIONAL_META_INF_FILES = [
 
 interface CacheEntry {
   info: EpubBookInfo;
-  mtime: number;
+  signature: string;
+  revisionId: string | null;
   validPaths: Set<string>;
   lastAccessed: number;
 }
 
 interface EpubFileResolution {
+  revisionId: string | null;
   fileId: number | null;
   absolutePath: string;
   readerPath: string;
@@ -321,13 +323,13 @@ export class EpubService {
   ) {}
 
   async getBookInfo(bookId: number, fileId: number | undefined, user: RequestUser): Promise<EpubBookInfo> {
-    const epubPath = await this.resolveEpubPath(bookId, fileId, user);
-    return (await this.getCachedEntry(epubPath)).info;
+    const { path: epubPath, revisionId } = await this.resolveEpubPath(bookId, fileId, user);
+    return (await this.getCachedEntry(epubPath, revisionId)).info;
   }
 
   async getMediaOverlayPlaylist(bookId: number, fileId: number | undefined, user: RequestUser): Promise<EpubMediaOverlayPlaylist> {
     const resolved = await this.resolveEpubFile(bookId, fileId, user);
-    const cached = await this.getCachedEntry(resolved.absolutePath);
+    const cached = await this.getCachedEntry(resolved.absolutePath, resolved.revisionId);
     return buildEpubMediaOverlayPlaylist(resolved.absolutePath, cached.info, bookId, resolved.fileId);
   }
 
@@ -343,7 +345,7 @@ export class EpubService {
     if (!normalizedPath) throw new ForbiddenException('Invalid path');
 
     const resolved = await this.resolveEpubFile(bookId, fileId, user);
-    const cached = await this.getCachedEntry(resolved.absolutePath);
+    const cached = await this.getCachedEntry(resolved.absolutePath, resolved.revisionId);
     const playlist = await buildEpubMediaOverlayPlaylist(resolved.absolutePath, cached.info, bookId, resolved.fileId);
     const resource = playlist.resources.find((item) => item.href === normalizedPath);
     if (!resource) throw new NotFoundException(`Media-overlay resource not in playlist: ${normalizedPath}`);
@@ -374,8 +376,8 @@ export class EpubService {
     const normalizedPath = normalizeZipPath(filePath);
     if (!normalizedPath) throw new ForbiddenException('Invalid path');
 
-    const epubPath = await this.resolveEpubPath(bookId, fileId, user);
-    const cached = await this.getCachedEntry(epubPath);
+    const { path: epubPath, revisionId } = await this.resolveEpubPath(bookId, fileId, user);
+    const cached = await this.getCachedEntry(epubPath, revisionId);
     if (!cached.validPaths.has(normalizedPath)) {
       throw new NotFoundException(`Entry not in archive: ${normalizedPath}`);
     }
@@ -392,8 +394,9 @@ export class EpubService {
   // The web reader always renders the original EPUB: every stored CFI is epub-DOM.
   // Precise Kobo positions are produced server-side by the kepub span codec, which
   // replaced the earlier kepub-serving mechanism (BO-249).
-  private async resolveEpubPath(bookId: number, fileId: number | undefined, user: RequestUser): Promise<string> {
-    return (await this.resolveEpubFile(bookId, fileId, user)).readerPath;
+  private async resolveEpubPath(bookId: number, fileId: number | undefined, user: RequestUser): Promise<{ path: string; revisionId: string | null }> {
+    const file = await this.resolveEpubFile(bookId, fileId, user);
+    return { path: file.readerPath, revisionId: file.revisionId };
   }
 
   private async resolveEpubFile(bookId: number, fileId: number | undefined, user: RequestUser): Promise<EpubFileResolution> {
@@ -405,12 +408,25 @@ export class EpubService {
       const file = await this.bookReadService.findFileById(fileId);
       if (!file || file.bookId !== bookId) throw new NotFoundException(`File ${fileId} not found for book ${bookId}`);
       if (file.format !== 'epub') throw new NotFoundException(`File ${fileId} is not an EPUB file`);
-      return { fileId: file.id, absolutePath: file.absolutePath, readerPath: file.absolutePath, fileHash: file.fileHash, sizeBytes: file.sizeBytes };
+      return {
+        revisionId: file.currentRevisionId ?? null,
+        fileId: file.id,
+        absolutePath: file.absolutePath,
+        readerPath: file.absolutePath,
+        fileHash: file.fileHash,
+        sizeBytes: file.sizeBytes,
+      };
     }
 
     const [file] = await this.bookReadService.findPrimaryFilesByBookIds([bookId]);
     if (!file || file.format !== 'epub') throw new NotFoundException(`No primary EPUB file for book ${bookId}`);
-    return { fileId: null, absolutePath: file.absolutePath, readerPath: file.absolutePath, sizeBytes: file.sizeBytes };
+    return {
+      revisionId: file.currentRevisionId ?? null,
+      fileId: null,
+      absolutePath: file.absolutePath,
+      readerPath: file.absolutePath,
+      sizeBytes: file.sizeBytes,
+    };
   }
 
   private parseRange(rangeHeader: string | undefined, size: number): ByteRange | null {
@@ -437,25 +453,34 @@ export class EpubService {
     return { start, end: Math.min(end, size - 1) };
   }
 
-  private async getCachedEntry(epubPath: string): Promise<CacheEntry> {
-    const { mtimeMs } = await stat(epubPath);
+  private async getCachedEntry(epubPath: string, revisionId: string | null): Promise<CacheEntry> {
+    const signature = await this.fileSignature(epubPath);
     const cached = this.cache.get(epubPath);
-    if (cached && cached.mtime === mtimeMs) {
+    if (cached && cached.signature === signature && cached.revisionId === revisionId) {
       cached.lastAccessed = Date.now();
       return cached;
     }
 
     this.logger.debug(`Parsing EPUB: ${epubPath}`);
     const info = await parseEpub(epubPath);
+    if (signature !== (await this.fileSignature(epubPath))) {
+      this.cache.delete(epubPath);
+      throw new ConflictException('EPUB changed while reading its manifest; retry opening the book');
+    }
 
     const validPaths = new Set<string>(['META-INF/container.xml', normalizeZipPath(info.containerPath)]);
     for (const item of info.manifest) validPaths.add(normalizeZipPath(item.href));
     for (const path of info.optionalFiles ?? []) validPaths.add(normalizeZipPath(path));
 
-    const entry: CacheEntry = { info, mtime: mtimeMs, validPaths, lastAccessed: Date.now() };
+    const entry: CacheEntry = { info, signature, revisionId, validPaths, lastAccessed: Date.now() };
     this.evict();
     this.cache.set(epubPath, entry);
     return entry;
+  }
+
+  private async fileSignature(path: string): Promise<string> {
+    const value = await stat(path, { bigint: true });
+    return [value.dev, value.ino, value.size, value.mtimeNs ?? value.mtimeMs, value.ctimeNs ?? value.ctimeMs].join(':');
   }
 
   private evict(): void {

@@ -5901,6 +5901,7 @@
     }
   },
   "reader": {
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "retry": "Повторити спробу",
     "pdf": {
       "openError": "Не вдалося відкрити цей PDF",

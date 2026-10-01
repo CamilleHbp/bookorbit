@@ -1,0 +1,4 @@
+ALTER TABLE "book_file_revisions" DROP CONSTRAINT "book_file_revisions_reason_chk";--> statement-breakpoint
+ALTER TABLE "revision_publications" DROP CONSTRAINT "revision_publications_reason_chk";--> statement-breakpoint
+ALTER TABLE "book_file_revisions" ADD CONSTRAINT "book_file_revisions_reason_chk" CHECK ("book_file_revisions"."reason" in ('baseline', 'external_change', 'file_write', 'fanficfare', 'rollback', 'replacement'));--> statement-breakpoint
+ALTER TABLE "revision_publications" ADD CONSTRAINT "revision_publications_reason_chk" CHECK ("revision_publications"."reason" in ('fanficfare', 'rollback', 'file_write', 'replacement'));

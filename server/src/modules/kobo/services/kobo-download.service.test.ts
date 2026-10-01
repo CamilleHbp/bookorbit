@@ -8,10 +8,16 @@ vi.mock('fs', () => ({
   createReadStream: vi.fn(),
 }));
 
-import { NotFoundException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { DB } from '../../../db';
+import { KepubConversionService } from './kepub-conversion.service';
+import { KoboSettingsService } from './kobo-settings.service';
+import { KoboBookAccessService } from './kobo-book-access.service';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createReadStream } from 'fs';
 import { mkdtemp, rm, stat } from 'fs/promises';
 
+import { AudiolessEpubService } from '../../book/audioless-epub.service';
 import { KoboDownloadService } from './kobo-download.service';
 
 const statMock = vi.mocked(stat);
@@ -75,6 +81,37 @@ function kepubSettings(overrides: Record<string, unknown> = {}) {
 }
 
 describe('KoboDownloadService', () => {
+  it.each(['converted', 'fallback', 'moved'] as const)('rechecks access and file association after %s conversion', async (outcome) => {
+    const deps = makeDeps();
+    deps.db.query.books.findFirst.mockResolvedValue({ id: 11, primaryFileId: 22 });
+    deps.db.query.bookFiles.findFirst.mockResolvedValue({ id: 22, absolutePath: '/books/file.epub', format: 'epub', sizeBytes: 10 });
+    deps.settingsService.getSettings.mockResolvedValue({ convertToKepub: true, kepubConversionLimitMb: 10, forceEnableHyphenation: false });
+    deps.bookAccessService.assertBookAccessible.mockResolvedValue(undefined);
+    deps.kepubConversionService.getKepubPath.mockImplementation(() => {
+      if (outcome === 'moved') deps.db.query.bookFiles.findFirst.mockResolvedValue(null);
+      else deps.bookAccessService.assertBookAccessible.mockRejectedValue(new ForbiddenException('Access revoked'));
+      return outcome === 'fallback' ? Promise.reject(new Error('conversion failed')) : Promise.resolve('/cache/book.kepub.epub');
+    });
+    const module = await Test.createTestingModule({
+      providers: [
+        KoboDownloadService,
+        { provide: DB, useValue: deps.db },
+        { provide: KepubConversionService, useValue: deps.kepubConversionService },
+        { provide: AudiolessEpubService, useValue: deps.audiolessEpubService },
+        { provide: KoboSettingsService, useValue: deps.settingsService },
+        { provide: KoboBookAccessService, useValue: deps.bookAccessService },
+      ],
+    }).compile();
+    const reply = makeReply();
+    await expect(module.get(KoboDownloadService).streamBook(7, 11, reply as never)).rejects.toBeInstanceOf(
+      outcome === 'moved' ? NotFoundException : ForbiddenException,
+    );
+    expect(deps.bookAccessService.assertBookAccessible).toHaveBeenCalledTimes(2);
+    expect(reply.send).not.toHaveBeenCalled();
+    expect(createReadStreamMock).not.toHaveBeenCalled();
+    await module.close();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -160,7 +197,7 @@ describe('KoboDownloadService', () => {
 
     await service.streamBook(7, 11, makeReply() as never);
 
-    expect(streamKepubSpy).toHaveBeenCalledWith('/books/file.epub', 'h1', 11, 22, true, false, expect.anything(), undefined);
+    expect(streamKepubSpy).toHaveBeenCalledWith('/books/file.epub', 'h1', 11, 22, true, false, expect.anything(), 7, '/books/file.epub', undefined);
   });
 
   it('strips narration before the size check so a read-along book still converts', async () => {
@@ -180,7 +217,18 @@ describe('KoboDownloadService', () => {
     await service.streamBook(7, 11, makeReply() as never);
 
     expect(deps.audiolessEpubService.writeArchive).toHaveBeenCalledWith('/books/narrated.epub', '/tmp/kobo-epub/book.epub');
-    expect(streamKepubSpy).toHaveBeenCalledWith('/tmp/kobo-epub/book.epub', 'h1', 11, 22, false, true, expect.anything(), expect.any(Function));
+    expect(streamKepubSpy).toHaveBeenCalledWith(
+      '/tmp/kobo-epub/book.epub',
+      'h1',
+      11,
+      22,
+      false,
+      true,
+      expect.anything(),
+      7,
+      '/books/narrated.epub',
+      expect.any(Function),
+    );
   });
 
   it('streams the stripped copy when kepub conversion is turned off', async () => {
@@ -338,7 +386,8 @@ describe('KoboDownloadService', () => {
     deps.kepubConversionService.getKepubPath.mockResolvedValue('/app-data/.kepub-cache/44/abc.kepub.epub');
     const streamFileSpy = vi.spyOn(service as any, 'streamFile').mockResolvedValue(undefined);
 
-    await (service as any).streamKepub('/books/source.epub', 'abc', 44, 55, false, false, makeReply());
+    deps.db.query.bookFiles.findFirst.mockResolvedValue({ id: 55 });
+    await (service as any).streamKepub('/books/source.epub', 'abc', 44, 55, false, false, makeReply(), 7, '/books/source.epub');
 
     expect(deps.kepubConversionService.getKepubPath).toHaveBeenCalledWith({
       sourcePath: '/books/source.epub',
@@ -357,7 +406,8 @@ describe('KoboDownloadService', () => {
     deps.kepubConversionService.getKepubPath.mockResolvedValue('/app-data/.kepub-cache/44/abc-noaudio.kepub.epub');
     const streamFileSpy = vi.spyOn(service as any, 'streamFile').mockResolvedValue(undefined);
 
-    await (service as any).streamKepub('/tmp/kobo-epub/book.epub', 'abc', 44, 55, false, true, makeReply(), cleanup);
+    deps.db.query.bookFiles.findFirst.mockResolvedValue({ id: 55 });
+    await (service as any).streamKepub('/tmp/kobo-epub/book.epub', 'abc', 44, 55, false, true, makeReply(), 7, '/books/source.epub', cleanup);
 
     expect(deps.kepubConversionService.getKepubPath).toHaveBeenCalledWith(expect.objectContaining({ audioless: true }));
     // The temp rebuild outlives the conversion: whichever file is sent carries the cleanup.
@@ -370,7 +420,8 @@ describe('KoboDownloadService', () => {
     const service = makeService(deps);
     const streamFileSpy = vi.spyOn(service as any, 'streamFile').mockResolvedValue(undefined);
 
-    await (service as any).streamKepub('/books/source.epub', 'hash', 44, 55, false, false, makeReply());
+    deps.db.query.bookFiles.findFirst.mockResolvedValue({ id: 55 });
+    await (service as any).streamKepub('/books/source.epub', 'hash', 44, 55, false, false, makeReply(), 7, '/books/source.epub');
 
     expect(streamFileSpy).toHaveBeenLastCalledWith('/books/source.epub', 55, 'epub', expect.anything(), undefined);
   });

@@ -1,0 +1,1 @@
+ALTER TABLE "fanfiction_profiles" ADD COLUMN "credential_generation" integer DEFAULT 1 NOT NULL;

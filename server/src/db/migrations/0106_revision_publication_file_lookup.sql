@@ -1,0 +1,1 @@
+CREATE INDEX "revision_publications_file_idx" ON "revision_publications" USING btree ("book_file_id");

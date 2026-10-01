@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { RevisionApiModule } from './modules/book-revision/revision-api.module';
+import { FanfictionModule } from './modules/fanfiction/fanfiction.module';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -98,6 +100,7 @@ import { PodcastModule } from './modules/podcast/podcast.module';
 
 @Module({
   imports: [
+    FanfictionModule,
     LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,
@@ -164,6 +167,7 @@ import { PodcastModule } from './modules/podcast/podcast.module';
     ReaderPreferencesModule,
     UserPreferencesModule,
     EpubModule,
+    RevisionApiModule,
     BookDockModule,
     BookRequestModule,
     EmailModule,

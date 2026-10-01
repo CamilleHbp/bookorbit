@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
+import type { ReadingAnchor, AnnotationPositionRevision } from '@bookorbit/types';
 
 import type { RequestUser } from '../../common/types/request-user';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
@@ -20,6 +21,7 @@ const CONVERSION_BUDGET_PER_REQUEST = 20;
 const DEVICE_DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
 
 type DevicePositionsByFormat = { pdf?: AnnotationPosition; xpointer?: AnnotationPosition; cfi?: AnnotationPosition };
+type PositionFileIdentity = NonNullable<Awaited<ReturnType<AnnotationSyncService['findPositionFileIdentity']>>>;
 
 export function parseKoreaderSourceCreatedAt(datetime: string, timeZone: string): Date | null {
   try {
@@ -31,7 +33,14 @@ export function parseKoreaderSourceCreatedAt(datetime: string, timeZone: string)
   }
 }
 
-export interface ExchangeAddEntry {
+function stalePosition(position: AnnotationPosition | undefined | null, identity: PositionFileIdentity): boolean {
+  if (position?.converterVersion == null) return false;
+  const extras = position.extras as { revisionId?: string | null; sha256?: string | null } | null;
+  return (extras?.revisionId ?? null) !== identity.revisionId || (extras?.sha256 ?? null) !== identity.sha256;
+}
+
+export interface ExchangeAddEntry extends AnnotationPositionRevision {
+  sourceAnchor?: ReadingAnchor;
   serverId: number;
   version: number;
   datetime: string;
@@ -166,6 +175,7 @@ export class KoreaderAnnotationExchangeService {
           userId: user.id,
           source: 'koreader',
           deviceId: dto.deviceId,
+          bookId: match.bookId,
           bookFileId: match.bookFileId,
           applied: book.applied.map((entry) => ({
             serverId: entry.serverId,
@@ -177,6 +187,8 @@ export class KoreaderAnnotationExchangeService {
             pos1: entry.pos1 ?? null,
             pageno: entry.pageno ?? null,
             datetimeUpdated: entry.datetimeUpdated,
+            positionRevisionId: entry.positionRevisionId,
+            positionSha256: entry.positionSha256,
           })),
           deleted: book.deleted,
           converterVersion: this.positionConverter.version,
@@ -241,7 +253,7 @@ export class KoreaderAnnotationExchangeService {
       });
     }
 
-    const pushDown = await this.annotationSync.computePushDown(userId, 'koreader', deviceId, bookId, PUSH_DOWN_PAGE);
+    const pushDown = await this.annotationSync.computePushDown(userId, 'koreader', deviceId, bookId, PUSH_DOWN_PAGE, this.positionConverter.version);
 
     const deleteEntries: ExchangeDeleteEntry[] = pushDown.deletes.map(({ state, annotation }) => ({
       serverId: annotation.id,
@@ -290,6 +302,9 @@ export class KoreaderAnnotationExchangeService {
   ): Promise<{ addEntries: ExchangeAddEntry[]; skippedNoPosition: number }> {
     if (adds.length === 0) return { addEntries: [], skippedNoPosition: 0 };
 
+    const identity = await this.annotationSync.findPositionFileIdentity(userId, bookId, bookFileId);
+    if (!identity) return { addEntries: [], skippedNoPosition: adds.length };
+
     const positions = await this.loadDevicePositions(adds);
     const converterVersion = this.positionConverter.version;
 
@@ -299,11 +314,13 @@ export class KoreaderAnnotationExchangeService {
     let skippedNoPosition = 0;
 
     for (const annotation of adds) {
+      if (annotation.sourceAnchor && (annotation.sourceAnchor.bookId !== bookId || annotation.sourceAnchor.bookFileId !== bookFileId)) {
+        skippedNoPosition += 1;
+        continue;
+      }
       const formats = positions.get(annotation.id);
-      // KOReader's apply path is reflowable/xpointer-only and rejects PDF adds. A PDF-only
-      // annotation (a web highlight in a PDF with no EPUB anchor) has nothing to send, so skip
-      // it rather than fall into the CFI->xpointer path, which would store a failed xpointer and
-      // inflate the needs-review count. A mixed PDF+CFI annotation still converts its CFI below.
+      if (formats?.cfi && stalePosition(formats.cfi, identity)) delete formats.cfi;
+      // KOReader's apply path rejects PDF adds; mixed PDF+CFI annotations can still convert.
       const position = formats?.xpointer ?? null;
       const cfiConvertible = formats?.cfi?.pos0 != null;
       if (!position && formats?.pdf && !cfiConvertible) {
@@ -312,12 +329,14 @@ export class KoreaderAnnotationExchangeService {
       }
       const usable =
         position?.pos0 != null &&
+        !stalePosition(position, identity) &&
         position.status !== 'failed' &&
         (position.converterVersion == null || position.converterVersion >= converterVersion);
-      const retryable = position == null || position.converterVersion == null || position.converterVersion < converterVersion;
+      const retryable =
+        position == null || stalePosition(position, identity) || position.converterVersion == null || position.converterVersion < converterVersion;
 
       if (!usable) {
-        if (conversionBudget > 0 && retryable) {
+        if (conversionBudget > 0 && retryable && cfiConvertible) {
           conversionBudget -= 1;
           convertible.push(annotation);
         } else {
@@ -328,7 +347,7 @@ export class KoreaderAnnotationExchangeService {
       pushable.push({ annotation, position });
     }
 
-    const converted = await this.convertCfiPositions(userId, bookFileId, convertible, positions);
+    const converted = await this.convertCfiPositions(userId, bookFileId, convertible, positions, identity);
 
     // Mint in the original push-down order so the values match what a per-annotation
     // loop would have assigned, and only for annotations that actually reached the device
@@ -339,6 +358,9 @@ export class KoreaderAnnotationExchangeService {
     const datetimes = await this.annotationSync.ensureDeviceCreatedAtMany(userId, bookId, needsIdentity, deviceClockOffsetMs);
 
     const addEntries = pushable.map(({ annotation, position }) => ({
+      positionRevisionId: identity.revisionId ?? undefined,
+      positionSha256: identity.sha256 ?? undefined,
+      ...(annotation.sourceAnchor && { sourceAnchor: annotation.sourceAnchor }),
       serverId: annotation.id,
       version: annotation.version,
       datetime: datetimes.get(annotation.id)!,
@@ -377,23 +399,12 @@ export class KoreaderAnnotationExchangeService {
     bookFileId: number,
     annotationRows: AnnotationRow[],
     positions: Map<number, DevicePositionsByFormat>,
+    identity: PositionFileIdentity,
   ): Promise<Set<number>> {
     const converted = new Set<number>();
     for (const annotation of annotationRows) {
       const cfiPosition = positions.get(annotation.id)?.cfi ?? null;
-      if (!cfiPosition?.pos0) {
-        await this.annotationSync.upsertGeneratedPosition({
-          annotationId: annotation.id,
-          userId,
-          bookFileId,
-          format: 'xpointer',
-          pos0: '',
-          pos1: null,
-          status: 'failed',
-          converterVersion: this.positionConverter.version,
-        });
-        continue;
-      }
+      if (!cfiPosition?.pos0) continue;
 
       const outcome = await this.positionConverter.cfiToXpointer({
         bookFileId,
@@ -410,7 +421,7 @@ export class KoreaderAnnotationExchangeService {
           pos1: null,
           status: 'failed',
           converterVersion: this.positionConverter.version,
-          extras: outcome.reason ? { reason: outcome.reason } : null,
+          extras: { ...identity, ...(outcome.reason && { reason: outcome.reason }) },
         });
         continue;
       }
@@ -424,7 +435,7 @@ export class KoreaderAnnotationExchangeService {
         pos1: outcome.pos1,
         status: 'pending',
         converterVersion: this.positionConverter.version,
-        extras: outcome.chapterIndex != null ? { chapterIndex: outcome.chapterIndex, converterStatus: outcome.status } : null,
+        extras: { ...identity, ...(outcome.chapterIndex != null && { chapterIndex: outcome.chapterIndex, converterStatus: outcome.status }) },
       });
       converted.add(annotation.id);
     }
@@ -447,6 +458,7 @@ export class KoreaderAnnotationExchangeService {
 
   private toIncoming(change: KoreaderAnnotationDto, timeZone: string): IncomingDeviceAnnotation {
     return {
+      ...(change.sourceAnchor && { sourceAnchor: change.sourceAnchor }),
       datetime: change.datetime,
       sourceCreatedAt: parseKoreaderSourceCreatedAt(change.datetime, timeZone),
       datetimeUpdated: change.datetimeUpdated ?? null,

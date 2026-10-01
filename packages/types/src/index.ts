@@ -82,3 +82,7 @@ export * from "./cron";
 export * from "./tts";
 export * from "./watch-download";
 export * from "./podcast";
+export * from "./book-revision";
+export * from "./anchor-text";
+export * from "./fanfiction";
+export * from "./koreader-delivery";

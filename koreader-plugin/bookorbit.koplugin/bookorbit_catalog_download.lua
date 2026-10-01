@@ -357,7 +357,7 @@ function CatalogDownload.install(Catalog)
 
         showStatus(T(_("Downloading:\n%1"), filename))
         self:runOffThread(function()
-            local ok, err = Transfer.run{
+            local ok, err, result = Transfer.run{
                 root = root,
                 destination = local_path,
                 generation = generation,
@@ -365,6 +365,10 @@ function CatalogDownload.install(Catalog)
                 on_progress = onProgress,
                 is_current = function()
                     return self.download_generation == generation
+                end,
+                replace = function()
+                    return require("bookorbit_delivery_catalog").replace(self, local_path, detail, file,
+                        function() return self.download_generation == generation end)
                 end,
                 perform = function(download_opts)
                     return self.client:downloadCatalogFile(file.id, local_path, download_opts)
@@ -376,6 +380,11 @@ function CatalogDownload.install(Catalog)
                 self:showRetry(err, function()
                     self:downloadFile(local_path, detail, file)
                 end)
+                return
+            end
+
+            if result and result.queued then
+                UIManager:show(InfoMessage:new{ text = _("Update queued. It will finish after reading data is uploaded and the book is closed."), timeout = 5 })
                 return
             end
 

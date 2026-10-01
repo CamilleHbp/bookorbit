@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, getTableColumns, gt, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, getTableColumns, gt, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { APP_FEATURES, type AccessLevel, type ContentFilterRules, type LibraryStats } from '@bookorbit/types';
 
@@ -131,6 +131,23 @@ export class LibraryRepository {
 
   findFoldersByLibrary(libraryId: number) {
     return this.db.select().from(libraryFolders).where(eq(libraryFolders.libraryId, libraryId)).orderBy(libraryFolders.createdAt, libraryFolders.id);
+  }
+
+  findFolder(libraryId: number, folderId: number) {
+    return this.db
+      .select()
+      .from(libraryFolders)
+      .where(and(eq(libraryFolders.libraryId, libraryId), eq(libraryFolders.id, folderId)))
+      .limit(1);
+  }
+
+  findFolderPage(libraryId: number, afterId: number, limit: number) {
+    return this.db
+      .select({ id: libraryFolders.id, path: libraryFolders.path })
+      .from(libraryFolders)
+      .where(and(eq(libraryFolders.libraryId, libraryId), sql`${libraryFolders.id} > ${afterId}`))
+      .orderBy(libraryFolders.id)
+      .limit(limit);
   }
 
   findAllFolders() {
@@ -473,6 +490,40 @@ export class LibraryRepository {
       where: and(eq(schema.userLibraryAccess.userId, userId), eq(schema.userLibraryAccess.libraryId, libraryId)),
     });
     return row?.accessLevel ?? null;
+  }
+
+  findUserAccess(userId: number, libraryId: number) {
+    return this.db.query.userLibraryAccess.findFirst({
+      columns: { accessLevel: true },
+      where: and(eq(schema.userLibraryAccess.userId, userId), eq(schema.userLibraryAccess.libraryId, libraryId)),
+    });
+  }
+
+  findAdministrable(userId: number, isSuperuser: boolean, afterId: number, limit: number) {
+    return this.db
+      .select({ id: libraries.id, name: libraries.name })
+      .from(libraries)
+      .where(
+        and(
+          gt(libraries.id, afterId),
+          isSuperuser
+            ? undefined
+            : exists(
+                this.db
+                  .select({ userId: schema.userLibraryAccess.userId })
+                  .from(schema.userLibraryAccess)
+                  .where(
+                    and(
+                      eq(schema.userLibraryAccess.libraryId, libraries.id),
+                      eq(schema.userLibraryAccess.userId, userId),
+                      eq(schema.userLibraryAccess.accessLevel, 'owner'),
+                    ),
+                  ),
+              ),
+        ),
+      )
+      .orderBy(libraries.id)
+      .limit(limit);
   }
 
   getAccess(libraryId: number) {

@@ -8,6 +8,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   Min,
@@ -15,6 +16,7 @@ import {
 } from 'class-validator';
 
 import { KoreaderAnnotationDto, PluginDeviceDto } from './koreader-plugin.dto';
+import type { AnnotationPositionRevision } from '@bookorbit/types';
 
 const MD5_HEX = /^[0-9a-f]{32}$/i;
 const DEVICE_DATETIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
@@ -60,7 +62,15 @@ export class AnnotationExchangeDto extends PluginDeviceDto {
   books!: ExchangeBookDto[];
 }
 
-export class ExchangeAckAppliedDto {
+export class ExchangeAckAppliedDto implements AnnotationPositionRevision {
+  @IsOptional()
+  @IsUUID()
+  positionRevisionId?: string;
+
+  @IsOptional()
+  @Matches(/^[a-f0-9]{64}$/)
+  positionSha256?: string;
+
   @IsInt()
   @Min(1)
   serverId!: number;
