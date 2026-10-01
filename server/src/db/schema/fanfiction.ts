@@ -162,6 +162,29 @@ export const fanfictionJobs = pgTable(
   ],
 );
 
+export const fanfictionSourceBatchItems = pgTable(
+  'fanfiction_source_batch_items',
+  {
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => fanfictionJobs.id, { onDelete: 'cascade' }),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => fanfictionSources.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    childJobId: uuid('child_job_id').references(() => fanfictionJobs.id, { onDelete: 'set null' }),
+    errorCode: varchar('error_code', { length: 100 }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.batchId, t.sourceId] }),
+    index('fanfiction_source_batch_items_child_idx').on(t.childJobId),
+    index('fanfiction_source_batch_items_source_idx').on(t.sourceId),
+    index('fanfiction_source_batch_items_user_idx').on(t.userId),
+  ],
+);
+
 export const fanfictionSourceBatchFailures = pgTable(
   'fanfiction_source_batch_failures',
   {

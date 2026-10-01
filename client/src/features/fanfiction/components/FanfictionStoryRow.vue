@@ -19,7 +19,7 @@ const props = defineProps<{
   selectionDisabled: boolean
   selected: boolean
 }>()
-const emit = defineEmits<{ select: [selected: boolean]; check: []; refresh: []; pause: [] }>()
+const emit = defineEmits<{ select: [selected: boolean]; check: []; refresh: []; pause: []; fixLogin: [profileId: string] }>()
 const { t, locale } = useI18n()
 const active = computed(() => props.pending || ['queued', 'running'].includes(props.job?.state ?? ''))
 const canCheck = computed(
@@ -45,6 +45,9 @@ function handleCheck() {
 }
 function handleRefresh() {
   emit('refresh')
+}
+function handleFixLogin() {
+  if (props.source.profileId) emit('fixLogin', props.source.profileId)
 }
 function handlePause() {
   emit('pause')
@@ -78,7 +81,8 @@ function handlePause() {
           <p class="break-words text-sm text-muted-foreground">{{ source.authors.join(', ') }} · {{ source.site }}</p>
           <p class="text-sm text-muted-foreground">
             {{ t('fanfiction.chapterCount', { count: source.chapterCount })
-            }}<span v-if="words"> · {{ t('fanfiction.wordCount', { count: words }) }}</span> · {{ source.storyStatus }}
+            }}<span v-if="words"> · {{ t('fanfiction.wordCount', { count: words }) }}</span
+            ><span v-if="source.storyStatus"> · {{ source.storyStatus }}</span>
           </p>
         </div>
         <DropdownMenu v-if="canCheck">
@@ -121,7 +125,14 @@ function handlePause() {
       <ImportProgress v-else-if="job" :job="job" />
       <StoryUpdateOutcome v-if="succeeded && job" :job="job" />
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Button v-if="needsAttention && source.bookId" variant="outline" as-child
+        <Button
+          v-if="source.attentionCode === 'authentication_required' && source.profileId"
+          variant="outline"
+          :disabled="disabled"
+          @click="handleFixLogin"
+          >{{ t('fanfiction.bulk.fixLogin') }}</Button
+        >
+        <Button v-else-if="needsAttention && source.bookId" variant="outline" as-child
           ><RouterLink :to="details">{{
             t(source.attentionCode === 'metadata_review_required' ? 'fanfiction.metadataReview.title' : 'fanfiction.reviewStory')
           }}</RouterLink></Button

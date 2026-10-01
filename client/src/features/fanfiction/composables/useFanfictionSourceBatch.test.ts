@@ -39,6 +39,83 @@ describe('durable bulk story controls', () => {
   })
   const create = () => scope.run(() => useFanfictionSourceBatch(libraryId, sources, search, filter, completed))!
 
+  it('checks the whole current library without inheriting filters or selection', async () => {
+    const state = create()
+    await flushPromises()
+    state.selectedIds.value = ['one']
+    state.action.value = 'schedule'
+    mockApi.mockResolvedValueOnce(response(queued))
+    await state.checkAll()
+    expect(mockApi.mock.lastCall![0]).toBe('/api/v1/libraries/5/fanfiction/source-batches')
+    expect(JSON.parse(mockApi.mock.lastCall![1]!.body as string)).toEqual({ action: 'update', allMatching: true, idempotencyKey: expect.any(String) })
+  })
+
+  it('keeps polling after selection ends and announces completion only after child updates finish', async () => {
+    const tracked = {
+      ...queued,
+      state: 'succeeded',
+      result: { selection: { tracked: true, action: 'update', processed: 2, failed: 0, finished: true } },
+    }
+    const status = {
+      job: tracked,
+      total: 2,
+      checked: 1,
+      updated: 1,
+      unchanged: 0,
+      needsAttention: 0,
+      running: 1,
+      waiting: 0,
+      finished: false,
+      trackingAvailable: true,
+    }
+    mockApi.mockResolvedValueOnce(response({ items: [tracked] })).mockResolvedValueOnce(response(status))
+    const state = create()
+    await flushPromises()
+    expect(state.active.value).toBe(true)
+    expect(state.selecting.value).toBe(false)
+    expect(state.canStart.value).toBe(false)
+    expect(completed).not.toHaveBeenCalled()
+    mockApi
+      .mockResolvedValueOnce(response(tracked))
+      .mockResolvedValueOnce(response({ ...status, checked: 2, unchanged: 1, running: 0, finished: true }))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(state.active.value).toBe(false)
+    expect(completed).toHaveBeenCalledOnce()
+    expect(state.summary.value).toMatchObject({ updated: 1, unchanged: 1, checked: 2 })
+    expect(state.job.value?.id).toBe('batch')
+  })
+
+  it('continues tracking when the completion endpoint temporarily fails', async () => {
+    const tracked = {
+      ...queued,
+      state: 'succeeded',
+      result: { selection: { tracked: true, action: 'update', processed: 2, failed: 0, finished: true } },
+    }
+    mockApi.mockResolvedValueOnce(response({ items: [tracked] })).mockRejectedValueOnce(new Error('Unavailable'))
+    const state = create()
+    await flushPromises()
+    expect(state.active.value).toBe(true)
+    expect(state.job.value?.id).toBe('batch')
+    expect(completed).not.toHaveBeenCalled()
+    mockApi.mockResolvedValueOnce(response(tracked)).mockResolvedValueOnce(
+      response({
+        job: tracked,
+        total: 2,
+        checked: 2,
+        updated: 1,
+        unchanged: 1,
+        needsAttention: 0,
+        running: 0,
+        waiting: 0,
+        finished: true,
+        trackingAvailable: true,
+      }),
+    )
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(state.active.value).toBe(false)
+    expect(completed).toHaveBeenCalledOnce()
+  })
+
   it('reuses an uncertain request and sends only the validated selection fields', async () => {
     const state = create()
     await flushPromises()

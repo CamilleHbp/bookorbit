@@ -269,6 +269,7 @@ export class FanfictionJobService {
         and(
           eq(jobs.libraryId, libraryId),
           dto.kind ? eq(jobs.kind, dto.kind) : undefined,
+          dto.kind === 'source_batch' && !user.isSuperuser ? eq(jobs.userId, user.id) : undefined,
           dto.sourceId ? eq(jobs.sourceId, dto.sourceId) : undefined,
           dto.activeOnly ? inArray(jobs.state, ['queued', 'running']) : undefined,
           before
@@ -366,7 +367,15 @@ export class FanfictionJobService {
           ...(job.kind === 'source_batch' && job.sourceSelection && job.state === 'review_required'
             ? {
                 sourceSelection: { ...job.sourceSelection, cursor: null, processed: 0, failed: 0, retryFailedOnly: true },
-                result: { selection: { processed: 0, failed: 0, finished: false, action: job.sourceSelection.action } },
+                result: {
+                  selection: {
+                    tracked: job.sourceSelection.tracksOutcomes,
+                    processed: 0,
+                    failed: 0,
+                    finished: false,
+                    action: job.sourceSelection.action,
+                  },
+                },
               }
             : {}),
           ...(job.kind === 'adopt' && job.selection && job.state === 'review_required'

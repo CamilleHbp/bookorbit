@@ -7,7 +7,7 @@ import ImportProgress from './components/ImportProgress.vue'
 import StoryImportReview from './components/StoryImportReview.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { BookOpen, Plus, Settings, RefreshCw } from '@lucide/vue'
+import { BookOpen, Plus, Settings, RefreshCw, Search } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
 import FanfictionStoryRow from './components/FanfictionStoryRow.vue'
 import FanfictionPagination from './components/FanfictionPagination.vue'
@@ -17,6 +17,7 @@ import { Permission, type FanfictionJob, type FanfictionProfileSummary } from '@
 import { Button } from '@/components/ui/button'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import StoryBulkActions from './components/StoryBulkActions.vue'
+import { useFanfictionBatchScope } from './composables/useFanfictionBatchScope'
 import { useFanfictionSourceBatch } from './composables/useFanfictionSourceBatch'
 import ExistingStories from './components/ExistingStories.vue'
 import SourceProfiles from './components/SourceProfiles.vue'
@@ -163,6 +164,7 @@ async function allowAdultImport(candidate: (typeof page.candidates.value)[number
   if (await preferences.allowAdult()) await retryImport(candidate)
 }
 function handleRefresh() {
+  void batchScope.reload()
   if (tab.value === 'profiles') void sourceSettings.reload()
   else void refresh()
 }
@@ -176,7 +178,20 @@ function handleProfileDeleted(id: string) {
   profiles.value = profiles.value.filter((profile) => profile.id !== id)
   if (profileId.value === id) profileId.value = ''
 }
-const bulk = reactive(useFanfictionSourceBatch(libraryId, sources, page.appliedSearch, page.appliedState, refresh))
+const batchScope = reactive(useFanfictionBatchScope(libraryId, page.appliedSearch, page.appliedState))
+const libraryName = computed(() => libraries.value.find((library) => library.id === libraryId.value)?.name ?? '')
+const bulk = reactive(
+  useFanfictionSourceBatch(libraryId, sources, page.appliedSearch, page.appliedState, async () => {
+    await Promise.all([refresh(), batchScope.reload()])
+  }),
+)
+const sourceRepair = ref<HTMLElement | null>(null)
+async function fixSourceLogin(id: string) {
+  configuring.value = null
+  await sourceSettings.editProfile({ id })
+  await nextTick()
+  sourceRepair.value?.focus()
+}
 function reviewBatch(job: FanfictionJob) {
   showStories()
   void bulk.open(job.id)
@@ -194,7 +209,7 @@ const selecting = ref(false)
 const selectionLabel = computed(() =>
   selecting.value || bulk.selectedIds.length > 0 || bulk.allMatching ? t('common.cancel') : t('fanfiction.selectStories'),
 )
-const showBulk = computed(() => selecting.value || bulk.selectedIds.length > 0 || bulk.allMatching || bulk.active || Boolean(bulk.error))
+const showBulk = computed(() => selecting.value || bulk.selectedIds.length > 0 || bulk.allMatching || Boolean(bulk.job) || Boolean(bulk.error))
 function toggleSelection() {
   const selected = selecting.value || bulk.selectedIds.length > 0 || bulk.allMatching
   selecting.value = !selected
@@ -209,7 +224,10 @@ watch(libraryId, () => {
 watch(
   () => bulk.active,
   (active) => {
-    if (active) selecting.value = true
+    if (active) {
+      selecting.value = false
+      bulk.clearSelection()
+    }
   },
 )
 function dateLabel(value: string | null) {
@@ -224,7 +242,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main v-if="canManage" class="mx-auto w-full max-w-7xl space-y-5 p-4 sm:p-6">
+  <main v-if="canManage" class="mx-auto w-full max-w-7xl space-y-4 p-4 sm:p-6">
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center gap-2">
         <BookOpen class="size-5 text-primary" aria-hidden="true" />
@@ -234,13 +252,13 @@ onMounted(() => {
         <Button variant="ghost" class="size-11" as-child
           ><RouterLink :to="{ name: 'settings-fanfiction' }" :aria-label="t('fanfiction.settingsTitle')"><Settings aria-hidden="true" /></RouterLink
         ></Button>
-        <Button v-if="tab !== 'add'" :disabled="libraryId === null" @click="showAdd"
+        <Button v-if="tab !== 'add'" variant="outline" :disabled="libraryId === null" @click="showAdd"
           ><Plus aria-hidden="true" />{{ t('fanfiction.addStories') }}</Button
         >
       </div>
     </header>
     <div class="flex flex-wrap items-end gap-2">
-      <label class="min-w-0 flex-1 space-y-1 text-sm sm:max-w-xs"
+      <label class="w-full min-w-0 flex-none space-y-1 text-sm sm:w-auto sm:flex-1 sm:max-w-xs"
         >{{ t('fanfiction.library') }}
         <select
           v-model="libraryId"
@@ -251,11 +269,24 @@ onMounted(() => {
           <option v-for="library in libraries" :key="library.id" :value="library.id">{{ library.name }}</option>
         </select>
       </label>
+      <div v-if="tab === 'stories'" class="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:ms-auto sm:flex-none">
+        <span v-if="batchScope.counts" class="text-sm text-muted-foreground tabular-nums">{{
+          t('fanfiction.bulk.storyCount', { count: batchScope.counts.total })
+        }}</span>
+        <Button
+          :disabled="busy || bulk.busy || bulk.active || !batchScope.counts?.total"
+          :aria-label="t('fanfiction.bulk.checkLibrary', { library: libraryName })"
+          @click="bulk.checkAll"
+        >
+          <RefreshCw class="size-4" aria-hidden="true" />{{ t('fanfiction.bulk.checkAll') }}
+        </Button>
+        <Button v-if="batchScope.error" variant="ghost" @click="batchScope.reload">{{ t('fanfiction.bulk.retryCount') }}</Button>
+      </div>
       <Button v-if="libraryCursor !== null" variant="outline" :disabled="busy" @click="loadLibraries">{{ t('fanfiction.moreLibraries') }}</Button>
       <Button
         variant="ghost"
         class="size-11 sm:size-9"
-        :aria-label="t('fanfiction.refresh')"
+        :aria-label="t('fanfiction.bulk.reload')"
         :disabled="busy || sourceSettings.busy || libraryId === null"
         @click="handleRefresh"
         ><RefreshCw class="size-4" :class="{ 'motion-safe:animate-spin': busy }" aria-hidden="true"
@@ -279,7 +310,7 @@ onMounted(() => {
         <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
         <SourceProfiles :settings="sourceSettings" @saved="useSavedProfile" @deleted="handleProfileDeleted" />
       </div>
-      <section v-else-if="tab === 'stories'" class="space-y-4" :aria-label="t('fanfiction.stories')" :aria-busy="busy">
+      <section v-else-if="tab === 'stories'" class="space-y-3 rounded-xl bg-card p-3 sm:p-4" :aria-label="t('fanfiction.stories')" :aria-busy="busy">
         <form class="flex flex-wrap items-center gap-2" @submit.prevent="applyFilters">
           <Input
             v-model="search"
@@ -289,6 +320,9 @@ onMounted(() => {
             maxlength="200"
             class="h-11 min-w-40 flex-1 sm:h-9"
           />
+          <Button type="submit" variant="outline" class="size-11 shrink-0 sm:size-9" :disabled="busy" :aria-label="t('fanfiction.search')"
+            ><Search class="size-4" aria-hidden="true"
+          /></Button>
           <select
             v-model="state"
             :disabled="busy"
@@ -302,12 +336,15 @@ onMounted(() => {
             <option value="review_required">{{ t('fanfiction.states.review_required') }}</option>
             <option value="configuration_blocked">{{ t('fanfiction.states.configuration_blocked') }}</option>
           </select>
-          <StoryFilters v-model="page.filters.value" :disabled="busy || bulk.active" />
-          <Button type="submit" variant="outline" :disabled="busy">{{ t('fanfiction.search') }}</Button>
-          <Button v-if="sources.length" variant="ghost" :aria-pressed="showBulk" :disabled="busy || bulk.active" @click="toggleSelection">{{
+          <Button v-if="sources.length" variant="ghost" :aria-pressed="selecting" :disabled="busy || bulk.active" @click="toggleSelection">{{
             selectionLabel
           }}</Button>
+          <StoryFilters v-model="page.filters.value" :disabled="busy || bulk.active" />
         </form>
+        <div v-if="sourceSettings.showEditor || sourceSettings.error" ref="sourceRepair" tabindex="-1" class="focus:outline-none">
+          <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
+          <SourceProfileEditor :settings="sourceSettings" compact @saved="handleProfileSaved" />
+        </div>
         <StoryBulkActions
           v-if="showBulk"
           v-model:all-matching="bulk.allMatching"
@@ -315,7 +352,11 @@ onMounted(() => {
           v-model:interval="bulk.interval"
           :bulk="bulk"
           :loading="busy"
+          :selecting="selecting || bulk.selectedIds.length > 0 || bulk.allMatching"
+          :library-name="libraryName"
+          :matching-count="batchScope.counts?.matching"
           :allow-all-matching="!advancedSelection"
+          @fix-login="fixSourceLogin"
         />
         <p v-if="busy && !sources.length" role="status" class="py-12 text-center text-sm text-muted-foreground">{{ t('common.loading') }}</p>
         <div v-else-if="!sources.length" class="space-y-3 py-12 text-center">
@@ -338,6 +379,7 @@ onMounted(() => {
             @check="checkNow(source)"
             @refresh="refreshChapters(source)"
             @pause="togglePaused(source)"
+            @fix-login="fixSourceLogin"
           />
         </div>
         <FanfictionPagination

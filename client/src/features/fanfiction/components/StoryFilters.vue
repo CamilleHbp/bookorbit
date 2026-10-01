@@ -17,8 +17,10 @@ function genre(values: string[]) {
 }
 </script>
 <template>
-  <details class="w-full rounded-lg border border-border p-3">
-    <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.filters.title') }}</summary>
+  <details class="w-full border-t border-border pt-2">
+    <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring sm:min-h-9 sm:py-2">
+      {{ t('fanfiction.filters.title') }}
+    </summary>
     <div class="grid gap-3 pt-3 sm:grid-cols-2 lg:grid-cols-3">
       <label class="space-y-1 text-sm"
         >{{ t('fanfiction.filters.view')

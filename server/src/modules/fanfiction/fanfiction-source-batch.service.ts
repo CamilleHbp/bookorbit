@@ -1,8 +1,8 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, exists, gt, ilike, inArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
-import type { FanfictionJob, FanfictionSourceSelection } from '@bookorbit/types';
+import type { FanfictionJob, FanfictionSourceBatchStatus, FanfictionSourceSelection } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
@@ -10,11 +10,12 @@ import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionSourceService } from './fanfiction-source.service';
-import { SelectFanfictionSourcesDto } from './dto/fanfiction-source-batch.dto';
+import { FanfictionSourceBatchScopeDto, SelectFanfictionSourcesDto } from './dto/fanfiction-source-batch.dto';
 
 const jobs = schema.fanfictionJobs;
 const sources = schema.fanfictionSources;
 const failures = schema.fanfictionSourceBatchFailures;
+const items = schema.fanfictionSourceBatchItems;
 
 @Injectable()
 export class FanfictionSourceBatchService {
@@ -25,6 +26,63 @@ export class FanfictionSourceBatchService {
     private readonly jobs: FanfictionJobService,
     private readonly sources: FanfictionSourceService,
   ) {}
+
+  async scope(libraryId: number, dto: FanfictionSourceBatchScopeDto, user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    const match =
+      and(dto.state ? eq(sources.state, dto.state) : undefined, dto.search?.trim() ? ilike(sources.title, `%${dto.search.trim()}%`) : undefined) ??
+      sql`true`;
+    const [counts] = await this.db
+      .select({ total: sql<number>`count(*)::int`, matching: sql<number>`count(*) filter (where ${match})::int` })
+      .from(sources)
+      .where(eq(sources.libraryId, libraryId));
+    return counts;
+  }
+
+  private async ownedBatch(libraryId: number, jobId: string, user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    const [job] = await this.db
+      .select()
+      .from(jobs)
+      .where(and(eq(jobs.libraryId, libraryId), eq(jobs.id, jobId), eq(jobs.kind, 'source_batch')))
+      .limit(1);
+    if (!job) throw new NotFoundException('Story selection not found');
+    if (job.userId !== user.id && !user.isSuperuser) throw new ForbiddenException('This story check belongs to another user');
+    return job;
+  }
+
+  async status(libraryId: number, jobId: string, user: RequestUser): Promise<FanfictionSourceBatchStatus> {
+    const batch = await this.ownedBatch(libraryId, jobId, user);
+    const job = await this.jobs.get(libraryId, jobId, user);
+    const trackingAvailable = batch.sourceSelection?.tracksOutcomes === true;
+    const [counts] = await this.db
+      .select({
+        tracked: sql<number>`count(*)::int`,
+        running: sql<number>`count(*) filter (where ${items.errorCode} is null and ${jobs.state} in ('queued', 'running'))::int`,
+        updated: sql<number>`count(*) filter (where ${items.errorCode} is null and ${jobs.state} = 'succeeded' and coalesce((${jobs.result}->>'noChange')::boolean, false) = false)::int`,
+        unchanged: sql<number>`count(*) filter (where ${items.errorCode} is null and (${jobs.state} = 'no_change' or (${jobs.state} = 'succeeded' and (${jobs.result}->>'noChange')::boolean = true)))::int`,
+      })
+      .from(items)
+      .leftJoin(jobs, eq(jobs.id, items.childJobId))
+      .where(and(eq(items.batchId, jobId), eq(items.userId, batch.userId)));
+    const scheduling = batch.sourceSelection?.action === 'schedule';
+    const needsAttention = scheduling ? (job.result?.selection?.failed ?? 0) : counts.tracked - counts.running - counts.updated - counts.unchanged;
+    const checked = scheduling ? (job.result?.selection?.processed ?? 0) : counts.updated + counts.unchanged + needsAttention;
+    const selecting = ['queued', 'running'].includes(job.state);
+    const total = batch.sourceSelection?.total ?? null;
+    return {
+      job,
+      total,
+      checked,
+      updated: counts.updated,
+      unchanged: counts.unchanged,
+      needsAttention,
+      running: counts.running,
+      waiting: selecting && total !== null ? Math.max(0, total - counts.tracked) : 0,
+      finished: !selecting && counts.running === 0,
+      trackingAvailable,
+    };
+  }
 
   async start(libraryId: number, dto: SelectFanfictionSourcesDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
@@ -72,6 +130,18 @@ export class FanfictionSourceBatchService {
       const {
         rows: [{ cutoff }],
       } = await tx.execute<{ cutoff: string }>(sql`select to_char(clock_timestamp(), 'YYYY-MM-DD"T"HH24:MI:SS.USOF') as cutoff`);
+      const [{ total }] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(sources)
+        .where(
+          and(
+            eq(sources.libraryId, libraryId),
+            sql`${sources.createdAt} <= ${cutoff}::timestamptz`,
+            ids
+              ? inArray(sources.id, ids)
+              : and(input.state ? eq(sources.state, input.state) : undefined, input.search ? ilike(sources.title, `%${input.search}%`) : undefined),
+          ),
+        );
       const [inserted] = await tx
         .insert(jobs)
         .values({
@@ -82,8 +152,8 @@ export class FanfictionSourceBatchService {
           kind: 'source_batch',
           site: `local-library-${libraryId}`,
           url: '',
-          sourceSelection: { ...input, cutoff, cursor: null, processed: 0, failed: 0 },
-          result: { selection: { processed: 0, failed: 0, finished: false, action: dto.action } },
+          sourceSelection: { ...input, cutoff, total, tracksOutcomes: true, cursor: null, processed: 0, failed: 0 },
+          result: { selection: { tracked: true, processed: 0, failed: 0, finished: false, action: dto.action } },
         })
         .onConflictDoNothing()
         .returning();
@@ -99,8 +169,34 @@ export class FanfictionSourceBatchService {
   }
 
   async listFailures(libraryId: number, jobId: string, cursor: string | undefined, limit: number, user: RequestUser) {
-    const job = await this.jobs.get(libraryId, jobId, user);
-    if (job.kind !== 'source_batch') throw new NotFoundException('Story selection not found');
+    const job = await this.ownedBatch(libraryId, jobId, user);
+    if (job.sourceSelection?.tracksOutcomes) {
+      const rows = await this.db
+        .select({
+          sourceId: items.sourceId,
+          jobId: items.childJobId,
+          title: sources.title,
+          bookId: sources.bookId,
+          site: sources.site,
+          profileId: sources.profileId,
+          errorCode: sql<string>`coalesce(${items.errorCode}, ${jobs.errorCode}, ${sources.attentionCode}, 'source_batch_item_failed')`,
+        })
+        .from(items)
+        .innerJoin(sources, eq(sources.id, items.sourceId))
+        .leftJoin(jobs, eq(jobs.id, items.childJobId))
+        .where(
+          and(
+            eq(items.batchId, jobId),
+            eq(items.userId, job.userId),
+            eq(sources.libraryId, libraryId),
+            cursor ? gt(items.sourceId, cursor) : undefined,
+            sql`(${items.errorCode} is not null or ${jobs.state} in ('failed', 'cancelled', 'review_required', 'configuration_blocked') or (${items.childJobId} is null and ${job.sourceSelection.action} <> 'schedule'))`,
+          ),
+        )
+        .orderBy(asc(items.sourceId))
+        .limit(limit + 1);
+      return { items: rows.slice(0, limit), nextCursor: rows.length > limit ? rows[limit - 1].sourceId : null };
+    }
     const rows = await this.db
       .select({ sourceId: failures.sourceId, title: sources.title, errorCode: failures.errorCode })
       .from(failures)
@@ -108,8 +204,8 @@ export class FanfictionSourceBatchService {
       .where(and(eq(failures.jobId, jobId), eq(sources.libraryId, libraryId), cursor ? gt(failures.sourceId, cursor) : undefined))
       .orderBy(asc(failures.sourceId))
       .limit(limit + 1);
-    const items = rows.slice(0, limit);
-    return { items, nextCursor: rows.length > limit ? items.at(-1)!.sourceId : null };
+    const pageItems = rows.slice(0, limit);
+    return { items: pageItems, nextCursor: rows.length > limit ? pageItems.at(-1)!.sourceId : null };
   }
 
   async run(
@@ -144,7 +240,6 @@ export class FanfictionSourceBatchService {
               : selection.ids
                 ? inArray(sources.id, selection.ids)
                 : and(
-                    sql`${sources.updatedAt} <= ${selection.cutoff}::timestamptz`,
                     selection.state ? eq(sources.state, selection.state) : undefined,
                     selection.search ? ilike(sources.title, `%${selection.search}%`) : undefined,
                   ),
@@ -158,15 +253,20 @@ export class FanfictionSourceBatchService {
           selection = await this.db.transaction(async (tx) => {
             await this.jobs.assertOwnership(job, tx);
             await authorize();
-            await this.apply(tx, job, source, selection, user);
-            return this.checkpoint(tx, job.id, source.id, selection, null);
+            const child = await this.apply(tx, job, source, selection, user);
+            return this.checkpoint(tx, job, source.id, selection, null, child?.id);
           });
         } catch (error) {
           if (!(error instanceof BadRequestException || error instanceof ConflictException || error instanceof NotFoundException)) throw error;
           selection = await this.db.transaction(async (tx) => {
             await this.jobs.assertOwnership(job, tx);
             await authorize();
-            return this.checkpoint(tx, job.id, source.id, selection, 'source_batch_item_failed');
+            const response = error.getResponse();
+            const code =
+              typeof response === 'object' && 'errorCode' in response
+                ? String(response.errorCode)
+                : (source.attentionCode ?? 'source_batch_item_failed');
+            return this.checkpoint(tx, job, source.id, selection, code);
           });
         }
         if (Date.now() - startedAt >= 20_000) break;
@@ -175,7 +275,15 @@ export class FanfictionSourceBatchService {
       this.logger.log(
         `[fanfiction.source_batch] [end] libraryId=${job.libraryId} jobId=${job.id} durationMs=${Date.now() - startedAt} processed=${selection.processed} failed=${selection.failed} finished=${finished} - story selection checkpoint saved`,
       );
-      return { selection: { processed: selection.processed, failed: selection.failed, finished, action: selection.action } };
+      return {
+        selection: {
+          tracked: selection.tracksOutcomes,
+          processed: selection.processed,
+          failed: selection.failed,
+          finished,
+          action: selection.action,
+        },
+      };
     } catch (error) {
       this.logger.warn(
         `[fanfiction.source_batch] [fail] libraryId=${job.libraryId} jobId=${job.id} durationMs=${Date.now() - startedAt} errorClass=SourceBatchError error="story selection interrupted" - saved selection remains resumable`,
@@ -191,10 +299,12 @@ export class FanfictionSourceBatchService {
     selection: FanfictionSourceSelection,
     user: RequestUser,
   ) {
-    if (selection.action === 'schedule') return this.sources.setSchedule(tx, source, selection.intervalMinutes);
-    if (selection.action === 'update' || selection.action === 'refresh') {
-      await this.jobs.updateStory(source, selection.action, randomUUID(), user, false, undefined, tx);
+    if (selection.action === 'schedule') {
+      await this.sources.setSchedule(tx, source, selection.intervalMinutes);
       return;
+    }
+    if (selection.action === 'update' || selection.action === 'refresh') {
+      return this.jobs.updateStory(source, selection.action, randomUUID(), user, false, undefined, tx);
     }
     const [previous] = await tx
       .select({ id: jobs.id })
@@ -208,10 +318,23 @@ export class FanfictionSourceBatchService {
       )
       .orderBy(desc(jobs.createdAt), desc(jobs.id))
       .limit(1);
-    if (previous) await this.jobs.retry(job.libraryId, previous.id, user, tx);
+    if (previous) return this.jobs.retry(job.libraryId, previous.id, user, tx);
+    throw new BadRequestException('No previous update is available to retry');
   }
 
-  private async checkpoint(tx: DatabaseTransaction, jobId: string, sourceId: string, selection: FanfictionSourceSelection, errorCode: string | null) {
+  private async checkpoint(
+    tx: DatabaseTransaction,
+    job: typeof jobs.$inferSelect,
+    sourceId: string,
+    selection: FanfictionSourceSelection,
+    errorCode: string | null,
+    childJobId?: string,
+  ) {
+    const jobId = job.id;
+    await tx
+      .insert(items)
+      .values({ batchId: jobId, sourceId, userId: job.userId, childJobId: childJobId ?? null, errorCode })
+      .onConflictDoUpdate({ target: [items.batchId, items.sourceId], set: { childJobId: childJobId ?? null, errorCode } });
     const next = { ...selection, cursor: sourceId, processed: selection.processed + 1, failed: selection.failed + (errorCode ? 1 : 0) };
     if (errorCode)
       await tx
@@ -223,7 +346,9 @@ export class FanfictionSourceBatchService {
       .update(jobs)
       .set({
         sourceSelection: next,
-        result: { selection: { processed: next.processed, failed: next.failed, finished: false, action: next.action } },
+        result: {
+          selection: { tracked: selection.tracksOutcomes, processed: next.processed, failed: next.failed, finished: false, action: next.action },
+        },
         updatedAt: sql`now()`,
       })
       .where(eq(jobs.id, jobId));
