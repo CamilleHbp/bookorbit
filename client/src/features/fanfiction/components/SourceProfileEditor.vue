@@ -7,7 +7,12 @@ import { SECRET_INPUT_ATTRS } from '@/lib/secret-input'
 import type { useFanfictionSettings } from '../composables/useFanfictionSettings'
 import TagRuleEditor from './TagRuleEditor.vue'
 import { sourcePresets } from '../lib/source-presets'
-const props = defineProps<{ settings: UnwrapRef<ReturnType<typeof useFanfictionSettings>>; compact?: boolean }>()
+const props = defineProps<{
+  settings: UnwrapRef<ReturnType<typeof useFanfictionSettings>>
+  compact?: boolean
+  loginSite?: string
+  saveLabel?: string
+}>()
 const emit = defineEmits<{ saved: [profile: FanfictionProfileSummary] }>()
 const { t } = useI18n()
 const {
@@ -53,7 +58,9 @@ async function save() {
   <form v-if="showEditor" class="space-y-4 rounded-lg border border-border bg-card p-4" @submit.prevent="save">
     <fieldset :disabled="busy" class="space-y-4">
       <div class="space-y-2">
-        <h2 class="text-lg font-medium">{{ t(editing ? 'fanfiction.editSource' : 'fanfiction.addProfile') }}</h2>
+        <h2 class="text-lg font-medium">
+          {{ loginSite ? t('fanfiction.bulk.loginTitle', { site: loginSite }) : t(editing ? 'fanfiction.editSource' : 'fanfiction.addProfile') }}
+        </h2>
         <label v-if="!editing && !compact" class="block space-y-1 text-sm">
           <span>{{ t('fanfiction.chooseSite') }}</span>
           <select v-model="presetId" class="w-full rounded-md border border-input bg-background p-2" @change="applyPreset">
@@ -67,7 +74,7 @@ async function save() {
         ><span>{{ t('fanfiction.profileName') }}</span
         ><input v-model="name" required maxlength="120" class="w-full rounded-md border border-input bg-background p-2"
       /></label>
-      <label class="block space-y-1 text-sm">
+      <label v-if="!loginSite" class="block space-y-1 text-sm">
         <span>{{ t('fanfiction.rootUrls') }}</span>
         <textarea
           v-model="rootUrls"
@@ -96,19 +103,10 @@ async function save() {
         /></label>
       </div>
       <Button v-if="!preset || preset.login" type="button" variant="outline" @click="clearPassword">{{ t('fanfiction.clearPassword') }}</Button>
-      <TagRuleEditor ref="ruleEditor" v-model="tagRules" :disabled="busy" />
-      <details class="space-y-3 rounded-lg border border-border p-3">
-        <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.advancedSettings') }}</summary>
-        <label class="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
-          <input v-model="isAdult" type="checkbox" class="mt-1" @change="changeAdult" />
-          <span class="font-medium">{{ t('fanfiction.adultConfirmation') }}</span>
-        </label>
-        <label class="block space-y-1 text-sm"
-          ><span>{{ t('fanfiction.siteSection') }}</span>
-          <input v-model="section" required maxlength="255" class="w-full rounded-md border border-input bg-background p-2" @change="readSection" />
-        </label>
-        <fieldset class="space-y-3 rounded-lg border border-border p-3">
-          <legend class="px-1 text-sm font-medium">{{ t('fanfiction.cookiesTitle') }}</legend>
+      <TagRuleEditor v-if="!loginSite" ref="ruleEditor" v-model="tagRules" :disabled="busy" />
+      <details :open="Boolean(loginSite && (!preset?.login || cookies.length))" class="space-y-3 rounded-lg border border-border p-3">
+        <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.cookiesTitle') }}</summary>
+        <div class="space-y-3">
           <p class="text-xs text-muted-foreground">{{ t('fanfiction.cookiesHelp') }}</p>
           <div v-for="cookie in cookieRows" :key="cookie.key" class="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-2">
             <label class="block space-y-1 text-sm"
@@ -165,7 +163,19 @@ async function save() {
             <Button v-if="cookiePage > 0" type="button" variant="outline" @click="previousCookies">{{ t('fanfiction.previousCookies') }}</Button>
             <Button v-if="moreCookies" type="button" variant="outline" @click="nextCookies">{{ t('fanfiction.nextCookies') }}</Button>
           </div>
-        </fieldset>
+        </div>
+      </details>
+      <details class="space-y-3 rounded-lg border border-border p-3">
+        <summary class="cursor-pointer text-sm font-medium">{{ t('fanfiction.advancedSettings') }}</summary>
+        <label class="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
+          <input v-model="isAdult" type="checkbox" class="mt-1" @change="changeAdult" />
+          <span class="font-medium">{{ t('fanfiction.adultConfirmation') }}</span>
+        </label>
+        <label class="block space-y-1 text-sm"
+          ><span>{{ t('fanfiction.siteSection') }}</span>
+          <input v-model="section" required maxlength="255" class="w-full rounded-md border border-input bg-background p-2" @change="readSection" />
+        </label>
+
         <label class="block space-y-1 text-sm"
           ><span>{{ t('fanfiction.advanced') }}</span
           ><textarea
@@ -178,7 +188,7 @@ async function save() {
         </label>
       </details>
       <div class="flex gap-2">
-        <Button type="submit" :disabled="busy">{{ t('fanfiction.save') }}</Button
+        <Button type="submit" :disabled="busy">{{ saveLabel ?? t('fanfiction.save') }}</Button
         ><Button type="button" variant="outline" :disabled="busy" @click="closeEditor">{{ t('fanfiction.cancel') }}</Button>
       </div>
     </fieldset>

@@ -48,25 +48,26 @@ describe('story row feedback', () => {
     })
     await wrapper
       .findAll('button')
-      .find((button) => button.text() === 'Fix source login')!
+      .find((button) => button.text() === 'Update website login')!
       .trigger('click')
-    expect(wrapper.emitted('fixLogin')).toEqual([['profile']])
+    expect(wrapper.emitted('fixLogin')).toEqual([['source']])
     expect(wrapper.text()).toContain('1 chapter')
     expect(wrapper.text()).not.toContain('1 chapters')
     wrapper.unmount()
   })
 
-  it('offers blocked stories a direct update-settings destination', () => {
+  it('offers the same direct login action when a story has no saved profile', async () => {
     const wrapper = mount(FanfictionStoryRow, {
-      props: { ...props, source: { ...source, state: 'configuration_blocked', attentionCode: 'authentication_required' } },
+      props: { ...props, source: { ...source, profileId: null, state: 'configuration_blocked', attentionCode: 'authentication_required' } },
       global,
     })
-    const link = wrapper.findAllComponents({ name: 'RouterLink' }).find((item) => item.text() === 'Review story updates')
-    const repair = wrapper.findAll('a').find((item) => item.text() === 'Review story updates')
-    expect(repair).toBeDefined()
-    expect(wrapper.text()).not.toContain('Check for new chapters')
-    expect(link).toBeDefined()
-    expect(link!.props('to')).toMatchObject({ name: 'book-detail', query: { tab: 'story-updates' } })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Update website login')!
+      .trigger('click')
+    expect(wrapper.emitted('fixLogin')).toEqual([['source']])
+    expect(wrapper.text()).not.toContain('Review story updates')
+    expect(wrapper.text()).not.toContain('source settings')
     wrapper.unmount()
   })
 })

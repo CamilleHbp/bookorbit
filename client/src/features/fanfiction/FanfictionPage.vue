@@ -140,7 +140,19 @@ const navigation = computed(() => [
   { id: 'activity' as const, label: t('fanfiction.activity') },
   { id: 'profiles' as const, label: t('fanfiction.profiles') },
 ])
-const { sourceSettings, detectedSite, selectedProfile, addSource, editSource } = useInlineSourceSettings(libraryId, profiles, profileId, urls)
+const {
+  sourceSettings,
+  detectedSite,
+  selectedProfile,
+  addSource,
+  editSource,
+  repairingSource,
+  repairing,
+  editStoryLogin,
+  applyStoryLogin,
+  cancelStoryLogin,
+} = useInlineSourceSettings(libraryId, profiles, profileId, urls)
+watch(tab, () => cancelStoryLogin())
 const preferences = reactive(useFanfictionPreferences())
 const configuring = ref<(typeof page.candidates.value)[number] | null>(null)
 function handleAddSource() {
@@ -157,7 +169,17 @@ async function handleProfileSaved(profile: FanfictionProfileSummary) {
   const candidate = configuring.value
   configuring.value = null
   if (profile.libraryId !== libraryId.value) return
-  if (candidate) await retryImport(candidate, profile)
+  if (repairingSource.value) {
+    const source = await applyStoryLogin(profile)
+    if (!source) return
+    useSavedProfile(profile)
+    if (source.bookFileId) await checkNow(source)
+    else {
+      urls.value = source.canonicalUrl
+      showAdd()
+    }
+    await refresh()
+  } else if (candidate) await retryImport(candidate, profile)
   else useSavedProfile(profile)
 }
 async function allowAdultImport(candidate: (typeof page.candidates.value)[number]) {
@@ -188,7 +210,7 @@ const bulk = reactive(
 const sourceRepair = ref<HTMLElement | null>(null)
 async function fixSourceLogin(id: string) {
   configuring.value = null
-  await sourceSettings.editProfile({ id })
+  await editStoryLogin(id)
   await nextTick()
   sourceRepair.value?.focus()
 }
@@ -336,14 +358,32 @@ onMounted(() => {
             <option value="review_required">{{ t('fanfiction.states.review_required') }}</option>
             <option value="configuration_blocked">{{ t('fanfiction.states.configuration_blocked') }}</option>
           </select>
-          <Button v-if="sources.length" variant="ghost" :aria-pressed="selecting" :disabled="busy || bulk.active" @click="toggleSelection">{{
-            selectionLabel
-          }}</Button>
-          <StoryFilters v-model="page.filters.value" :disabled="busy || bulk.active" />
+          <Button
+            v-if="sources.length"
+            variant="ghost"
+            :aria-pressed="selecting"
+            :disabled="busy || bulk.active || repairing || sourceSettings.busy"
+            @click="toggleSelection"
+            >{{ selectionLabel }}</Button
+          >
+          <StoryFilters v-model="page.filters.value" :disabled="busy || bulk.active || repairing || sourceSettings.busy" />
         </form>
-        <div v-if="sourceSettings.showEditor || sourceSettings.error" ref="sourceRepair" tabindex="-1" class="focus:outline-none">
+        <div
+          v-if="repairing || sourceSettings.showEditor || sourceSettings.error"
+          ref="sourceRepair"
+          tabindex="-1"
+          :aria-busy="repairing"
+          class="focus:outline-none"
+        >
+          <p v-if="repairing" role="status" class="text-sm text-muted-foreground">{{ t('common.loading') }}</p>
           <p v-if="sourceSettings.error" role="alert" class="text-sm text-destructive">{{ sourceSettings.error }}</p>
-          <SourceProfileEditor :settings="sourceSettings" compact @saved="handleProfileSaved" />
+          <SourceProfileEditor
+            :settings="sourceSettings"
+            :login-site="repairingSource?.site"
+            :save-label="t(repairingSource?.bookFileId ? 'fanfiction.bulk.saveLoginAndCheck' : 'fanfiction.bulk.saveLogin')"
+            compact
+            @saved="handleProfileSaved"
+          />
         </div>
         <StoryBulkActions
           v-if="showBulk"
@@ -351,7 +391,7 @@ onMounted(() => {
           v-model:action="bulk.action"
           v-model:interval="bulk.interval"
           :bulk="bulk"
-          :loading="busy"
+          :loading="busy || repairing || sourceSettings.busy"
           :selecting="selecting || bulk.selectedIds.length > 0 || bulk.allMatching"
           :library-name="libraryName"
           :matching-count="batchScope.counts?.matching"
@@ -372,7 +412,7 @@ onMounted(() => {
             :job="sourceJobs[source.id]"
             :error="sourceErrors[source.id]"
             :pending="checkingSourceId === source.id"
-            :disabled="busy || bulk.active"
+            :disabled="busy || bulk.active || repairing || sourceSettings.busy"
             :selected="bulk.selectedIds.includes(source.id) || bulk.allMatching"
             :selection-disabled="busy || bulk.busy || bulk.active || bulk.allMatching"
             @select="selectStory(source.id, $event)"

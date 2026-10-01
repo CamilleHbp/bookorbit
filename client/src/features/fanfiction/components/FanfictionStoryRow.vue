@@ -19,7 +19,7 @@ const props = defineProps<{
   selectionDisabled: boolean
   selected: boolean
 }>()
-const emit = defineEmits<{ select: [selected: boolean]; check: []; refresh: []; pause: []; fixLogin: [profileId: string] }>()
+const emit = defineEmits<{ select: [selected: boolean]; check: []; refresh: []; pause: []; fixLogin: [sourceId: string] }>()
 const { t, locale } = useI18n()
 const active = computed(() => props.pending || ['queued', 'running'].includes(props.job?.state ?? ''))
 const canCheck = computed(
@@ -47,7 +47,7 @@ function handleRefresh() {
   emit('refresh')
 }
 function handleFixLogin() {
-  if (props.source.profileId) emit('fixLogin', props.source.profileId)
+  emit('fixLogin', props.source.id)
 }
 function handlePause() {
   emit('pause')
@@ -125,13 +125,9 @@ function handlePause() {
       <ImportProgress v-else-if="job" :job="job" />
       <StoryUpdateOutcome v-if="succeeded && job" :job="job" />
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Button
-          v-if="source.attentionCode === 'authentication_required' && source.profileId"
-          variant="outline"
-          :disabled="disabled"
-          @click="handleFixLogin"
-          >{{ t('fanfiction.bulk.fixLogin') }}</Button
-        >
+        <Button v-if="source.attentionCode === 'authentication_required'" variant="outline" :disabled="disabled" @click="handleFixLogin">{{
+          t('fanfiction.bulk.fixLogin')
+        }}</Button>
         <Button v-else-if="needsAttention && source.bookId" variant="outline" as-child
           ><RouterLink :to="details">{{
             t(source.attentionCode === 'metadata_review_required' ? 'fanfiction.metadataReview.title' : 'fanfiction.reviewStory')
