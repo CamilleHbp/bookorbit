@@ -35,6 +35,9 @@ export interface BrowseEntitiesParams {
   sortBy?: BrowseEntitySortBy;
   sortOrder?: BrowseEntitySortOrder;
   bookCount?: BrowseEntityBookCountFilter;
+  tagSeparator?: string;
+  /** Empty string selects tags without a prefix. */
+  tagPrefix?: string;
 }
 
 export interface BrowseEntityItem {

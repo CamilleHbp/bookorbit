@@ -10436,7 +10436,8 @@
       "entityManager": "Entity Manager",
       "bulkRename": "Bulk Rename",
       "duplicateBooks": "Duplicate Books",
-      "missingResources": "Missing Resources"
+      "missingResources": "Missing Resources",
+      "tags": "Tags"
     },
     "entityTypes": {
       "authors": "Authors",
@@ -10964,6 +10965,29 @@
         "list": "Could not load these entries.",
         "clean": "Cleanup failed."
       }
+    },
+    "tagManager": {
+      "groups": "Tag groups",
+      "prefixes": "Prefixes",
+      "allTags": "All tags",
+      "ungrouped": "Ungrouped",
+      "groupByPrefix": "Group by prefix",
+      "separator": "Separator",
+      "example": "For example: {example}",
+      "invalidSeparator": "Use 1 to 8 characters without spaces.",
+      "saveError": "Could not save your separator. Try again.",
+      "loadError": "Could not load groups.",
+      "browseError": "Could not load this list. Try again.",
+      "searchGroups": "Find a group",
+      "noMatchingGroups": "No matching groups.",
+      "noGroups": "No prefixes with this separator.",
+      "previousGroups": "Previous groups",
+      "nextGroups": "Next groups",
+      "permissionRequired": "You need permission to edit library metadata.",
+      "operationError": "Could not update the selected items. Check your library access and try again.",
+      "saving": "Saving...",
+      "resultCount": "{count, plural, =0 {no tags} one {# tag} other {# tags}}",
+      "activeGroup": "Group: {group}"
     }
   },
   "views": {
@@ -12180,5 +12204,33 @@
     "errors": {
       "generic": "TTS error"
     }
+  },
+  "tagBrowser": {
+    "title": "Tags",
+    "manage": "Manage tags",
+    "choose": "Choose tags",
+    "searchTags": "Find a tag",
+    "searchBooks": "Search matching books",
+    "match": "Match",
+    "all": "All selected tags",
+    "any": "Any selected tag",
+    "clear": "Clear tags",
+    "remove": "Remove {tag}",
+    "viewBooks": "View books",
+    "books": "{count, plural, =0 {No books} one {# book} other {# books}}",
+    "noBooks": "No books match these tags",
+    "noBooksHint": "Remove a tag or match any selected tag.",
+    "noTags": "No tags found",
+    "tagsError": "Could not load tags. Try again.",
+    "booksError": "Could not load books. Try again.",
+    "sort": "Sort books",
+    "titleSort": "Title",
+    "recentSort": "Recently added",
+    "ratingSort": "Your rating",
+    "grid": "Cover grid",
+    "list": "Book list",
+    "loadMore": "Load more books",
+    "selected": "{count} selected",
+    "limit": "Select up to 50 tags."
   }
 }

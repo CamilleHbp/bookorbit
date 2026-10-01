@@ -36,6 +36,7 @@ import { SetPermissionsDto } from './dto/set-permissions.dto';
 import { SetSuperuserDto } from './dto/set-superuser.dto';
 import { SetContentFiltersDto } from './dto/set-content-filters.dto';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { UpdateTagGroupingDto } from './dto/update-tag-grouping.dto';
 import { UpdateMeSettingsDto } from './dto/update-me-settings.dto';
 import { UpdateReaderStorageModeDto } from './dto/update-reader-storage-mode.dto';
 import { UpdateThemeStorageModeDto } from './dto/update-theme-storage-mode.dto';
@@ -87,6 +88,11 @@ export class UserController {
   })
   updateMe(@CurrentUser() user: RequestUser, @Body() dto: UpdateMeDto) {
     return this.userService.updateMe(user.id, dto);
+  }
+
+  @Patch('me/tag-grouping')
+  updateTagGrouping(@CurrentUser() user: RequestUser, @Body() dto: UpdateTagGroupingDto) {
+    return this.userService.updateMySettings(user.id, { settings: { tagGrouping: dto } });
   }
 
   @Patch('me/settings')

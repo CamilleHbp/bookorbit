@@ -17,8 +17,12 @@ interface ToolSection {
 const sections = computed<ToolSection[]>(() => {
   const result: ToolSection[] = []
 
-  if (hasPermission('manage_libraries')) {
+  if (hasPermission('library_edit_metadata')) {
+    result.push({ label: t('tools.header.tags'), routeName: 'tools-tags' })
     result.push({ label: t('tools.header.entityManager'), routeName: 'tools-entity-manager' })
+  }
+
+  if (hasPermission('manage_libraries')) {
     result.push({ label: t('tools.header.bulkRename'), routeName: 'tools-bulk-rename' })
   }
 

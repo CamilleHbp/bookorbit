@@ -13,6 +13,8 @@ vi.mock('../../composables/useEntityManager', () => ({
   useEntityManager: mocks.useEntityManager,
 }))
 
+vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
+
 function makeItem(id: number | string): BrowseEntityItem {
   return {
     id,
@@ -59,6 +61,9 @@ function makeEntityManagerMock() {
     browseSortOrder: ref('asc'),
     browseBookCount: ref('any'),
     browseLoading: ref(false),
+    browseError: ref(false),
+    tagSeparator: ref<string>(),
+    tagPrefix: ref<string>(),
     browseTotalPages: ref(1),
     fetchBrowse: mockFn(),
     clearBrowse: mockFn(),
@@ -281,6 +286,19 @@ describe('EntityManagerView selection', () => {
 
     expect(entityManager.browsePage.value).toBe(6)
     expect(entityManager.fetchBrowse).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an active prefix visible and clears it from empty results', async () => {
+    const entityManager = makeEntityManagerMock()
+    entityManager.entityType.value = 'tag'
+    entityManager.tagPrefix.value = 'topic'
+    mocks.useEntityManager.mockReturnValue(entityManager)
+    const wrapper = shallowMount(EntityManagerView)
+    expect(wrapper.findComponent({ name: 'EntityBrowseTable' }).props('hasActiveFilters')).toBe(true)
+    expect(wrapper.text()).toContain('Group: topic')
+    wrapper.findComponent({ name: 'EntityBrowseTable' }).vm.$emit('clearFilters')
+    await nextTick()
+    expect(entityManager.tagPrefix.value).toBeUndefined()
   })
 
   it('clears every filter in a single refresh rather than one per filter', async () => {

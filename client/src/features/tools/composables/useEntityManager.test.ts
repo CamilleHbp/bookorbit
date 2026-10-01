@@ -439,7 +439,7 @@ describe('useEntityManager', () => {
 
   describe('bulkDeleteEntities()', () => {
     it('calls entityManagerApi.bulkDeleteEntities with non-inline payload', async () => {
-      mockBulkDeleteEntities.mockResolvedValue(undefined as never)
+      mockBulkDeleteEntities.mockResolvedValue({ results: [], errors: [] })
       const { bulkDeleteEntities } = useEntityManager()
 
       await bulkDeleteEntities([1, 2, 3], 'hard', false)
@@ -448,7 +448,7 @@ describe('useEntityManager', () => {
     })
 
     it('calls entityManagerApi.bulkDeleteEntities with inline payload', async () => {
-      mockBulkDeleteEntities.mockResolvedValue(undefined as never)
+      mockBulkDeleteEntities.mockResolvedValue({ results: [], errors: [] })
       const { bulkDeleteEntities, entityType } = useEntityManager()
       entityType.value = 'publisher'
 

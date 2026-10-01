@@ -4,6 +4,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn, PgTableWithColumns } from 'drizzle-orm/pg-core';
 
 import { DB } from '../../../db';
+import { tagPrefixExpression } from './tag-grouping';
 import * as schema from '../../../db/schema';
 import { books, bookMetadata } from '../../../db/schema';
 import { buildContentFilterClauses } from '../../../common/utils/content-filter-sql.utils';
@@ -135,7 +136,12 @@ export abstract class JunctionEntityStrategy implements EntityStrategy {
             .where(and(inArray(books.libraryId, params.libraryIds), ...cfClauses))
         : null;
 
-    const nameCondition = params.search ? (accentInsensitiveIlike(this.nameCol, `%${escapeLike(params.search)}%`) as any) : undefined;
+    const nameCondition = and(
+      params.search ? accentInsensitiveIlike(this.nameCol, `%${escapeLike(params.search)}%`) : undefined,
+      this.entityType === 'tag' && params.tagSeparator && params.tagPrefix !== undefined
+        ? eq(tagPrefixExpression(this.nameCol, params.tagSeparator), params.tagPrefix)
+        : undefined,
+    );
     const joinCondition = bookSubquery
       ? and(eq(this.junctionEntityIdCol, this.entityIdCol), inArray(this.junctionBookIdCol, bookSubquery))
       : and(eq(this.junctionEntityIdCol, this.entityIdCol), sql`false`);
@@ -155,8 +161,13 @@ export abstract class JunctionEntityStrategy implements EntityStrategy {
         .from(this.junctionTable)
         .where(eq(this.junctionEntityIdCol, this.entityIdCol)),
     );
-    const visibilityCondition =
-      params.bookCount === 'empty' ? isGloballyEmpty : hasScopedBooks ? or(hasScopedBooks, isGloballyEmpty) : isGloballyEmpty;
+    const visibilityCondition = params.usedOnly
+      ? (hasScopedBooks ?? sql`false`)
+      : params.bookCount === 'empty'
+        ? isGloballyEmpty
+        : hasScopedBooks
+          ? or(hasScopedBooks, isGloballyEmpty)
+          : isGloballyEmpty;
 
     const countQuery = this.db
       .select({ total: sql<number>`count(distinct ${this.entityIdCol})::int` })

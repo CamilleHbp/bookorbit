@@ -1,6 +1,9 @@
 import { api } from '@/lib/api'
 import type {
   BrowseEntitiesParams,
+  BrowseTagGroupsParams,
+  BrowseTagGroupsResponse,
+  TagGroupingPreferences,
   BrowseEntitiesResponse,
   BulkDeleteResult,
   DeleteResult,
@@ -30,10 +33,27 @@ export async function browseEntities(entityType: EntityType, params: BrowseEntit
     sortBy: params.sortBy,
     sortOrder: params.sortOrder,
     bookCount: params.bookCount,
+    tagSeparator: params.tagSeparator,
+    tagPrefix: params.tagPrefix,
   })
   const res = await api(`${BASE}/${entityType}/browse${query}`)
   if (!res.ok) throw new Error(`Failed to browse ${entityType}`)
   return res.json()
+}
+
+export async function browseTagGroups(params: BrowseTagGroupsParams): Promise<BrowseTagGroupsResponse> {
+  const res = await api(`${BASE}/tag/groups${toQuery({ ...params })}`)
+  if (!res.ok) throw new Error('Could not load tag groups')
+  return res.json()
+}
+
+export async function saveTagGrouping(preferences: TagGroupingPreferences): Promise<void> {
+  const res = await api('/api/v1/users/me/tag-grouping', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(preferences),
+  })
+  if (!res.ok) throw new Error('Could not save tag grouping')
 }
 
 export async function scanDuplicates(

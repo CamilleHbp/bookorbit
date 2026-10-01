@@ -7,6 +7,7 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import type { RequestUser } from '../../common/types/request-user';
 import {
   BrowseEntitiesDto,
+  BrowseTagGroupsDto,
   BulkDeleteEntitiesDto,
   DeleteEntityDto,
   DismissPairDto,
@@ -27,6 +28,12 @@ function isInline(entityType: string): boolean {
 @Controller('entity-manager')
 export class EntityManagerController {
   constructor(private readonly service: EntityManagerService) {}
+
+  @Get('tag/groups')
+  @RequirePermission(Permission.LibraryEditMetadata)
+  browseTagGroups(@Query() dto: BrowseTagGroupsDto, @CurrentUser() user: RequestUser) {
+    return this.service.browseTagGroups(user, dto);
+  }
 
   @Get(':entityType/browse')
   @RequirePermission(Permission.LibraryEditMetadata)
