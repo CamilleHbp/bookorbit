@@ -232,7 +232,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.find('source-profiles-stub').exists()).toBe(false)
     expect(wrapper!.text()).not.toContain('Recent story changes')
     expect(wrapper!.text()).not.toContain('No activity yet.')
-    expect(wrapper!.findAll('nav a').map((link) => link.text())).toEqual(['Stories', 'Updates'])
+    expect(wrapper!.findAll('nav a').map((link) => link.text())).toEqual(['Stories', 'Review', 'Updates'])
   })
 
   it('starts with an actionable empty state instead of bulk configuration', async () => {
