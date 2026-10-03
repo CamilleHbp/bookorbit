@@ -33,7 +33,8 @@ async function saveFields() {
   await save()
 }
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (queue.hasDrafts.value || busy.value) {
+  const committed = current.value?.review ? reviewEditor.value?.commitPending() : fields.value?.commitPending()
+  if (committed === false || queue.hasDrafts.value || busy.value) {
     event.preventDefault()
     event.returnValue = ''
   }
