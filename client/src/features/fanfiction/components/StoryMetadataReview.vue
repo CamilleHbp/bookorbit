@@ -4,7 +4,9 @@ import { useI18n } from 'vue-i18n'
 import type { FanfictionMetadataReview, FanfictionMetadataChoices, FanfictionMetadataField } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import ChipInput from '@/components/ui/ChipInput.vue'
+import RichDescriptionEditor from '@/features/book/components/detail/tabs/RichDescriptionEditor.vue'
 import { useGenreSearch, useTagSearch } from '@/features/book/composables/useTagSearch'
+import StoryDescription from './StoryDescription.vue'
 const props = defineProps<{ review: FanfictionMetadataReview; busy: boolean }>()
 const choices = defineModel<FanfictionMetadataChoices>({ required: true })
 const emit = defineEmits<{ save: []; later: []; discard: [] }>()
@@ -33,6 +35,7 @@ const selectedTags = computed({
   },
 })
 const finalTags = computed(() => [...new Set([...(props.review.tags?.custom ?? []), ...selectedTags.value])])
+const finalDescription = computed(() => display(finalValue('description')))
 function display(value: string | string[] | undefined) {
   return Array.isArray(value) ? value.join(', ') : (value ?? '')
 }
@@ -46,6 +49,9 @@ function finalValue(field: FanfictionMetadataField) {
 }
 function updateList(field: 'authors' | 'genres', values: string[]) {
   if (choices.value.values) choices.value.values[field] = values
+}
+function updateDescription(description: string | null) {
+  if (choices.value.values) choices.value.values.description = description ?? ''
 }
 function keepTags() {
   choices.value.tags = 'keep'
@@ -84,13 +90,15 @@ function handleKeepAll() {
       <div class="grid gap-3 text-sm sm:grid-cols-2">
         <div>
           <p class="text-muted-foreground">{{ t('fanfiction.metadataReview.current') }}</p>
-          <p class="max-h-48 overflow-auto whitespace-pre-wrap break-words">
+          <StoryDescription v-if="field === 'description'" :description="review.current.description" />
+          <p v-else class="max-h-48 overflow-auto whitespace-pre-wrap break-words">
             {{ display(review.current[field]) || t('fanfiction.metadataReview.empty') }}
           </p>
         </div>
         <div>
           <p class="text-muted-foreground">{{ t('fanfiction.metadataReview.incoming') }}</p>
-          <p class="max-h-48 overflow-auto whitespace-pre-wrap break-words">
+          <StoryDescription v-if="field === 'description'" :description="review.incoming.description" />
+          <p v-else class="max-h-48 overflow-auto whitespace-pre-wrap break-words">
             {{ display(review.incoming[field]) || t('fanfiction.metadataReview.empty') }}
           </p>
         </div>
@@ -139,7 +147,8 @@ function handleKeepAll() {
           <option value="edit">{{ t('fanfiction.metadataReview.edit') }}</option>
         </select>
         <template v-if="choices[field] === 'edit' && choices.values">
-          <label :for="`${id}-${field}`" class="block text-sm">{{ t('fanfiction.metadataReview.final') }}</label>
+          <p v-if="field === 'description'" :id="`${id}-description-label`" class="text-sm">{{ t('fanfiction.metadataReview.final') }}</p>
+          <label v-else :for="`${id}-${field}`" class="block text-sm">{{ t('fanfiction.metadataReview.final') }}</label>
           <ChipInput
             :split-on-separators="false"
             v-if="field === 'authors' || field === 'genres'"
@@ -151,14 +160,13 @@ function handleKeepAll() {
             :disabled="busy || review.lockedFields.includes(field)"
             @update:model-value="updateList(field, $event)"
           />
-          <textarea
+          <RichDescriptionEditor
             v-else-if="field === 'description'"
-            :id="`${id}-${field}`"
-            v-model="choices.values.description"
-            rows="4"
-            maxlength="262144"
+            :model-value="choices.values.description"
             :disabled="busy || review.lockedFields.includes(field)"
-            class="border-input bg-background w-full rounded-md border p-2"
+            role="group"
+            :aria-labelledby="`${id}-description-label`"
+            @update:model-value="updateDescription"
           />
           <input
             v-else
@@ -171,7 +179,11 @@ function handleKeepAll() {
           />
         </template>
       </template>
-      <p class="text-sm whitespace-pre-wrap break-words">
+      <div v-if="field === 'description'">
+        <strong class="text-sm">{{ t('fanfiction.metadataReview.final') }}:</strong>
+        <StoryDescription :description="finalDescription" />
+      </div>
+      <p v-else class="text-sm whitespace-pre-wrap break-words">
         <strong>{{ t('fanfiction.metadataReview.final') }}:</strong> {{ display(finalValue(field)) || t('fanfiction.metadataReview.empty') }}
       </p>
       <p v-if="review.lockedFields.includes(field)" class="text-muted-foreground text-sm">{{ t('fanfiction.metadataReview.locked') }}</p>
