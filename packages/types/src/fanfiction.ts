@@ -403,6 +403,7 @@ export interface FanfictionReplacementReview {
 }
 
 export type FanfictionMetadataField = "title" | "description" | "authors" | "tags" | "genres";
+export type FanfictionReviewScope = "pending" | "all";
 export type FanfictionMetadataValues = Pick<FanfictionPreview, FanfictionMetadataField>;
 export interface FanfictionMetadataReview {
   current: FanfictionMetadataValues;

@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { FanfictionMetadataValues } from '@bookorbit/types'
+import type { FanfictionMetadataValues, FanfictionMetadataField } from '@bookorbit/types'
 import ChipInput from '@/components/ui/ChipInput.vue'
 import RichDescriptionEditor from '@/features/book/components/detail/tabs/RichDescriptionEditor.vue'
 import { useGenreSearch, useTagSearch } from '@/features/book/composables/useTagSearch'
 const values = defineModel<FanfictionMetadataValues>({ required: true })
-defineProps<{ disabled?: boolean }>()
+const props = defineProps<{ disabled?: boolean; lockedFields?: string[] }>()
+function isDisabled(field: FanfictionMetadataField) {
+  return props.disabled || props.lockedFields?.includes(field)
+}
 const { t } = useI18n()
 const id = useId()
 const { search: searchTags } = useTagSearch()
@@ -33,7 +36,7 @@ defineExpose({ commitPending })
         v-model="values.title"
         required
         maxlength="500"
-        :disabled="disabled"
+        :disabled="isDisabled('title')"
         class="border-input bg-background block min-h-11 w-full rounded-md border p-2"
       />
     </label>
@@ -45,14 +48,14 @@ defineExpose({ commitPending })
         v-model="values.authors"
         :input-id="`${id}-authors`"
         :max-items="100"
-        :disabled="disabled"
+        :disabled="isDisabled('authors')"
       />
     </div>
     <div class="space-y-1 text-sm">
       <p :id="`${id}-description`">{{ t('fanfiction.storyDescription') }}</p>
       <RichDescriptionEditor
         :model-value="values.description"
-        :disabled="disabled"
+        :disabled="isDisabled('description')"
         role="group"
         :aria-labelledby="`${id}-description`"
         @update:model-value="updateDescription"
@@ -67,7 +70,7 @@ defineExpose({ commitPending })
         :input-id="`${id}-genres`"
         :search-fn="searchGenres"
         :max-items="1000"
-        :disabled="disabled"
+        :disabled="isDisabled('genres')"
         @update:model-value="updateGenres"
       />
     </div>
@@ -80,7 +83,7 @@ defineExpose({ commitPending })
         :input-id="`${id}-tags`"
         :search-fn="searchTags"
         :max-items="1000"
-        :disabled="disabled"
+        :disabled="isDisabled('tags')"
       />
     </div>
   </div>

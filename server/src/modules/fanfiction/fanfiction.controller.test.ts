@@ -94,6 +94,19 @@ describe('Fanfiction HTTP contracts', () => {
     expect((await app.inject({ method: 'POST', url, payload: { jobId: uuid } })).statusCode).toBe(400);
     expect(sources.resolveMetadata).toHaveBeenCalledTimes(1);
   });
+  it('validates paginated story review scopes without accepting unrelated states', async () => {
+    sources.list.mockResolvedValue({ items: [], nextCursor: null });
+    for (const reviewScope of ['pending', 'all']) {
+      const response = await app.inject({ method: 'GET', url: `${base}/sources?reviewScope=${reviewScope}&limit=25&cursor=${uuid}` });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ items: [], nextCursor: null });
+      expect(sources.list).toHaveBeenLastCalledWith(5, expect.objectContaining({ reviewScope, limit: 25, cursor: uuid }), undefined);
+    }
+    for (const query of ['reviewScope=invalid', 'reviewScope=pending&limit=101', 'reviewScope=all&cursor=invalid']) {
+      expect((await app.inject({ method: 'GET', url: `${base}/sources?${query}` })).statusCode).toBe(400);
+    }
+    expect(sources.list).toHaveBeenCalledTimes(2);
+  });
   it('validates editable import reviews and deferred update choices before passing them to the scoped service', async () => {
     const payload = { action: 'later', values: { title: 'My title', description: '', authors: ['Author'], tags: ['Custom'] } };
     const url = `${base}/jobs/${uuid}/import-review`;

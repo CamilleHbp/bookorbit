@@ -15,6 +15,7 @@ const id = useId()
 const { search: searchTags } = useTagSearch()
 const { search: searchGenres } = useGenreSearch()
 const inputs = ref<InstanceType<typeof ChipInput>[]>([])
+const form = ref<HTMLFormElement>()
 watch(
   () => props.review.fingerprint,
   () => {
@@ -69,7 +70,8 @@ function handleDiscard() {
   emit('discard')
 }
 async function handleSave() {
-  if (!inputs.value.map((input) => input.commitPending()).every(Boolean)) return
+  if (!form.value?.reportValidity()) return
+  if (!commitPending()) return
   await nextTick()
   choices.value.keepAll = false
   emit('save')
@@ -78,9 +80,13 @@ function handleKeepAll() {
   choices.value.keepAll = true
   emit('save')
 }
+function commitPending() {
+  return inputs.value.map((input) => input.commitPending()).every(Boolean)
+}
+defineExpose({ commitPending })
 </script>
 <template>
-  <form class="border-primary bg-card space-y-4 rounded-xl border p-4" @submit.prevent="handleSave">
+  <form ref="form" class="border-primary bg-card space-y-4 rounded-xl border p-4" @submit.prevent="handleSave">
     <h2 class="text-lg font-semibold">{{ t('fanfiction.metadataReview.title') }}</h2>
     <p class="text-muted-foreground text-sm">
       {{ t(review.beforeUpdate ? 'fanfiction.metadataReview.beforeHelp' : 'fanfiction.metadataReview.help') }}
@@ -188,17 +194,19 @@ function handleKeepAll() {
       </p>
       <p v-if="review.lockedFields.includes(field)" class="text-muted-foreground text-sm">{{ t('fanfiction.metadataReview.locked') }}</p>
     </fieldset>
-    <div class="flex flex-wrap gap-2">
-      <Button type="submit" :disabled="busy">{{ t(review.beforeUpdate ? 'fanfiction.metadataReview.apply' : 'common.save') }}</Button>
-      <Button v-if="review.beforeUpdate" type="button" variant="outline" :disabled="busy" @click="handleKeepAll">{{
-        t('fanfiction.metadataReview.keepAll')
-      }}</Button>
-      <Button v-if="review.beforeUpdate" type="button" variant="outline" :disabled="busy" @click="handleLater">{{
-        t('fanfiction.metadataReview.later')
-      }}</Button>
-      <Button v-if="review.beforeUpdate" type="button" variant="ghost" :disabled="busy" @click="handleDiscard">{{
-        t('fanfiction.metadataReview.discard')
-      }}</Button>
-    </div>
+    <slot name="actions" :save="handleSave">
+      <div class="flex flex-wrap gap-2">
+        <Button type="submit" :disabled="busy">{{ t(review.beforeUpdate ? 'fanfiction.metadataReview.apply' : 'common.save') }}</Button>
+        <Button v-if="review.beforeUpdate" type="button" variant="outline" :disabled="busy" @click="handleKeepAll">{{
+          t('fanfiction.metadataReview.keepAll')
+        }}</Button>
+        <Button v-if="review.beforeUpdate" type="button" variant="outline" :disabled="busy" @click="handleLater">{{
+          t('fanfiction.metadataReview.later')
+        }}</Button>
+        <Button v-if="review.beforeUpdate" type="button" variant="ghost" :disabled="busy" @click="handleDiscard">{{
+          t('fanfiction.metadataReview.discard')
+        }}</Button>
+      </div>
+    </slot>
   </form>
 </template>

@@ -14,7 +14,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import type { FanfictionImportRequest, FanfictionSourceState, FanfictionMetadataResolution } from '@bookorbit/types';
+import type { FanfictionImportRequest, FanfictionSourceState, FanfictionMetadataResolution, FanfictionReviewScope } from '@bookorbit/types';
 import { PreviewFanfictionDto } from './fanfiction.dto';
 
 export class ImportFanfictionDto extends PreviewFanfictionDto implements FanfictionImportRequest {
@@ -64,6 +64,7 @@ export class ImportStoryReviewDto {
 }
 
 export class ListFanfictionSourcesDto {
+  @IsOptional() @IsIn(['pending', 'all']) reviewScope?: FanfictionReviewScope;
   @IsOptional() @IsIn(['true']) excludeSharedAccess?: 'true';
   @IsOptional() @IsIn(['ongoing', 'complete']) publication?: 'ongoing' | 'complete';
   @IsOptional() @IsIn(['added', 'updated']) sort?: 'added' | 'updated';

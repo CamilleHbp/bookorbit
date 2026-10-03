@@ -12789,6 +12789,30 @@
       "keepCopy": "Keep saved copy and pause",
       "attention": "Stories needing attention",
       "noAttention": "No stories need your attention."
+    },
+    "reviewQueue": {
+      "nav": "Review",
+      "title": "Review stories",
+      "scope": "Show",
+      "pending": "To review",
+      "all": "All stories",
+      "save": "Save & next",
+      "saving": "Saving…",
+      "skip": "Skip & next",
+      "position": "Story {count}",
+      "summary": "{saved} saved · {skipped} skipped",
+      "saved": "Saved",
+      "finished": "You’ve reached the end",
+      "empty": "No stories to review",
+      "skippedRemain": "Skipped stories are still waiting for review.",
+      "startAgain": "Review again",
+      "reload": "Reload this story",
+      "requestFailed": "Could not load or save this story. Try again.",
+      "discardDrafts": "Leave review and discard your unsaved edits? Skipped stories will still need review.",
+      "discardCurrentDraft": "Reload this story and discard its unsaved edits?",
+      "discardOlderDrafts": "Continue and discard unsaved edits from the oldest 25 stories? Those stories will still need review.",
+      "readOnly": "You don’t have permission to edit this story’s metadata.",
+      "locked": "Locked fields cannot be edited here."
     }
   },
   "koreaderCopies": {

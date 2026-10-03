@@ -2,7 +2,7 @@ import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { useFanfiction } from './useFanfiction'
 
-const tabs = ['stories', 'add', 'discovery', 'activity'] as const
+const tabs = ['stories', 'add', 'discovery', 'activity', 'review'] as const
 type Tab = (typeof tabs)[number]
 
 export function useFanfictionNavigation(page: ReturnType<typeof useFanfiction>) {

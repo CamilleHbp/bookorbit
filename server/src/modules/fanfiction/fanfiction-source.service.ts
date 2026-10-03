@@ -389,6 +389,10 @@ export class FanfictionSourceService {
         and(
           eq(sources.libraryId, libraryId),
           dto.bookId ? eq(sources.bookId, dto.bookId) : undefined,
+          dto.reviewScope ? sql`${sources.bookId} is not null and ${sources.state} <> 'unlinked'` : undefined,
+          dto.reviewScope === 'pending'
+            ? sql`(${sources.metadataReviewPending} or ${sources.attentionCode} = 'metadata_review_required')`
+            : undefined,
           dto.state ? storyStateFilter(dto.state) : sql`${sources.state} <> 'unlinked'`,
           dto.excludeSharedAccess
             ? sql`(${sources.metadataReviewPending} or not coalesce((${personalAccessIssueFilter(user.id)}), false))`

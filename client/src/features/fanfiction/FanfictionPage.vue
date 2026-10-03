@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import WebsiteConnections from './components/WebsiteConnections.vue'
 import StoryAttentionList from './components/StoryAttentionList.vue'
+import StoryReviewQueue from './components/StoryReviewQueue.vue'
 import { api } from '@/lib/api'
 import { useCollections } from '@/features/collection/composables/useCollections'
 import StoryReadingActions from './components/StoryReadingActions.vue'
@@ -109,6 +110,16 @@ const {
 } = page
 const connectionIssues = ref<InstanceType<typeof WebsiteConnections> | null>(null)
 const storyIssues = ref<InstanceType<typeof StoryAttentionList> | null>(null)
+const reviewQueue = ref<InstanceType<typeof StoryReviewQueue> | null>(null)
+function handleLibraryChange(event: Event) {
+  const select = event.target as HTMLSelectElement
+  if (reviewQueue.value && !reviewQueue.value.canLeave()) {
+    select.value = String(libraryId.value)
+    return
+  }
+  libraryId.value = Number(select.value)
+  void changeLibrary()
+}
 async function refresh() {
   await Promise.all([refreshStories(), connectionIssues.value?.reload?.(), storyIssues.value?.refresh?.()])
 }
@@ -136,6 +147,7 @@ const jobPagination = reactive(page.jobPagination)
 const activityPagination = reactive(page.activityPagination)
 const navigation = computed(() => [
   { id: 'stories' as const, label: t('fanfiction.stories') },
+  { id: 'review' as const, label: t('fanfiction.reviewQueue.nav') },
   { id: 'activity' as const, label: t('fanfiction.activity') },
 ])
 const preferences = reactive(useFanfictionPreferences())
@@ -269,10 +281,10 @@ onMounted(() => {
       <label class="w-full min-w-0 flex-none space-y-1 text-sm sm:w-auto sm:flex-1 sm:max-w-xs"
         >{{ t('fanfiction.library') }}
         <select
-          v-model="libraryId"
+          :value="libraryId"
           :disabled="busy"
           class="border-input bg-background block h-11 w-full rounded-md border px-3 focus-visible:outline-2 focus-visible:outline-ring sm:h-9"
-          @change="changeLibrary"
+          @change="handleLibraryChange"
         >
           <option v-for="library in libraries" :key="library.id" :value="library.id">{{ library.name }}</option>
         </select>
@@ -336,6 +348,7 @@ onMounted(() => {
           t('fanfiction.maintenance.fromLibrary')
         }}</RouterLink>
       </nav>
+      <StoryReviewQueue v-if="tab === 'review'" ref="reviewQueue" :key="libraryId" :library-id="libraryId" />
       <section v-if="tab === 'stories'" class="space-y-3 rounded-xl bg-card p-3 sm:p-4" :aria-label="t('fanfiction.stories')" :aria-busy="busy">
         <form class="flex flex-wrap items-center gap-2" @submit.prevent="applyFilters">
           <Input
