@@ -85,6 +85,18 @@ describe('story review editor navigation', () => {
     expect(router.currentRoute.value.path).toBe('/review')
     expect(window.confirm).toHaveBeenCalledOnce()
   })
+  it('warns before browser reload while tag text is still uncommitted and focused', async () => {
+    await open()
+    const pristine = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(pristine)
+    expect(pristine.defaultPrevented).toBe(false)
+    await wrapper.get('input[role="combobox"]').setValue('Still typing')
+    const reload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(reload)
+    expect(reload.defaultPrevented).toBe(true)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Still typing')
+  })
   it('hides ordinary metadata saving without the edit permission', async () => {
     permissions.edit = false
     const fallback = vi.mocked(api).getMockImplementation()!
