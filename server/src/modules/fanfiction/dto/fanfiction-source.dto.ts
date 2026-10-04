@@ -54,7 +54,7 @@ export class ResolveFanfictionMetadataDto implements FanfictionMetadataResolutio
   @IsOptional() @IsIn(['keep', 'incoming', 'edit']) genres?: 'keep' | 'incoming' | 'edit';
   @IsOptional() @IsBoolean() keepAll?: boolean;
   @IsOptional() @ValidateNested() @Type(() => StoryMetadataValuesDto) values?: StoryMetadataValuesDto;
-  @IsIn(['keep', 'merge', 'select']) tags!: 'keep' | 'merge' | 'select';
+  @IsIn(['keep', 'merge', 'select', 'edit']) tags!: 'keep' | 'merge' | 'select' | 'edit';
   @IsOptional() @IsArray() @ArrayMaxSize(1000) @IsString({ each: true }) @MaxLength(500, { each: true }) selectedTags?: string[];
 }
 

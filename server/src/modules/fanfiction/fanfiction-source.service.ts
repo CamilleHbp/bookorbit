@@ -23,7 +23,7 @@ import { ManagedTagService } from '../metadata/managed-tag.service';
 import { recordFanfictionActivity } from './fanfiction-activity';
 import { validateFanfictionPreview } from './fanfiction-preview';
 import { FanfictionReviewService } from './fanfiction-review.service';
-import type { FanfictionMetadataReviewView, FanfictionMetadataResolution } from '@bookorbit/types';
+import type { FanfictionMetadataReviewView, FanfictionMetadataResolution, FanfictionMetadataField } from '@bookorbit/types';
 
 const sources = schema.fanfictionSources;
 type Job = typeof schema.fanfictionJobs.$inferSelect;
@@ -156,13 +156,18 @@ export class FanfictionSourceService {
           job.result.metadataDeferred ? `fanfiction:${id}` : undefined,
         );
         if (snapshot.fingerprint !== dto.fingerprint) throw new ConflictException('Book metadata changed; refresh the review before saving');
-        const fields = dto.keepAll ? [] : review.fields.filter((field) => dto[field] !== 'keep' && dto[field] !== undefined);
+        const editableFields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags', 'genres'];
+        const fields = dto.keepAll ? [] : editableFields.filter((field) => dto[field] !== 'keep' && dto[field] !== undefined);
         if (fields.some((field) => snapshot.lockedFields.includes(field)))
           throw new ConflictException('Unlock the selected metadata fields before saving');
         const incoming = { ...review.incoming };
         for (const field of fields) {
           if (field === 'tags') {
-            incoming.tags = dto.tags === 'select' ? (dto.selectedTags ?? []) : [...new Set([...snapshot.current.tags, ...review.incoming.tags])];
+            if (dto.tags === 'edit' && !dto.selectedTags) throw new BadRequestException('Enter the final tags');
+            incoming.tags =
+              dto.tags === 'select' || dto.tags === 'edit'
+                ? (dto.selectedTags ?? [])
+                : [...new Set([...snapshot.current.tags, ...review.incoming.tags])];
           } else if (dto[field] === 'edit') {
             const value = dto.values?.[field];
             if (value === undefined) throw new BadRequestException('Enter a value for the edited field');
@@ -175,7 +180,8 @@ export class FanfictionSourceService {
           { key: `fanfiction:${id}`, libraryId },
           incoming,
           fields,
-          incoming.tags.filter((tag) => !review.incoming.tags.includes(tag)),
+          incoming.tags.filter((tag) => snapshot.customTags.includes(tag) || !review.incoming.tags.includes(tag)),
+          dto.tags === 'edit' && !dto.keepAll,
         );
         const result = { ...job.result };
         delete result.metadataReview;

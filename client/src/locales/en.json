@@ -12645,7 +12645,7 @@
       "allActivity": "Show all activity",
       "edit": "Edit",
       "keepAll": "Update chapters, keep my metadata",
-      "keepTags": "Keep current source tags",
+      "keepTags": "Use library tags",
       "useTags": "Use source tags",
       "mergeTags": "Combine tags",
       "final": "Final value"
