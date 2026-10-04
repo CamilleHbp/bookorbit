@@ -23,25 +23,27 @@ watch(
   },
   { immediate: true },
 )
-const tagOptions = computed(() => [...new Set([...(props.review.tags?.managed ?? props.review.current.tags), ...props.review.incoming.tags])].sort())
+const fields: FanfictionMetadataField[] = ['title', 'authors', 'description', 'genres', 'tags']
+const tagOptions = computed(() => [...new Set([...props.review.current.tags, ...props.review.incoming.tags])].sort())
 const selectedTags = computed({
-  get: () =>
-    choices.value.tags === 'keep'
-      ? (props.review.tags?.managed ?? props.review.current.tags)
-      : choices.value.tags === 'merge'
-        ? tagOptions.value
-        : (choices.value.selectedTags ?? props.review.incoming.tags),
+  get: () => {
+    if (props.review.lockedFields.includes('tags') || choices.value.tags === 'keep') return props.review.current.tags
+    if (choices.value.tags === 'merge') return tagOptions.value
+    const selected = choices.value.selectedTags ?? props.review.incoming.tags
+    // Older saved reviews selected source tags separately from personal tags.
+    return choices.value.tags === 'select' ? [...new Set([...(props.review.tags?.custom ?? []), ...selected])] : selected
+  },
   set: (tags: string[]) => {
-    choices.value = { ...choices.value, tags: 'select', selectedTags: tags }
+    choices.value = { ...choices.value, tags: 'edit', selectedTags: tags }
   },
 })
-const finalTags = computed(() => [...new Set([...(props.review.tags?.custom ?? []), ...selectedTags.value])])
 const finalDescription = computed(() => display(finalValue('description')))
 function display(value: string | string[] | undefined) {
   return Array.isArray(value) ? value.join(', ') : (value ?? '')
 }
 function finalValue(field: FanfictionMetadataField) {
-  if (field === 'tags') return finalTags.value
+  if (field === 'tags') return selectedTags.value
+  if (props.review.lockedFields.includes(field)) return props.review.current[field]
   return choices.value[field] === 'incoming'
     ? props.review.incoming[field]
     : choices.value[field] === 'edit'
@@ -91,7 +93,7 @@ defineExpose({ commitPending })
     <p class="text-muted-foreground text-sm">
       {{ t(review.beforeUpdate ? 'fanfiction.metadataReview.beforeHelp' : 'fanfiction.metadataReview.help') }}
     </p>
-    <fieldset v-for="field in review.fields" :key="field" class="border-border space-y-3 border-t pt-3">
+    <fieldset v-for="field in fields" :key="field" class="border-border space-y-3 border-t pt-3">
       <legend class="font-medium">{{ t(`fanfiction.metadataReview.fields.${field}`) }}</legend>
       <div class="grid gap-3 text-sm sm:grid-cols-2">
         <div>
@@ -110,7 +112,6 @@ defineExpose({ commitPending })
         </div>
       </div>
       <template v-if="field === 'tags'">
-        <p v-if="review.tags?.custom.length" class="text-sm">{{ t('fanfiction.metadataReview.customTags') }}: {{ review.tags.custom.join(', ') }}</p>
         <div class="flex flex-wrap gap-2">
           <Button type="button" variant="outline" :disabled="busy || review.lockedFields.includes(field)" @click="keepTags">{{
             t('fanfiction.metadataReview.keepTags')
@@ -132,14 +133,6 @@ defineExpose({ commitPending })
           :max-items="1000"
           :disabled="busy || review.lockedFields.includes(field)"
         />
-        <div v-if="review.tags" class="flex flex-wrap gap-2 text-xs">
-          <span v-for="tag in review.tags.added" :key="`add-${tag}`" class="max-w-full rounded-full bg-muted px-2 py-1 break-words"
-            >{{ t('fanfiction.metadataReview.added') }}: {{ tag }}</span
-          >
-          <span v-for="tag in review.tags.removed" :key="`remove-${tag}`" class="max-w-full rounded-full bg-muted px-2 py-1 break-words"
-            >{{ t('fanfiction.metadataReview.removed') }}: {{ tag }}</span
-          >
-        </div>
       </template>
       <template v-else>
         <select
@@ -149,7 +142,7 @@ defineExpose({ commitPending })
           class="border-input bg-background min-h-11 w-full rounded-md border p-2 text-sm"
         >
           <option value="keep">{{ t('fanfiction.metadataReview.keep') }}</option>
-          <option value="incoming">{{ t('fanfiction.metadataReview.useIncoming') }}</option>
+          <option value="incoming" :disabled="review.incoming[field] === undefined">{{ t('fanfiction.metadataReview.useIncoming') }}</option>
           <option value="edit">{{ t('fanfiction.metadataReview.edit') }}</option>
         </select>
         <template v-if="choices[field] === 'edit' && choices.values">
@@ -189,7 +182,7 @@ defineExpose({ commitPending })
         <strong class="text-sm">{{ t('fanfiction.metadataReview.final') }}:</strong>
         <StoryDescription :description="finalDescription" />
       </div>
-      <p v-else class="text-sm whitespace-pre-wrap break-words">
+      <p v-else-if="field !== 'tags'" class="text-sm whitespace-pre-wrap break-words">
         <strong>{{ t('fanfiction.metadataReview.final') }}:</strong> {{ display(finalValue(field)) || t('fanfiction.metadataReview.empty') }}
       </p>
       <p v-if="review.lockedFields.includes(field)" class="text-muted-foreground text-sm">{{ t('fanfiction.metadataReview.locked') }}</p>

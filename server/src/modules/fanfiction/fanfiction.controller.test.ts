@@ -132,6 +132,14 @@ describe('Fanfiction HTTP contracts', () => {
       expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/metadata-review/${action}`, payload: choices })).statusCode).toBe(201);
       expect(reviews.decide).toHaveBeenCalledWith(5, uuid, choices, undefined, action);
     }
+    const edited = { ...choices, tags: 'edit', selectedTags: ['Calibre tag', 'Library tag', 'New tag'] };
+    expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/metadata-review`, payload: edited })).statusCode).toBe(201);
+    expect(sources.resolveMetadata).toHaveBeenCalledWith(5, uuid, edited, undefined);
+    for (const selectedTags of [[42], ['x'.repeat(501)], Array(1001).fill('tag')]) {
+      expect(
+        (await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/metadata-review`, payload: { ...edited, selectedTags } })).statusCode,
+      ).toBe(400);
+    }
     expect((await app.inject({ method: 'POST', url: `${base}/sources/${uuid}/metadata-review/invalid`, payload: choices })).statusCode).toBe(400);
   });
   it('removes profile routes and rejects profile fields on story requests', async () => {

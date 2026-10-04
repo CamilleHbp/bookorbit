@@ -117,8 +117,7 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
       entry.choices = structuredClone(
         review.review.choices ?? {
           ...emptyChoices(),
-          tags: review.review.tags ? 'select' : 'keep',
-          ...(review.review.tags ? { selectedTags: review.review.incoming.tags } : {}),
+          tags: 'keep',
         },
       )
       entry.choices.values ??= structuredClone(review.review.current)

@@ -1,7 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import RichDescriptionEditor from '@/features/book/components/detail/tabs/RichDescriptionEditor.vue'
 import StoryMetadataReview from './StoryMetadataReview.vue'
+import ChipInput from '@/components/ui/ChipInput.vue'
+import { api } from '@/lib/api'
+vi.mock('@/lib/api', () => ({ api: vi.fn() }))
 const review = {
   current: { title: 'Title', description: '', authors: [], tags: ['Custom tag'] },
   incoming: { title: 'Title', description: '', authors: [], tags: ['Incoming tag'] },
@@ -62,6 +65,61 @@ describe('story metadata review', () => {
     expect(wrapper.emitted('save')).toHaveLength(1)
     wrapper.unmount()
   })
+  it('shows every library field and edits the complete tag list even when only the description needs review', async () => {
+    const wrapper = mount(StoryMetadataReview, {
+      props: {
+        review: {
+          ...review,
+          current: { ...review.current, authors: ['Library author'], genres: ['Fantasy'] },
+          fields: ['description'],
+          tags: { custom: ['Custom tag'], managed: [], added: ['Incoming tag'], removed: [] },
+        },
+        busy: false,
+        modelValue: { title: 'keep', description: 'keep', authors: 'keep', genres: 'keep', tags: 'keep' },
+        'onUpdate:modelValue': (value) => {
+          void wrapper.setProps({ modelValue: value })
+        },
+      },
+    })
+    expect(wrapper.findAll('legend').map((field) => field.text())).toEqual(['Title', 'Authors', 'Description', 'Genres', 'Tags'])
+    expect(wrapper.text()).toContain('Library author')
+    expect(wrapper.text()).toContain('Fantasy')
+    const tags = wrapper.getComponent(ChipInput)
+    expect(tags.props('modelValue')).toEqual(['Custom tag'])
+    const click = async (label: string) =>
+      wrapper
+        .findAll('button')
+        .find((button) => button.text() === label)!
+        .trigger('click')
+    await click('Use source tags')
+    expect(tags.props('modelValue')).toEqual(['Incoming tag'])
+    await click('Combine tags')
+    expect(tags.props('modelValue')).toEqual(['Custom tag', 'Incoming tag'])
+    await click('Use library tags')
+    expect(tags.props('modelValue')).toEqual(['Custom tag'])
+
+    vi.mocked(api).mockResolvedValue(new Response(JSON.stringify([{ name: 'Library suggestion' }])))
+    vi.useFakeTimers()
+    try {
+      await tags.get('input').setValue('Lib')
+      await vi.advanceTimersByTimeAsync(250)
+      await flushPromises()
+      expect(api).toHaveBeenCalledWith('/api/v1/metadata/tags?q=Lib')
+      expect(document.querySelector('[role="option"]')?.textContent).toBe('Library suggestion')
+      await tags.get('input').trigger('keydown', { key: 'ArrowDown' })
+      await tags.get('input').trigger('keydown', { key: 'Enter' })
+      expect(tags.props('modelValue')).toEqual(['Custom tag', 'Library suggestion'])
+      await tags.get('input').setValue('My new tag')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(wrapper.props('modelValue')).toMatchObject({ tags: 'edit', selectedTags: ['Custom tag', 'Library suggestion', 'My new tag'] })
+      expect(wrapper.emitted('save')).toHaveLength(1)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps locked metadata disabled', () => {
     const wrapper = mount(StoryMetadataReview, {
       props: {

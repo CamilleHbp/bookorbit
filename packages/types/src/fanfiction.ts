@@ -154,6 +154,7 @@ export interface FanfictionJob {
       approved: boolean;
       metadataApplied?: boolean;
       personalTags?: string[];
+      replaceTags?: boolean;
       baseline?: FanfictionMetadataValues;
     };
     importReview?: { preview: FanfictionPreview; values: FanfictionMetadataValues; approved: boolean };
@@ -433,7 +434,7 @@ export interface FanfictionMetadataResolution {
   genres?: "keep" | "incoming" | "edit";
   values?: FanfictionMetadataValues;
   keepAll?: boolean;
-  tags: "keep" | "merge" | "select";
+  tags: "keep" | "merge" | "select" | "edit";
   selectedTags?: string[];
 }
 

@@ -90,6 +90,7 @@ export class ManagedMetadataService {
     preview: Pick<FanfictionPreview, 'title' | 'description' | 'authors' | 'tags' | 'genres'>,
     fields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags', 'genres'],
     personalTags: string[] = [],
+    replaceTags = false,
   ) {
     if (
       typeof preview.title !== 'string' ||
@@ -155,7 +156,13 @@ export class ManagedMetadataService {
         await this.metadata.replaceGenres(bookId, filtered.genres, { executor: tx, emitEvent: false });
         changed = true;
       }
-      if (filtered.tags !== undefined) changed = (await this.tags.sync(tx, bookId, source, filtered.tags)) || changed;
+      if (filtered.tags !== undefined) {
+        changed = (await this.tags.sync(tx, bookId, source, filtered.tags)) || changed;
+        if (replaceTags) {
+          await this.metadata.replaceTags(bookId, filtered.tags, { executor: tx, emitEvent: false });
+          changed = true;
+        }
+      }
       if (personalTags.length) await this.tags.keepPersonal(tx, bookId, source, personalTags);
       if (changed) await tx.update(books).set({ updatedAt: new Date() }).where(eq(books.id, bookId));
       this.logger.log(

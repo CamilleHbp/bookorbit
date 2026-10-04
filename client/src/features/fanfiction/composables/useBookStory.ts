@@ -162,8 +162,7 @@ export function useBookStory(
       title: 'keep',
       description: 'keep',
       authors: 'keep',
-      tags: result?.review.tags ? 'select' : 'keep',
-      ...(result?.review.tags ? { selectedTags: result.review.incoming.tags } : {}),
+      tags: 'keep',
     }
     reviewDeferred.value = false
   }

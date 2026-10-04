@@ -623,6 +623,81 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     180_000,
   );
 
+  it.each([false, true])(
+    'saves complete tags and edits outside the conflict list, deferred=%s',
+    async (deferred) => {
+      await chapterEpub(target, ['Original chapter']);
+      await chapterEpub(output, ['Original chapter', 'New chapter']);
+      await revisions.observeFile(fileId, {});
+      if (deferred) await db.update(schema.fanfictionSources).set({ updatePolicy: 'safe' }).where(eq(schema.fanfictionSources.id, source.id));
+      const [personal] = await db
+        .insert(schema.tags)
+        .values({ name: `calibre-${randomUUID()}` })
+        .returning();
+      const [removed] = await db
+        .insert(schema.tags)
+        .values({ name: `remove-${randomUUID()}` })
+        .returning();
+      await db.insert(schema.bookTags).values([personal, removed].map((tag) => ({ bookId: source.bookId!, tagId: tag.id })));
+      const incoming = { ...preview, title: 'Website title changed' };
+      runtime.update.mockImplementationOnce(async (_operation, _url, _document, prepare, consume) => {
+        await prepare(join(directory, 'review-input.epub'));
+        return consume(output, incoming);
+      });
+      const job = await claim();
+      const result = await run(job);
+      await jobs.finish(job, deferred ? 'succeeded' : 'review_required', result, deferred ? undefined : 'metadata_review_required');
+      const pending = (await sources.metadataReview(libraryId, source.id, user))!;
+      expect(pending.review.fields).toEqual(['title']);
+      expect(pending.review.current.tags).toContain(personal.name);
+      const selectedTags = [personal.name, 'Source tag', 'Existing library tag', 'My new tag'];
+      const choices = {
+        jobId: job.id,
+        fingerprint: pending.review.fingerprint,
+        title: 'keep' as const,
+        authors: 'keep' as const,
+        description: 'edit' as const,
+        tags: 'edit' as const,
+        selectedTags,
+        values: { ...pending.review.current, description: 'My completed description' },
+      };
+      await db
+        .update(schema.bookMetadata)
+        .set({ lockedFields: ['tags'] })
+        .where(eq(schema.bookMetadata.bookId, source.bookId!));
+      const locked = (await sources.metadataReview(libraryId, source.id, user))!;
+      await expect(sources.resolveMetadata(libraryId, source.id, { ...choices, fingerprint: locked.review.fingerprint }, user)).rejects.toThrow(
+        /locked|Unlock/,
+      );
+      await db.update(schema.bookMetadata).set({ lockedFields: [] }).where(eq(schema.bookMetadata.bookId, source.bookId!));
+      const refreshed = (await sources.metadataReview(libraryId, source.id, user))!;
+      await sources.resolveMetadata(libraryId, source.id, { ...choices, fingerprint: refreshed.review.fingerprint }, user);
+      if (!deferred) {
+        const approved = (await jobs.claim())!;
+        await jobs.finish(approved, 'succeeded', await run(approved));
+      }
+      const names = async () =>
+        (
+          await db
+            .select({ name: schema.tags.name })
+            .from(schema.bookTags)
+            .innerJoin(schema.tags, eq(schema.tags.id, schema.bookTags.tagId))
+            .where(eq(schema.bookTags.bookId, source.bookId!))
+        )
+          .map((tag) => tag.name)
+          .sort();
+      expect(await names()).toEqual([...selectedTags].sort());
+      expect((await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, source.bookId!)))[0].description).toBe(
+        'My completed description',
+      );
+      await db.transaction((tx) =>
+        module.get(ManagedTagService).sync(tx, source.bookId!, { key: `fanfiction:${source.id}`, libraryId }, ['Source tag']),
+      );
+      expect(await names()).toEqual([...selectedTags].sort());
+    },
+    180_000,
+  );
+
   it('discards staged updates without changing the file or metadata', async () => {
     const original = await readFile(target);
     const incoming = { ...preview, tags: ['New incoming tag'] };

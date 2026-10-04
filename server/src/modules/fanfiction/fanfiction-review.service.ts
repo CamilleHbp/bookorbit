@@ -248,6 +248,7 @@ export class FanfictionReviewService {
         plan.values,
         plan.fields,
         plan.personalTags,
+        plan.replaceTags,
       );
       plan.metadataApplied = true;
     }
@@ -312,8 +313,10 @@ export class FanfictionReviewService {
         return;
       }
       const values = { ...job.result.preparedUpdate.values };
-      for (const field of action === 'discard' ? [] : dto.keepAll ? job.result.preparedUpdate.fields : review.fields) {
-        if (dto.keepAll || dto[field] === 'keep' || dto[field] === undefined) {
+      const fields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags', 'genres'];
+      for (const field of action === 'discard' ? [] : fields) {
+        if (dto[field] === undefined && !dto.keepAll) continue;
+        if (dto.keepAll || dto[field] === 'keep') {
           Object.assign(values, { [field]: field === 'tags' ? snapshot.managedTags : snapshot.current[field] });
           continue;
         }
@@ -324,7 +327,8 @@ export class FanfictionReviewService {
           Object.assign(values, { [field]: value });
         } else {
           const allowed = storyTags([...snapshot.managedTags, ...review.incoming.tags]);
-          const selected = dto.tags === 'select' ? storyTags(dto.selectedTags ?? []) : allowed;
+          if (dto.tags === 'edit' && !dto.selectedTags) throw new BadRequestException('Enter the final tags');
+          const selected = dto.tags === 'select' || dto.tags === 'edit' ? storyTags(dto.selectedTags ?? []) : allowed;
           values.tags = selected;
         }
       }
@@ -335,7 +339,10 @@ export class FanfictionReviewService {
           approved: action === 'apply',
           values,
           fingerprint: snapshot.fingerprint,
-          personalTags: values.tags.filter((tag) => !storyTags([...snapshot.managedTags, ...review.incoming.tags]).includes(tag)),
+          replaceTags: action === 'apply' && !dto.keepAll && dto.tags === 'edit',
+          personalTags: values.tags.filter(
+            (tag) => snapshot.customTags.includes(tag) || !storyTags([...snapshot.managedTags, ...review.incoming.tags]).includes(tag),
+          ),
         },
         ...(action === 'discard' ? { reviewDiscarded: true } : {}),
       };

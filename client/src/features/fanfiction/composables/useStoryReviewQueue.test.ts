@@ -59,6 +59,16 @@ describe('story review queue', () => {
     vi.restoreAllMocks()
   })
 
+  it('starts with library tags even when a website proposes other tags', async () => {
+    vi.mocked(api).mockImplementation(async (path) => {
+      if (String(path).includes('/sources?')) return respond({ items: [source(1)], nextCursor: null })
+      return respond({ ...review, review: { ...review.review, tags: { custom: ['Original'], managed: [], added: ['Incoming'], removed: [] } } })
+    })
+    await open()
+    expect(queue.current.value?.choices.tags).toBe('keep')
+    expect(queue.current.value?.choices.values?.tags).toEqual(['Original'])
+  })
+
   it('skips and goes back without writes, retaining edits and queue membership', async () => {
     await open()
     queue.current.value!.choices.tags = 'select'
