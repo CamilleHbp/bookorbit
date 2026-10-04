@@ -191,11 +191,16 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
           const original = JSON.parse(entry.baseline) as FanfictionMetadataValues
           const changes = Object.fromEntries(
             Object.entries(entry.values).filter(
-              ([field, value]) =>
-                !entry.lockedFields.includes(field) && JSON.stringify(value) !== JSON.stringify(original[field as keyof FanfictionMetadataValues]),
+              ([field, value]) => JSON.stringify(value) !== JSON.stringify(original[field as keyof FanfictionMetadataValues]),
             ),
           )
-          if (Object.keys(changes).length) await request(`/api/v1/books/${entry.source.bookId}/metadata`, signal, changes, 'PATCH')
+          if (Object.keys(changes).length)
+            await request(
+              `/api/v1/books/${entry.source.bookId}/metadata-and-locks`,
+              signal,
+              { metadata: changes, lockedFields: entry.lockedFields },
+              'PATCH',
+            )
         }
         if (signal.aborted) return
         entry.saved = true

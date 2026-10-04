@@ -12648,7 +12648,14 @@
       "keepTags": "Use library tags",
       "useTags": "Use source tags",
       "mergeTags": "Combine tags",
-      "final": "Final value"
+      "final": "Final value",
+      "editHelp": "Use a source to replace the final value, then edit it before saving.",
+      "fromLibrary": "Use library",
+      "fromIncoming": "Use incoming",
+      "combine": "Combine",
+      "protected": "Protected from automatic updates. You can still edit it here.",
+      "showLess": "Show less",
+      "showMore": "Show {count} more"
     },
     "categories": {
       "fandoms": "Fandoms",
@@ -12812,7 +12819,7 @@
       "discardCurrentDraft": "Reload this story and discard its unsaved edits?",
       "discardOlderDrafts": "Continue and discard unsaved edits from the oldest 25 stories? Those stories will still need review.",
       "readOnly": "You don’t have permission to edit this story’s metadata.",
-      "locked": "Locked fields cannot be edited here."
+      "locked": "Protected fields can be edited here. Their protection from automatic updates will be kept."
     }
   },
   "koreaderCopies": {

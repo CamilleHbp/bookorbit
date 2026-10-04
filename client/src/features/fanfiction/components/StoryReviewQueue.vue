@@ -148,13 +148,7 @@ onBeforeUnmount(() => {
       <form v-else-if="current.loaded" ref="form" class="space-y-5 rounded-xl border border-border bg-card p-4" @submit.prevent="saveFields">
         <p v-if="!canSave" class="text-sm text-muted-foreground">{{ t('fanfiction.reviewQueue.readOnly') }}</p>
         <p v-else-if="current.lockedFields.length" class="text-sm text-muted-foreground">{{ t('fanfiction.reviewQueue.locked') }}</p>
-        <StoryMetadataFields
-          ref="fields"
-          :key="current.source.id"
-          v-model="current.values"
-          :locked-fields="current.lockedFields"
-          :disabled="busy || current.saved || !canSave"
-        />
+        <StoryMetadataFields ref="fields" :key="current.source.id" v-model="current.values" :disabled="busy || current.saved || !canSave" />
         <StoryReviewActions
           :busy="busy"
           :has-previous="hasPrevious"

@@ -158,8 +158,6 @@ export class FanfictionSourceService {
         if (snapshot.fingerprint !== dto.fingerprint) throw new ConflictException('Book metadata changed; refresh the review before saving');
         const editableFields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags', 'genres'];
         const fields = dto.keepAll ? [] : editableFields.filter((field) => dto[field] !== 'keep' && dto[field] !== undefined);
-        if (fields.some((field) => snapshot.lockedFields.includes(field)))
-          throw new ConflictException('Unlock the selected metadata fields before saving');
         const incoming = { ...review.incoming };
         for (const field of fields) {
           if (field === 'tags') {
@@ -182,6 +180,7 @@ export class FanfictionSourceService {
           fields,
           incoming.tags.filter((tag) => snapshot.customTags.includes(tag) || !review.incoming.tags.includes(tag)),
           dto.tags === 'edit' && !dto.keepAll,
+          fields,
         );
         const result = { ...job.result };
         delete result.metadataReview;

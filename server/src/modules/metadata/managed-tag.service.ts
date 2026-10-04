@@ -12,9 +12,15 @@ export interface ManagedTagSource {
 export class ManagedTagService {
   private readonly logger = new Logger(ManagedTagService.name);
 
-  async keepPersonal(tx: DatabaseTransaction, bookId: number, source: ManagedTagSource, names: string[]): Promise<void> {
+  async keepPersonal(
+    tx: DatabaseTransaction,
+    bookId: number,
+    source: ManagedTagSource,
+    names: string[],
+    options: { reviewed?: boolean } = {},
+  ): Promise<void> {
     const metadata = await this.context(tx, bookId, source);
-    if (!names.length || metadata.lockedFields?.includes('tags')) return;
+    if (!names.length || (!options.reviewed && metadata.lockedFields?.includes('tags'))) return;
     const matches = await tx
       .select({ id: tags.id })
       .from(tags)
@@ -40,7 +46,13 @@ export class ManagedTagService {
         );
   }
 
-  async sync(tx: DatabaseTransaction, bookId: number, source: ManagedTagSource, input: string[]): Promise<boolean> {
+  async sync(
+    tx: DatabaseTransaction,
+    bookId: number,
+    source: ManagedTagSource,
+    input: string[],
+    options: { reviewed?: boolean } = {},
+  ): Promise<boolean> {
     if (!Array.isArray(input) || input.length > 1000 || input.some((name) => typeof name !== 'string' || name.length > 500))
       throw new BadRequestException('Managed tags exceed the supported limits');
     const startedAt = Date.now();
@@ -48,7 +60,7 @@ export class ManagedTagService {
     try {
       const metadata = await this.context(tx, bookId, source);
       let changed = false;
-      if (!metadata.lockedFields?.includes('tags')) {
+      if (options.reviewed || !metadata.lockedFields?.includes('tags')) {
         const names = [...new Set(input.map((name) => name.trim().slice(0, 200)).filter(Boolean))].sort();
         const scope = and(eq(bookTagSources.bookId, bookId), eq(bookTagSources.sourceKey, source.key));
         const previous = await tx

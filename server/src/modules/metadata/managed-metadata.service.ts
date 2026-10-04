@@ -91,6 +91,7 @@ export class ManagedMetadataService {
     fields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags', 'genres'],
     personalTags: string[] = [],
     replaceTags = false,
+    reviewedFields: FanfictionMetadataField[] = [],
   ) {
     if (
       typeof preview.title !== 'string' ||
@@ -115,6 +116,10 @@ export class ManagedMetadataService {
       if (!current) throw new NotFoundException('Book metadata not found in this library');
       const selected = Object.fromEntries(fields.map((field) => [field, preview[field]]));
       const { dto: filtered } = await this.locks.filterAutomatedBookUpdate(bookId, selected, tx);
+      // An approved manual review can edit protected values without removing their automatic-update locks.
+      for (const field of reviewedFields) {
+        if (fields.includes(field)) Object.assign(filtered, { [field]: selected[field] });
+      }
       const patch: Partial<typeof bookMetadata.$inferInsert> = {};
       if (filtered.title !== undefined && current.title !== filtered.title) patch.title = filtered.title;
       if (filtered.description !== undefined && current.description !== filtered.description) patch.description = filtered.description;
@@ -157,13 +162,13 @@ export class ManagedMetadataService {
         changed = true;
       }
       if (filtered.tags !== undefined) {
-        changed = (await this.tags.sync(tx, bookId, source, filtered.tags)) || changed;
+        changed = (await this.tags.sync(tx, bookId, source, filtered.tags, { reviewed: reviewedFields.includes('tags') })) || changed;
         if (replaceTags) {
           await this.metadata.replaceTags(bookId, filtered.tags, { executor: tx, emitEvent: false });
           changed = true;
         }
       }
-      if (personalTags.length) await this.tags.keepPersonal(tx, bookId, source, personalTags);
+      if (personalTags.length) await this.tags.keepPersonal(tx, bookId, source, personalTags, { reviewed: reviewedFields.includes('tags') });
       if (changed) await tx.update(books).set({ updatedAt: new Date() }).where(eq(books.id, bookId));
       this.logger.log(
         `[metadata.managed_story] [end] bookId=${bookId} libraryId=${source.libraryId} durationMs=${Date.now() - startedAt} changed=${changed} - story metadata processed`,

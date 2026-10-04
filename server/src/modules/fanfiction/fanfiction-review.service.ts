@@ -249,6 +249,7 @@ export class FanfictionReviewService {
         plan.fields,
         plan.personalTags,
         plan.replaceTags,
+        plan.reviewedFields,
       );
       plan.metadataApplied = true;
     }
@@ -320,7 +321,6 @@ export class FanfictionReviewService {
           Object.assign(values, { [field]: field === 'tags' ? snapshot.managedTags : snapshot.current[field] });
           continue;
         }
-        if (snapshot.lockedFields.includes(field)) throw new ConflictException('This field is locked. Keep its library value.');
         if (field !== 'tags') {
           const value = dto[field] === 'edit' ? dto.values?.[field] : review.incoming[field];
           if (value === undefined) throw new BadRequestException('Enter a value for the edited field');
@@ -332,6 +332,7 @@ export class FanfictionReviewService {
           values.tags = selected;
         }
       }
+      const reviewedFields = action === 'apply' && !dto.keepAll ? fields.filter((field) => dto[field] !== undefined && dto[field] !== 'keep') : [];
       const result = {
         ...job.result,
         preparedUpdate: {
@@ -340,6 +341,8 @@ export class FanfictionReviewService {
           values,
           fingerprint: snapshot.fingerprint,
           replaceTags: action === 'apply' && !dto.keepAll && dto.tags === 'edit',
+          reviewedFields,
+          fields: [...new Set([...job.result.preparedUpdate.fields, ...reviewedFields])],
           personalTags: values.tags.filter(
             (tag) => snapshot.customTags.includes(tag) || !storyTags([...snapshot.managedTags, ...review.incoming.tags]).includes(tag),
           ),
