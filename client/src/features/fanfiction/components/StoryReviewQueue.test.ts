@@ -30,6 +30,7 @@ describe('story review editor navigation', () => {
                 site: 'example.org',
               })),
               nextCursor: null,
+              total: 42,
             }
           : String(path).endsWith('/metadata-review')
             ? review
@@ -58,12 +59,14 @@ describe('story review editor navigation', () => {
   const button = (text: string) => wrapper.findAll('button').find((item) => item.text() === text)!
   it('commits a typed tag to the local draft before skipping and restores it on Previous', async () => {
     await open()
+    expect(wrapper.text()).toContain('Story 1 / 42')
     await wrapper.get('input[role="combobox"]').setValue('Draft tag')
     await button('Skip & next').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Story 2')
+    expect(wrapper.text()).toContain('Story 2 / 42')
     await button('Previous').trigger('click')
     await flushPromises()
+    expect(wrapper.text()).toContain('Story 1 / 42')
     expect(wrapper.text()).toContain('Draft tag')
     expect(vi.mocked(api).mock.calls.some(([, options]) => options?.method)).toBe(false)
   })

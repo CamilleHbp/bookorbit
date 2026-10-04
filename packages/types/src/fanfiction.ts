@@ -349,6 +349,8 @@ export interface FanfictionSource {
 }
 
 export interface FanfictionSourcePage {
+  /** Total matching stories on the first page of a review queue. */
+  total?: number;
   items: FanfictionSource[];
   nextCursor: string | null;
 }

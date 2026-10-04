@@ -114,11 +114,16 @@ describe('story review queue', () => {
     vi.mocked(api).mockImplementation(async (path, options) => {
       if (options?.method) return respond({ resolved: true })
       if (String(path).includes('/sources?'))
-        return respond(String(path).includes('cursor=1') ? { items: [source(2)], nextCursor: null } : { items: [source(1)], nextCursor: '1' })
+        return respond(
+          String(path).includes('cursor=1') ? { items: [source(2)], nextCursor: null } : { items: [source(1)], nextCursor: '1', total: 2 },
+        )
       return respond(review)
     })
     await open()
+    expect(queue.total.value).toBe(2)
     await queue.save()
+    expect(queue.position.value).toBe(2)
+    expect(queue.total.value).toBe(2)
     expect(queue.current.value?.source.id).toBe('2')
     expect(vi.mocked(api).mock.calls.some(([path]) => String(path).includes('reviewScope=pending&limit=25&cursor=1'))).toBe(true)
     await queue.next()
