@@ -624,7 +624,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
   );
 
   it.each([false, true])(
-    'saves complete tags and edits outside the conflict list, deferred=%s',
+    'saves explicit protected field edits and preserves automatic locks, deferred=%s',
     async (deferred) => {
       await chapterEpub(target, ['Original chapter']);
       await chapterEpub(output, ['Original chapter', 'New chapter']);
@@ -651,27 +651,22 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       expect(pending.review.fields).toEqual(['title']);
       expect(pending.review.current.tags).toContain(personal.name);
       const selectedTags = [personal.name, 'Source tag', 'Existing library tag', 'My new tag'];
+      const protectedFields = ['title', 'authors', 'description', 'genres', 'tags'];
       const choices = {
         jobId: job.id,
         fingerprint: pending.review.fingerprint,
-        title: 'keep' as const,
-        authors: 'keep' as const,
+        title: 'incoming' as const,
+        authors: 'edit' as const,
+        genres: 'edit' as const,
         description: 'edit' as const,
         tags: 'edit' as const,
         selectedTags,
-        values: { ...pending.review.current, description: 'My completed description' },
+        values: { ...pending.review.current, description: 'My completed description', authors: ['My author'], genres: ['My genre'] },
       };
-      await db
-        .update(schema.bookMetadata)
-        .set({ lockedFields: ['tags'] })
-        .where(eq(schema.bookMetadata.bookId, source.bookId!));
+      await db.update(schema.bookMetadata).set({ lockedFields: protectedFields }).where(eq(schema.bookMetadata.bookId, source.bookId!));
+      await expect(sources.resolveMetadata(libraryId, source.id, choices, user)).rejects.toThrow(/changed|refresh/i);
       const locked = (await sources.metadataReview(libraryId, source.id, user))!;
-      await expect(sources.resolveMetadata(libraryId, source.id, { ...choices, fingerprint: locked.review.fingerprint }, user)).rejects.toThrow(
-        /locked|Unlock/,
-      );
-      await db.update(schema.bookMetadata).set({ lockedFields: [] }).where(eq(schema.bookMetadata.bookId, source.bookId!));
-      const refreshed = (await sources.metadataReview(libraryId, source.id, user))!;
-      await sources.resolveMetadata(libraryId, source.id, { ...choices, fingerprint: refreshed.review.fingerprint }, user);
+      await sources.resolveMetadata(libraryId, source.id, { ...choices, fingerprint: locked.review.fingerprint }, user);
       if (!deferred) {
         const approved = (await jobs.claim())!;
         await jobs.finish(approved, 'succeeded', await run(approved));
@@ -687,9 +682,27 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
           .map((tag) => tag.name)
           .sort();
       expect(await names()).toEqual([...selectedTags].sort());
-      expect((await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, source.bookId!)))[0].description).toBe(
-        'My completed description',
+      const snapshot = () => db.transaction((tx) => module.get(ManagedMetadataService).snapshot(tx, source.bookId!, libraryId));
+      const saved = await snapshot();
+      expect(saved.current).toMatchObject({
+        title: incoming.title,
+        description: 'My completed description',
+        authors: ['My author'],
+        genres: ['My genre'],
+      });
+      expect(saved.lockedFields).toEqual([...protectedFields].sort());
+      await db.transaction((tx) =>
+        module
+          .get(ManagedMetadataService)
+          .apply(
+            tx,
+            source.bookId!,
+            { key: `fanfiction:${source.id}`, libraryId },
+            { ...preview, genres: ['Automatic genre'], tags: ['Automatic tag'] },
+          ),
       );
+      expect(await snapshot()).toEqual(saved);
+      await db.update(schema.bookMetadata).set({ lockedFields: [] }).where(eq(schema.bookMetadata.bookId, source.bookId!));
       await db.transaction((tx) =>
         module.get(ManagedTagService).sync(tx, source.bookId!, { key: `fanfiction:${source.id}`, libraryId }, ['Source tag']),
       );

@@ -155,6 +155,7 @@ export interface FanfictionJob {
       metadataApplied?: boolean;
       personalTags?: string[];
       replaceTags?: boolean;
+      reviewedFields?: FanfictionMetadataField[];
       baseline?: FanfictionMetadataValues;
     };
     importReview?: { preview: FanfictionPreview; values: FanfictionMetadataValues; approved: boolean };

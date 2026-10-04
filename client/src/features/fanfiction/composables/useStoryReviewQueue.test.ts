@@ -142,7 +142,7 @@ describe('story review queue', () => {
     expect(vi.mocked(api).mock.calls.filter(([, options]) => options?.method)).toHaveLength(1)
   })
 
-  it('edits non-pending stories through book metadata and omits locked and unchanged fields', async () => {
+  it('edits protected fields on non-pending stories while preserving their locks', async () => {
     scope.value = 'all'
     vi.mocked(api).mockImplementation(async (path, options) => {
       if (options?.method) return respond({})
@@ -155,8 +155,8 @@ describe('story review queue', () => {
     queue.current.value!.values.tags = ['Custom']
     await queue.save()
     const write = vi.mocked(api).mock.calls.find(([, options]) => options?.method === 'PATCH')!
-    expect(write[0]).toBe('/api/v1/books/1/metadata')
-    expect(JSON.parse(write[1]!.body as string)).toEqual({ tags: ['Custom'] })
+    expect(write[0]).toBe('/api/v1/books/1/metadata-and-locks')
+    expect(JSON.parse(write[1]!.body as string)).toEqual({ metadata: { title: 'Locked change', tags: ['Custom'] }, lockedFields: ['title'] })
     expect(queue.finished.value).toBe(true)
   })
 
