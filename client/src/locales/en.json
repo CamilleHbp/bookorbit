@@ -12771,7 +12771,7 @@
       "save": "Save & next",
       "saving": "Saving…",
       "skip": "Skip & next",
-      "position": "Story {count}",
+      "position": "Story {count} / {total}",
       "summary": "{saved} saved · {skipped} skipped",
       "saved": "Saved",
       "finished": "You’ve reached the end",

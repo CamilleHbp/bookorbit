@@ -15,7 +15,7 @@ const { t } = useI18n()
 const { hasPermission } = usePermissions()
 const scope = ref<FanfictionReviewScope>('pending')
 const queue = useStoryReviewQueue(toRef(props, 'libraryId'), scope)
-const { current, busy, error, finished, position, hasPrevious, savedCount, skippedCount, save, retry, restart, reloadCurrent } = queue
+const { current, busy, error, finished, position, total, hasPrevious, savedCount, skippedCount, save, retry, restart, reloadCurrent } = queue
 const heading = ref<HTMLElement>()
 const reviewEditor = ref<InstanceType<typeof StoryMetadataReview>>()
 const fields = ref<InstanceType<typeof StoryMetadataFields>>()
@@ -109,7 +109,7 @@ onBeforeUnmount(() => {
     <template v-else-if="current">
       <div class="space-y-2">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span>{{ t('fanfiction.reviewQueue.position', { count: position }) }}</span>
+          <span>{{ t('fanfiction.reviewQueue.position', { count: position, total }) }}</span>
           <span v-if="current.saved" class="text-foreground">{{ t('fanfiction.reviewQueue.saved') }}</span>
         </div>
         <h3 ref="heading" tabindex="-1" class="break-words text-xl font-semibold focus:outline-none">

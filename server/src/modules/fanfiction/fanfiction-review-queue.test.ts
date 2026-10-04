@@ -15,12 +15,13 @@ describe('fanfiction review queue scope', () => {
   const access = { administer: vi.fn() };
   const reader = { project: vi.fn().mockResolvedValue([]) };
   const query = { from: vi.fn(), where: vi.fn(), orderBy: vi.fn(), limit: vi.fn() };
-  const db = { select: vi.fn() };
+  const db = { select: vi.fn(), $count: vi.fn() };
   let service: FanfictionSourceService;
   beforeEach(async () => {
     vi.clearAllMocks();
     access.administer.mockResolvedValue(undefined);
     db.select.mockReturnValue(query);
+    db.$count.mockResolvedValue(42);
     query.from.mockReturnValue(query);
     query.where.mockReturnValue(query);
     query.orderBy.mockReturnValue(query);
@@ -48,7 +49,21 @@ describe('fanfiction review queue scope', () => {
     expect(compiled.sql.includes('"metadata_review_pending"')).toBe(reviewScope === 'pending');
     expect(query.limit).toHaveBeenCalledWith(26);
     expect(reader.project).toHaveBeenCalledWith([], user.id);
-    expect(result).toEqual({ items: [], nextCursor: null });
+    expect(result).toEqual({ items: [], nextCursor: null, total: 42 });
+    const countFilters = new PgDialect().sqlToQuery(db.$count.mock.calls[0]![1] as SQL);
+    expect(countFilters).toEqual(compiled);
+  });
+  it('does not recount later review pages as saved stories leave the queue', async () => {
+    const cursor = '00000000-0000-4000-8000-000000000001';
+    query.limit.mockResolvedValueOnce([{ id: cursor }]);
+    const result = await service.list(5, Object.assign(new ListFanfictionSourcesDto(), { reviewScope: 'pending', cursor }), user);
+    expect(db.$count).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty('total');
+  });
+  it('does not count ordinary source lists', async () => {
+    const result = await service.list(5, new ListFanfictionSourcesDto(), user);
+    expect(db.$count).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty('total');
   });
   it('does not query stories when library administration is denied', async () => {
     access.administer.mockRejectedValueOnce(new ForbiddenException());
@@ -56,5 +71,6 @@ describe('fanfiction review queue scope', () => {
       ForbiddenException,
     );
     expect(db.select).not.toHaveBeenCalled();
+    expect(db.$count).not.toHaveBeenCalled();
   });
 });

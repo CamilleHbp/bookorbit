@@ -34,6 +34,7 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
   const entries = ref<Entry[]>([])
   const index = ref(0)
   const offset = ref(0)
+  const total = ref(0)
   const cursor = ref<string | null>(null)
   const started = ref(false)
   const busy = ref(false)
@@ -101,6 +102,7 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
         skipped: false,
       })),
     )
+    total.value = Math.max(total.value, page.total ?? 0, offset.value + entries.value.length)
     cursor.value = page.nextCursor
     started.value = true
   }
@@ -238,7 +240,7 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
     generation++
     controller?.abort()
     entries.value = []
-    index.value = offset.value = savedCount.value = skippedCount.value = 0
+    index.value = offset.value = total.value = savedCount.value = skippedCount.value = 0
     cursor.value = null
     started.value = busy.value = false
     error.value = ''
@@ -257,6 +259,7 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
     finished,
     hasDrafts,
     position,
+    total,
     hasPrevious,
     savedCount,
     skippedCount,
