@@ -4,7 +4,7 @@ import RichDescriptionEditor from '@/features/book/components/detail/tabs/RichDe
 import StoryMetadataReview from './StoryMetadataReview.vue'
 import ChipInput from '@/components/ui/ChipInput.vue'
 import { api } from '@/lib/api'
-vi.mock('@/lib/api', () => ({ api: vi.fn() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 const review = {
   current: { title: 'Title', description: '', authors: [], tags: ['Custom tag'] },
   incoming: { title: 'Title', description: '', authors: [], tags: ['Incoming tag'] },
