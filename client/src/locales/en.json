@@ -9880,6 +9880,7 @@
     },
     "loadingBook": "Loading book…",
     "failedToLoadBook": "Failed to load book",
+    "bookLoadTimeout": "The book took too long to open. Try refreshing the page.",
     "chapterNumber": "Chapter {number}",
     "peek": {
       "badge": "Peeking",
