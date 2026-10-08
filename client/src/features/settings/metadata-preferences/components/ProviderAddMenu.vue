@@ -2,10 +2,10 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus } from '@lucide/vue'
-import type { MetadataProviderKey, ProviderStatus } from '@bookorbit/types'
+import type { MetadataField, MetadataProviderKey, ProviderStatus } from '@bookorbit/types'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { providerChipStyle, PROVIDER_SHORT_LABELS } from '@/lib/provider-colors'
-import { skipReasonFor } from '../lib/field-rules'
+import { providerHasOtherShape, skipReasonFor } from '../lib/field-rules'
 
 const { t } = useI18n()
 
@@ -15,24 +15,30 @@ const props = defineProps<{
   disabled?: boolean
   /** Rendered in the trigger and used as its accessible name. */
   fieldLabel: string
+  /** The rule being added to, so a provider that can never fill it is said to be so. */
+  field?: MetadataField
 }>()
 
 const emit = defineEmits<{ add: [provider: MetadataProviderKey] }>()
 
 const open = ref(false)
 
-// Usable providers first: an unconfigured one can still be added, but it is not the
-// choice anyone is looking for.
+// Usable providers first: an unconfigured one, or one that never fills this field, can still be
+// added, but it is not the choice anyone is looking for.
 const candidates = computed(() => {
   const available = props.statuses.filter((status) => !props.assigned.includes(status.key as MetadataProviderKey))
   return available
-    .map((status) => ({
-      key: status.key as MetadataProviderKey,
-      label: status.label,
-      short: PROVIDER_SHORT_LABELS[status.key] ?? status.key,
-      skipReason: skipReasonFor(status),
-    }))
-    .sort((a, b) => Number(Boolean(a.skipReason)) - Number(Boolean(b.skipReason)))
+    .map((status) => {
+      const skipReason = skipReasonFor(status, props.field)
+      return {
+        key: status.key as MetadataProviderKey,
+        label: status.label,
+        short: PROVIDER_SHORT_LABELS[status.key] ?? status.key,
+        skipReason,
+        otherShape: !skipReason && providerHasOtherShape(status.key as MetadataProviderKey, props.field),
+      }
+    })
+    .sort((a, b) => Number(Boolean(a.skipReason || a.otherShape)) - Number(Boolean(b.skipReason || b.otherShape)))
 })
 
 function add(provider: MetadataProviderKey) {
@@ -69,6 +75,9 @@ function add(provider: MetadataProviderKey) {
           </span>
           <span v-if="candidate.skipReason" class="ml-auto text-xs text-muted-foreground">
             {{ t(`settings.metadata.fieldRules.providerState.${candidate.skipReason}`) }}
+          </span>
+          <span v-else-if="candidate.otherShape" class="ml-auto text-xs text-muted-foreground">
+            {{ t('settings.metadata.fieldRules.providerState.otherShape') }}
           </span>
         </button>
       </div>

@@ -924,10 +924,13 @@ describe('ReleasePickerPanel for a pair', () => {
     const wrapper = await renderPair()
 
     expect(wrapper.text()).toContain('Pick releases')
-    const [ebook, audiobook] = tabs(wrapper).findAll('a')
-    expect(ebook!.text()).toContain('E-book')
-    expect(ebook!.text()).toContain('2 releases')
-    expect(ebook!.text()).toContain('To choose')
+    // The open half is where you are, so only the other one is a link.
+    const ebook = tabs(wrapper).get('[aria-current="page"]')
+    const [audiobook, ...rest] = tabs(wrapper).findAll('a')
+    expect(rest).toHaveLength(0)
+    expect(ebook.text()).toContain('E-book')
+    expect(ebook.text()).toContain('2 releases')
+    expect(ebook.text()).toContain('To choose')
     expect(audiobook!.text()).toContain('Audiobook')
     expect(audiobook!.text()).toContain('1 release')
     expect(audiobook!.text()).toContain('To choose')
@@ -960,7 +963,7 @@ describe('ReleasePickerPanel for a pair', () => {
 
     await sendFirstRelease(wrapper)
 
-    expect(wrapper.text()).toContain('Both releases are on their way')
+    expect(wrapper.text()).toContain('Nothing left to choose')
     expect(releaseRows(wrapper)).toHaveLength(0)
     expect(tabs(wrapper).text().match(/Sent/g)).toHaveLength(2)
     await wrapper
@@ -976,14 +979,14 @@ describe('ReleasePickerPanel for a pair', () => {
     await sendFirstRelease(wrapper)
 
     expect(nav.push).toHaveBeenCalledWith({ name: 'book-request-detail', params: { id: 7 }, query: {} })
-    expect(wrapper.text()).not.toContain('Both releases are on their way')
+    expect(wrapper.text()).not.toContain('Nothing left to choose')
   })
 
   it('shows a half nobody can pick a release for yet as a label, not a link, and never searches it', async () => {
     const wrapper = await renderPair(audioHalf({ status: 'pending' }))
 
-    const audiobook = tabs(wrapper).get('span[aria-disabled="true"]')
-    expect(audiobook.text()).toContain('Pending')
+    expect(tabs(wrapper).findAll('a')).toHaveLength(0)
+    expect(tabs(wrapper).text()).toContain('Pending')
     expect(searchesFor(8)).toBe(0)
   })
 

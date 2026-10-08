@@ -392,7 +392,24 @@ describe('useReleasePicker out-of-order searches', () => {
 
       expect(picker.releases.value).toHaveLength(2)
       expect(picker.loading.value).toBe(false)
+      // A list shown again from memory is one already searched, and the note says so.
+      expect(picker.cached.value).toBe(true)
       expect(apiMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows the list last on screen when a half is opened again, a changed search included', async () => {
+      apiMock.mockResolvedValueOnce(ok(searchResult({ releases: [release] })))
+      const first = useReleasePicker(() => true)
+      await first.fetchReleases(11)
+      const narrowed = [{ indexerId: 3, guid: 'narrowed' } as ReleaseCandidateItem]
+      apiMock.mockResolvedValueOnce(ok(searchResult({ activeIsbn: '9781250301697', releases: narrowed })))
+      await first.fetchReleases(11, { overrides: { isbn: '9781250301697' } })
+
+      const again = useReleasePicker(() => true)
+      void again.fetchReleases(11)
+
+      expect(again.releases.value).toEqual(narrowed)
+      expect(apiMock).toHaveBeenCalledTimes(2)
     })
 
     it('asks the trackers again when the search is refreshed', async () => {

@@ -20,10 +20,10 @@ export function searchAttemptKey(activeIsbn: string | null): string {
 }
 
 /**
- * A request's default search, kept for a moment on this side too. The picker for a pair searches
- * both halves when it opens, and the server neither merges a search still in flight nor keeps one
- * longer than this, so the half the approver switches to reads its answer here instead of asking
- * every tracker a second time.
+ * A request's last search, kept for a moment on this side too. The picker for a pair searches both
+ * halves when it opens, and the server never merges a search still in flight, so the half the
+ * approver switches to reads its answer here instead of asking every tracker a second time. Every
+ * search that answers replaces the entry, so switching back shows the list that was last on screen.
  */
 interface DefaultSearch {
   startedAt: number
@@ -164,7 +164,8 @@ export function useReleasePicker(canManage: () => boolean) {
     // A search already answered is shown in the same tick, so switching to it never flashes a spinner.
     const known = custom || options.refresh ? null : freshEntry(path)?.result
     if (known) {
-      applyResult(known)
+      // It is a list already searched, which is what the cached note says.
+      applyResult({ ...known, cached: true })
       loading.value = false
       return true
     }
@@ -179,6 +180,7 @@ export function useReleasePicker(canManage: () => boolean) {
           body: JSON.stringify(options.overrides),
         })
         result = res.ok ? ((await res.json()) as ReleaseSearchResult) : null
+        if (result) rememberSearch(path, { startedAt: Date.now(), result, pending: null })
       } else {
         result = await loadDefaultSearch(path, options.refresh === true)
       }

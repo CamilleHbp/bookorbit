@@ -33,8 +33,8 @@ const emit = defineEmits<{
 }>()
 
 const label = computed(() => t(fieldRuleLabelKey(props.field)))
-const resolved = computed(() => resolvedProviders(props.preference.providers, props.statuses))
-const skipped = computed(() => skippedProviders(props.preference.providers, props.statuses))
+const resolved = computed(() => resolvedProviders(props.preference.providers, props.statuses, props.field))
+const skipped = computed(() => skippedProviders(props.preference.providers, props.statuses, props.field))
 const hasNoUsableProvider = computed(() => props.preference.enabled && resolved.value.length === 0)
 
 /** Mobile shows a fixed-width preview so every row is the same height. */
@@ -108,6 +108,7 @@ function collapse() {
         <ProviderChipList
           :providers="preference.providers"
           :statuses="statuses"
+          :field="field"
           :disabled="!preference.enabled || saving"
           @update:providers="onProvidersChange"
         />
@@ -117,6 +118,7 @@ function collapse() {
           :statuses="statuses"
           :disabled="saving"
           :field-label="label"
+          :field="field"
           @add="addProvider"
         />
         <span v-if="skipped.length" class="inline-flex items-center gap-1 text-xs font-medium text-warning">
@@ -218,7 +220,7 @@ function collapse() {
 
     <div v-if="hasNoUsableProvider && !expanded" class="flex items-center gap-2 px-4 pb-2.5 text-xs text-warning md:col-span-full md:px-6 md:pb-2">
       <TriangleAlert :size="13" class="shrink-0" aria-hidden="true" />
-      {{ t('settings.metadata.fieldRules.field.noProviders') }}
+      {{ t('settings.metadata.fieldRules.field.noUsableProvider') }}
     </div>
 
     <FieldRuleDetail

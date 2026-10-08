@@ -37,7 +37,7 @@ const emit = defineEmits<{
   updated: [BookDockFile]
 }>()
 
-const { saved, saveError, saveMetadata, setTarget, coverUrl } = useBookDockDetail()
+const { saved, saveError, saveMetadata, setTarget, coverUrl, fetchReadAlong } = useBookDockDetail()
 const destination = useBookDestination({ defaultToFirstLibrary: true })
 const { libraryId: targetLibraryId, folderId: targetFolderId, hasDestination, fetchLibraries: fetchLibs } = destination
 
@@ -294,9 +294,38 @@ const fileCoverMedium = computed<CoverMedium>(() => (fileMediaKind.value === 'au
 
 const fileCoverPriority = computed(() => (fileCoverMedium.value === 'audio' ? audioCoverProviderOrder.value : coverProviderOrder.value))
 
+/**
+ * Whether this EPUB carries narration, asked of the file as it opens. A search on an EPUB waits for
+ * the answer: the first one goes out by itself as soon as the search opens, which can be before the
+ * file has been read.
+ */
+let readAlongCheck: { id: number; answer: Promise<boolean> } | null = null
+watch(
+  () => props.file.id,
+  (id) => {
+    readAlongCheck = props.file.format?.toLowerCase() === 'epub' ? { id, answer: fetchReadAlong(id) } : null
+  },
+  { immediate: true },
+)
+
 function handleSearchSubmit(params: MetadataQuery) {
   const mediaKind = fileMediaKind.value
-  search(mediaKind === 'unknown' ? params : { ...params, mediaKind })
+  if (mediaKind === 'unknown') {
+    search(params)
+    return
+  }
+  const id = props.file.id
+  const check = readAlongCheck?.id === id ? readAlongCheck : null
+  if (!check) {
+    search({ ...params, mediaKind })
+    return
+  }
+  void check.answer.then((readAlong) => {
+    // Another file was opened meanwhile, and these terms were for this one.
+    if (props.file.id !== id) return
+    // A read-along also asks the audiobook sources, as the same book on a shelf would be.
+    search(readAlong ? { ...params, mediaKind, mediaKinds: ['ebook', 'audiobook'] } : { ...params, mediaKind })
+  })
 }
 
 function backToEditor() {

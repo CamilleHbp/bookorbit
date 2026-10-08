@@ -2878,7 +2878,7 @@ export class BookService {
       const found = await this.bookRepo.findById(id);
       if (!found) throw new NotFoundException(`Book ${id} not found`);
 
-      const { book, authorRows, genreRows, communityRatingRows, fileRows } = found;
+      const { book, authorRows, genreRows, communityRatingRows, fileRows, narratorRows } = found;
       await this.libraryService.verifyUserAccess(user.id, book.books.libraryId, this.isSuperuser(user));
       const meta = book.book_metadata;
 
@@ -2892,7 +2892,7 @@ export class BookService {
         seriesIndex: meta?.seriesIndex ?? undefined,
         existingProviderIds: providerIds,
         hardcoverEditionId: meta?.hardcoverEditionId ?? undefined,
-        isAudiobook: resolveIsAudiobook(fileRows, meta),
+        isAudiobook: resolveIsAudiobook(fileRows, meta, book.books.primaryFileId),
         maxCandidatesPerProvider: 1,
       };
 
@@ -2913,6 +2913,10 @@ export class BookService {
         genres: genreRows.map((g) => g.name),
         duration: meta?.durationSeconds ?? undefined,
         abridged: meta?.abridged ?? undefined,
+        // Without these a fill-missing narrators rule saw none and wrote over the book's own narrators
+        // and chapters, which the queued fetch never did because it always passed them.
+        narrators: narratorRows.map((narrator) => narrator.name),
+        chapters: meta?.chapters,
       };
       if (meta?.lockedFields?.length) existingFields.lockedFields = meta.lockedFields;
       const coverState = await this.coverStore.fetchState(id);

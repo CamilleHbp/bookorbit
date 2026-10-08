@@ -1,6 +1,5 @@
 import { deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
 import { Inject, Injectable } from '@nestjs/common';
-import { DEFAULT_FORMAT_PRIORITY } from '@bookorbit/types';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
@@ -21,7 +20,7 @@ import {
   userLibraryAccess,
   users,
 } from '../../db/schema';
-import { selectPrimaryFile } from '../../common/utils/primary-file-selection.utils';
+import { selectMovedPrimary } from './book-move.utils';
 
 type Db = NodePgDatabase<typeof schema>;
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -35,6 +34,7 @@ export interface MoveBookFile {
   role: string;
   format: string | null;
   fileHash: string | null;
+  sizeBytes: number | null;
   sortOrder: number | null;
   mediaOverlayAvailable: boolean;
 }
@@ -71,6 +71,7 @@ export interface MoveTargetLibrary {
   organizationMode: string;
   fileNamingPattern: string | null;
   allowedFormats: string[];
+  formatPriority: string[];
   folderId: number;
   folderPath: string;
   watch: boolean;
@@ -108,6 +109,7 @@ export class BookMoveRepository {
         organizationMode: libraries.organizationMode,
         fileNamingPattern: libraries.fileNamingPattern,
         allowedFormats: libraries.allowedFormats,
+        formatPriority: libraries.formatPriority,
         watch: libraries.watch,
         folderId: libraryFolders.id,
         folderPath: libraryFolders.path,
@@ -167,6 +169,7 @@ export class BookMoveRepository {
           role: bookFiles.role,
           format: bookFiles.format,
           fileHash: bookFiles.fileHash,
+          sizeBytes: bookFiles.sizeBytes,
           sortOrder: bookFiles.sortOrder,
           mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,
         })
@@ -199,6 +202,7 @@ export class BookMoveRepository {
           role: file.role,
           format: file.format,
           fileHash: file.fileHash,
+          sizeBytes: file.sizeBytes,
           sortOrder: file.sortOrder,
           mediaOverlayAvailable: file.mediaOverlayAvailable,
         };
@@ -505,18 +509,30 @@ export class BookMoveRepository {
 }
 
 /**
- * Re-picks a moved book's primary by the library it now belongs to, the way a scan of that library
- * would. Leaving the old library's choice in place kept an EPUB primary in a library that ranks
- * audiobooks first, until something happened to rescan it.
+ * Re-picks a moved book's primary by the library it now belongs to (`selectMovedPrimary`). Leaving
+ * the old library's choice in place kept an EPUB primary in a library that ranks audiobooks first,
+ * until something happened to rescan it.
  */
 async function reselectPrimaryFile(tx: Tx, bookId: number, libraryId: number): Promise<void> {
-  const [library] = await tx.select({ formatPriority: libraries.formatPriority }).from(libraries).where(eq(libraries.id, libraryId)).limit(1);
-  const contentFiles = await tx
-    .select({ id: bookFiles.id, format: bookFiles.format, sizeBytes: bookFiles.sizeBytes, mediaOverlayAvailable: bookFiles.mediaOverlayAvailable })
+  const [library] = await tx
+    .select({ formatPriority: libraries.formatPriority, allowedFormats: libraries.allowedFormats })
+    .from(libraries)
+    .where(eq(libraries.id, libraryId))
+    .limit(1);
+  const [book] = await tx.select({ primaryFileId: books.primaryFileId }).from(books).where(eq(books.id, bookId)).limit(1);
+  if (!library || !book) return;
+  const files = await tx
+    .select({
+      id: bookFiles.id,
+      role: bookFiles.role,
+      format: bookFiles.format,
+      sizeBytes: bookFiles.sizeBytes,
+      sortOrder: bookFiles.sortOrder,
+      mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,
+    })
     .from(bookFiles)
-    .where(and(eq(bookFiles.bookId, bookId), eq(bookFiles.role, 'content')))
-    .orderBy(asc(bookFiles.sortOrder), asc(bookFiles.id));
-  const winner = selectPrimaryFile(contentFiles, library?.formatPriority ?? DEFAULT_FORMAT_PRIORITY);
+    .where(eq(bookFiles.bookId, bookId));
+  const winner = selectMovedPrimary(files, book.primaryFileId, library);
   if (!winner) return;
   await tx
     .update(books)

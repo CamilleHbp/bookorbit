@@ -356,12 +356,13 @@ export class BookMetadataFetchQueueRepository {
         return sql`NOT EXISTS (SELECT 1 FROM ${bookAuthors} WHERE ${bookAuthors.bookId} = ${bookMetadata.bookId})`;
       case 'genres':
         return sql`NOT EXISTS (SELECT 1 FROM ${bookGenres} WHERE ${bookGenres.bookId} = ${bookMetadata.bookId})`;
+      // Mirrors `BookMetadataFetchEligibilityService.isFieldMissing`: only a book with audio can lack these.
       case 'narrators':
-        return sql`NOT EXISTS (SELECT 1 FROM ${bookNarrators} WHERE ${bookNarrators.bookId} = ${bookMetadata.bookId})`;
+        return sql`(${coverMediaSql(bookMetadata.bookId).hasAudio} AND NOT EXISTS (SELECT 1 FROM ${bookNarrators} WHERE ${bookNarrators.bookId} = ${bookMetadata.bookId}))`;
       case 'duration':
-        return sql`${bookMetadata.durationSeconds} IS NULL`;
+        return sql`(${coverMediaSql(bookMetadata.bookId).hasAudio} AND ${bookMetadata.durationSeconds} IS NULL)`;
       case 'abridged':
-        return sql`${bookMetadata.abridged} IS NULL`;
+        return sql`(${coverMediaSql(bookMetadata.bookId).hasAudio} AND ${bookMetadata.abridged} IS NULL)`;
       case 'cover':
         return sql`${bookMetadata.coverSource} IS NULL`;
       case 'audioCover': {

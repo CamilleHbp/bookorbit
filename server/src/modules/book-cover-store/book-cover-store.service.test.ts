@@ -483,4 +483,17 @@ describe('BookCoverStore', () => {
     );
     await expect(dormant.store.fetchState(7)).resolves.toMatchObject({ filled: { ebook: false, audio: false } });
   });
+
+  it('calls a slot empty only when it holds nothing, a dormant custom cover counting as something', async () => {
+    const root = join(tmpdir(), 'unused-cover-store');
+    const ebookOnly = makeStore(root, context({ slots: [slot('ebook')], media: { hasEbook: true, hasAudio: true } }));
+    await expect(ebookOnly.store.slotIsEmpty(7, 'audio')).resolves.toBe(true);
+    await expect(ebookOnly.store.slotIsEmpty(7, 'ebook')).resolves.toBe(false);
+
+    const dormantCustom = makeStore(
+      root,
+      context({ slots: [{ ...slot('audio', 'custom'), dormantSince: new Date() }], media: { hasEbook: true, hasAudio: true } }),
+    );
+    await expect(dormantCustom.store.slotIsEmpty(7, 'audio')).resolves.toBe(false);
+  });
 });

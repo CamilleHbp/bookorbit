@@ -57,6 +57,7 @@ function makeService() {
   const metadataService = {
     downloadAndSaveCover: vi.fn().mockResolvedValue(false),
     saveExtractedCoverBytes: vi.fn().mockResolvedValue(undefined),
+    coverSlotIsEmpty: vi.fn().mockResolvedValue(true),
     replaceAuthors: vi.fn().mockResolvedValue(undefined),
     replaceGenres: vi.fn().mockResolvedValue(undefined),
     replaceNarrators: vi.fn().mockResolvedValue(undefined),
@@ -765,57 +766,126 @@ describe('BookDockFinalizeService', () => {
         expect(storage.moveToPath).toHaveBeenCalledWith('/tmp/dune.m4b', '/library/Frank Herbert/Dune (Unabridged)/Dune (Unabridged).m4b');
       });
 
-      it('adds identifiers and audio facts the book lacks without overwriting what it already says', async () => {
-        const { service, db, metadataService } = makeService();
+      /** The book a format joins, as `applyJoinedMetadata` reads it: its audio facts and locks, then whether it has narrators. */
+      function mockJoinedBook(
+        db: ReturnType<typeof makeService>['db'],
+        current: { lockedFields?: string[]; durationSeconds?: number | null; abridged?: boolean | null; chapters?: unknown } = {},
+        hasNarrators = false,
+      ) {
+        const chain = (rows: unknown[]) => {
+          const query = { from: vi.fn(), where: vi.fn(), limit: vi.fn().mockResolvedValue(rows) };
+          query.from.mockReturnValue(query);
+          query.where.mockReturnValue(query);
+          return query;
+        };
+        db.select
+          .mockReturnValueOnce(chain([{ lockedFields: [], durationSeconds: null, abridged: null, chapters: null, ...current }]))
+          .mockReturnValueOnce(chain(hasNarrators ? [{ bookId: 42 }] : []));
         const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
         db.update.mockReturnValue({ set });
+        return set;
+      }
+
+      it('adds identifiers and audio facts the book lacks without overwriting what it already says', async () => {
+        const { service, db, metadataService } = makeService();
+        const set = mockJoinedBook(db, { durationSeconds: 3600, lockedFields: ['goodreadsId'] });
         const row = makeRow({
           format: 'm4b',
-          selectedMetadata: { title: 'Dune (Unabridged)', authors: ['Simon Vance'], audibleId: 'B002V1OF70' } as BookDockMetadata,
+          embeddedMetadata: { durationSeconds: 9999, abridged: true, narrators: ['Simon Vance'] } as unknown as BookDockMetadata,
+          selectedMetadata: {
+            title: 'Dune (Unabridged)',
+            authors: ['Simon Vance'],
+            audibleId: 'B002V1OF70',
+            goodreadsId: 'gr-1',
+          } as BookDockMetadata,
         });
 
-        await (service as any).applyJoinedMetadata(42, row, null);
+        await (service as any).applyJoinedMetadata(42, row, null, null);
 
         const patch = set.mock.calls[0]![0] as Record<string, unknown>;
         expect(patch).toHaveProperty('audibleId');
+        expect(patch).toHaveProperty('abridged', true);
+        expect(patch).not.toHaveProperty('goodreadsId');
+        expect(patch).not.toHaveProperty('durationSeconds');
         expect(patch).not.toHaveProperty('title');
         expect(metadataService.replaceAuthors).not.toHaveBeenCalled();
+        expect(metadataService.replaceNarrators).toHaveBeenCalledWith(42, [{ name: 'Simon Vance', sortName: null }]);
       });
 
-      /**
-       * The dock's own provider lookup does not know the file is the other format of a book it
-       * already has, so for an audiobook it answers with the ebook's portrait jacket. The audio slot
-       * takes the file's own art instead.
-       */
-      it("fills the new format's cover slot from the file's own art, never from the dock's lookup", async () => {
+      it('keeps the narrators a book already has, and any it has locked', async () => {
+        const row = makeRow({ format: 'm4b', embeddedMetadata: { narrators: ['Simon Vance'] } as unknown as BookDockMetadata });
+
+        const existing = makeService();
+        mockJoinedBook(existing.db, {}, true);
+        await (existing.service as any).applyJoinedMetadata(42, row, null, null);
+        expect(existing.metadataService.replaceNarrators).not.toHaveBeenCalled();
+
+        const locked = makeService();
+        mockJoinedBook(locked.db, { lockedFields: ['narrators'] });
+        await (locked.service as any).applyJoinedMetadata(42, row, null, null);
+        expect(locked.metadataService.replaceNarrators).not.toHaveBeenCalled();
+      });
+
+      it('uses a cover picked in the Book Dock for this file as it is', async () => {
         const { service, db, metadataService } = makeService();
-        db.update.mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) });
-        mockReadFile.mockResolvedValueOnce(Buffer.from('square-art') as never);
+        mockJoinedBook(db);
+        metadataService.downloadAndSaveCover.mockResolvedValueOnce(true);
         const row = makeRow({
           format: 'm4b',
           coverPath: '/dock/covers/1.jpg',
-          selectedMetadata: { title: 'Dune', coverUrl: 'https://covers.example/portrait.jpg' } as BookDockMetadata,
+          selectedMetadata: { title: 'Dune', coverUrl: 'https://covers.example/picked.jpg' } as BookDockMetadata,
         });
 
-        await (service as any).applyJoinedMetadata(42, row, 'https://covers.example/requested-square.jpg');
+        await (service as any).applyJoinedMetadata(42, row, 'https://covers.example/requested.jpg', null);
+
+        expect(metadataService.downloadAndSaveCover).toHaveBeenCalledTimes(1);
+        expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith([{ url: 'https://covers.example/picked.jpg' }], 42, 'audio', {
+          userChosen: true,
+        });
+        expect(metadataService.saveExtractedCoverBytes).not.toHaveBeenCalled();
+      });
+
+      /**
+       * The dock's lookup does not know the file is the other format of a book it already has, so for
+       * an audiobook it can answer with the ebook's portrait jacket. The file's own art goes in first,
+       * and the looked-up cover replaces it only if it fits the slot, which the download checks.
+       */
+      it("fills the new format's slot from the file's own art first, and offers the looked-up cover only to replace it if it fits", async () => {
+        const { service, db, metadataService } = makeService();
+        mockJoinedBook(db);
+        mockReadFile.mockResolvedValueOnce(Buffer.from('square-art') as never);
+        const row = makeRow({ format: 'm4b', coverPath: '/dock/covers/1.jpg', selectedMetadata: { title: 'Dune' } as BookDockMetadata });
+
+        await (service as any).applyJoinedMetadata(42, row, 'https://covers.example/requested-square.jpg', 'https://covers.example/looked-up.jpg');
 
         expect(metadataService.saveExtractedCoverBytes).toHaveBeenCalledWith(42, Buffer.from('square-art'), 'audio');
-        expect(metadataService.downloadAndSaveCover).not.toHaveBeenCalled();
+        expect(metadataService.downloadAndSaveCover).toHaveBeenCalledTimes(1);
+        expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith([{ url: 'https://covers.example/looked-up.jpg' }], 42, 'audio');
       });
 
       it("falls back to the cover chosen when the format was requested, held to the slot's shape", async () => {
         const { service, db, metadataService } = makeService();
-        db.update.mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) });
-        const row = makeRow({
-          format: 'm4b',
-          coverPath: null,
-          selectedMetadata: { title: 'Dune', coverUrl: 'https://covers.example/portrait.jpg' } as BookDockMetadata,
-        });
+        mockJoinedBook(db);
+        const row = makeRow({ format: 'm4b', coverPath: null, selectedMetadata: { title: 'Dune' } as BookDockMetadata });
 
-        await (service as any).applyJoinedMetadata(42, row, 'https://covers.example/requested-square.jpg');
+        await (service as any).applyJoinedMetadata(42, row, 'https://covers.example/requested-square.jpg', null);
 
         expect(metadataService.downloadAndSaveCover).toHaveBeenCalledTimes(1);
         expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith([{ url: 'https://covers.example/requested-square.jpg' }], 42, 'audio');
+      });
+
+      it('leaves a cover the book already holds for this medium, a dormant custom one included', async () => {
+        const { service, db, metadataService } = makeService();
+        mockJoinedBook(db);
+        metadataService.coverSlotIsEmpty.mockResolvedValueOnce(false);
+        mockReadFile.mockResolvedValueOnce(Buffer.from('square-art') as never);
+        const row = makeRow({ format: 'm4b', coverPath: '/dock/covers/1.jpg', selectedMetadata: { title: 'Dune' } as BookDockMetadata });
+
+        await (service as any).applyJoinedMetadata(42, row, 'https://covers.example/requested.jpg', 'https://covers.example/looked-up.jpg');
+
+        expect(metadataService.coverSlotIsEmpty).toHaveBeenCalledWith(42, 'audio');
+        expect(metadataService.saveExtractedCoverBytes).not.toHaveBeenCalled();
+        expect(metadataService.downloadAndSaveCover).not.toHaveBeenCalled();
       });
     });
 
@@ -1950,6 +2020,17 @@ describe('BookDockFinalizeService', () => {
     it('tries the requested art for a joined format only while its slot would otherwise stay empty', async () => {
       const { service, db, metadataService } = makeService();
       stubMetadataWrites(db);
+      const chain = () => {
+        const query = {
+          from: vi.fn(),
+          where: vi.fn(),
+          limit: vi.fn().mockResolvedValue([{ lockedFields: [], durationSeconds: null, abridged: null, chapters: null }]),
+        };
+        query.from.mockReturnValue(query);
+        query.where.mockReturnValue(query);
+        return query;
+      };
+      db.select.mockImplementation(chain);
       mockReadFile.mockResolvedValue(Buffer.from('square-art'));
       const row = makeRow({ coverPath: '/tmp/cover.jpg', format: 'm4b', selectedMetadata: { title: 'Dune' } as BookDockMetadata });
 

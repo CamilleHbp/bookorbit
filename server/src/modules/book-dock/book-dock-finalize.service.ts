@@ -52,7 +52,7 @@ import { normalizePublishedDate, publishedYearFromDateKey } from '../../common/u
 import { buildPatternTokens, patternReferencesToken } from '../../common/utils/pattern-tokens.utils';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
-import { bookMetadata, libraries, libraryFolders } from '../../db/schema';
+import { bookMetadata, bookNarrators, libraries, libraryFolders } from '../../db/schema';
 import { AppSettingsService } from '../app-settings/app-settings.service';
 import { FileWriteService } from '../file-write/file-write.service';
 import { LibraryService } from '../library/library.service';
@@ -1207,14 +1207,11 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
   }
 
   /**
-   * The staged cover was read from the unit's primary file, so it fills only that file's medium on
-   * the book that owns it. The other books of a loose-file unit get their own art from reconcile.
-   */
-  /**
-   * What a new format adds to a book that already exists: its own cover slot, the audio facts only
-   * an audio file carries, and identifiers the book does not have yet. Nothing the book already
-   * says is overwritten - the title, authors and description were settled before this file arrived,
-   * and an audiobook's tags routinely disagree with them ("Unabridged", the narrator as author).
+   * What a new format adds to a book that already exists: its own cover slot while that is empty,
+   * and the audio facts and identifiers the book does not have yet, unless they are locked. Nothing
+   * the book already says is overwritten - the title, authors and description were settled before
+   * this file arrived, and an audiobook's tags routinely disagree with them ("Unabridged", the
+   * narrator as author).
    */
   private async applyJoinedMetadata(
     bookId: number,
@@ -1226,9 +1223,27 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
     const audio = resolveAudioFinalizeFields(row.embeddedMetadata, row.selectedMetadata);
     const medium = row.format && isAudioFormat(row.format) ? 'audio' : 'ebook';
 
-    // Only the new format's own slot, and the art chosen for it when it was requested only where
-    // nothing else fills it.
-    await this.applyUnpickedCover(bookId, row, medium, true, lookedUpCoverUrl, requestedCoverUrl);
+    // A cover picked in the Book Dock for this file is used as it is. Otherwise only an empty slot is
+    // filled: a cover the book already holds for this medium stays, a custom one resting dormant
+    // since the last copy of this format went away included. The requested art comes last.
+    const picked = meta.coverUrl
+      ? await this.metadataService.downloadAndSaveCover([{ url: meta.coverUrl }], bookId, medium, { userChosen: true })
+      : false;
+    if (!picked && (await this.metadataService.coverSlotIsEmpty(bookId, medium))) {
+      await this.applyUnpickedCover(bookId, row, medium, true, lookedUpCoverUrl, requestedCoverUrl);
+    }
+
+    const [current] = await this.db
+      .select({
+        lockedFields: bookMetadata.lockedFields,
+        durationSeconds: bookMetadata.durationSeconds,
+        abridged: bookMetadata.abridged,
+        chapters: bookMetadata.chapters,
+      })
+      .from(bookMetadata)
+      .where(eq(bookMetadata.bookId, bookId))
+      .limit(1);
+    const locked = new Set(current?.lockedFields ?? []);
 
     const identifiers = {
       googleBooksId: meta.googleBooksId,
@@ -1243,18 +1258,27 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
     } as const;
     const fillMissing: Record<string, SQL> = {};
     for (const [field, value] of Object.entries(identifiers)) {
-      if (value) fillMissing[field] = sql`coalesce(${bookMetadata[field as keyof typeof identifiers]}, ${value})`;
+      if (value && !locked.has(field)) fillMissing[field] = sql`coalesce(${bookMetadata[field as keyof typeof identifiers]}, ${value})`;
     }
 
     const audioPatch = medium === 'audio' ? buildAudioMetadataPatch(audio) : {};
-    if (Object.keys(fillMissing).length > 0 || Object.keys(audioPatch).length > 0) {
+    const audioFill = {
+      ...(audioPatch.durationSeconds !== undefined && current?.durationSeconds == null && !locked.has('durationSeconds')
+        ? { durationSeconds: audioPatch.durationSeconds }
+        : {}),
+      ...(audioPatch.abridged !== undefined && current?.abridged == null && !locked.has('abridged') ? { abridged: audioPatch.abridged } : {}),
+      ...(audioPatch.chapters !== undefined && !(Array.isArray(current?.chapters) && current.chapters.length > 0)
+        ? { chapters: audioPatch.chapters }
+        : {}),
+    };
+    if (Object.keys(fillMissing).length > 0 || Object.keys(audioFill).length > 0) {
       await this.db
         .update(bookMetadata)
-        .set({ ...fillMissing, ...audioPatch, updatedAt: new Date() })
+        .set({ ...fillMissing, ...audioFill, updatedAt: new Date() })
         .where(eq(bookMetadata.bookId, bookId));
     }
 
-    if (medium === 'audio' && audio.narrators.length > 0) {
+    if (medium === 'audio' && audio.narrators.length > 0 && !locked.has('narrators') && !(await this.hasNarrators(bookId))) {
       await this.metadataService.replaceNarrators(
         bookId,
         audio.narrators.map((name) => ({ name, sortName: null })),
@@ -1262,6 +1286,11 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
     }
 
     await this.metadataScoreService.calculateAndSave(bookId);
+  }
+
+  private async hasNarrators(bookId: number): Promise<boolean> {
+    const [row] = await this.db.select({ bookId: bookNarrators.bookId }).from(bookNarrators).where(eq(bookNarrators.bookId, bookId)).limit(1);
+    return row !== undefined;
   }
 
   /**
@@ -1297,7 +1326,12 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
       );
   }
 
-  /** `lookedUpCoverUrl`: see `applyUnpickedCover`. A cover picked in the Book Dock is used as it is. */
+  /**
+   * `lookedUpCoverUrl`: see `applyUnpickedCover`. A cover picked in the Book Dock is used as it is.
+   * The staged cover was read from the unit's primary file, so it fills only that file's medium on
+   * the book that owns it (`ownsStagedCover`); the other books of a loose-file unit get their own
+   * art from reconcile.
+   */
   private async applyMetadata(bookId: number, row: BookDockFileRow, ownsStagedCover = true, lookedUpCoverUrl: string | null = null): Promise<void> {
     const meta = normalizeFinalizeMetadata(row.selectedMetadata ?? row.embeddedMetadata);
     const audio = resolveAudioFinalizeFields(row.embeddedMetadata, row.selectedMetadata);

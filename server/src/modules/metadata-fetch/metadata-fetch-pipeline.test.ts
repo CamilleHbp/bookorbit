@@ -1954,10 +1954,36 @@ describe('MetadataFetchPipeline', () => {
       expect(resolved.hardcoverEditionId).toBe('ebook-edition');
     });
 
+    it("keeps a book's own chapters under a fill-missing narrators rule, and replaces them otherwise", async () => {
+      const chapters = [{ title: 'From Audnexus', startMs: 0 }];
+      register(MetadataProviderKey.AUDNEXUS);
+      answer({ [MetadataProviderKey.AUDNEXUS]: { audio: { title: 'Dune', authors: ['Frank Herbert'], chapters } } });
+      const existing = { chapters: [{ title: 'Own chapter', startMs: 0 }] };
+
+      usePreferences((preferences) => {
+        preferences.fields.narrators = { enabled: true, providers: [MetadataProviderKey.AUDNEXUS], mergeStrategy: 'fillMissing' };
+      });
+      const kept = await pipeline.runWithSources({ title: 'Dune', isAudiobook: true }, existing, undefined, { coverMedia: AUDIO_ONLY });
+      expect(kept.resolved.chapters).toBeUndefined();
+
+      usePreferences((preferences) => {
+        preferences.fields.narrators = { enabled: true, providers: [MetadataProviderKey.AUDNEXUS], mergeStrategy: 'overwriteIfProvided' };
+      });
+      const replaced = await pipeline.runWithSources({ title: 'Dune', isAudiobook: true }, existing, undefined, { coverMedia: AUDIO_ONLY });
+      expect(replaced.resolved.chapters).toEqual(chapters);
+
+      usePreferences((preferences) => {
+        preferences.fields.narrators = { enabled: true, providers: [MetadataProviderKey.AUDNEXUS], mergeStrategy: 'fillMissing' };
+      });
+      const filled = await pipeline.runWithSources({ title: 'Dune', isAudiobook: true }, { chapters: [] }, undefined, { coverMedia: AUDIO_ONLY });
+      expect(filled.resolved.chapters).toEqual(chapters);
+    });
+
     it('takes nothing but art from a provider only a cover rule brought in, apart from an audiobook id', async () => {
       usePreferences((preferences) => {
-        // Community ratings name Audible and Hardcover by default, which would make them full providers.
+        // Community ratings and the audiobook fields name Audible by default, which would make it a full provider.
         preferences.fields.communityRating.providers = [MetadataProviderKey.GOOGLE];
+        for (const field of ['narrators', 'duration', 'abridged'] as const) preferences.fields[field].providers = [MetadataProviderKey.GOOGLE];
         preferences.fields.audioCover.providers = [MetadataProviderKey.AUDIBLE, MetadataProviderKey.HARDCOVER];
       });
       register(MetadataProviderKey.GOOGLE, MetadataProviderKey.AUDIBLE, MetadataProviderKey.HARDCOVER);
@@ -1991,6 +2017,7 @@ describe('MetadataFetchPipeline', () => {
     it('lets a cover-only provider be checked against the anchor without choosing it', async () => {
       usePreferences((preferences) => {
         preferences.fields.communityRating.providers = [MetadataProviderKey.GOOGLE];
+        for (const field of ['narrators', 'duration', 'abridged'] as const) preferences.fields[field].providers = [MetadataProviderKey.GOOGLE];
         preferences.fields.audioCover.providers = [MetadataProviderKey.AUDIBLE, MetadataProviderKey.GOOGLE];
       });
       register(MetadataProviderKey.GOOGLE, MetadataProviderKey.AUDIBLE);

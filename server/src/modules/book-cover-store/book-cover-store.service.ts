@@ -393,6 +393,12 @@ export class BookCoverStore {
   }
 
   /** Whether the slot is filled and served, after bringing a legacy root cover into its slot. */
+  /** Whether the slot holds no cover at all: not an active one, and not one resting dormant either. */
+  async slotIsEmpty(bookId: number, medium: CoverMedium): Promise<boolean> {
+    const context = await this.convertedContext(bookId);
+    return !context.slots.some((slot) => slot.medium === medium);
+  }
+
   async hasActiveSlot(bookId: number, medium: CoverMedium): Promise<boolean> {
     const context = await this.convertedContext(bookId);
     return context.slots.some((slot) => slot.medium === medium && slot.dormantSince === null) && this.mediumIsActive(medium, context.media);

@@ -1772,7 +1772,8 @@
             "overwriteTerm": "Overwrite:",
             "overwriteBody": "Replace whenever a provider has data."
           },
-          "summary": "Providers are tried top to bottom and the first one that returns a value wins. The merge strategy decides whether that value may replace what the book already has; genres can also append new unique values. Set defaults here, then override individual fields per library."
+          "summary": "Providers are tried top to bottom and the first one that returns a value wins. The merge strategy decides whether that value may replace what the book already has; genres can also append new unique values. Set defaults here, then override individual fields per library.",
+          "summaryByMedium": "Providers are tried top to bottom, and the first one with a value wins; genres in merge mode and community ratings combine every provider instead. The merge strategy decides whether a value may replace what the book already has. Audible, AudNexus and Libro.fm only answer for books with audio, read-along EPUBs included, so putting them first prefers audiobook metadata without touching ebook-only books. Cover art of the wrong shape fills a slot only when nothing else can. A library override replaces that field's whole rule."
         },
         "libraryOverrides": {
           "title": "Library Overrides",
@@ -1841,6 +1842,7 @@
         },
         "field": {
           "noProviders": "Enabled but has no providers",
+          "noUsableProvider": "Enabled, but no provider here can fill it",
           "empty": "Empty",
           "config": "Config",
           "custom": "Custom",
@@ -1899,7 +1901,11 @@
           "disabled": "Disabled",
           "notConfigured": "Not configured",
           "disabledDetail": "{provider} is turned off, so it stays in the order but is skipped.",
-          "notConfiguredDetail": "{provider} has no credentials yet, so it stays in the order but is skipped."
+          "notConfiguredDetail": "{provider} has no credentials yet, so it stays in the order but is skipped.",
+          "neverSupplies": "Never supplies this",
+          "neverSuppliesDetail": "{provider} never supplies this field, so it is skipped here.",
+          "otherShape": "Other cover shape",
+          "otherShapeDetail": "{provider} only has covers of the other shape, so it fills this slot only when nothing else can."
         },
         "detail": {
           "priority": "Provider priority",
@@ -7379,8 +7385,8 @@
         "searching": "Searching",
         "toChoose": "To choose",
         "sent": "Sent",
-        "finishedTitle": "Both releases are on their way",
-        "finishedHint": "Each one files into your library when its download finishes. You can follow both from the request.",
+        "finishedTitle": "Nothing left to choose",
+        "finishedHint": "Both formats have their release now. You can follow each one from the request.",
         "backToRequest": "Back to the request",
         "done": "Done"
       },

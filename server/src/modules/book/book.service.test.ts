@@ -271,9 +271,23 @@ function makeService(overrides: { bookMetadataLockService?: unknown; appDataPath
     resolve: vi.fn().mockResolvedValue(null),
     fetchState: vi.fn().mockResolvedValue({ media: { hasEbook: true, hasAudio: false }, filled: { ebook: false, audio: false }, locked: [] }),
     enrichCardFaces: vi.fn().mockResolvedValue(undefined),
-    contextFor: vi.fn().mockResolvedValue(null),
+    // getDetail refuses a book with no cover context, so the default is one with nothing in it.
+    contextFor: vi.fn().mockResolvedValue({
+      bookId: 1,
+      libraryId: 7,
+      coverAspectRatio: '2/3',
+      primaryFileId: null,
+      coverSource: null,
+      coverUpdatedAt: null,
+      metadataUpdatedAt: null,
+      lockedFields: [],
+      media: { hasEbook: true, hasAudio: false },
+      files: [],
+      slots: [],
+    }),
     slotDtos: vi.fn().mockReturnValue({ ebook: null, audio: null }),
     coverVersion: vi.fn((_coverAspectRatio: string, _slots: unknown[], legacyVersion: string) => `legacy:${legacyVersion}`),
+    faceForContext: vi.fn((_context: unknown, legacyVersion: string) => ({ coverAspectRatio: '2/3', coverVersion: `legacy:${legacyVersion}` })),
   };
 
   bookRepo.withTransaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => callback({}));
@@ -985,6 +999,7 @@ describe('BookService', () => {
         },
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
+        narratorRows: [],
         communityRatingRows: [],
         fileRows: [{ format: 'epub', role: 'primary', mediaOverlayAvailable: false }],
       });
@@ -1036,6 +1051,7 @@ describe('BookService', () => {
           audioCover: null,
           duration: undefined,
           abridged: undefined,
+          narrators: [],
         },
         7,
         { coverMedia: { hasEbook: true, hasAudio: false }, lockedCoverSlots: [] },
@@ -1052,6 +1068,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
       });
@@ -1091,6 +1108,7 @@ describe('BookService', () => {
         },
         authorRows: [],
         genreRows: [],
+        narratorRows: [],
         fileRows: [
           { format: 'epub', role: 'primary', mediaOverlayAvailable: false },
           { format: 'm4b', role: 'content', mediaOverlayAvailable: false },
@@ -1129,6 +1147,7 @@ describe('BookService', () => {
         book: { books: { id: 1, libraryId: 7 }, book_metadata: { title: 'Old' } },
         authorRows: [],
         genreRows: [],
+        narratorRows: [],
         fileRows: [],
       });
       coverStore.fetchState.mockResolvedValue(null);
@@ -1144,6 +1163,7 @@ describe('BookService', () => {
         book: { books: { id: 1, libraryId: 7 }, book_metadata: { title: 'Old' } },
         authorRows: [],
         genreRows: [],
+        narratorRows: [],
         fileRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
@@ -1170,6 +1190,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
       });
@@ -1205,6 +1226,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
         communityRatingRows: [],
@@ -1236,6 +1258,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
       });
@@ -1280,6 +1303,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Confessor', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Terry Goodkind', sortName: null }],
         genreRows: [],
       });
@@ -1320,6 +1344,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
       });
@@ -1362,6 +1387,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: '9780756404741', isbn10: null, hardcoverEditionId: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Patrick Rothfuss', sortName: null }],
         genreRows: [],
         communityRatingRows: [],
@@ -1393,6 +1419,29 @@ describe('BookService', () => {
       );
     });
 
+    it("refreshMetadata hands the book's own narrators to the pipeline, so a fill-missing rule keeps them", async () => {
+      const { service, bookRepo, pipeline } = makeService();
+      bookRepo.findById.mockResolvedValue({
+        book: { books: { id: 1, libraryId: 7, primaryFileId: 2 }, book_metadata: { title: 'Dune', chapters: [{ title: 'One', startMs: 0 }] } },
+        narratorRows: [{ id: 4, name: 'Simon Vance', sortName: null, displayOrder: 0 }],
+        authorRows: [],
+        genreRows: [],
+        communityRatingRows: [],
+        fileRows: [
+          { id: 1, format: 'epub', role: 'content' },
+          { id: 2, format: 'm4b', role: 'content' },
+        ],
+      });
+      pipeline.runWithSources.mockResolvedValue({ resolved: {}, sources: {}, providerIds: {} });
+
+      await service.refreshMetadata(1, true, makeUser());
+
+      const [params, existing] = pipeline.runWithSources.mock.calls[0]!;
+      expect(existing).toEqual(expect.objectContaining({ narrators: ['Simon Vance'], chapters: [{ title: 'One', startMs: 0 }] }));
+      // The M4B is the primary, so it leads even though the EPUB sorts first by path.
+      expect(params).toEqual(expect.objectContaining({ isAudiobook: true }));
+    });
+
     it('refreshMetadata pins the search to a previously chosen Hardcover edition', async () => {
       const { service, bookRepo, pipeline } = makeService();
       const user = makeUser();
@@ -1401,6 +1450,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: '9780756404741', isbn10: null, hardcoverEditionId: '8941973' },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Patrick Rothfuss', sortName: null }],
         genreRows: [],
         communityRatingRows: [],
@@ -1425,6 +1475,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
         communityRatingRows: [],
@@ -1463,6 +1514,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Confessor', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Terry Goodkind', sortName: null }],
         genreRows: [],
       });
@@ -1510,6 +1562,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
       });
@@ -1557,6 +1610,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
       });
@@ -1604,6 +1658,7 @@ describe('BookService', () => {
           books: { id: 1, libraryId: 7 },
           book_metadata: { title: 'Old', isbn13: null, isbn10: null },
         },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author One', sortName: null }],
         genreRows: [],
       });
@@ -3982,6 +4037,7 @@ describe('BookService', () => {
       const user = makeUser();
       bookRepo.findById.mockResolvedValue({
         book: { books: { id: 1, libraryId: 7 }, book_metadata: { title: 'Old', isbn13: null, isbn10: null } },
+        narratorRows: [],
         authorRows: [{ id: 1, name: 'Author', sortName: null }],
         genreRows: [],
       });

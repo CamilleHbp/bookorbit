@@ -27,12 +27,20 @@ const { t } = useI18n()
 /** Past the choice and on their way, which from here reads as done, not as three tracker states. */
 const SENT_STATUSES: readonly BookRequestStatus[] = ['grabbed', 'downloading', 'importing']
 
+/** Only the other half, and only while it still needs a release, is somewhere to go. */
+function isLink(tab: ReleasePairTab): boolean {
+  return !tab.current && tab.choosable
+}
+
 function linkProps(tab: ReleasePairTab) {
-  if (!tab.current && !tab.choosable) return { 'aria-disabled': 'true' }
-  return {
-    to: { name: 'book-request-releases', params: { id: tab.request.id }, query: props.query },
-    'aria-current': tab.current ? 'page' : undefined,
-  }
+  if (isLink(tab)) return { to: { name: 'book-request-releases', params: { id: tab.request.id }, query: props.query } }
+  return tab.current ? { 'aria-current': 'page' } : {}
+}
+
+function tabClass(tab: ReleasePairTab): string {
+  if (tab.current) return 'bg-background text-foreground shadow-xs'
+  if (tab.choosable) return 'text-muted-foreground hover:text-foreground focus-visible:text-foreground'
+  return 'text-muted-foreground'
 }
 
 function isSent(tab: ReleasePairTab): boolean {
@@ -43,18 +51,12 @@ function isSent(tab: ReleasePairTab): boolean {
 <template>
   <nav class="mt-4 grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted p-1" :aria-label="t('bookRequests.releases.pair.tabsLabel')">
     <component
-      :is="tab.current || tab.choosable ? 'RouterLink' : 'span'"
+      :is="isLink(tab) ? 'RouterLink' : 'span'"
       v-for="tab in tabs"
       :key="tab.request.id"
       v-bind="linkProps(tab)"
       class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-2.5 py-2 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
-      :class="
-        tab.current
-          ? 'bg-background text-foreground shadow-xs'
-          : tab.choosable
-            ? 'text-muted-foreground hover:text-foreground focus-visible:text-foreground'
-            : 'text-muted-foreground'
-      "
+      :class="tabClass(tab)"
     >
       <component :is="requestMediaIcon(tab.request.mediaKind)" :size="14" class="shrink-0" aria-hidden="true" />
       <span class="truncate">{{ t(`bookRequests.mediaKind.${tab.request.mediaKind}`) }}</span>
