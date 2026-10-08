@@ -35,6 +35,7 @@ const { libraries } = useLibraries()
 provide(
   COVER_ASPECT_RATIO_KEY,
   computed(() => {
+    if (detail.value?.coverAspectRatio) return detail.value.coverAspectRatio
     const libraryId = detail.value?.libraryId
     const library = libraryId != null ? libraries.value.find((l) => l.id === libraryId) : null
     return library?.coverAspectRatio ?? DEFAULT_COVER_ASPECT_RATIO

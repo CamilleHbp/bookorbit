@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatDate as formatLocaleDate } from '@/i18n/formatters'
 import { formatBytes as formatFileSize } from '@/lib/formatting'
@@ -31,7 +31,7 @@ import { faceMedium } from '@/features/book/lib/cover-slots'
 import { readingDateToDateKey } from '@/features/book/lib/reading-date'
 import { getProviderColor, PROVIDER_SHORT_LABELS } from '@/lib/provider-colors'
 import { useCoverVersions } from '@/features/book/composables/useCoverVersions'
-import { COVER_ASPECT_RATIO_KEY, DEFAULT_COVER_ASPECT_RATIO } from '@/features/book/lib/cover-aspect-ratio'
+import { useBookCoverAspectRatio } from '@/features/book/composables/useBookCoverAspectRatio'
 import { FORMAT_TO_GROUP, getPrimaryBookFile, READER_OPENABLE_FORMATS } from '@bookorbit/types'
 import type { BookDetail, BookKoboState, CustomMetadataBookValue, ReadAloudProgressSync, ReadStatus, UserBookStatus } from '@bookorbit/types'
 import { STATUS_OPTIONS, STATUS_ICONS, STATUS_COLORS, useBookStatus } from '@/features/book/composables/useBookStatus'
@@ -341,7 +341,7 @@ watch([coverColumnEl, coverActionsEl], ([column, actions]) => {
   measureCoverLayout()
 })
 
-const coverAspectRatio = inject(COVER_ASPECT_RATIO_KEY, ref(DEFAULT_COVER_ASPECT_RATIO))
+const coverAspectRatio = useBookCoverAspectRatio(() => props.book)
 const { bookCoverDisplayMode } = useDisplaySettings()
 const detailCoverAspectRatio = computed(() => {
   if (bookCoverDisplayMode.value !== 'natural-bottom' || !hasCover.value || !coverLoaded.value || coverFailed.value || !coverImageRatio.value) {
@@ -354,7 +354,7 @@ const primaryFile = computed(() => getPrimaryBookFile(props.book.files))
 const readAlongFile = computed(() => props.book.files.find((file) => hasReadAlong(file)) ?? null)
 const hasAudioFile = computed(() => props.book.files.some((file) => file.format != null && FORMAT_TO_GROUP[file.format] === 'audio'))
 const isPrimaryAudio = computed(() => primaryFile.value?.format != null && FORMAT_TO_GROUP[primaryFile.value.format] === 'audio')
-// The hero shows the face, whose shape follows the library rather than the primary file once slots exist.
+// The hero shows the face: the primary file's slot, or the other one when that slot has no art.
 const isFaceAudio = computed(() => {
   if (!props.book.covers.ebook && !props.book.covers.audio) return isPrimaryAudio.value
   return faceMedium(props.book, coverAspectRatio.value) === 'audio'

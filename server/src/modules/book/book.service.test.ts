@@ -270,7 +270,7 @@ function makeService(overrides: { bookMetadataLockService?: unknown; appDataPath
   const coverStore = {
     resolve: vi.fn().mockResolvedValue(null),
     fetchState: vi.fn().mockResolvedValue({ media: { hasEbook: true, hasAudio: false }, filled: { ebook: false, audio: false }, locked: [] }),
-    enrichCardVersions: vi.fn().mockResolvedValue(undefined),
+    enrichCardFaces: vi.fn().mockResolvedValue(undefined),
     contextFor: vi.fn().mockResolvedValue(null),
     slotDtos: vi.fn().mockReturnValue({ ebook: null, audio: null }),
     coverVersion: vi.fn((_coverAspectRatio: string, _slots: unknown[], legacyVersion: string) => `legacy:${legacyVersion}`),

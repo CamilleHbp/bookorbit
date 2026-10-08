@@ -177,7 +177,7 @@ export class AuthorsService {
       cardData.tagRows,
       cardData.seriesMembershipRows,
     );
-    await this.coverStore.enrichCardVersions(items);
+    await this.coverStore.enrichCardFaces(items);
     items.sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0));
 
     return { items, total: page.total, bookTotal: page.total, page: page.page, size: page.size };
@@ -221,7 +221,7 @@ export class AuthorsService {
       collapsed.tagRows,
       collapsed.seriesMembershipRows,
     );
-    await this.coverStore.enrichCardVersions(items);
+    await this.coverStore.enrichCardFaces(items);
 
     return { items, total: collapsed.total, bookTotal: collapsed.bookTotal, page, size };
   }

@@ -162,7 +162,7 @@ const mockMetadata = {
 function makeService(
   repo: ReturnType<typeof makeRepo>,
   autoFetchOrchestrator?: { scheduleImportedBooksIfEligible: (...args: unknown[]) => Promise<number> },
-  coverStore: { enrichCardVersions: (cards: unknown[]) => Promise<void> } = { enrichCardVersions: vi.fn().mockResolvedValue(undefined) },
+  coverStore: { enrichCardFaces: (cards: unknown[]) => Promise<void> } = { enrichCardFaces: vi.fn().mockResolvedValue(undefined) },
   coverReconciler?: { enqueue: (...args: unknown[]) => Promise<void>; enqueueExpiredDormant?: (libraryId: number) => Promise<void> },
 ) {
   const jobStore = new ScanJobStore();

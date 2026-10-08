@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { BookOpen, ExternalLink, Eye, Folder, FolderPlus, Headphones, Pencil, Star, Trash2, X } from '@lucide/vue'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
@@ -15,7 +15,7 @@ import BookFormatChip from './BookFormatChip.vue'
 import { bookFormatEntries, fileFormatKey } from '../lib/book-formats'
 import { displayPublishedDate } from '../lib/published-date'
 import { FORMAT_TO_GROUP, getPrimaryBookFile } from '@bookorbit/types'
-import { COVER_ASPECT_RATIO_KEY, DEFAULT_COVER_ASPECT_RATIO } from '../lib/cover-aspect-ratio'
+import { useBookCoverAspectRatio } from '../composables/useBookCoverAspectRatio'
 import { useDisplaySettings } from '@/composables/useDisplaySettings'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSafeHtml } from '@/features/book/composables/useSafeHtml'
@@ -77,7 +77,7 @@ const providerLinks = computed(() => (detail.value ? createBookProviderLinks(det
 
 const safeDescription = useSafeHtml(() => detail.value?.description)
 
-const coverAspectRatio = inject(COVER_ASPECT_RATIO_KEY, ref(DEFAULT_COVER_ASPECT_RATIO))
+const coverAspectRatio = useBookCoverAspectRatio(() => detail.value)
 const { bookCoverDisplayMode } = useDisplaySettings()
 const quickViewCoverAspectRatio = computed(() => {
   if (

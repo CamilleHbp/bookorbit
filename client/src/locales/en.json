@@ -1216,6 +1216,11 @@
             "portrait": "2:3 portrait",
             "square": "1:1 square"
           },
+          "gridShape": "Grid shape",
+          "gridShapeValue": {
+            "tall": "Tall cells",
+            "square": "Square cells"
+          },
           "none": "None",
           "allSupported": "All supported",
           "patternCount": "{count, plural, one {# pattern} other {# patterns}}",
@@ -8817,6 +8822,14 @@
           "squareTitle": "Square 1:1",
           "squareHint": "Audiobook-only libraries",
           "slotsHint": "A book with both an ebook and an audiobook shows the cover that fits this shape."
+        },
+        "gridShape": {
+          "title": "Grid shape",
+          "tallTitle": "Tall cells",
+          "tallHint": "Best for ebooks or mixed libraries",
+          "squareTitle": "Square cells",
+          "squareHint": "Best for audiobook libraries",
+          "hint": "Each book shows the cover of its primary format, square for an audiobook. A cover that doesn't match the tile follows your cover display setting."
         }
       },
       "folders": {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getBookMediaProfile, type BookCard } from '@bookorbit/types'
+import { getBookMediaProfile, type BookCard, type CoverAspectRatio } from '@bookorbit/types'
 import { Library } from '@lucide/vue'
 import BookCoverArtwork from './BookCoverArtwork.vue'
 import BookCoverPlaceholder from './BookCoverPlaceholder.vue'
@@ -16,6 +16,8 @@ const STACK_COVER_STEP_PCT = 8
 
 const props = defineProps<{
   book: BookCard
+  /** A grid's own tile shape, which wins over the book's. */
+  coverAspectRatio?: CoverAspectRatio
   showLabel?: boolean
   selectionMode?: boolean
 }>()
@@ -23,7 +25,7 @@ const props = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const injectedCoverAspectRatio = inject(COVER_ASPECT_RATIO_KEY, ref(DEFAULT_COVER_ASPECT_RATIO))
-const coverAspectRatio = computed(() => props.book.coverAspectRatio ?? injectedCoverAspectRatio.value)
+const effectiveCoverAspectRatio = computed(() => props.coverAspectRatio ?? props.book.coverAspectRatio ?? injectedCoverAspectRatio.value)
 const { coverUrl } = useCoverVersions()
 const { seriesCardCoverMode, gridCardPrimaryLabel, gridCardSecondaryLabel, cardInfoMode, cardOverlays } = useDisplaySettings()
 
@@ -31,7 +33,7 @@ const collapsed = computed(() => props.book.collapsedSeries!)
 const seriesName = computed(() => props.book.seriesName ?? '')
 const authorLine = computed(() => props.book.authors.join(', ') || null)
 const authorQuery = computed(() => props.book.authors[0] ?? null)
-const hoverTitleClampClass = computed(() => (coverAspectRatio.value === '1/1' ? 'line-clamp-1' : 'line-clamp-2'))
+const hoverTitleClampClass = computed(() => (effectiveCoverAspectRatio.value === '1/1' ? 'line-clamp-1' : 'line-clamp-2'))
 const showHoverText = computed(() => cardInfoMode.value === 'hover-overlay')
 const overlayBackground = computed(() => (cardInfoMode.value === 'hover-overlay' ? 'bg-black/70' : 'bg-black/20'))
 const showProgressBar = computed(() => cardOverlays.value.includes('progress-bar'))
@@ -172,7 +174,7 @@ const stackCoverStyles = computed(() =>
       right: `${STACK_COVER_STEP_PCT * index}%`,
       bottom: `${STACK_COVER_STEP_PCT * index}%`,
       width: `${coverWidth}%`,
-      aspectRatio: coverAspectRatio.value,
+      aspectRatio: effectiveCoverAspectRatio.value,
       zIndex: 100 - index,
       boxShadow:
         index === 0
@@ -211,7 +213,7 @@ const secondaryLabelText = computed(() => resolveSeriesLabel(gridCardSecondaryLa
         interactive
         :disable-spine="isAudiobook"
         :is-comic="isComic"
-        :style="{ aspectRatio: coverAspectRatio, ...(isStack ? { backgroundColor: 'transparent', boxShadow: 'none' } : {}) }"
+        :style="{ aspectRatio: effectiveCoverAspectRatio, ...(isStack ? { backgroundColor: 'transparent', boxShadow: 'none' } : {}) }"
       >
         <div v-if="isStack" class="absolute inset-0 isolate overflow-hidden" data-testid="series-cover-stack">
           <div class="absolute inset-x-[12%] bottom-[5%] h-5 rounded-full bg-black/12 blur-2xl opacity-45" />

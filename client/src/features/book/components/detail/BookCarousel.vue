@@ -15,6 +15,7 @@ export interface CarouselBook {
   title: string | null
   coverAspectRatio: CoverAspectRatio
   updatedAt?: string | null
+  coverVersion?: string
   seriesIndex?: string | null
   hasCover: boolean
   authors: string[]
@@ -157,7 +158,7 @@ defineExpose({ scroll })
           :style="{ aspectRatio: cardAspectRatio(book) }"
         >
           <BookCoverArtwork
-            :src="coverUrl(book.id, 'thumbnail', book.updatedAt)"
+            :src="coverUrl(book.id, 'thumbnail', book.coverVersion ?? book.updatedAt)"
             :has-cover="book.hasCover"
             :title="book.title"
             :author-line="book.authors.length > 0 ? book.authors.join(', ') : null"

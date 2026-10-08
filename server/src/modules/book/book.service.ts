@@ -1152,7 +1152,7 @@ export class BookService {
         tagRows,
         seriesMembershipRows,
       );
-      await this.coverStore.enrichCardVersions(cards);
+      await this.coverStore.enrichCardFaces(cards);
       const result = {
         items: cards,
         total,
@@ -1195,7 +1195,7 @@ export class BookService {
       seriesMembershipRows,
       customMetadataRows,
     );
-    await this.coverStore.enrichCardVersions(cards);
+    await this.coverStore.enrichCardFaces(cards);
     const result = {
       items: cards,
       total,
@@ -3268,7 +3268,7 @@ export class BookService {
       this.bookRepo.findReadAloudSyncMode(user.id, id),
       this.coverStore.contextFor(id),
     ]);
-    if (!result) throw new NotFoundException(`Book ${id} not found`);
+    if (!result || !coverContext) throw new NotFoundException(`Book ${id} not found`);
 
     const { book, authorRows, genreRows, tagRows, fileRows, narratorRows, seriesMembershipRows, communityRatingRows } = result;
     const meta = book.book_metadata;
@@ -3318,13 +3318,9 @@ export class BookService {
       personalNoteUpdatedAt: personalNote ? new Date(personalNote.updatedAt) : null,
       communityRatings: this.mapCommunityRatingRows(communityRatingRows),
       coverSource: (meta?.coverSource as 'extracted' | 'custom' | null) ?? null,
-      coverMedia: [...(coverContext?.media.hasEbook ? (['ebook'] as const) : []), ...(coverContext?.media.hasAudio ? (['audio'] as const) : [])],
-      covers: coverContext ? this.coverStore.slotDtos(coverContext) : { ebook: null, audio: null },
-      coverVersion: this.coverStore.coverVersion(
-        book.libraries?.coverAspectRatio ?? '2/3',
-        coverContext?.slots ?? [],
-        (meta?.coverUpdatedAt ?? book.books.updatedAt ?? book.books.addedAt).toISOString(),
-      ),
+      coverMedia: [...(coverContext.media.hasEbook ? (['ebook'] as const) : []), ...(coverContext.media.hasAudio ? (['audio'] as const) : [])],
+      covers: this.coverStore.slotDtos(coverContext),
+      ...this.coverStore.faceForContext(coverContext, (meta?.coverUpdatedAt ?? book.books.updatedAt ?? book.books.addedAt).toISOString()),
       hardcoverEditionId: meta?.hardcoverEditionId ?? null,
       lockedFields: this.bookMetadataLockService.normalizeLockedFields(meta?.lockedFields),
       providerIds: {

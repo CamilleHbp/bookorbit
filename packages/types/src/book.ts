@@ -187,6 +187,7 @@ export type BookSeriesMembership = {
 export type BookCard = {
   id: number;
   status: string;
+  /** The frame of the cover the book shows by default, which follows its primary file's medium rather than its library. */
   coverAspectRatio: CoverAspectRatio;
   title: string | null;
   authors: string[];
@@ -315,6 +316,8 @@ export type BookDetail = {
   coverSource: "extracted" | "custom" | null;
   coverMedia: CoverMedium[];
   covers: Record<CoverMedium, BookCoverSlot | null>;
+  /** The frame of the cover the book shows by default: square when that is its audiobook art. Absent from servers that predate it. */
+  coverAspectRatio?: CoverAspectRatio;
   coverVersion: string;
   hardcoverEditionId: string | null;
   providerIds: ProviderIds;
@@ -437,6 +440,8 @@ export type BookRecommendation = {
   title: string | null;
   coverAspectRatio: CoverAspectRatio;
   updatedAt: string | null;
+  /** The book card's cover cache key. Absent from servers that predate it, where `updatedAt` serves. */
+  coverVersion?: string;
   hasCover: boolean;
   authors: string[];
   readStatus: UserBookStatus | null;
@@ -452,6 +457,8 @@ export type SeriesBookRecommendation = {
   title: string | null;
   coverAspectRatio: CoverAspectRatio;
   updatedAt: string | null;
+  /** The book card's cover cache key. Absent from servers that predate it, where `updatedAt` serves. */
+  coverVersion?: string;
   seriesIndex: SeriesIndex | null;
   hasCover: boolean;
   authors: string[];
