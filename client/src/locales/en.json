@@ -7127,7 +7127,40 @@
       "moreOptions": "More options",
       "fewerOptions": "Fewer options",
       "optionsSummary": "{formats} · note added",
-      "formatToggleAria": "Prefer {format}"
+      "formatToggleAria": "Prefer {format}",
+      "pair": {
+        "choice": "Both",
+        "choiceHint": "Ask for the e-book and the audiobook together",
+        "ebookLibraryLabel": "E-book library",
+        "audiobookLibraryLabel": "Audiobook library",
+        "audiobookFolderLabel": "Audiobook folder",
+        "landsTogether": "Both formats arrive as one book in {library}.",
+        "landsSeparately": "{library} keeps one book per file, so each format arrives as a book of its own.",
+        "landsApart": "The e-book and the audiobook go to different libraries, so they arrive as two books.",
+        "preferredEbookFormats": "Preferred e-book formats",
+        "preferredAudiobookFormats": "Preferred audiobook formats",
+        "state": {
+          "owned": "In your library",
+          "following": "You requested this",
+          "joinable": "Requested",
+          "new": "Not requested"
+        },
+        "requestBoth": "Request both",
+        "getBoth": "Get both",
+        "chooseReleases": "Choose releases",
+        "joinBoth": "Add me to both",
+        "requestEbook": "Request e-book",
+        "requestAudiobook": "Request audiobook",
+        "getEbook": "Get e-book",
+        "getAudiobook": "Get audiobook",
+        "joinEbook": "Add me to the e-book request",
+        "joinAudiobook": "Add me to the audiobook request",
+        "haveBoth": "In your library",
+        "requestedBoth": "Requested",
+        "submitted": "Requested the e-book and the audiobook",
+        "submittedPartlyJoined": "Requested both. One was already on its way, so you were added to that request",
+        "submittedJoinsBook": "Requested. It will join the copy already in your library"
+      }
     },
     "card": {
       "details": "Details",
@@ -7186,7 +7219,10 @@
         "forbidden": "That request belongs to someone else.",
         "loadFailed": "Could not load that request"
       },
-      "entityName": "Request"
+      "entityName": "Request",
+      "pairSwitchLabel": "Formats in this request",
+      "joinsBook": "Joins a book you have",
+      "joinsBookHint": "When this arrives it is added to the book already in your library"
     },
     "actions": {
       "approve": "Approve",
@@ -7201,7 +7237,29 @@
       "grab": "Find a release",
       "goToBook": "Go to book",
       "retryRelease": "Try another release",
-      "leave": "Leave request"
+      "leave": "Leave request",
+      "pair": {
+        "approveBoth": "Approve both",
+        "approveEbook": "Approve e-book",
+        "approveAudiobook": "Approve audiobook",
+        "rejectBoth": "Reject both",
+        "rejectEbook": "Reject e-book",
+        "rejectAudiobook": "Reject audiobook",
+        "cancelBoth": "Cancel both",
+        "cancelEbook": "Cancel e-book",
+        "cancelAudiobook": "Cancel audiobook",
+        "dismissBoth": "Dismiss both",
+        "dismissEbook": "Dismiss e-book",
+        "dismissAudiobook": "Dismiss audiobook",
+        "restoreBoth": "Restore both",
+        "restoreEbook": "Restore e-book",
+        "restoreAudiobook": "Restore audiobook",
+        "grabEbook": "Find an e-book release",
+        "grabAudiobook": "Find an audiobook release",
+        "chooseReleases": "Choose releases",
+        "openEbook": "Open the e-book request",
+        "openAudiobook": "Open the audiobook request"
+      }
     },
     "filters": {
       "status": "Status",
@@ -7244,7 +7302,9 @@
       "left": "You have left this request",
       "bulkRejected": "{count, plural, one {# request rejected} other {# requests rejected}}",
       "bulkRejectedPartial": "{done} rejected, {failed} could not be",
-      "importDiscarded": "The imported file was discarded"
+      "importDiscarded": "The imported file was discarded",
+      "pairApproved": "Approved both",
+      "pairRejected": "Rejected both"
     },
     "errors": {
       "loadFailed": "Could not load requests",
@@ -7264,7 +7324,9 @@
       "languageChangeFailed": "Could not change the request language",
       "leaveFailed": "That request could not be left",
       "bulkRejectFailed": "That selection could not be rejected",
-      "discardImportFailed": "That import could not be discarded"
+      "discardImportFailed": "That import could not be discarded",
+      "approveCompanionFailedEbook": "Approved this one, but the e-book could not be approved",
+      "approveCompanionFailedAudiobook": "Approved this one, but the audiobook could not be approved"
     },
     "grab": {
       "title": "Send to a download client",
@@ -7310,6 +7372,18 @@
     "releases": {
       "title": "Pick a release",
       "retryTitle": "Try another release",
+      "pairTitle": "Pick releases",
+      "pair": {
+        "tabsLabel": "Formats to pick releases for",
+        "releaseCount": "{count, plural, one {# release} other {# releases}}",
+        "searching": "Searching",
+        "toChoose": "To choose",
+        "sent": "Sent",
+        "finishedTitle": "Both releases are on their way",
+        "finishedHint": "Each one files into your library when its download finishes. You can follow both from the request.",
+        "backToRequest": "Back to the request",
+        "done": "Done"
+      },
       "subtitle": "Ranked across every enabled indexer.",
       "summaryCount": "{count, plural, one {# release} other {# releases}}",
       "allFreeleech": "all freeleech",
@@ -7599,7 +7673,8 @@
       "decidedBy": "Decided by",
       "decisionNote": "Decision note",
       "requestNote": "Request note",
-      "openDetail": "Open full detail"
+      "openDetail": "Open full detail",
+      "pairMedia": "E-book and audiobook"
     },
     "confirm": {
       "cancelDownloadTitle": "Cancel this download?",
@@ -7655,7 +7730,9 @@
       "SUBMIT_DESTINATION_REQUIRED": "Your requests are approved as soon as you make them, so pick the library the book should land in",
       "SUBMIT_SELF_SERVE_LIMIT": "Finish or cancel some downloads first: you can have {limit} in flight at once",
       "SUBMIT_ON_BEHALF_FORBIDDEN": "You are not allowed to request books for other people",
-      "SUBMIT_ON_BEHALF_UNKNOWN_USER": "That user cannot have a book request made for them"
+      "SUBMIT_ON_BEHALF_UNKNOWN_USER": "That user cannot have a book request made for them",
+      "SUBMIT_TARGET_BOOK_NOT_FOUND": "That book is not in a library you can reach",
+      "SUBMIT_TARGET_BOOK_HAS_MEDIUM": "That book already has this format"
     },
     "actionError": {
       "BOOK_REQUEST_NOT_PENDING": "Only a pending request supports this action; this request is currently {status}",
@@ -7741,7 +7818,22 @@
       "reviewSources": "Review sources"
     },
     "selfServeBadge": "Self-served",
-    "selfServeBadgeHint": "Downloaded directly by the requester, with no approval step"
+    "selfServeBadgeHint": "Downloaded directly by the requester, with no approval step",
+    "missingFormat": {
+      "labelAudiobook": "Audiobook for this book",
+      "labelEbook": "E-book for this book",
+      "noAudiobook": "No audiobook yet",
+      "noEbook": "No e-book yet",
+      "requestAudiobook": "Request audiobook",
+      "requestEbook": "Request e-book",
+      "requested": "Requested",
+      "requestedBySomeone": "Requested by someone else",
+      "ownedElsewhere": "In your library as a separate book",
+      "open": "Open",
+      "viewRequest": "View request",
+      "submittedAudiobook": "Requested. The audiobook will join this book when it arrives",
+      "submittedEbook": "Requested. The e-book will join this book when it arrives"
+    }
   },
   "collection": {
     "visibleToAll": "Visible to all users",

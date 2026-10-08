@@ -67,6 +67,7 @@ import HardcoverBookSyncGridItem from '@/features/hardcover/components/Hardcover
 import StorygraphBookSyncGridItem from '@/features/storygraph/components/StorygraphBookSyncGridItem.vue'
 import BookEditionsCard, { type EditionProgress } from '@/features/book/components/detail/details/BookEditionsCard.vue'
 import BookReadingActivityCard from '@/features/book/components/detail/details/BookReadingActivityCard.vue'
+import BookMissingFormatRequest from '@/features/book-requests/components/BookMissingFormatRequest.vue'
 import { useBookReadingLog } from '@/features/book/composables/useBookReadingLog'
 import { useProviderLinkSettings } from '@/features/book/composables/useProviderLinkSettings'
 import { hasReadAlong } from '@/features/book/lib/file-capabilities'
@@ -2180,7 +2181,11 @@ watch(
         </dl>
       </section>
 
-      <BookEditionsCard :book="book" :progress="editionProgress" :resetting-file-ids="resettingFileIds" @reset-progress="handleEditionReset" />
+      <BookEditionsCard :book="book" :progress="editionProgress" :resetting-file-ids="resettingFileIds" @reset-progress="handleEditionReset">
+        <template #missing>
+          <BookMissingFormatRequest :book="book" />
+        </template>
+      </BookEditionsCard>
 
       <div v-if="filledCustomMetadata.length > 0" class="mt-6 pt-5 border-t border-border">
         <p class="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">{{ t('book.detail.details.customMetadata') }}</p>

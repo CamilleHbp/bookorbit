@@ -1,5 +1,6 @@
 import { deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
 import { Inject, Injectable } from '@nestjs/common';
+import { DEFAULT_FORMAT_PRIORITY } from '@bookorbit/types';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
@@ -20,8 +21,10 @@ import {
   userLibraryAccess,
   users,
 } from '../../db/schema';
+import { selectPrimaryFile } from '../../common/utils/primary-file-selection.utils';
 
 type Db = NodePgDatabase<typeof schema>;
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 const ID_BATCH_SIZE = 500;
 
@@ -401,6 +404,8 @@ export class BookMoveRepository {
           .where(eq(bookFiles.id, update.fileId));
       }
 
+      await reselectPrimaryFile(tx, input.bookId, input.targetLibraryId);
+
       return { moved: true, mergedBookId };
     });
   }
@@ -497,4 +502,24 @@ export class BookMoveRepository {
       .where(and(inArray(libraries.id, libraryIds), eq(libraries.watch, true)));
     return rows.map((row) => row.id);
   }
+}
+
+/**
+ * Re-picks a moved book's primary by the library it now belongs to, the way a scan of that library
+ * would. Leaving the old library's choice in place kept an EPUB primary in a library that ranks
+ * audiobooks first, until something happened to rescan it.
+ */
+async function reselectPrimaryFile(tx: Tx, bookId: number, libraryId: number): Promise<void> {
+  const [library] = await tx.select({ formatPriority: libraries.formatPriority }).from(libraries).where(eq(libraries.id, libraryId)).limit(1);
+  const contentFiles = await tx
+    .select({ id: bookFiles.id, format: bookFiles.format, sizeBytes: bookFiles.sizeBytes, mediaOverlayAvailable: bookFiles.mediaOverlayAvailable })
+    .from(bookFiles)
+    .where(and(eq(bookFiles.bookId, bookId), eq(bookFiles.role, 'content')))
+    .orderBy(asc(bookFiles.sortOrder), asc(bookFiles.id));
+  const winner = selectPrimaryFile(contentFiles, library?.formatPriority ?? DEFAULT_FORMAT_PRIORITY);
+  if (!winner) return;
+  await tx
+    .update(books)
+    .set({ primaryFileId: winner.id })
+    .where(and(eq(books.id, bookId), sql`${books.primaryFileId} IS DISTINCT FROM ${winner.id}`));
 }

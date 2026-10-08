@@ -42,9 +42,8 @@ describe('rejectRelease', () => {
     expect(rejectRelease(release({ format: 'epub' }), request({ mediaKind: 'audiobook' }))).toContain('not a audiobook format');
   });
 
-  it('accepts pdf for both ebooks and comics', () => {
+  it('accepts pdf as an ebook format', () => {
     expect(rejectRelease(release({ format: 'pdf' }), request({ mediaKind: 'ebook' }))).toBeNull();
-    expect(rejectRelease(release({ format: 'pdf' }), request({ mediaKind: 'comic' }))).toBeNull();
   });
 
   it('compares only the language subtag, so eng and en agree', () => {

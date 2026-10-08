@@ -326,7 +326,7 @@ describe('RequestAutomationPanel', () => {
    */
   describe('release profiles', () => {
     async function profilePanel(conditions: BookRequestAutomationSettings['profiles']['ebook'][number]['conditions'] = {}) {
-      const wrapper = await mountPanel(settings({ profiles: { ebook: [{ id: 'tier-1', name: 'Retail', conditions }], audiobook: [], comic: [] } }))
+      const wrapper = await mountPanel(settings({ profiles: { ebook: [{ id: 'tier-1', name: 'Retail', conditions }], audiobook: [] } }))
       apiMock.mockClear()
       apiMock.mockResolvedValue(response(settings()))
       return wrapper

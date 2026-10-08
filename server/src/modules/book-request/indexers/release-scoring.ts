@@ -6,7 +6,6 @@ import {
   explainReleaseProfileMismatch,
   ISO_639_2_TO_1,
   isAudioFormat,
-  isComicFormat,
   isValidBookRequestIsbn10,
   languagesAgree,
   matchReleaseTier,
@@ -74,14 +73,12 @@ const MEGABYTE = 1024 * 1024;
 const SIZE_RANGES: Record<BookRequestMediaKind, { min: number; max: number }> = {
   ebook: { min: 20 * 1024, max: 400 * MEGABYTE },
   audiobook: { min: 20 * MEGABYTE, max: 8 * 1024 * MEGABYTE },
-  comic: { min: 1 * MEGABYTE, max: 4 * 1024 * MEGABYTE },
 };
 
 /** Whether a format is a usable one for the requested medium. */
 const FORMATS_BY_MEDIA_KIND: Record<BookRequestMediaKind, (format: string) => boolean> = {
   ebook: (format) => (EBOOK_FORMAT_LIST as readonly string[]).includes(format),
   audiobook: (format) => isAudioFormat(format),
-  comic: (format) => isComicFormat(format) || format === 'pdf',
 };
 
 /**

@@ -126,6 +126,9 @@ function rowMeasure(row: BookFormatEntry): string {
       {{ t('book.detail.details.moreFormats', { count: hiddenCount }) }}
     </p>
 
+    <!-- What this book could still have: a format another feature can offer to fetch. -->
+    <slot name="missing" />
+
     <div class="mt-2.5 flex items-baseline gap-2 border-t border-border pt-2">
       <p class="text-[11px] text-muted-foreground">{{ t('book.detail.details.filesOnDisk') }}</p>
       <p class="ml-auto text-[11px] font-semibold tabular-nums">{{ formatNumber(book.files.length) }}</p>

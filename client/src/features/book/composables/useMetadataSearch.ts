@@ -18,6 +18,8 @@ export interface SearchParams {
   isAudiobook?: boolean
   /** Narrows the search to the providers that serve one medium; the server derives isAudiobook from it. */
   mediaKind?: ConcreteBookMediaKind
+  /** Several media at once, ranked as for the first: the providers of every medium named are asked. */
+  mediaKinds?: ConcreteBookMediaKind[]
   /** Asks exactly these providers, whatever the provider filter holds. */
   providers?: MetadataProviderKey[]
 }
@@ -67,6 +69,7 @@ export function useMetadataSearch() {
     if (params.bookId != null) query.set('bookId', String(params.bookId))
     if (params.isAudiobook != null) query.set('isAudiobook', String(params.isAudiobook))
     if (params.mediaKind) query.set('mediaKind', params.mediaKind)
+    if (params.mediaKinds?.length) query.set('mediaKinds', params.mediaKinds.join(','))
     const onlyProvider = providers.value.length === 1 ? providers.value[0] : undefined
     const requestedProviders = params.providers ?? (selectedProviders.value.length ? selectedProviders.value : onlyProvider ? [onlyProvider.key] : [])
     if (requestedProviders.length) query.set('providers', requestedProviders.join(','))

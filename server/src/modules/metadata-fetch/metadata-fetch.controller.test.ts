@@ -500,6 +500,23 @@ describe('MetadataFetchController', () => {
     ]);
   });
 
+  it('asks the providers of every medium named, ranked as for the first one, for a paired search', async () => {
+    registry.keysForMediaKind.mockImplementation((_keys: MetadataProviderKey[], mediaKind: string) =>
+      mediaKind === 'audiobook' ? [MetadataProviderKey.GOOGLE, MetadataProviderKey.AUDIBLE] : [MetadataProviderKey.GOOGLE],
+    );
+    service.search.mockReturnValue(of({ provider: MetadataProviderKey.GOOGLE, providerId: 'g3', title: 'Dune' }));
+
+    const stream = await controller.stream({ title: 'Dune', mediaKinds: ['ebook', 'audiobook'] }, user);
+    await firstValueFrom(stream.pipe(toArray()));
+
+    expect(registry.keysForMediaKind).toHaveBeenCalledWith(expect.any(Array), 'ebook');
+    expect(registry.keysForMediaKind).toHaveBeenCalledWith(expect.any(Array), 'audiobook');
+    expect(service.search).toHaveBeenCalledWith(expect.objectContaining({ isAudiobook: false, includeAudiobookProviders: true }), [
+      MetadataProviderKey.GOOGLE,
+      MetadataProviderKey.AUDIBLE,
+    ]);
+  });
+
   it('keeps an explicit isAudiobook flag ahead of the medium it was sent with', async () => {
     registry.keysForMediaKind.mockReturnValue([MetadataProviderKey.GOOGLE]);
     service.search.mockReturnValue(of({ provider: MetadataProviderKey.GOOGLE, providerId: 'g2', title: 'Dune' }));

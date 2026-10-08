@@ -18,6 +18,7 @@ import {
   NotificationType,
   type BookDockMetadata,
 } from '@bookorbit/types';
+import type { BookDockFileRow } from '../../db/schema/book-dock';
 import { BookDockFinalizeService } from './book-dock-finalize.service';
 
 const mockAccess = vi.mocked(access);
@@ -693,6 +694,131 @@ describe('BookDockFinalizeService', () => {
       ]);
     });
 
+    describe('as another format of an existing book', () => {
+      const joinBook = { bookId: 42, folderPath: '/library/Frank Herbert/Dune' };
+
+      function stubFolderLibrary(service: BookDockFinalizeService, organizationMode = 'book_per_folder') {
+        vi.spyOn(service as never, 'findLibraryOrFail').mockResolvedValue({
+          id: 5,
+          allowedFormats: [],
+          fileNamingPattern: null,
+          organizationMode,
+        } as never);
+        vi.spyOn(service as never, 'findFolderOrFail').mockResolvedValue({ id: 9, libraryId: 5, path: '/library' } as never);
+        vi.spyOn(service as never, 'resolveDestination').mockResolvedValue('/library/Frank Herbert/Dune (Unabridged)/Dune (Unabridged).m4b' as never);
+        vi.spyOn(service as never, 'cleanupBookDockRecord').mockResolvedValue(undefined as never);
+      }
+
+      const audioRow = () => makeRow({ fileName: 'dune.m4b', absolutePath: '/tmp/dune.m4b', format: 'm4b', targetLibraryId: 5, targetFolderId: 9 });
+
+      it("lands in the book's own folder under the pattern's file name, so the two formats are one book", async () => {
+        const { service, processor, storage } = makeService();
+        stubFolderLibrary(service);
+        const applyMetadata = vi.spyOn(service as never, 'applyMetadata').mockResolvedValue(undefined as never);
+        const applyJoined = vi.spyOn(service as never, 'applyJoinedMetadata').mockResolvedValue(undefined as never);
+        mockAccess.mockRejectedValueOnce(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+        mockStat.mockResolvedValueOnce({ size: 100 } as never);
+        processor.createUnitBookRecords.mockResolvedValueOnce({ bookIds: [42], createdBookIds: [], attachedFileIds: [900] });
+
+        await expect((service as any).finalizeFile(audioRow(), undefined, undefined, new Map([[1, { joinBook }]]), 1, true)).resolves.toMatchObject({
+          success: true,
+          bookId: 42,
+        });
+
+        expect(storage.moveToPath).toHaveBeenCalledWith('/tmp/dune.m4b', '/library/Frank Herbert/Dune/Dune (Unabridged).m4b');
+        expect(processor.createUnitBookRecords).toHaveBeenCalledWith(5, 9, [
+          expect.objectContaining({ folderPath: '/library/Frank Herbert/Dune', absolutePath: '/library/Frank Herbert/Dune/Dune (Unabridged).m4b' }),
+        ]);
+        // The book keeps the title and authors it already had.
+        expect(applyJoined).toHaveBeenCalledWith(42, expect.objectContaining({ id: 1 }), null, null);
+        expect(applyMetadata).not.toHaveBeenCalled();
+      });
+
+      it('files the ordinary way in a library where a book is a single file', async () => {
+        const { service, storage } = makeService();
+        stubFolderLibrary(service, 'book_per_file');
+        vi.spyOn(service as never, 'applyMetadata').mockResolvedValue(undefined as never);
+        mockAccess.mockRejectedValueOnce(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+        mockStat.mockResolvedValueOnce({ size: 100 } as never);
+
+        await (service as any).finalizeFile(audioRow(), undefined, undefined, new Map([[1, { joinBook }]]), 1, true);
+
+        expect(storage.moveToPath).toHaveBeenCalledWith('/tmp/dune.m4b', '/library/Frank Herbert/Dune (Unabridged)/Dune (Unabridged).m4b');
+      });
+
+      it('refuses to place anything outside the folder being filed into', async () => {
+        const { service, storage } = makeService();
+        stubFolderLibrary(service);
+        vi.spyOn(service as never, 'applyMetadata').mockResolvedValue(undefined as never);
+        mockAccess.mockRejectedValueOnce(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+        mockStat.mockResolvedValueOnce({ size: 100 } as never);
+
+        await (service as any).finalizeFile(
+          audioRow(),
+          undefined,
+          undefined,
+          new Map([[1, { joinBook: { bookId: 42, folderPath: '/elsewhere/Dune' } }]]),
+          1,
+          true,
+        );
+
+        expect(storage.moveToPath).toHaveBeenCalledWith('/tmp/dune.m4b', '/library/Frank Herbert/Dune (Unabridged)/Dune (Unabridged).m4b');
+      });
+
+      it('adds identifiers and audio facts the book lacks without overwriting what it already says', async () => {
+        const { service, db, metadataService } = makeService();
+        const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+        db.update.mockReturnValue({ set });
+        const row = makeRow({
+          format: 'm4b',
+          selectedMetadata: { title: 'Dune (Unabridged)', authors: ['Simon Vance'], audibleId: 'B002V1OF70' } as BookDockMetadata,
+        });
+
+        await (service as any).applyJoinedMetadata(42, row, null);
+
+        const patch = set.mock.calls[0]![0] as Record<string, unknown>;
+        expect(patch).toHaveProperty('audibleId');
+        expect(patch).not.toHaveProperty('title');
+        expect(metadataService.replaceAuthors).not.toHaveBeenCalled();
+      });
+
+      /**
+       * The dock's own provider lookup does not know the file is the other format of a book it
+       * already has, so for an audiobook it answers with the ebook's portrait jacket. The audio slot
+       * takes the file's own art instead.
+       */
+      it("fills the new format's cover slot from the file's own art, never from the dock's lookup", async () => {
+        const { service, db, metadataService } = makeService();
+        db.update.mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) });
+        mockReadFile.mockResolvedValueOnce(Buffer.from('square-art') as never);
+        const row = makeRow({
+          format: 'm4b',
+          coverPath: '/dock/covers/1.jpg',
+          selectedMetadata: { title: 'Dune', coverUrl: 'https://covers.example/portrait.jpg' } as BookDockMetadata,
+        });
+
+        await (service as any).applyJoinedMetadata(42, row, 'https://covers.example/requested-square.jpg');
+
+        expect(metadataService.saveExtractedCoverBytes).toHaveBeenCalledWith(42, Buffer.from('square-art'), 'audio');
+        expect(metadataService.downloadAndSaveCover).not.toHaveBeenCalled();
+      });
+
+      it("falls back to the cover chosen when the format was requested, held to the slot's shape", async () => {
+        const { service, db, metadataService } = makeService();
+        db.update.mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) });
+        const row = makeRow({
+          format: 'm4b',
+          coverPath: null,
+          selectedMetadata: { title: 'Dune', coverUrl: 'https://covers.example/portrait.jpg' } as BookDockMetadata,
+        });
+
+        await (service as any).applyJoinedMetadata(42, row, 'https://covers.example/requested-square.jpg');
+
+        expect(metadataService.downloadAndSaveCover).toHaveBeenCalledTimes(1);
+        expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith([{ url: 'https://covers.example/requested-square.jpg' }], 42, 'audio');
+      });
+    });
+
     it('files a book_per_file book under the pattern folders instead of the library root', async () => {
       const { service, appSettings, processor, storage } = makeService();
       appSettings.getUploadPattern.mockResolvedValue(DEFAULT_UPLOAD_PATTERN_BOOK_PER_FILE);
@@ -793,7 +919,7 @@ describe('BookDockFinalizeService', () => {
         expect(processor.createUnitBookRecords).toHaveBeenNthCalledWith(index + 1, 5, 9, [
           expect.objectContaining({ folderPath: destPath, absolutePath: destPath }),
         ]);
-        expect(applyMetadata).toHaveBeenNthCalledWith(index + 1, 101 + index, row, true);
+        expect(applyMetadata).toHaveBeenNthCalledWith(index + 1, 101 + index, row, true, null);
       }
     });
 
@@ -1736,6 +1862,135 @@ describe('BookDockFinalizeService', () => {
     );
 
     expect(metadataService.saveExtractedCoverBytes).toHaveBeenCalledWith(21, Buffer.from('cover-bytes'), 'ebook');
+  });
+
+  describe('a cover the metadata lookup found by itself', () => {
+    function stubMetadataWrites(db: ReturnType<typeof makeService>['db']) {
+      const updateChain = { set: vi.fn(), where: vi.fn().mockResolvedValue(undefined) };
+      updateChain.set.mockReturnValue(updateChain);
+      db.update.mockReturnValue(updateChain);
+    }
+
+    it("puts an audiobook's own art in first, and lets the field rules' cover replace it only if it fits", async () => {
+      const { service, db, metadataService } = makeService();
+      stubMetadataWrites(db);
+      mockReadFile.mockResolvedValue(Buffer.from('square-art'));
+
+      await (service as any).applyMetadata(
+        40,
+        makeRow({ coverPath: '/tmp/cover.jpg', format: 'm4b', selectedMetadata: { title: 'Dear Debbie' } as BookDockMetadata }),
+        true,
+        'https://covers.example/print-jacket.jpg',
+      );
+
+      expect(metadataService.saveExtractedCoverBytes).toHaveBeenCalledWith(40, Buffer.from('square-art'), 'audio');
+      // Not `userChosen`: the shape check is what keeps a portrait jacket out of a filled square slot.
+      expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith([{ url: 'https://covers.example/print-jacket.jpg' }], 40, 'audio');
+      expect(metadataService.saveExtractedCoverBytes.mock.invocationCallOrder[0]).toBeLessThan(
+        metadataService.downloadAndSaveCover.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('checks the shape of a looked-up cover an audiobook falls back to, since nobody chose it', async () => {
+      const { service, db, metadataService } = makeService();
+      stubMetadataWrites(db);
+
+      await (service as any).applyMetadata(
+        41,
+        makeRow({ coverPath: null, format: 'm4b', selectedMetadata: { title: 'Dear Debbie' } as BookDockMetadata }),
+        true,
+        'https://covers.example/print-jacket.jpg',
+      );
+
+      expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith([{ url: 'https://covers.example/print-jacket.jpg' }], 41, 'audio');
+    });
+
+    it("files an e-book by the same rule: its own art, then the field rules' cover if it fits", async () => {
+      const { service, db, metadataService } = makeService();
+      stubMetadataWrites(db);
+      mockReadFile.mockResolvedValue(Buffer.from('epub-art'));
+
+      await (service as any).applyMetadata(
+        42,
+        makeRow({ coverPath: '/tmp/cover.jpg', selectedMetadata: { title: 'Dear Debbie' } as BookDockMetadata }),
+        true,
+        'https://covers.example/jacket.jpg',
+      );
+
+      expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith([{ url: 'https://covers.example/jacket.jpg' }], 42, 'ebook');
+      expect(metadataService.saveExtractedCoverBytes).toHaveBeenCalledWith(42, Buffer.from('epub-art'), 'ebook');
+    });
+
+    it('files a managed row with the looked-up cover kept apart from what it was told to file with', async () => {
+      const { service, repo } = makeService();
+      repo.findById.mockResolvedValue(
+        makeRow({
+          id: 9,
+          format: 'm4b',
+          embeddedMetadata: { title: 'Dear Debbie' } as BookDockMetadata,
+          fetchedMetadata: { title: 'Dear Debbie', coverUrl: 'https://covers.example/print-jacket.jpg' } as BookDockMetadata,
+          selectedMetadata: null,
+        }),
+      );
+      const finalizeFile = vi.spyOn(service as any, 'finalizeFile').mockResolvedValue({ fileId: 9, fileName: 'f', success: false, message: 'x' });
+
+      await service.finalizeManagedFile(9, { libraryId: 3, folderId: 4 });
+
+      const [row, , , overrides] = finalizeFile.mock.calls[0] as [
+        BookDockFileRow,
+        unknown,
+        unknown,
+        Map<number, { lookedUpCoverUrl?: string | null }>,
+      ];
+      expect(row.selectedMetadata?.coverUrl).toBeUndefined();
+      expect(row.selectedMetadata?.title).toBe('Dear Debbie');
+      expect(overrides.get(9)?.lookedUpCoverUrl).toBe('https://covers.example/print-jacket.jpg');
+    });
+
+    it('tries the requested art for a joined format only while its slot would otherwise stay empty', async () => {
+      const { service, db, metadataService } = makeService();
+      stubMetadataWrites(db);
+      mockReadFile.mockResolvedValue(Buffer.from('square-art'));
+      const row = makeRow({ coverPath: '/tmp/cover.jpg', format: 'm4b', selectedMetadata: { title: 'Dune' } as BookDockMetadata });
+
+      await (service as any).applyJoinedMetadata(43, row, 'https://covers.example/requested.jpg', 'https://covers.example/looked-up.jpg');
+      expect(metadataService.downloadAndSaveCover).toHaveBeenLastCalledWith([{ url: 'https://covers.example/looked-up.jpg' }], 43, 'audio');
+
+      await (service as any).applyJoinedMetadata(
+        44,
+        { ...row, coverPath: null },
+        'https://covers.example/requested.jpg',
+        'https://covers.example/looked-up.jpg',
+      );
+      expect(metadataService.downloadAndSaveCover).toHaveBeenLastCalledWith(
+        [{ url: 'https://covers.example/looked-up.jpg' }, { url: 'https://covers.example/requested.jpg' }],
+        44,
+        'audio',
+      );
+    });
+
+    it('treats a cover picked in the Book Dock as chosen, whatever the lookup found', async () => {
+      const { service, repo } = makeService();
+      repo.findById.mockResolvedValue(
+        makeRow({
+          id: 9,
+          fetchedMetadata: { title: 'Dune', coverUrl: 'https://covers.example/looked-up.jpg' } as BookDockMetadata,
+          selectedMetadata: { title: 'Dune', coverUrl: 'https://covers.example/picked.jpg' } as BookDockMetadata,
+        }),
+      );
+      const finalizeFile = vi.spyOn(service as any, 'finalizeFile').mockResolvedValue({ fileId: 9, fileName: 'f', success: false, message: 'x' });
+
+      await service.finalizeManagedFile(9, {});
+
+      const [row, , , overrides] = finalizeFile.mock.calls[0] as [
+        BookDockFileRow,
+        unknown,
+        unknown,
+        Map<number, { lookedUpCoverUrl?: string | null }>,
+      ];
+      expect(row.selectedMetadata?.coverUrl).toBe('https://covers.example/picked.jpg');
+      expect(overrides.get(9)?.lookedUpCoverUrl).toBeNull();
+    });
   });
 
   describe('multi-file units', () => {

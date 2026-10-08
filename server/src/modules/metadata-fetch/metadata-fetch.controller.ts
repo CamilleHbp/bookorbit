@@ -89,7 +89,11 @@ export class MetadataFetchController {
     ]);
     // A stated medium describes the book, so it settles which providers can answer at all. It
     // narrows the caller's provider list rather than widening it, and never adds a disabled one.
-    const providerKeys = dto.mediaKind ? this.registry.keysForMediaKind(enabledProviderKeys, dto.mediaKind) : enabledProviderKeys;
+    const media = [...new Set([...(dto.mediaKind ? [dto.mediaKind] : []), ...(dto.mediaKinds ?? [])])];
+    const providerKeys = media.length
+      ? [...new Set(media.flatMap((mediaKind) => this.registry.keysForMediaKind(enabledProviderKeys, mediaKind)))]
+      : enabledProviderKeys;
+    const leadMediaKind = media[0];
     const servesOnlyAudiobooks = (providerKey: MetadataProviderKey) => this.registry.servesOnlyAudiobooks(providerKey);
     const requestedAudiobookProvider = (dto.providers ?? []).some(servesOnlyAudiobooks);
     const onlyAudiobookProviders = providerKeys.length > 0 && providerKeys.every(servesOnlyAudiobooks);
@@ -97,7 +101,7 @@ export class MetadataFetchController {
       requestedAudiobookProvider ||
       onlyAudiobookProviders ||
       Boolean(existingProviderIds[MetadataProviderKey.AUDIBLE] || existingProviderIds[MetadataProviderKey.LIBROFM]);
-    const isAudiobook = dto.isAudiobook ?? (dto.mediaKind ? dto.mediaKind === 'audiobook' : inferredIsAudiobook);
+    const isAudiobook = dto.isAudiobook ?? (leadMediaKind ? leadMediaKind === 'audiobook' : inferredIsAudiobook);
 
     const searchTitle = normalizeSearchTitle(dto.title);
     const params: MetadataSearchParams = {
