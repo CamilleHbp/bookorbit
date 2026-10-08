@@ -88,10 +88,10 @@ function collapse() {
 </script>
 
 <template>
-  <div class="border-b border-border/60 last:border-b-0" :class="expanded ? 'bg-muted/15' : ''">
-    <!-- ── Desktop row ─────────────────────────────────────── -->
+  <div class="border-b border-border/60 last:border-b-0 md:col-span-full md:grid md:grid-cols-subgrid" :class="expanded ? 'bg-muted/15' : ''">
+    <!-- ── Desktop row: a subgrid of FieldRulesTable's columns ── -->
     <div
-      class="hidden items-center gap-4 px-4 py-2 transition-colors md:grid md:px-6 md:grid-cols-[minmax(160px,200px)_minmax(0,1fr)_272px_116px]"
+      class="hidden items-center px-4 py-2 transition-colors md:col-span-full md:grid md:grid-cols-subgrid md:px-6"
       :class="expanded ? '' : 'hover:bg-muted/25'"
     >
       <div class="flex min-w-0 items-center gap-3">
@@ -216,7 +216,7 @@ function collapse() {
       <component :is="expanded ? ChevronDown : ChevronRight" :size="16" class="mt-1 shrink-0 text-muted-foreground" aria-hidden="true" />
     </div>
 
-    <div v-if="hasNoUsableProvider && !expanded" class="flex items-center gap-2 px-4 pb-2.5 text-xs text-warning md:px-6 md:pb-2">
+    <div v-if="hasNoUsableProvider && !expanded" class="flex items-center gap-2 px-4 pb-2.5 text-xs text-warning md:col-span-full md:px-6 md:pb-2">
       <TriangleAlert :size="13" class="shrink-0" aria-hidden="true" />
       {{ t('settings.metadata.fieldRules.field.noProviders') }}
     </div>
@@ -224,6 +224,7 @@ function collapse() {
     <FieldRuleDetail
       v-if="expanded"
       :id="detailId"
+      class="md:col-span-full"
       :field="field"
       :field-label="label"
       :preference="preference"
