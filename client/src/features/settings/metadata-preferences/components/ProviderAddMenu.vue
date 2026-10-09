@@ -53,7 +53,7 @@ function add(provider: MetadataProviderKey) {
       type="button"
       :disabled="disabled || candidates.length === 0"
       :aria-label="t('settings.metadata.fieldRules.field.addProviderTo', { field: fieldLabel })"
-      class="inline-flex h-6 shrink-0 items-center gap-1 rounded border border-dashed border-input px-2 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
+      class="inline-flex h-6 shrink-0 items-center gap-1 rounded-xs border border-dashed border-input px-2 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
     >
       <Plus :size="12" :stroke-width="3" aria-hidden="true" />
       {{ t('settings.metadata.fieldRules.field.add') }}
@@ -70,7 +70,7 @@ function add(provider: MetadataProviderKey) {
           class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
           @click="add(candidate.key)"
         >
-          <span class="provider-chip inline-flex h-5 items-center rounded px-1.5 text-xs font-medium" :style="providerChipStyle(candidate.key)">
+          <span class="provider-chip inline-flex h-5 items-center rounded-xs px-1.5 text-xs font-medium" :style="providerChipStyle(candidate.key)">
             {{ candidate.short }}
           </span>
           <span v-if="candidate.skipReason" class="ml-auto text-xs text-muted-foreground">

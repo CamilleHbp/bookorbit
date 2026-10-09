@@ -1421,7 +1421,7 @@ function showEverySource(): void {
                         <button
                           v-if="credits(release).length"
                           type="button"
-                          class="ms-1 rounded text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                          class="ms-1 rounded-xs text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                           :aria-expanded="isExpanded(release)"
                           @click="toggleWhy(release)"
                         >
@@ -1452,7 +1452,7 @@ function showEverySource(): void {
                         <li
                           v-for="reason in credits(release)"
                           :key="reason.code"
-                          class="rounded border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                          class="rounded-xs border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
                         >
                           {{ reasonText(reason) }} <span class="tabular-nums text-foreground">{{ reasonPoints(reason.points) }}</span>
                         </li>

@@ -107,9 +107,51 @@
       },
       "theme": {
         "title": "Theme",
+        "style": {
+          "label": "Style",
+          "hint": "The overall look of the app. Mode, accent, corners and background keep their settings.",
+          "bookorbit": {
+            "label": "BookOrbit",
+            "description": "Tinted surfaces, glass panels and serif headings."
+          },
+          "nostalgia": {
+            "label": "Nostalgia",
+            "description": "Neutral grounds, system type, flat panels and a top glow."
+          }
+        },
         "colorScheme": {
           "label": "Color scheme",
           "hint": "Light or dark interface"
+        },
+        "surfacePalette": {
+          "label": "Surface",
+          "hint": "The neutral ground behind panels and cards.",
+          "palettes": {
+            "onyx": "Onyx",
+            "carbon": "Carbon",
+            "neutral": "Neutral",
+            "zinc": "Zinc",
+            "iron": "Iron",
+            "steel": "Steel",
+            "ash": "Ash",
+            "smoke": "Smoke",
+            "charcoal": "Charcoal",
+            "slate": "Slate",
+            "midnight-blue": "Midnight blue",
+            "ocean": "Ocean",
+            "pine": "Pine",
+            "olive": "Olive",
+            "stone": "Stone",
+            "sepia": "Sepia",
+            "crimson": "Crimson",
+            "plum": "Plum"
+          }
+        },
+        "topGlow": {
+          "label": "Top glow",
+          "hint": "How far the accent glow reaches down the page. Slide all the way left to turn it off.",
+          "value": "{value}%",
+          "off": "Off"
         },
         "accents": {
           "grey": "Grey",
@@ -183,7 +225,13 @@
         },
         "cornerRadius": {
           "label": "Corner radius",
-          "hint": "Roundness of cards and UI elements"
+          "hint": "Roundness of cards and UI elements",
+          "options": {
+            "sharp": "Sharp",
+            "default": "Default",
+            "rounded": "Rounded",
+            "pill": "Pill"
+          }
         },
         "surfaceBrightness": {
           "label": "Surface brightness",
@@ -202,7 +250,8 @@
           "structural": "Structural",
           "ambient": "Ambient",
           "refractive": "Refractive"
-        }
+        },
+        "syncSaveFailed": "Failed to save theme preferences"
       },
       "storage": {
         "title": "Where to save appearance preferences",
@@ -3615,6 +3664,7 @@
     "nav": {
       "title": "Settings",
       "ariaLabel": "Settings sections",
+      "breadcrumbLabel": "Breadcrumb",
       "searchPlaceholder": "Search settings",
       "clearSearch": "Clear search",
       "noResults": "No settings match {query}.",
@@ -7916,6 +7966,9 @@
       "uploadBooks": "Upload books",
       "appearance": "Appearance",
       "appearanceDescription": "Choose theme, accent, corner radius, surface, and background options.",
+      "style": "Style",
+      "surfacePalette": "Surface",
+      "topGlow": "Top glow",
       "theme": "Theme",
       "accent": "Accent",
       "radius": "Radius",
@@ -8213,6 +8266,28 @@
       "discardTitle": "Discard changes?",
       "discardDescription": "Your unsaved changes will be lost.",
       "discardConfirm": "Discard"
+    },
+    "backgroundPicker": {
+      "none": "None",
+      "dots": "Dots",
+      "cross": "Cross",
+      "millimeter": "Millimeter",
+      "blueprint": "Blueprint",
+      "brushed": "Brushed",
+      "scanlines": "Scanlines",
+      "vinyl": "Vinyl",
+      "carbon": "Carbon",
+      "perforated": "Perforated",
+      "aurora": "Aurora",
+      "horizon": "Horizon",
+      "glow": "Glow",
+      "mesh": "Mesh",
+      "elevation": "Elevation",
+      "prism": "Prism",
+      "spectrum": "Spectrum",
+      "spectrum-x": "Spectrum X",
+      "spectrum-plus": "Spectrum Plus",
+      "eclipse": "Eclipse"
     }
   },
   "customIcons": {

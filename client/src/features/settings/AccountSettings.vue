@@ -542,7 +542,7 @@ function closeUnlinkDialog() {
               :key="identity.id"
               class="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2"
             >
-              <img v-if="identity.providerIconUrl" :src="identity.providerIconUrl" alt="" class="size-5 shrink-0 rounded object-contain" />
+              <img v-if="identity.providerIconUrl" :src="identity.providerIconUrl" alt="" class="size-5 shrink-0 rounded-xs object-contain" />
               <div class="min-w-0 flex-1">
                 <p class="settings-label truncate">{{ identity.providerName }}</p>
                 <p class="settings-hint truncate">{{ identity.oidcSubject }}</p>

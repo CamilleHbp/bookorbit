@@ -112,7 +112,7 @@ function rowMeasure(row: BookFormatEntry): string {
         <button
           v-if="progressFor(row)?.resetFileId != null"
           type="button"
-          class="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          class="inline-flex size-5 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           :aria-label="t('book.detail.details.resetEditionProgress', { format: formatKeyName(row.key) })"
           :disabled="isResetting(row)"
           @click="handleReset(row)"

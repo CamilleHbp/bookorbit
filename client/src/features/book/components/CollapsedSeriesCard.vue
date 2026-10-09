@@ -208,7 +208,7 @@ const secondaryLabelText = computed(() => resolveSeriesLabel(gridCardSecondaryLa
     <!-- Cover -->
     <div class="group">
       <BookCoverSurface
-        class="relative w-full rounded-sm overflow-hidden transition-[box-shadow,transform] duration-150 will-change-transform group-hover:scale-[1.02]"
+        class="relative w-full rounded-sm overflow-hidden transition-[box-shadow,transform] duration-150 will-change-transform group-hover:[transform:var(--cover-hover-transform)] motion-reduce:group-hover:[transform:none]"
         :class="isStack ? 'book-cover-surface--spine-fitted' : ''"
         interactive
         :disable-spine="isAudiobook"

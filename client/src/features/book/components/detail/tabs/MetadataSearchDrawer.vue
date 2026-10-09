@@ -253,7 +253,7 @@ function handleCancel() {
                 <input
                   v-model="autoSearchOnOpen"
                   type="checkbox"
-                  class="mt-0.5 size-4 shrink-0 rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  class="mt-0.5 size-4 shrink-0 rounded-xs border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   :aria-describedby="`${optionsId}-hint`"
                 />
                 {{ t('book.detail.editMetadata.searchDrawer.autoSearchOnOpen') }}

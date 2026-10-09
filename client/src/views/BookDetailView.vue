@@ -167,15 +167,15 @@ function onCoverChanged() {
             </div>
           </div>
           <div class="flex-1 space-y-3">
-            <div class="h-7 w-3/4 rounded bg-muted animate-shimmer" />
-            <div class="h-4 w-1/2 rounded bg-muted animate-shimmer" />
-            <div class="h-4 w-1/3 rounded bg-muted animate-shimmer" />
+            <div class="h-7 w-3/4 rounded-xs bg-muted animate-shimmer" />
+            <div class="h-4 w-1/2 rounded-xs bg-muted animate-shimmer" />
+            <div class="h-4 w-1/3 rounded-xs bg-muted animate-shimmer" />
             <div class="flex gap-1.5 mt-4">
-              <div class="h-5 w-12 rounded bg-muted animate-shimmer" />
-              <div class="h-5 w-16 rounded bg-muted animate-shimmer" />
-              <div class="h-5 w-10 rounded bg-muted animate-shimmer" />
+              <div class="h-5 w-12 rounded-xs bg-muted animate-shimmer" />
+              <div class="h-5 w-16 rounded-xs bg-muted animate-shimmer" />
+              <div class="h-5 w-10 rounded-xs bg-muted animate-shimmer" />
             </div>
-            <div class="h-32 w-full rounded bg-muted animate-shimmer mt-4" />
+            <div class="h-32 w-full rounded-xs bg-muted animate-shimmer mt-4" />
           </div>
         </div>
         <div v-else-if="tab === 'edit'" class="max-w-2xl space-y-4">

@@ -944,7 +944,7 @@ function dockFileMeta(file: BookDockFile): string {
                       :book-id="book.id"
                       type="thumbnail"
                       :version="book.updatedAt"
-                      class="h-[42px] w-7 shrink-0 rounded bg-muted object-cover"
+                      class="h-[42px] w-7 shrink-0 rounded-xs bg-muted object-cover"
                       :alt="''"
                     />
                     <span class="min-w-0 flex-1">

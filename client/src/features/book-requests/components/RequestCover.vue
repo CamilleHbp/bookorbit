@@ -61,12 +61,12 @@ function handleError() {
     v-if="showImage"
     :src="currentSrc ?? undefined"
     alt=""
-    class="shrink-0 rounded border border-border bg-muted object-cover"
+    class="shrink-0 rounded-xs border border-border bg-muted object-cover"
     :class="props.class"
     loading="lazy"
     @error="handleError"
   />
-  <div v-else class="flex shrink-0 items-center justify-center rounded border border-border bg-muted" :class="props.class" aria-hidden="true">
+  <div v-else class="flex shrink-0 items-center justify-center rounded-xs border border-border bg-muted" :class="props.class" aria-hidden="true">
     <component :is="icon" :size="iconSize" class="text-muted-foreground" />
   </div>
 </template>

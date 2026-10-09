@@ -194,7 +194,7 @@ function collapse() {
           <span
             v-for="(key, index) in previewProviders"
             :key="key"
-            class="provider-chip inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium"
+            class="provider-chip inline-flex h-5 shrink-0 items-center gap-1 rounded-xs px-1.5 text-[11px] font-medium"
             :style="providerChipStyle(key)"
           >
             <span class="tabular-nums opacity-70">{{ index + 1 }}</span>

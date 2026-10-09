@@ -686,7 +686,7 @@ function goToNextPage() {
             <input
               v-model="activeList.includeDismissed.value"
               type="checkbox"
-              class="h-3.5 w-3.5 rounded border-border accent-primary"
+              class="h-3.5 w-3.5 rounded-xs border-border accent-primary"
               @change="handleShowDismissedChange"
             />
             {{ t('bookRequests.filters.showDismissed') }}

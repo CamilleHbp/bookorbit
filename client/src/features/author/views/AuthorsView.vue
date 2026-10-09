@@ -591,13 +591,13 @@ defineOptions({ name: 'AuthorsView' })
                 class="aspect-square w-full animate-pulse bg-muted/60"
                 :class="authorCoverShape === 'circle' ? 'rounded-full' : 'rounded-[10px]'"
               />
-              <div class="h-3 w-3/4 animate-pulse rounded bg-muted/50" />
+              <div class="h-3 w-3/4 animate-pulse rounded-xs bg-muted/50" />
             </div>
           </div>
           <div v-else class="flex flex-col gap-1">
             <div v-for="index in INITIAL_SKELETON_COUNT" :key="`author-skeleton-row-${index}`" class="flex items-center gap-3 px-2 py-1">
               <div class="size-[30px] shrink-0 animate-pulse rounded-lg bg-muted/60" />
-              <div class="h-3 w-40 max-w-[45%] animate-pulse rounded bg-muted/50" />
+              <div class="h-3 w-40 max-w-[45%] animate-pulse rounded-xs bg-muted/50" />
             </div>
           </div>
         </div>

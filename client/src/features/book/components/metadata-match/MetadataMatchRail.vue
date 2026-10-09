@@ -213,9 +213,9 @@ defineExpose({ focusQuery })
           <div v-for="n in total ? 2 : 5" :key="n" class="grid grid-cols-[2.875rem_minmax(0,1fr)] gap-2.5 p-2" aria-hidden="true">
             <span class="block w-full animate-pulse rounded-[5px] bg-muted motion-reduce:animate-none" :style="{ aspectRatio: coverRatio }" />
             <span class="grid content-start gap-1.5 pt-1">
-              <span class="h-3 w-4/5 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-              <span class="h-2.5 w-3/5 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-              <span class="h-4 w-2/5 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+              <span class="h-3 w-4/5 animate-pulse rounded-xs bg-muted motion-reduce:animate-none" />
+              <span class="h-2.5 w-3/5 animate-pulse rounded-xs bg-muted motion-reduce:animate-none" />
+              <span class="h-4 w-2/5 animate-pulse rounded-xs bg-muted motion-reduce:animate-none" />
             </span>
           </div>
         </template>

@@ -132,7 +132,7 @@ function removeProvider(index: number) {
         v-for="(chip, index) in chips"
         :key="chip.dragId"
         :title="chipTitle(chip)"
-        class="flex h-6 select-none items-center gap-1 rounded pl-1.5 pr-1 text-xs font-medium transition-transform"
+        class="flex h-6 select-none items-center gap-1 rounded-xs pl-1.5 pr-1 text-xs font-medium transition-transform"
         :class="[
           chip.usable ? 'provider-chip' : 'provider-chip-skipped',
           !disabled ? 'provider-chip-handle cursor-grab active:cursor-grabbing' : 'cursor-default',

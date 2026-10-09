@@ -150,7 +150,7 @@ defineExpose({ scroll })
         @click="navigateToBook(book.id)"
       >
         <BookCoverSurface
-          class="book-cover-surface--spine-fitted relative w-full rounded-sm overflow-hidden transition-transform duration-150 group-hover:scale-[1.02]"
+          class="book-cover-surface--spine-fitted relative w-full rounded-sm overflow-hidden transition-transform duration-150 group-hover:[transform:var(--cover-hover-transform)] motion-reduce:group-hover:[transform:none]"
           :interactive="true"
           :disable-spine="isAudiobook(book)"
           :is-comic="isComic(book)"

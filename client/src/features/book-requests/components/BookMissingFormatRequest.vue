@@ -84,14 +84,14 @@ async function handleRequest() {
     <RouterLink
       v-if="state === 'owned' && ownedBookId !== null"
       :to="{ name: 'book-detail', params: { bookId: ownedBookId } }"
-      class="shrink-0 rounded text-[11px] font-medium text-foreground underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      class="shrink-0 rounded-xs text-[11px] font-medium text-foreground underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       {{ t('bookRequests.missingFormat.open') }}
     </RouterLink>
     <RouterLink
       v-else-if="state === 'following' && requestId !== null"
       :to="{ name: 'book-request-detail', params: { id: requestId }, query: { tab: 'mine' } }"
-      class="shrink-0 rounded text-[11px] font-medium text-foreground underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      class="shrink-0 rounded-xs text-[11px] font-medium text-foreground underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       {{ t('bookRequests.missingFormat.viewRequest') }}
     </RouterLink>

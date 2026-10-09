@@ -178,7 +178,7 @@ async function runAuthorBackfillAll() {
         <label class="flex items-center gap-3 cursor-pointer select-none">
           <input
             type="checkbox"
-            class="w-4 h-4 rounded border-border accent-primary"
+            class="w-4 h-4 rounded-xs border-border accent-primary"
             :checked="config.conditions.neverEnriched"
             :disabled="saving"
             @change="toggleCondition('neverEnriched')"
@@ -193,7 +193,7 @@ async function runAuthorBackfillAll() {
         <label class="flex items-center gap-3 cursor-pointer select-none">
           <input
             type="checkbox"
-            class="w-4 h-4 rounded border-border accent-primary"
+            class="w-4 h-4 rounded-xs border-border accent-primary"
             :checked="config.conditions.missingBio"
             :disabled="saving"
             @change="toggleCondition('missingBio')"
@@ -208,7 +208,7 @@ async function runAuthorBackfillAll() {
         <label class="flex items-center gap-3 cursor-pointer select-none">
           <input
             type="checkbox"
-            class="w-4 h-4 rounded border-border accent-primary"
+            class="w-4 h-4 rounded-xs border-border accent-primary"
             :checked="config.conditions.missingPhoto"
             :disabled="saving"
             @change="toggleCondition('missingPhoto')"

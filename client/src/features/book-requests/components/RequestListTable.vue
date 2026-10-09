@@ -291,7 +291,7 @@ function rowDismissed(row: BookRequestItem): boolean {
           <th v-if="hasSelectableRows" scope="col" class="w-10 px-3 py-2.5">
             <input
               type="checkbox"
-              class="h-3.5 w-3.5 rounded border-border accent-primary"
+              class="h-3.5 w-3.5 rounded-xs border-border accent-primary"
               :checked="allSelected"
               :indeterminate.prop="someSelected && !allSelected"
               :aria-label="t('bookRequests.table.selectAll')"
@@ -302,7 +302,7 @@ function rowDismissed(row: BookRequestItem): boolean {
           <th scope="col" class="px-3 py-2.5 text-start" :aria-sort="ariaSort('title')">
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
+              class="inline-flex items-center gap-1 rounded-xs text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
               @click="sortByTitle"
             >
               {{ t('bookRequests.table.title') }}
@@ -313,7 +313,7 @@ function rowDismissed(row: BookRequestItem): boolean {
           <th scope="col" class="w-24 px-3 py-2.5 text-start" :aria-sort="ariaSort('mediaKind')">
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
+              class="inline-flex items-center gap-1 rounded-xs text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
               @click="sortByMediaKind"
             >
               {{ t('bookRequests.table.mediaKind') }}
@@ -324,7 +324,7 @@ function rowDismissed(row: BookRequestItem): boolean {
           <th scope="col" class="hidden w-36 px-3 py-2.5 text-start xl:table-cell" :aria-sort="ariaSort('requester')">
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
+              class="inline-flex items-center gap-1 rounded-xs text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
               @click="sortByRequester"
             >
               {{ t('bookRequests.table.requestedBy') }}
@@ -335,7 +335,7 @@ function rowDismissed(row: BookRequestItem): boolean {
           <th scope="col" class="w-32 px-3 py-2.5 text-start" :aria-sort="ariaSort('createdAt')">
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
+              class="inline-flex items-center gap-1 rounded-xs text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
               @click="sortByAge"
             >
               {{ t('bookRequests.table.age') }}
@@ -346,7 +346,7 @@ function rowDismissed(row: BookRequestItem): boolean {
           <th scope="col" class="w-40 px-3 py-2.5 text-start" :aria-sort="ariaSort('status')">
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
+              class="inline-flex items-center gap-1 rounded-xs text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
               @click="sortByState"
             >
               {{ t('bookRequests.table.state') }}
@@ -375,7 +375,7 @@ function rowDismissed(row: BookRequestItem): boolean {
             <input
               v-if="isSelectable(request)"
               type="checkbox"
-              class="h-3.5 w-3.5 rounded border-border accent-primary"
+              class="h-3.5 w-3.5 rounded-xs border-border accent-primary"
               :checked="isSelected(request)"
               :aria-label="t('bookRequests.table.selectRow', { title: request.title })"
               @change="handleToggleSelect(request)"
@@ -613,7 +613,7 @@ function rowDismissed(row: BookRequestItem): boolean {
           <input
             v-if="isSelectable(request)"
             type="checkbox"
-            class="mt-1 h-3.5 w-3.5 shrink-0 rounded border-border accent-primary"
+            class="mt-1 h-3.5 w-3.5 shrink-0 rounded-xs border-border accent-primary"
             :checked="isSelected(request)"
             :aria-label="t('bookRequests.table.selectRow', { title: request.title })"
             @change="handleToggleSelect(request)"

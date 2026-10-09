@@ -197,7 +197,7 @@ function cancelDelete() {
         </div>
       </div>
 
-      <div v-if="form.deviceType === 'kindle'" class="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-2">
+      <div v-if="form.deviceType === 'kindle'" class="text-xs text-muted-foreground bg-muted/50 rounded-xs px-3 py-2">
         {{ t('email.recipients.kindleNote') }}
       </div>
 
@@ -234,10 +234,10 @@ function cancelDelete() {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-sm font-medium text-foreground">{{ r.name }}</span>
-            <span v-if="r.isDefault" class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/15 text-primary">{{
+            <span v-if="r.isDefault" class="text-[10px] font-semibold px-1.5 py-0.5 rounded-xs bg-primary/15 text-primary">{{
               t('email.badge.default')
             }}</span>
-            <span v-if="r.deviceType" class="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+            <span v-if="r.deviceType" class="text-[10px] px-1.5 py-0.5 rounded-xs bg-muted text-muted-foreground">
               {{ deviceLabel(r.deviceType) }}
             </span>
           </div>

@@ -1209,7 +1209,7 @@ function handleCoverChanged(medium: CoverMedium | null) {
                   <span v-else class="flex h-10 items-center rounded-lg border border-input bg-background px-3 sm:h-8">
                     <input
                       type="checkbox"
-                      class="size-4 rounded border-input accent-primary"
+                      class="size-4 rounded-xs border-input accent-primary"
                       :checked="field.value === true"
                       :aria-label="field.label"
                       @change="setCustomBooleanField(field.fieldId, $event)"
@@ -1355,7 +1355,7 @@ function handleCoverChanged(medium: CoverMedium | null) {
                     <input
                       v-model="form.abridged"
                       type="checkbox"
-                      class="size-4 rounded border-input accent-primary"
+                      class="size-4 rounded-xs border-input accent-primary"
                       :aria-label="t('book.detail.editMetadata.abridgedLabel')"
                       :disabled="isLocked('abridged')"
                     />
@@ -1422,12 +1422,12 @@ function handleCoverChanged(medium: CoverMedium | null) {
                     <input
                       :id="`provider-id-${field}`"
                       v-model="form[field]"
-                      class="h-8 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1.5 font-mono text-xs transition-shadow outline-none hover:border-input focus:border-input focus:bg-background focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:h-7"
+                      class="h-8 min-w-0 flex-1 rounded-xs border border-transparent bg-transparent px-1.5 font-mono text-xs transition-shadow outline-none hover:border-input focus:border-input focus:bg-background focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:h-7"
                       :disabled="isLocked(field)"
                     />
                     <button
                       type="button"
-                      class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded border transition-colors disabled:cursor-not-allowed"
+                      class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-xs border transition-colors disabled:cursor-not-allowed"
                       :class="
                         isLocked(field)
                           ? 'border-primary/30 bg-primary/15 text-primary hover:bg-primary/25'
@@ -1484,7 +1484,7 @@ function handleCoverChanged(medium: CoverMedium | null) {
                 </h3>
                 <button
                   type="button"
-                  class="ml-auto flex size-6 cursor-pointer items-center justify-center rounded border transition-colors disabled:cursor-not-allowed"
+                  class="ml-auto flex size-6 cursor-pointer items-center justify-center rounded-xs border transition-colors disabled:cursor-not-allowed"
                   :class="
                     isLocked('description')
                       ? 'border-primary/30 bg-primary/15 text-primary hover:bg-primary/25'

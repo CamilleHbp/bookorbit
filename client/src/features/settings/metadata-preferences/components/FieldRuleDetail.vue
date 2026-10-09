@@ -122,7 +122,7 @@ function handleClose() {
               {{ row.skipReason ? '-' : resolved.indexOf(row.key) + 1 }}
             </span>
             <span
-              class="inline-flex h-6 items-center rounded px-2 text-xs font-medium"
+              class="inline-flex h-6 items-center rounded-xs px-2 text-xs font-medium"
               :class="row.skipReason ? 'provider-chip-skipped' : 'provider-chip'"
               :style="row.skipReason ? undefined : providerChipStyle(row.key)"
             >
@@ -220,7 +220,7 @@ function handleClose() {
             <div v-if="resolved.length" class="mt-2.5 flex flex-wrap items-center gap-1.5">
               <template v-for="(key, index) in resolved" :key="key">
                 <ArrowRight v-if="index > 0" :size="13" class="shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span class="provider-chip inline-flex h-6 items-center rounded px-2 text-xs font-medium" :style="providerChipStyle(key)">
+                <span class="provider-chip inline-flex h-6 items-center rounded-xs px-2 text-xs font-medium" :style="providerChipStyle(key)">
                   {{ PROVIDER_SHORT_LABELS[key] ?? key }}
                 </span>
               </template>
