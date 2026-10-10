@@ -545,8 +545,8 @@ describe('Book requests (e2e)', () => {
       return response.json() as BookRequestPairSubmitResult;
     }
 
-    /** A book holding one ebook file, in a library that keeps one book per folder. */
-    async function seedEbookBook(target: CreatedLibrary): Promise<number> {
+    /** One content file, in a library that keeps one book per folder. */
+    async function seedEbookBook(target: CreatedLibrary, format = 'epub'): Promise<number> {
       const folderPath = `${target.folderPath}/${randomUUID()}`;
       const [book] = await ctx.db
         .insert(schema.books)
@@ -555,9 +555,9 @@ describe('Book requests (e2e)', () => {
       await ctx.db.insert(schema.bookFiles).values({
         bookId: book!.id,
         libraryFolderId: target.libraryFolderId,
-        absolutePath: `${folderPath}/book.epub`,
+        absolutePath: `${folderPath}/book.${format}`,
         ino: BigInt(Math.floor(Math.random() * 1_000_000_000)),
-        format: 'epub',
+        format,
         role: 'content',
       });
       return book!.id;
@@ -672,6 +672,58 @@ describe('Book requests (e2e)', () => {
         });
         expect(duplicate.statusCode).toBe(400);
         expect((duplicate.json() as { errorCode?: string }).errorCode).toBe('SUBMIT_TARGET_BOOK_HAS_MEDIUM');
+      },
+      SCENARIO_TIMEOUT_MS,
+    );
+
+    it.each(['cbz', 'cbr', 'cb7', 'cbx'])(
+      'recognizes an existing %s comic as the non-audio half and still allows its audiobook',
+      async (format) => {
+        const folderLibrary = await createLibraryWithFolder(ctx, { mode: 'book_per_folder', name: `book-requests-comic-${randomUUID()}` });
+        await grantLibraryAccess(ctx, requester.userId, folderLibrary.libraryId, 'viewer');
+        const bookId = await seedEbookBook(folderLibrary, format);
+        const duplicate = await inject('POST', '/book-requests', requester, {
+          title: `Comic ${randomUUID()}`,
+          mediaKind: 'ebook',
+          preferredFormats: [format],
+          targetBookId: bookId,
+        });
+        expect(duplicate.statusCode).toBe(400);
+        expect(duplicate.json()).toMatchObject({ errorCode: 'SUBMIT_TARGET_BOOK_HAS_MEDIUM' });
+
+        const added = await inject('POST', '/book-requests', requester, {
+          title: `Comic ${randomUUID()}`,
+          mediaKind: 'audiobook',
+          targetBookId: bookId,
+        });
+        expect(added.statusCode).toBe(201);
+        expect(added.json()).toMatchObject({ request: { mediaKind: 'audiobook', targetBookId: bookId, targetLibraryId: folderLibrary.libraryId } });
+      },
+      SCENARIO_TIMEOUT_MS,
+    );
+
+    it(
+      'accepts comic preferences on ebook requests and scopes comic availability to accessible libraries',
+      async () => {
+        const title = `Comic ${randomUUID()}`;
+        const created = await submitOk(requester, { title, preferredFormats: ['cbz', 'epub'] });
+        expect(created.request).toMatchObject({ mediaKind: 'ebook', preferredFormats: ['cbz', 'epub'] });
+
+        const bookId = await seedEbookBook(library, 'cbz');
+        const ownedTitle = `Owned comic ${randomUUID()}`;
+        await ctx.db.insert(schema.bookMetadata).values({ bookId, title: ownedTitle });
+        const queries = [
+          { title: ownedTitle, mediaKind: 'ebook' },
+          { title: ownedTitle, mediaKind: 'audiobook' },
+        ];
+        const visible = await inject('POST', '/book-requests/availability', requester, { items: queries });
+        expect(visible.statusCode).toBe(200);
+        expect(visible.json()).toMatchObject([{ ownedBookId: bookId }, { ownedBookId: null }]);
+
+        const stranger = await createUserAndLogin(ctx, { permissions: REQUESTER_PERMISSIONS });
+        const hidden = await inject('POST', '/book-requests/availability', stranger, { items: queries });
+        expect(hidden.statusCode).toBe(200);
+        expect(hidden.json()).toMatchObject([{ ownedBookId: null }, { ownedBookId: null }]);
       },
       SCENARIO_TIMEOUT_MS,
     );

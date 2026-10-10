@@ -114,6 +114,27 @@ function makeService(
 }
 
 describe('IndexerSearchService', () => {
+  it('keeps books and comic archives in the same non-audio search without returning audiobooks', async () => {
+    const adapter = {
+      mediaKinds: ['ebook', 'audiobook'],
+      search: vi
+        .fn()
+        .mockResolvedValue([
+          release({ guid: 'comic', format: 'cbz', title: 'Saga - Brian K Vaughan [CBZ]' }),
+          release({ guid: 'book', format: 'epub', title: 'Saga - Brian K Vaughan [EPUB]' }),
+          release({ guid: 'audio', format: 'mp3', title: 'Saga - Brian K Vaughan [MP3]' }),
+        ]),
+    };
+    const { service } = makeService([indexer({ adapterType: pluginType('example-plugin') })], { 'example-plugin': adapter });
+
+    const result = await service.search(request({ title: 'Saga', authors: ['Brian K Vaughan'], preferredFormats: ['cbz'] }));
+
+    expect(adapter.search).toHaveBeenCalledWith(expect.objectContaining({ mediaKind: 'ebook' }), expect.anything(), expect.any(AbortSignal));
+    expect(result.releases.map((item) => item.guid)).toEqual(['comic', 'book']);
+    expect(result.releases[0]).toMatchObject({ format: 'cbz', formats: ['cbz'] });
+    expect(result.indexers[0]).toMatchObject({ ok: true, count: 2, filtered: 1 });
+  });
+
   /** The picker for an old comic request says why, rather than asking every tracker for nothing. */
   it('refuses to search for a request made for the retired comic medium', async () => {
     const search = vi.fn();

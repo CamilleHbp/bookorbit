@@ -1,11 +1,8 @@
 import {
-  AUDIO_FORMAT_LIST,
+  BOOK_REQUEST_FORMATS_BY_MEDIA_KIND,
   bookRequestIsbn10To13,
-  COMIC_FORMAT_LIST,
-  EBOOK_FORMAT_LIST,
   explainReleaseProfileMismatch,
   ISO_639_2_TO_1,
-  isAudioFormat,
   isValidBookRequestIsbn10,
   languagesAgree,
   matchReleaseTier,
@@ -75,18 +72,12 @@ const SIZE_RANGES: Record<BookRequestMediaKind, { min: number; max: number }> = 
   audiobook: { min: 20 * MEGABYTE, max: 8 * 1024 * MEGABYTE },
 };
 
-/** Whether a format is a usable one for the requested medium. */
-const FORMATS_BY_MEDIA_KIND: Record<BookRequestMediaKind, (format: string) => boolean> = {
-  ebook: (format) => (EBOOK_FORMAT_LIST as readonly string[]).includes(format),
-  audiobook: (format) => isAudioFormat(format),
-};
-
 /**
  * Formats a scene name spells out, so a release with no format field still classifies. Derived
  * from the three shared lists rather than restated: written out by hand it had already lost `cbx`,
  * so a comic release naming that format read as having no format at all.
  */
-const FORMAT_TOKENS: readonly string[] = [...EBOOK_FORMAT_LIST, ...AUDIO_FORMAT_LIST, ...COMIC_FORMAT_LIST];
+const FORMAT_TOKENS: readonly string[] = Object.values(BOOK_REQUEST_FORMATS_BY_MEDIA_KIND).flat();
 
 const SCENE_LANGUAGE_NAMES: ReadonlyMap<string, string> = new Map([
   ['chinese', 'zh'],
@@ -151,7 +142,7 @@ export function rejectRelease(candidate: ReleaseCandidate, request: ScoringReque
 
   // A release may state several, as MyAnonaMouse does with "m4a mp3". One usable format is enough.
   const formats = resolveFormats(candidate);
-  if (formats.length > 0 && !formats.some((format) => FORMATS_BY_MEDIA_KIND[request.mediaKind](format))) {
+  if (formats.length > 0 && !formats.some((format) => BOOK_REQUEST_FORMATS_BY_MEDIA_KIND[request.mediaKind].includes(format))) {
     return `${formats.join('/')} is not a ${request.mediaKind} format`;
   }
 

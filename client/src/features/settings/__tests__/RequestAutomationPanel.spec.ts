@@ -332,6 +332,23 @@ describe('RequestAutomationPanel', () => {
       return wrapper
     }
 
+    it('offers comic formats in the non-audio profile and saves the selected archive format', async () => {
+      vi.useFakeTimers()
+      try {
+        const wrapper = await profilePanel()
+        const chips = wrapper.findAll('button[aria-pressed]')
+        for (const format of ['epub', 'cbz', 'cbr', 'cb7', 'cbx']) {
+          expect(chips.some((chip) => chip.text() === format)).toBe(true)
+        }
+        expect(chips.some((chip) => chip.text() === 'mp3')).toBe(false)
+        await chips.find((chip) => chip.text() === 'cbz')!.trigger('click')
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(lastBody()).toEqual({ profiles: { ebook: [{ id: 'tier-1', name: 'Retail', conditions: { formats: ['cbz'] } }] } })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     /** The chip presses land on the editor, and one request lands on the server. */
     it('collapses a burst of tier edits into one save', async () => {
       vi.useFakeTimers()

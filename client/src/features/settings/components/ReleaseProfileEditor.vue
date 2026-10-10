@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDown, ArrowUp, Plus, X } from '@lucide/vue'
-import { AUDIO_FORMAT_LIST, EBOOK_FORMAT_LIST, MAX_RELEASE_TIER_NAME_LENGTH, MAX_RELEASE_TIERS, REQUEST_LANGUAGE_CODES } from '@bookorbit/types'
+import { BOOK_REQUEST_FORMATS_BY_MEDIA_KIND, MAX_RELEASE_TIER_NAME_LENGTH, MAX_RELEASE_TIERS, REQUEST_LANGUAGE_CODES } from '@bookorbit/types'
 import type {
   BookRequestMediaKind,
   IndexerAdapterDescriptor,
@@ -66,10 +66,7 @@ function clone(list: ReleaseTier[]): ReleaseTier[] {
 }
 
 /** Offered from the same lists the matcher accepts, so a form can never state an impossible tier. */
-const FORMATS: Record<BookRequestMediaKind, readonly string[]> = {
-  ebook: EBOOK_FORMAT_LIST,
-  audiobook: AUDIO_FORMAT_LIST,
-}
+const FORMATS = BOOK_REQUEST_FORMATS_BY_MEDIA_KIND
 
 /** Bitrate and channels describe an encode, which an ebook does not have. */
 const isAudio = computed(() => props.mediaKind === 'audiobook')

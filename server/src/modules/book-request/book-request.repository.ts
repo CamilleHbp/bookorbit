@@ -23,9 +23,8 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   ACTIVE_BOOK_REQUEST_STATUSES,
-  AUDIO_FORMAT_LIST,
+  BOOK_REQUEST_FORMATS_BY_MEDIA_KIND,
   BOOK_REQUEST_MEDIA_KINDS,
-  EBOOK_FORMAT_LIST,
   WORKER_WRITABLE_BOOK_REQUEST_STATUSES,
 } from '@bookorbit/types';
 import type {
@@ -111,11 +110,6 @@ const ABANDONABLE_SELF_SERVE_STATUSES: readonly BookRequestStatus[] = ['approved
  * under, so it cannot collide with a lock any other feature takes on the same user id.
  */
 const SELF_SERVE_CAP_LOCK_NAMESPACE = 248_001;
-
-const OWNED_FORMATS_BY_MEDIA_KIND: Record<BookRequestMediaKind, readonly string[]> = {
-  ebook: EBOOK_FORMAT_LIST,
-  audiobook: AUDIO_FORMAT_LIST,
-};
 
 export interface ListRequestsOptions {
   page: number;
@@ -507,7 +501,7 @@ export class BookRequestRepository {
       .from(bookFiles)
       .where(and(eq(bookFiles.bookId, bookId), eq(bookFiles.role, 'content')));
     const formats = new Set(rows.map((row) => row.format?.toLowerCase()).filter((format): format is string => Boolean(format)));
-    return new Set(BOOK_REQUEST_MEDIA_KINDS.filter((kind) => OWNED_FORMATS_BY_MEDIA_KIND[kind].some((format) => formats.has(format))));
+    return new Set(BOOK_REQUEST_MEDIA_KINDS.filter((kind) => BOOK_REQUEST_FORMATS_BY_MEDIA_KIND[kind].some((format) => formats.has(format))));
   }
 
   private async insertWithAliases(tx: RequestWriteExecutor, data: NewBookRequestRow, aliasKeys: string[]): Promise<BookRequestRow> {
@@ -970,7 +964,11 @@ export class BookRequestRepository {
         .select({ id: bookFiles.id })
         .from(bookFiles)
         .where(
-          and(eq(bookFiles.bookId, books.id), eq(bookFiles.role, 'content'), inArray(bookFiles.format, [...OWNED_FORMATS_BY_MEDIA_KIND[mediaKind]])),
+          and(
+            eq(bookFiles.bookId, books.id),
+            eq(bookFiles.role, 'content'),
+            inArray(bookFiles.format, [...BOOK_REQUEST_FORMATS_BY_MEDIA_KIND[mediaKind]]),
+          ),
         ),
     );
 

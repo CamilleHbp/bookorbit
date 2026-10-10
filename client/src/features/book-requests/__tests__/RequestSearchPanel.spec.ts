@@ -347,6 +347,29 @@ describe('RequestSearchPanel provider sources', () => {
     )
   })
 
+  it('offers comic archives beside book formats and sends them through the non-audio request', async () => {
+    state.submit.mockResolvedValue(null)
+    const wrapper = await render()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('More options'))!
+      .trigger('click')
+
+    expect(wrapper.find('button[aria-label="Prefer EPUB"]').exists()).toBe(true)
+    for (const format of ['CBZ', 'CBR', 'CB7', 'CBX']) {
+      expect(wrapper.find(`button[aria-label="Prefer ${format}"]`).exists()).toBe(true)
+    }
+    expect(wrapper.find('button[aria-label="Prefer MP3"]').exists()).toBe(false)
+    await wrapper.get('button[aria-label="Prefer CBZ"]').trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Request')!
+      .trigger('click')
+
+    expect(state.mediaKind.value).toBe('ebook')
+    expect(state.submit).toHaveBeenCalledWith(state.groups.value[0]!.candidate, expect.objectContaining({ preferredFormats: ['cbz'] }))
+  })
+
   it('shows the recommended ISBN and explains the deterministic ranking', async () => {
     state.hasPermission.mockImplementation((permission: string) => permission === Permission.BookRequestSelfFulfill)
     state.defaultFor.mockReturnValue({ libraryId: 4, libraryName: 'Novels', folderId: null })

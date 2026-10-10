@@ -1,8 +1,15 @@
 import type { BookRequestDownloadItem } from "./download-client";
+import { AUDIO_FORMAT_LIST, COMIC_FORMAT_LIST, EBOOK_FORMAT_LIST } from "./book";
 
 /** What a book can be requested as: an ebook or an audiobook, alone or as a pair. */
 export const BOOK_REQUEST_MEDIA_KINDS = ["ebook", "audiobook"] as const;
 export type BookRequestMediaKind = (typeof BOOK_REQUEST_MEDIA_KINDS)[number];
+
+/** The `ebook` API kind covers readable books and comics; audio stays a separate request. */
+export const BOOK_REQUEST_FORMATS_BY_MEDIA_KIND: Readonly<Record<BookRequestMediaKind, readonly string[]>> = {
+  ebook: [...EBOOK_FORMAT_LIST, ...COMIC_FORMAT_LIST],
+  audiobook: AUDIO_FORMAT_LIST,
+};
 
 /**
  * A medium requests no longer offer, still carried by requests made before it was retired. Those

@@ -18,10 +18,9 @@ import {
   Users,
 } from '@lucide/vue'
 import {
-  AUDIO_FORMAT_LIST,
+  BOOK_REQUEST_FORMATS_BY_MEDIA_KIND,
   BOOK_REQUEST_MEDIA_KINDS,
   canonicalizeBookRequestIsbn,
-  EBOOK_FORMAT_LIST,
   isBookRequestFulfiller,
   isGrabbableBookRequestStatus,
   MAX_BOOK_REQUEST_SEARCH_ISBNS,
@@ -113,10 +112,7 @@ const searchChoice = computed<SearchChoice>(() => (pairMode.value ? 'pair' : med
  * What each medium may be asked for, taken from the shared lists rather than restated here, so the
  * form can never offer a format the scorer does not know how to recognise.
  */
-const FORMATS_BY_MEDIA: Record<BookRequestMediaKind, readonly string[]> = {
-  ebook: EBOOK_FORMAT_LIST,
-  audiobook: AUDIO_FORMAT_LIST,
-}
+const FORMATS_BY_MEDIA = BOOK_REQUEST_FORMATS_BY_MEDIA_KIND
 
 const title = ref('')
 const author = ref('')

@@ -46,6 +46,39 @@ describe('rejectRelease', () => {
     expect(rejectRelease(release({ format: 'pdf' }), request({ mediaKind: 'ebook' }))).toBeNull();
   });
 
+  it.each(['cbz', 'cbr', 'cb7', 'cbx'])('accepts %s for non-audio requests but rejects it for audiobooks', (format) => {
+    const candidate = release({ format, title: `Saga [${format.toUpperCase()}]` });
+    expect(rejectRelease(candidate, request())).toBeNull();
+    expect(rejectRelease(candidate, request({ mediaKind: 'audiobook' }))).toContain('not a audiobook format');
+  });
+
+  it('recognizes comic archives from scene names when the provider omits the format', () => {
+    const candidate = release({ title: 'Saga - Brian K Vaughan [CBZ]', format: undefined });
+    const criteria = request({ title: 'Saga', authors: ['Brian K Vaughan'], preferredFormats: ['cbz'] });
+    expect(rejectRelease(candidate, criteria)).toBeNull();
+    expect(toReleaseItem(scoreRelease(candidate, criteria), 'example', criteria)).toMatchObject({ format: 'cbz', formats: ['cbz'] });
+  });
+
+  it('accepts mixed book and comic formats while keeping audio-only releases out', () => {
+    expect(rejectRelease(release({ format: 'CBR PDF' }), request())).toBeNull();
+    expect(rejectRelease(release({ format: 'CBZ EPUB' }), request())).toBeNull();
+    expect(rejectRelease(release({ format: 'm4b mp3', title: 'Saga' }), request())).toContain('not a ebook format');
+  });
+
+  it('matches a comic format preference and release profile for a non-audio request', () => {
+    const criteria = request({
+      title: 'Saga',
+      authors: ['Brian K Vaughan'],
+      preferredFormats: ['cbz'],
+      tiers: [{ id: 'comic', name: 'Comic archives', conditions: { formats: ['cbz', 'cbr'] } }],
+    });
+    const candidate = release({ format: 'cbz', title: 'Saga - Brian K Vaughan [CBZ]' });
+    expect(rejectRelease(candidate, criteria)).toBeNull();
+    const scored = scoreRelease(candidate, criteria);
+    expect(pointsFor(scored, 'preferredFormat')).toBeGreaterThan(0);
+    expect(toReleaseItem(scored, 'example', criteria)).toMatchObject({ tier: 0, formats: ['cbz'] });
+  });
+
   it('compares only the language subtag, so eng and en agree', () => {
     expect(rejectRelease(release({ language: 'ENG' }), request({ language: 'en' }))).toBeNull();
     expect(rejectRelease(release({ language: 'de' }), request({ language: 'en' }))).toContain('not en');

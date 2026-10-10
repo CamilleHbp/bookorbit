@@ -70,6 +70,13 @@ describe('BookMissingFormatRequest', () => {
     expect(wrapper.get('button').attributes('aria-label')).toBe('Request e-book')
   })
 
+  it.each(['cbz', 'cbr', 'cb7', 'CBZ'])('recognizes %s as the non-audio half', async (format) => {
+    const wrapper = await render([format])
+    expect(wrapper.get('button').attributes('aria-label')).toBe('Request audiobook')
+    const [, init] = state.api.mock.calls[0]!
+    expect(JSON.parse(init!.body as string).items[0]).toMatchObject({ mediaKind: 'audiobook' })
+  })
+
   it('asks for the format against this book, so it joins it rather than becoming another', async () => {
     const wrapper = await render(['epub'])
     state.api.mockResolvedValueOnce(json({ request: { id: 77, status: 'pending' }, subscribed: false }))
@@ -105,7 +112,7 @@ describe('BookMissingFormatRequest', () => {
 
   it.each([
     ['a book holding both formats', ['epub', 'm4b'], true, true],
-    ['a comic', ['cbz'], true, true],
+    ['a comic holding audio too', ['cbz', 'mp3'], true, true],
     ['somebody without request access', ['epub'], false, true],
     ['somebody who hid requests', ['epub'], true, false],
   ])('stays out of the way for %s', async (_label, formats, permitted, visible) => {

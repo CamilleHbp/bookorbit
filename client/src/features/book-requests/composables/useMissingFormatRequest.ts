@@ -1,5 +1,5 @@
 import { computed, ref, watch, type Ref } from 'vue'
-import { getBookMediaProfile } from '@bookorbit/types'
+import { BOOK_REQUEST_FORMATS_BY_MEDIA_KIND } from '@bookorbit/types'
 import type { BookDetail, BookRequestAvailability, BookRequestMediaKind, BookRequestSubmitResult, CreateBookRequestPayload } from '@bookorbit/types'
 import { api } from '@/lib/api'
 import { pairHalfState, type PairHalfState } from '../requestPair'
@@ -23,9 +23,13 @@ export function useMissingFormatRequest(book: Ref<BookDetail | null>, enabled: R
 
   const missing = computed<BookRequestMediaKind | null>(() => {
     if (!book.value) return null
-    const profile = getBookMediaProfile(book.value.files)
-    if (profile.hasEbook && !profile.hasAudio) return 'audiobook'
-    if (profile.hasAudio && !profile.hasEbook) return 'ebook'
+    const formats = book.value.files
+      .filter((file) => file.role === 'content' || file.role === 'primary')
+      .map((file) => file.format?.toLowerCase() ?? '')
+    const hasReadable = formats.some((format) => BOOK_REQUEST_FORMATS_BY_MEDIA_KIND.ebook.includes(format))
+    const hasAudio = formats.some((format) => BOOK_REQUEST_FORMATS_BY_MEDIA_KIND.audiobook.includes(format))
+    if (hasReadable && !hasAudio) return 'audiobook'
+    if (hasAudio && !hasReadable) return 'ebook'
     return null
   })
 
