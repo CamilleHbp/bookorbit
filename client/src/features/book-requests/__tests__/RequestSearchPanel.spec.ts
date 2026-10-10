@@ -20,6 +20,7 @@ const state = vi.hoisted(
       submitFreeText: vi.fn<() => Promise<unknown>>(),
       submitPairFreeText: vi.fn<() => Promise<unknown>>(),
       search: vi.fn<() => void>(),
+      searchFresh: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
       checkFreeText: vi.fn<() => Promise<unknown>>(),
       push: vi.fn<() => Promise<void>>(),
       routeQuery: {} as Record<string, string>,
@@ -38,6 +39,7 @@ const state = vi.hoisted(
       submitFreeText: ReturnType<typeof vi.fn>
       submitPairFreeText: ReturnType<typeof vi.fn>
       search: ReturnType<typeof vi.fn>
+      searchFresh: ReturnType<typeof vi.fn>
       checkFreeText: ReturnType<typeof vi.fn>
       push: ReturnType<typeof vi.fn>
       routeQuery: Record<string, string>
@@ -89,6 +91,8 @@ vi.mock('@/features/book/composables/useMetadataSearch', async () => {
       providers: state.providers,
       loadProviders: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
       search: state.search,
+      searchFresh: state.searchFresh,
+      cacheSummary: ref({ cachedCount: 0, staleCount: 0, oldestFetchedAt: null }),
     }),
   }
 })
@@ -468,6 +472,19 @@ describe('RequestSearchPanel provider sources', () => {
       params: { id: 31 },
       query: { isbn: '9780441013593' },
     })
+  })
+
+  it('offers a fresh search after every finished search, even when no result came from saved searches', async () => {
+    const before = await render()
+    expect(before.find('[data-testid="metadata-cache-search-fresh"]').exists()).toBe(false)
+    before.unmount()
+
+    state.hasSearched.value = true
+    const wrapper = await render()
+    await wrapper.get('[data-testid="metadata-cache-search-fresh"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="metadata-cache-notice"]').exists()).toBe(false)
+    expect(state.searchFresh).toHaveBeenCalledTimes(1)
   })
 
   it('offers a one-off manual indexer search even when metadata results exist', async () => {

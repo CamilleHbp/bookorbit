@@ -13,6 +13,8 @@ export const SERVER_FEATURES = [
   "bookmark-edit",
   "notebook-hub",
   "book-request-pairs",
+  /** Metadata searches (book and author) accept `cache=refresh` and mark candidates answered from the cache. */
+  "metadata-search-cache",
 ] as const;
 
 export type ServerFeature = (typeof SERVER_FEATURES)[number];

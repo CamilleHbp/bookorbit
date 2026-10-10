@@ -87,12 +87,15 @@ const {
   resultProviderOrder,
   loadProviders,
   search,
+  searchFresh,
   retryProvider,
   toggleProvider,
   selectFieldRuleProviders,
   clearProviderFilter,
   coverProviderOrder,
   audioCoverProviderOrder,
+  cacheSummary,
+  cacheInfoFor,
 } = useMetadataSearch()
 const secondSearch = useMetadataSearch()
 const { results: secondResults, isStreaming: secondSearching } = secondSearch
@@ -168,6 +171,11 @@ function handleRetry(provider: MetadataProviderKey) {
   void retryProvider(provider)
 }
 
+function handleSearchFresh() {
+  void searchFresh()
+  if (secondCoverMedium.value) void secondSearch.searchFresh()
+}
+
 function handleApply(patch: MetadataDiffApply) {
   emit('apply', patch)
   emit('close')
@@ -225,11 +233,15 @@ function handleCancel() {
         :provider-order="resultProviderOrder"
         :is-streaming="isStreaming"
         :has-searched="hasSearched"
+        can-search-fresh
+        :cache-summary="cacheSummary"
+        :cache-info="cacheInfoFor"
         @search="runMetadataSearch"
         @toggle-provider="handleToggleProvider"
         @select-all="handleSelectAll"
         @select-field-rules="handleSelectFieldRules"
         @retry-provider="handleRetry"
+        @search-fresh="handleSearchFresh"
         @apply="handleApply"
         @cancel="handleCancel"
       >

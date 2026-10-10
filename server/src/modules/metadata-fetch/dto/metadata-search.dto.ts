@@ -17,8 +17,8 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 
-import { CONCRETE_BOOK_MEDIA_KINDS, MetadataProviderKey } from '@bookorbit/types';
-import type { ConcreteBookMediaKind } from '@bookorbit/types';
+import { CONCRETE_BOOK_MEDIA_KINDS, METADATA_CACHE_REQUEST_POLICIES, MetadataProviderKey } from '@bookorbit/types';
+import type { ConcreteBookMediaKind, MetadataCacheRequestPolicy } from '@bookorbit/types';
 
 @ValidatorConstraint({ name: 'atLeastOneSearchTerm', async: false })
 class AtLeastOneSearchTermConstraint implements ValidatorConstraintInterface {
@@ -123,4 +123,12 @@ export class MetadataSearchDto {
   })
   @IsEnum(MetadataProviderKey, { each: true })
   providers?: MetadataProviderKey[];
+
+  /**
+   * `refresh` asks every provider live instead of answering from the metadata cache. Clients must
+   * only send it to servers advertising the `metadata-search-cache` feature.
+   */
+  @IsOptional()
+  @IsIn(METADATA_CACHE_REQUEST_POLICIES)
+  cache?: MetadataCacheRequestPolicy;
 }

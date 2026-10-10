@@ -216,10 +216,13 @@ const {
   audioCoverProviderOrder,
   loadProviders,
   search,
+  searchFresh,
   retryProvider,
   toggleProvider,
   selectFieldRuleProviders,
   clearProviderFilter,
+  cacheSummary,
+  cacheInfoFor,
 } = useMetadataSearch()
 
 const searchDefaults = computed(() => ({
@@ -335,6 +338,10 @@ function backToEditor() {
 
 function handleRetry(provider: MetadataProviderKey) {
   void retryProvider(provider)
+}
+
+function handleSearchFresh() {
+  void searchFresh()
 }
 
 async function handleApply(patch: MetadataDiffApply) {
@@ -698,11 +705,15 @@ onMounted(() => {
           :has-searched="hasSearched"
           :fixed-candidate="metaView === 'diff' ? fetchedCandidate : null"
           :apply-hint="t('book.detail.editMetadata.match.footer.fileHint')"
+          can-search-fresh
+          :cache-summary="cacheSummary"
+          :cache-info="cacheInfoFor"
           @search="handleSearchSubmit"
           @toggle-provider="toggleProvider"
           @select-all="clearProviderFilter"
           @select-field-rules="selectFieldRuleProviders"
           @retry-provider="handleRetry"
+          @search-fresh="handleSearchFresh"
           @apply="handleApply"
           @cancel="backToEditor"
         />

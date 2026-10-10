@@ -39,7 +39,7 @@ import SeriesMembershipEditor from './SeriesMembershipEditor.vue'
 import WriteAndRenameResultPanel from '../WriteAndRenameResultPanel.vue'
 import type { MetadataDiffApply, MetadataPatch } from '../../../composables/useMetadataDiff'
 import { type EditableSeriesMembership, normalizeSeriesMemberships, useMetadataEditor } from '../../../composables/useMetadataEditor'
-import { type MetadataRefreshPreview, useRefreshMetadata } from '../../../composables/useRefreshMetadata'
+import { type MetadataRefreshPreview, type MetadataRefreshPreviewResult, useRefreshMetadata } from '../../../composables/useRefreshMetadata'
 import { type FileMetadata, useFileMetadata } from '../../../composables/useFileMetadata'
 import { useWriteAndRename } from '../../../composables/useWriteAndRename'
 import { useMetadataLocks } from '../../../composables/useMetadataLocks'
@@ -50,7 +50,9 @@ import { usePublisherSearch, useSeriesNameSearch, useLanguageSearch } from '../.
 import InputWithSuggestions from '@/components/ui/InputWithSuggestions.vue'
 import { RATING_STARS, getRatingStarClass } from '@/features/book/lib/rating-stars'
 import { buildFileMetadataPatch } from '@/features/book/lib/file-metadata-patch'
-import { metadataRefreshAppliedMessage, metadataRefreshEmptyMessage } from '@/features/book/lib/metadata-refresh-feedback'
+import { metadataProviderLabel, metadataRefreshAppliedMessage, metadataRefreshEmptyMessage } from '@/features/book/lib/metadata-refresh-feedback'
+import { showCacheFallbackToast } from '@/features/metadata-cache/lib/cache-feedback'
+import { diagnosticsFallbackProviders } from '@/features/metadata-cache/lib/metadata-cache'
 import { filterProviderIdFields, isProviderIdFieldAvailable, isProviderIdFormField } from '@/features/book/lib/provider-id-fields'
 import { formatCommunityRatingLine } from '@/features/book/lib/community-rating'
 import { coverFieldMedium, coverLockField } from '@/features/book/lib/cover-slots'
@@ -760,6 +762,11 @@ async function autoFill() {
     return
   }
 
+  applyAutoFillResult(result)
+  showCacheFallbackToast(diagnosticsFallbackProviders(result.diagnostics), metadataProviderLabel)
+}
+
+function applyAutoFillResult(result: MetadataRefreshPreviewResult) {
   const preview = result.metadata
   if (Object.keys(preview).length === 0) {
     const message =

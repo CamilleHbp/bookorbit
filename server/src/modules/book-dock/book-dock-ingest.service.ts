@@ -396,7 +396,13 @@ export class BookDockIngestService implements OnApplicationBootstrap, OnModuleDe
         },
         libraryId ?? undefined,
         // A dock file keeps one cover, its own medium's, so the other slot's search would be thrown away.
-        { coverMedia, lockedCoverSlots: [params.isAudiobook ? 'ebook' : 'audio'] },
+        // A manual refetch is live only: nothing on the dock would say a saved answer stood in for a
+        // provider that failed. Automatic ingest may answer from the metadata cache.
+        {
+          coverMedia,
+          lockedCoverSlots: [params.isAudiobook ? 'ebook' : 'audio'],
+          cacheDirective: force ? { policy: 'refresh', allowFallback: false } : { policy: 'default', allowFallback: true },
+        },
       );
       // A dock file has one medium, so its one cover is that medium's slot.
       if (params.isAudiobook) {

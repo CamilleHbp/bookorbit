@@ -56,6 +56,7 @@ import type {
   BookKoboState,
   BookMetadataRefreshPreviewFields,
   BookMetadataRefreshPreviewResponse,
+  MetadataCacheUsage,
   BookMetadataLockField,
   BookDeletionAuditMeta,
   BookQuery,
@@ -87,6 +88,7 @@ import { MetadataScoreService } from '../metadata-score/metadata-score.service';
 import { LibraryService } from '../library/library.service';
 import { books } from '../../db/schema';
 import { ExistingMetadataFields, MetadataFetchPipeline, ResolvedMetadataFields } from '../metadata-fetch/metadata-fetch-pipeline';
+import type { CacheDirective } from '../../common/provider-cache/provider-cache-spec';
 import { splitMetadataIsbn } from '../../common/text-match/isbn-normalize';
 import type { MetadataSearchParams } from '../metadata-fetch/providers/metadata-search-params';
 import { FileRenameService, RENAME_RELEVANT_FIELDS } from '../file-write/file-rename.service';
@@ -147,6 +149,8 @@ const METADATA_UPDATE_FAILPOINTS = [
 ] as const;
 
 const METADATA_PROVIDER_KEY_SET = new Set<string>(Object.values(MetadataProviderKey));
+/** An explicit single-book refresh goes live; a provider that fails may still answer from the cache. */
+const EXPLICIT_REFRESH_DIRECTIVE: CacheDirective = { policy: 'refresh', allowFallback: true };
 
 export type MetadataUpdateFailpoint = (typeof METADATA_UPDATE_FAILPOINTS)[number];
 export type ExportScope = 'primary' | 'all' | 'audio';
@@ -2870,7 +2874,16 @@ export class BookService {
     };
   }
 
-  async refreshMetadata(id: number, preview: boolean, user: RequestUser): Promise<BookDetailDto | BookMetadataRefreshPreviewResponse> {
+  /**
+   * An explicit refresh goes live (a provider that fails may still answer from the cache, and the
+   * response says which did); the bulk refresh passes its own directive so it can use the cache.
+   */
+  async refreshMetadata(
+    id: number,
+    preview: boolean,
+    user: RequestUser,
+    options?: { cacheDirective?: CacheDirective },
+  ): Promise<(BookDetailDto & { metadataCache?: MetadataCacheUsage }) | BookMetadataRefreshPreviewResponse> {
     const event = 'book.refresh_metadata';
     const startedAt = Date.now();
     this.logger.log(`[${event}] [start] bookId=${id} userId=${user.id} preview=${preview} - refresh metadata started`);
@@ -2928,7 +2941,11 @@ export class BookService {
         resolved,
         providerIds: resolvedProviderIds,
         diagnostics,
-      } = await this.pipeline.runWithSources(searchParams, existingFields, book.books.libraryId, coverInputs.options);
+        cache,
+      } = await this.pipeline.runWithSources(searchParams, existingFields, book.books.libraryId, {
+        ...coverInputs.options,
+        cacheDirective: options?.cacheDirective ?? EXPLICIT_REFRESH_DIRECTIVE,
+      });
 
       if (preview) {
         const previewResult = this.buildMetadataRefreshPreview(resolved, resolvedProviderIds);
@@ -2996,10 +3013,11 @@ export class BookService {
       if (coverDownloaded) detail = await this.getDetail(id, user);
 
       const result = detail ?? (await this.getDetail(id, user));
+      const fallbackProviders = cache.servedProviders.filter((provider) => provider.source === 'fallback');
       this.logger.log(
-        `[${event}] [end] bookId=${id} preview=false durationMs=${Date.now() - startedAt} updatedFields=${updatedFields} skippedLockedFields=${skippedFields.join('|') || 'none'} coverDownloaded=${coverDownloaded} - refresh metadata completed`,
+        `[${event}] [end] bookId=${id} preview=false durationMs=${Date.now() - startedAt} updatedFields=${updatedFields} skippedLockedFields=${skippedFields.join('|') || 'none'} coverDownloaded=${coverDownloaded} cacheServed=${cache.servedProviders.length} cacheFallbacks=${fallbackProviders.length} - refresh metadata completed`,
       );
-      return result;
+      return fallbackProviders.length > 0 ? { ...result, metadataCache: { fallbackProviders } } : result;
     } catch (err) {
       const errorClass = err instanceof Error ? err.name : 'Error';
       const errorMessage = sanitizeLogValue(err instanceof Error ? err.message : String(err));
@@ -3014,11 +3032,14 @@ export class BookService {
     bookIds: number[],
     user: RequestUser,
     onProgress?: (event: { bookId: number; success: boolean; detail?: BookDetailDto; error?: string }) => void,
-    options?: { isCancelled?: () => boolean },
+    options?: { isCancelled?: () => boolean; ignoreCache?: boolean },
   ): Promise<{ processed: number; failed: number }> {
     const event = 'book.bulk_refresh_metadata';
     const startedAt = Date.now();
-    this.logger.log(`[${event}] [start] count=${bookIds.length} userId=${user.id} - bulk refresh metadata started`);
+    const cacheDirective: CacheDirective = { policy: options?.ignoreCache ? 'refresh' : 'default', allowFallback: true };
+    this.logger.log(
+      `[${event}] [start] count=${bookIds.length} userId=${user.id} ignoreCache=${options?.ignoreCache === true} - bulk refresh metadata started`,
+    );
     try {
       if (bookIds.length === 0) {
         this.logger.log(`[${event}] [end] count=0 durationMs=${Date.now() - startedAt} processed=0 failed=0 - bulk refresh metadata completed`);
@@ -3039,7 +3060,7 @@ export class BookService {
         let detail: BookDetailDto | undefined;
         let errorMessage: string | undefined;
         try {
-          const refreshed = await this.refreshMetadata(id, false, user);
+          const refreshed = await this.refreshMetadata(id, false, user, { cacheDirective });
           detail = refreshed as BookDetailDto;
           processed++;
           success = true;

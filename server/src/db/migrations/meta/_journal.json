@@ -750,6 +750,13 @@
       "when": 1791429899868,
       "tag": "0106_add_book_request_pairs",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1791658522588,
+      "tag": "0107_add_provider_metadata_cache",
+      "breakpoints": true
     }
   ]
 }

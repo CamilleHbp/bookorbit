@@ -48,6 +48,8 @@ import { toast } from 'vue-sonner'
 import { useAuth } from '@/features/auth/composables/useAuth'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useMetadataSearch } from '@/features/book/composables/useMetadataSearch'
+import MetadataCacheNotice from '@/features/metadata-cache/components/MetadataCacheNotice.vue'
+import SearchFreshButton from '@/features/metadata-cache/components/SearchFreshButton.vue'
 import { providerIconPathSafe } from '@/features/book/lib/provider-icons'
 import { useLibraries } from '@/features/library/composables/useLibraries'
 import { getProviderColor } from '@/lib/provider-colors'
@@ -74,6 +76,8 @@ const {
   providers,
   loadProviders,
   search,
+  searchFresh,
+  cacheSummary,
 } = useMetadataSearch()
 const { libraries, fetchLibraries } = useLibraries()
 const { hasPermission } = usePermissions()
@@ -256,6 +260,15 @@ async function runSearch() {
     author: author.value.trim() || undefined,
     ...(pairMode.value ? { mediaKinds: [...BOOK_REQUEST_MEDIA_KINDS] } : { mediaKind: mediaKind.value }),
   })
+}
+
+const showCacheNotice = computed(() => hasSearched.value && cacheSummary.value.cachedCount > 0)
+// Offered after every finished search: a provider whose saved answer was "nothing" leaves no result to mark.
+const showSearchFresh = computed(() => hasSearched.value && !isStreaming.value && !showCacheNotice.value)
+
+function handleSearchFresh() {
+  activeCoverUrls.value = {}
+  void searchFresh()
 }
 
 function handleSearchSubmit(event: Event) {
@@ -1113,6 +1126,10 @@ function mediaIconFor(kind: BookRequestMediaKind) {
     </div>
 
     <p v-if="interruptedMessage" role="status" class="text-sm text-muted-foreground">{{ interruptedMessage }}</p>
+    <MetadataCacheNotice v-if="showCacheNotice" :summary="cacheSummary" @search-fresh="handleSearchFresh" />
+    <div v-else-if="showSearchFresh" class="flex justify-end">
+      <SearchFreshButton @search-fresh="handleSearchFresh" />
+    </div>
 
     <!-- One row per work. The records behind it are a footnote on the row, not rows of their own. -->
     <ul v-if="groups.length" class="space-y-2">

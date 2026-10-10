@@ -270,7 +270,7 @@ describe('BookMetadataFetchQueueRepository', () => {
     config.conditions.neverFetched.enabled = true;
 
     await expect(repo.scheduleEligibleBooksInBatches(config, 'manual_trigger', undefined, 2)).resolves.toBe(2);
-    expect(repo.upsertSchedule).toHaveBeenCalledWith([2, 5], 'manual_trigger');
+    expect(repo.upsertSchedule).toHaveBeenCalledWith([2, 5], 'manual_trigger', false);
   });
 
   it('fetchDue short-circuits for non-positive limits', async () => {

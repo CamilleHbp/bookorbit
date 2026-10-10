@@ -403,6 +403,9 @@ function makeBookCard(id: number, overrides?: Record<string, unknown>) {
   };
 }
 
+const NO_CACHE_USE = { servedProviders: [], outboundRequests: 0 };
+const EXPLICIT_REFRESH = { policy: 'refresh', allowFallback: true };
+
 describe('BookService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1004,6 +1007,7 @@ describe('BookService', () => {
         fileRows: [{ format: 'epub', role: 'primary', mediaOverlayAvailable: false }],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: { title: 'New Title', isbn10: '0306406152', isbn13: '9780306406157' },
         sources: {},
         providerIds: {},
@@ -1054,7 +1058,7 @@ describe('BookService', () => {
           narrators: [],
         },
         7,
-        { coverMedia: { hasEbook: true, hasAudio: false }, lockedCoverSlots: [] },
+        { coverMedia: { hasEbook: true, hasAudio: false }, lockedCoverSlots: [], cacheDirective: EXPLICIT_REFRESH },
       );
       expect(updateSpy).not.toHaveBeenCalled();
       expect(metadataService.downloadAndSaveCover).not.toHaveBeenCalled();
@@ -1073,6 +1077,7 @@ describe('BookService', () => {
         genreRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: { title: 'Resolved', authors: ['A'], genres: ['G'], isbn10: '0306406152', isbn13: '9780306406157', coverUrl: 'https://img/c.jpg' },
         sources: {},
         providerIds: {},
@@ -1119,6 +1124,7 @@ describe('BookService', () => {
         { url: 'https://img/b.jpg', provider: MetadataProviderKey.ITUNES, fit: 'match' as const },
       ];
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: { audioCoverUrl: 'https://img/a.jpg', audioCoverChoices },
         sources: {},
         providerIds: {},
@@ -1135,6 +1141,7 @@ describe('BookService', () => {
       expect(pipeline.runWithSources).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ cover: null, audioCover: null }), 7, {
         coverMedia: { hasEbook: true, hasAudio: true },
         lockedCoverSlots: ['ebook'],
+        cacheDirective: EXPLICIT_REFRESH,
       });
       expect(metadataService.downloadAndSaveCover).toHaveBeenCalledTimes(1);
       expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith(audioCoverChoices, 1, 'audio');
@@ -1167,6 +1174,7 @@ describe('BookService', () => {
         fileRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: {
           coverUrl: 'https://img/e.jpg',
           coverChoices: [{ url: 'https://img/e.jpg', provider: MetadataProviderKey.AMAZON, fit: 'match' }],
@@ -1195,6 +1203,7 @@ describe('BookService', () => {
         genreRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: { title: 'Resolved' },
         sources: {},
         providerIds: {
@@ -1232,6 +1241,7 @@ describe('BookService', () => {
         communityRatingRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: {
           communityRatings: [{ provider: MetadataProviderKey.HARDCOVER, rating: 4.25, ratingCount: 12345, updatedAt: '2026-06-25T00:00:00.000Z' }],
         },
@@ -1263,6 +1273,7 @@ describe('BookService', () => {
         genreRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: {
           title: 'Resolved',
           narrators: ['Narrator One'],
@@ -1308,6 +1319,7 @@ describe('BookService', () => {
         genreRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: {
           seriesName: 'Sword of Truth',
           seriesIndex: 11,
@@ -1336,6 +1348,35 @@ describe('BookService', () => {
       });
     });
 
+    it('refreshMetadata reports providers that fell back to the cache', async () => {
+      const { service, bookRepo, pipeline } = makeService();
+      const user = makeUser();
+      bookRepo.findById.mockResolvedValue({
+        book: {
+          books: { id: 1, libraryId: 7 },
+          book_metadata: { title: 'Old', isbn13: null, isbn10: null },
+        },
+        narratorRows: [],
+        authorRows: [],
+        genreRows: [],
+      });
+      const fallback = { provider: MetadataProviderKey.GOODREADS, source: 'fallback' as const, stale: true, cachedAt: '2026-01-01T00:00:00.000Z' };
+      pipeline.runWithSources.mockResolvedValue({
+        cache: {
+          servedProviders: [{ provider: MetadataProviderKey.GOOGLE, source: 'cache', stale: false, cachedAt: '2026-02-01T00:00:00.000Z' }, fallback],
+          outboundRequests: 1,
+        },
+        resolved: { title: 'Resolved' },
+        sources: {},
+        providerIds: {},
+      });
+      vi.spyOn(service, 'updateMetadata').mockResolvedValue({ book: { id: 1 }, write: null, libraryAutoWriteEnabled: false } as never);
+
+      const result = await service.refreshMetadata(1, false, user);
+
+      expect(result).toEqual(expect.objectContaining({ id: 1, metadataCache: { fallbackProviders: [fallback] } }));
+    });
+
     it('refreshMetadata persists provider ids returned by pipeline', async () => {
       const { service, bookRepo, pipeline } = makeService();
       const user = makeUser();
@@ -1349,6 +1390,7 @@ describe('BookService', () => {
         genreRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: { title: 'Resolved' },
         sources: {},
         providerIds: {
@@ -1393,6 +1435,7 @@ describe('BookService', () => {
         communityRatingRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: { hardcoverEditionId: '8941973' },
         sources: {},
         providerIds: {
@@ -1432,7 +1475,7 @@ describe('BookService', () => {
           { id: 2, format: 'm4b', role: 'content' },
         ],
       });
-      pipeline.runWithSources.mockResolvedValue({ resolved: {}, sources: {}, providerIds: {} });
+      pipeline.runWithSources.mockResolvedValue({ cache: NO_CACHE_USE, resolved: {}, sources: {}, providerIds: {} });
 
       await service.refreshMetadata(1, true, makeUser());
 
@@ -1455,7 +1498,7 @@ describe('BookService', () => {
         genreRows: [],
         communityRatingRows: [],
       });
-      pipeline.runWithSources.mockResolvedValue({ resolved: {}, sources: {}, providerIds: {} });
+      pipeline.runWithSources.mockResolvedValue({ cache: NO_CACHE_USE, resolved: {}, sources: {}, providerIds: {} });
 
       await service.refreshMetadata(1, true, user);
 
@@ -1481,6 +1524,7 @@ describe('BookService', () => {
         communityRatingRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: {
           communityRatings: [{ provider: MetadataProviderKey.HARDCOVER, rating: 4.25, ratingCount: 12345, updatedAt: null }],
         },
@@ -1519,6 +1563,7 @@ describe('BookService', () => {
         genreRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: {
           seriesName: 'Sword of Truth',
           seriesIndex: 11,
@@ -1567,6 +1612,7 @@ describe('BookService', () => {
         genreRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: {
           title: 'Resolved',
           narrators: ['Narrator One'],
@@ -1615,6 +1661,7 @@ describe('BookService', () => {
         genreRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: {
           title: 'Resolved',
           comicMetadata: {
@@ -1663,6 +1710,7 @@ describe('BookService', () => {
         genreRows: [],
       });
       pipeline.runWithSources.mockResolvedValue({
+        cache: NO_CACHE_USE,
         resolved: { title: 'Resolved', authors: ['A'], coverUrl: 'https://img/c.jpg', hardcoverEditionId: '8941973' },
         sources: {},
         providerIds: {
@@ -2556,9 +2604,20 @@ describe('BookService', () => {
       const result = await service.bulkRefreshMetadata([1, 2], user, onProgress);
 
       expect(result).toEqual({ processed: 2, failed: 0 });
-      expect(refreshSpy).toHaveBeenCalledWith(1, false, user);
-      expect(refreshSpy).toHaveBeenCalledWith(2, false, user);
+      expect(refreshSpy).toHaveBeenCalledWith(1, false, user, { cacheDirective: { policy: 'default', allowFallback: true } });
+      expect(refreshSpy).toHaveBeenCalledWith(2, false, user, { cacheDirective: { policy: 'default', allowFallback: true } });
       expect(onProgress).toHaveBeenCalledTimes(2);
+    });
+
+    it('bulkRefreshMetadata asks providers live when the caller ignores the cache', async () => {
+      const { service, bookRepo } = makeService();
+      const user = makeUser();
+      const refreshSpy = vi.spyOn(service, 'refreshMetadata').mockResolvedValue({ id: 1 } as never);
+      bookRepo.findLibraryIdsByBookIds.mockResolvedValue([{ id: 1, libraryId: 7 }]);
+
+      await service.bulkRefreshMetadata([1], user, undefined, { ignoreCache: true });
+
+      expect(refreshSpy).toHaveBeenCalledWith(1, false, user, { cacheDirective: { policy: 'refresh', allowFallback: true } });
     });
 
     it('removes every content file before deleting records, then cleans up covers', async () => {

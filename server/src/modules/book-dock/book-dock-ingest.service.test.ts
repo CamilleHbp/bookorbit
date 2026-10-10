@@ -537,7 +537,7 @@ describe('BookDockIngestService', () => {
         },
         {},
         undefined,
-        { coverMedia: { hasEbook: true, hasAudio: false }, lockedCoverSlots: ['audio'] },
+        { coverMedia: { hasEbook: true, hasAudio: false }, lockedCoverSlots: ['audio'], cacheDirective: { policy: 'default', allowFallback: true } },
       );
       expect(repo.update).toHaveBeenNthCalledWith(1, 8, { status: 'fetching' });
       expect(repo.update).toHaveBeenNthCalledWith(2, 8, { status: 'ready' });
@@ -568,7 +568,7 @@ describe('BookDockIngestService', () => {
         },
         { isbn10: undefined, isbn13: '9781401284770' },
         undefined,
-        { coverMedia: { hasEbook: true, hasAudio: false }, lockedCoverSlots: ['audio'] },
+        { coverMedia: { hasEbook: true, hasAudio: false }, lockedCoverSlots: ['audio'], cacheDirective: { policy: 'default', allowFallback: true } },
       );
     });
 
@@ -583,7 +583,23 @@ describe('BookDockIngestService', () => {
       expect(metadataFetchPipeline.runWithSources).toHaveBeenCalledWith(expect.objectContaining({ isAudiobook: true }), {}, undefined, {
         coverMedia: { hasEbook: false, hasAudio: true },
         lockedCoverSlots: ['ebook'],
+        cacheDirective: { policy: 'default', allowFallback: true },
       });
+    });
+
+    it('asks providers live for a manual refetch, without falling back to saved answers', async () => {
+      const { service, repo, metadataFetchPipeline } = makeService();
+      repo.findById.mockResolvedValue({ id: 8, fileName: 'Dune.epub', status: 'ready', format: 'epub', embeddedMetadata: { title: 'Dune' } });
+      (metadataFetchPipeline as any).runWithSources = vi.fn().mockResolvedValue({ resolved: {}, sources: {} });
+
+      await (service as any).autoFetchMetadataAsync(8, true);
+
+      expect(metadataFetchPipeline.runWithSources).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        undefined,
+        expect.objectContaining({ cacheDirective: { policy: 'refresh', allowFallback: false } }),
+      );
     });
 
     it('searches by the field rules of the library a docked file is headed for', async () => {
@@ -740,6 +756,7 @@ describe('BookDockIngestService', () => {
       expect(metadataFetchPipeline.runWithSources).toHaveBeenCalledWith(expect.objectContaining({ isAudiobook: false }), {}, undefined, {
         coverMedia: { hasEbook: true, hasAudio: true },
         lockedCoverSlots: ['audio'],
+        cacheDirective: { policy: 'default', allowFallback: true },
       });
     });
 

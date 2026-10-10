@@ -32,6 +32,7 @@ import { FileWriteService } from '../file-write/file-write.service';
 import { BookService } from './book.service';
 import { BookQueryPipe } from './pipes/book-query.pipe';
 import { BulkBookIdsDto } from './dto/bulk-book-ids.dto';
+import { BulkRefreshMetadataDto } from './dto/bulk-refresh-metadata.dto';
 import { BulkSetStatusDto } from './dto/bulk-set-status.dto';
 import { BulkSetRatingDto } from './dto/bulk-set-rating.dto';
 import { BulkSetMetadataDto } from './dto/bulk-set-metadata.dto';
@@ -161,7 +162,7 @@ export class BookController {
       return `Bulk refreshed metadata for ${count} book${count !== 1 ? 's' : ''}`;
     },
   })
-  async bulkRefreshMetadata(@Body() dto: BulkBookIdsDto, @CurrentUser() user: RequestUser, @Res() reply: FastifyReply) {
+  async bulkRefreshMetadata(@Body() dto: BulkRefreshMetadataDto, @CurrentUser() user: RequestUser, @Res() reply: FastifyReply) {
     const ids = await this.bookService.resolveSelectionToIds(dto, user);
     const stream = this.createSseStream(reply);
     try {
@@ -171,7 +172,7 @@ export class BookController {
         (event) => {
           stream.send(event);
         },
-        { isCancelled: stream.isClosed },
+        { isCancelled: stream.isClosed, ignoreCache: dto.ignoreCache === true },
       );
       if (!stream.isClosed()) {
         stream.send({ done: true, ...result });
