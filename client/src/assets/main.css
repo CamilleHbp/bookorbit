@@ -592,6 +592,28 @@ html[data-glow='off'] .glow-wrapper::after {
     }
   }
 
+  @keyframes request-shimmer {
+    from {
+      inset-inline-start: -70%;
+    }
+    to {
+      inset-inline-start: 140%;
+    }
+  }
+
+  @keyframes request-wand {
+    0%,
+    100% {
+      transform: rotate(0deg);
+    }
+    35% {
+      transform: rotate(-16deg);
+    }
+    70% {
+      transform: rotate(10deg);
+    }
+  }
+
   @keyframes shake {
     0%,
     100% {

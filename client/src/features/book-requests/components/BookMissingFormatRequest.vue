@@ -2,7 +2,7 @@
 import { computed, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { toast } from 'vue-sonner'
-import { BookOpen, Check, Headphones, Library, Loader2, Users } from '@lucide/vue'
+import { BookOpen, Check, Headphones, Library, Loader2, Users, WandSparkles } from '@lucide/vue'
 import { Permission, type BookDetail } from '@bookorbit/types'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useBookRequestVisibility } from '../composables/useBookRequestVisibility'
@@ -67,13 +67,13 @@ async function handleRequest() {
   -->
   <div v-if="visible" class="mt-2 flex min-h-7 items-center gap-2.5" role="group" :aria-label="groupLabel">
     <span
-      class="inline-flex h-5 min-w-13 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground"
+      class="inline-flex h-5 min-w-9 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground"
       aria-hidden="true"
     >
       <component :is="icon" :size="12" />
     </span>
 
-    <span class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" role="status">
+    <span class="min-w-0 flex-1 text-[11px] text-muted-foreground" role="status">
       <Loader2 v-if="state === 'checking'" :size="11" class="me-1 inline animate-spin align-[-1px]" aria-hidden="true" />
       <span v-else-if="state === 'owned'" class="inline-flex items-center gap-1"><Library :size="11" aria-hidden="true" />{{ statusText }}</span>
       <span v-else-if="state === 'following'" class="inline-flex items-center gap-1"><Check :size="11" aria-hidden="true" />{{ statusText }}</span>
@@ -98,13 +98,19 @@ async function handleRequest() {
     <button
       v-else-if="canAct"
       type="button"
-      class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-input bg-card px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60 motion-reduce:transition-none"
+      class="group/request relative isolate inline-flex h-7 shrink-0 items-center gap-1 overflow-hidden rounded-md border border-primary/45 bg-linear-to-br from-primary/12 to-card px-2 text-[11px] font-medium text-foreground shadow-[0_0_12px_color-mix(in_oklch,var(--primary)_22%,transparent)] transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card focus-visible:outline-none disabled:shadow-none disabled:opacity-60 after:pointer-events-none after:absolute after:-inset-y-2 after:-start-[70%] after:z-0 after:w-2/5 after:rotate-24 after:bg-linear-to-r after:from-transparent after:via-primary/22 after:to-transparent after:content-[''] motion-safe:enabled:hover:after:animate-[request-shimmer_700ms_ease-out] motion-safe:enabled:focus-visible:after:animate-[request-shimmer_700ms_ease-out] disabled:after:hidden motion-reduce:transition-none [@media(pointer:coarse)]:min-h-11"
       :disabled="submitting"
       :aria-label="actionAriaLabel"
       @click="handleRequest"
     >
-      <Loader2 v-if="submitting" :size="11" class="animate-spin" aria-hidden="true" />
-      {{ actionLabel }}
+      <Loader2 v-if="submitting" :size="13" class="relative z-10 motion-safe:animate-spin" aria-hidden="true" />
+      <WandSparkles
+        v-else
+        :size="13"
+        class="relative z-10 text-primary motion-safe:group-hover/request:animate-[request-wand_650ms_ease-in-out] motion-safe:group-focus-visible/request:animate-[request-wand_650ms_ease-in-out]"
+        aria-hidden="true"
+      />
+      <span class="relative z-10">{{ actionLabel }}</span>
     </button>
   </div>
 </template>
