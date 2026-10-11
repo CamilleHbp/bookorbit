@@ -244,6 +244,7 @@ function handleTranslate() {
 }
 
 const bookMeta = ref<BookDetail | null>(null)
+const initialNavigationPending = ref(true)
 
 const {
   foliateReady,
@@ -267,7 +268,10 @@ let mediaOverlayStartId = 0
 const isMediaOverlayAvailable = computed(() => isTtsAvailable && hasMediaOverlay.value)
 const isTtsActive = computed(() => isActive.value && currentBook.value?.bookFileId === fileId)
 const isNavigationLocked = computed(
-  () => (isTtsActive.value && playbackState.value === 'playing') || (mediaOverlay.isActive.value && mediaOverlay.isPlaying.value),
+  () =>
+    initialNavigationPending.value ||
+    (isTtsActive.value && playbackState.value === 'playing') ||
+    (mediaOverlay.isActive.value && mediaOverlay.isPlaying.value),
 )
 
 useTtsKeyboard(() => mediaOverlay.isActive.value, {
@@ -750,6 +754,8 @@ function onMiddleTapHandler() {
 }
 
 function canRunManualNavigation(): boolean {
+  if (initialNavigationPending.value) return false
+
   if (!isNavigationLocked.value) {
     relocationSource = 'text'
     return true
@@ -889,6 +895,8 @@ onMounted(async () => {
       toast.error(t('reader.toast.linkedHighlightError'))
     }
   }
+
+  initialNavigationPending.value = error.value !== null
 
   const resumedPercentage = resumeTarget.checkpointPercentage ?? (hadProgress ? progress.percentage.value : null)
   if (resumedPercentage !== null) {

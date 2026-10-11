@@ -1,7 +1,7 @@
 {
-  "totalRoutes": 635,
+  "totalRoutes": 644,
   "byPermission": {
-    "(none)": 278,
+    "(none)": 280,
     "Permission.ManageMetadataConfig": 38,
     "Permission.EmailSend": 30,
     "Permission.LibraryEditMetadata": 35,
@@ -10,10 +10,10 @@
     "Permission.ManageLibraries": 22,
     "Permission.ManageUsers": 13,
     "Permission.ManageEmail": 8,
-    "Permission.KoboSync": 7,
+    "Permission.KoboSync": 13,
     "Permission.NotificationAccess": 6,
     "Permission.DemoRestricted": 6,
-    "Permission.KoreaderSync": 8,
+    "Permission.KoreaderSync": 9,
     "Permission.OpdsAccess": 4,
     "Permission.ViewAuditLog": 1,
     "Permission.ViewUserActivity": 6,

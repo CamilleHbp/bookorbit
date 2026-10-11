@@ -15,6 +15,8 @@ export const SERVER_FEATURES = [
   "book-request-pairs",
   /** Metadata searches (book and author) accept `cache=refresh` and mark candidates answered from the cache. */
   "metadata-search-cache",
+  "read-aloud-delivery",
+  "koreader-delivery-settings",
 ] as const;
 
 export type ServerFeature = (typeof SERVER_FEATURES)[number];

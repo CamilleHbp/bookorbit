@@ -62,7 +62,7 @@ const viewKey = computed(() => {
         document-level scrollbar.
       -->
       <div
-        class="app-shell-scroll px-(--shell-content-gutter) pt-(--shell-gap) pb-[var(--podcast-mini-player-clearance,0px)] flex-1 overflow-y-auto overflow-x-hidden relative scroll-smooth bg-transparent"
+        class="app-shell-scroll ps-(--shell-content-gutter) pe-(--shell-gap) pt-(--shell-gap) pb-[var(--podcast-mini-player-clearance,0px)] flex-1 overflow-y-auto overflow-x-hidden relative scroll-smooth bg-transparent"
       >
         <router-view v-slot="{ Component }">
           <Transition name="page" mode="out-in">

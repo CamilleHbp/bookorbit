@@ -17,6 +17,8 @@ import type {
 } from '@bookorbit/types';
 
 export class BookFileDto {
+  fileHash?: string | null;
+  contentVersion?: string;
   id: number;
   format: string | null;
   role: string;

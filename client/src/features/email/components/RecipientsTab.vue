@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import ReadAloudDeliverySelect from '@/features/delivery/components/ReadAloudDeliverySelect.vue'
+import { useReadAloudDelivery } from '@/features/delivery/composables/useReadAloudDelivery'
 import { Button } from '@/components/ui/button'
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { toast } from 'vue-sonner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -9,6 +11,7 @@ import { useEmailRecipients, type EmailRecipient, type EmailRecipientForm } from
 import { useEmailTemplates } from '../composables/useEmailTemplates'
 
 const { t } = useI18n()
+const { supported: deliverySupported } = useReadAloudDelivery()
 const { recipients, createRecipient, updateRecipient, deleteRecipient, setDefaultRecipient } = useEmailRecipients()
 const { templates, fetchTemplates } = useEmailTemplates()
 
@@ -31,10 +34,17 @@ const emptyForm = (): EmailRecipientForm => ({
   deviceType: null,
   preferredFormat: null,
   defaultTemplateId: null,
+  readAloudDelivery: 'audioless_epub',
 })
 
 const form = reactive<EmailRecipientForm>(emptyForm())
 const formError = ref<string | null>(null)
+watch(
+  () => form.deviceType,
+  (deviceType) => {
+    if (deviceType === 'kindle' && form.readAloudDelivery === 'original') form.readAloudDelivery = 'audioless_epub'
+  },
+)
 
 function openCreate() {
   Object.assign(form, emptyForm())
@@ -51,6 +61,7 @@ function openEdit(r: EmailRecipient) {
     deviceType: r.deviceType,
     preferredFormat: r.preferredFormat,
     defaultTemplateId: r.defaultTemplateId,
+    readAloudDelivery: r.readAloudDelivery ?? null,
   })
   editingId.value = r.id
   formError.value = null
@@ -72,11 +83,14 @@ async function submitForm() {
   saving.value = true
   formError.value = null
   try {
+    const { readAloudDelivery: ignoredDelivery, ...legacy } = form
+    void ignoredDelivery
+    const payload = deliverySupported.value ? form : legacy
     if (editingId.value) {
-      await updateRecipient(editingId.value, form)
+      await updateRecipient(editingId.value, payload)
       toast.success(t('email.recipients.updated'))
     } else {
-      await createRecipient(form)
+      await createRecipient(payload)
       toast.success(t('email.recipients.created'))
     }
     cancelForm()
@@ -197,6 +211,7 @@ function cancelDelete() {
         </div>
       </div>
 
+      <ReadAloudDeliverySelect v-if="deliverySupported" v-model="form.readAloudDelivery" :kindle="form.deviceType === 'kindle'" :disabled="saving" />
       <div v-if="form.deviceType === 'kindle'" class="text-xs text-muted-foreground bg-muted/50 rounded-xs px-3 py-2">
         {{ t('email.recipients.kindleNote') }}
       </div>

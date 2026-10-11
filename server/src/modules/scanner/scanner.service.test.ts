@@ -1244,6 +1244,11 @@ describe('file identity resolution', () => {
   });
 
   it('backfills media-overlay capability when an unchanged EPUB has not been checked', async () => {
+    mockInspectMediaOverlayFields.mockResolvedValueOnce({
+      mediaOverlayAvailable: false,
+      mediaOverlayDurationSeconds: null,
+      mediaOverlayCheckedAt: new Date(),
+    });
     const mtime = new Date('2024-01-01T00:00:00Z');
     const fileStat = makeFileStat({ absolutePath: '/library/Author/Book/book.epub', sizeBytes: 1024, mtime });
     const repo = makeRepo({

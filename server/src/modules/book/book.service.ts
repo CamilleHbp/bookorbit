@@ -107,6 +107,8 @@ import { selectEmbeddedCoverSources } from '../book-cover-store/cover-sources';
 import { CoverSlotReconciler } from '../metadata/cover-slot-reconciler.service';
 import { BookQueryBuilder } from './book-query-builder.service';
 import { AudiobookEbookProgressSyncService } from './audiobook-ebook-progress-sync.service';
+import type { DeliveryArtifact } from './delivery-artifact.service';
+import { DeliverySelectionService } from './delivery-selection.service';
 import { AudiolessEpubService } from './audioless-epub.service';
 import { BookRepository } from './book.repository';
 import { ComicMetadataRepository } from '../metadata/comic-metadata.repository';
@@ -312,6 +314,7 @@ export class BookService {
     @Optional() private readonly audiolessEpubService?: AudiolessEpubService,
     @Optional() private readonly coverReconciler?: CoverSlotReconciler,
     @Optional() private readonly readingAttemptEvents?: ReadingAttemptEventsService,
+    @Optional() private readonly deliverySelection?: DeliverySelectionService,
   ) {
     this.appDataPath = this.config.get<string>('storage.appDataPath')!;
   }
@@ -1490,8 +1493,9 @@ export class BookService {
     size: number;
     filename: string;
     bookId: number;
-    removedEntries: number;
-    sanitizedEntries: number;
+    removedEntries: number | null;
+    sanitizedEntries: number | null;
+    artifact?: DeliveryArtifact;
     koreaderHash: string;
     cleanup: () => Promise<void>;
   }> {
@@ -1499,14 +1503,28 @@ export class BookService {
     const file = await this.verifyFileAccess(fileId, user);
     if (file.format?.toLowerCase() !== 'epub') throw new BadRequestException('Audioless export is only available for EPUB files');
 
-    const filename = this.withDownloadFilenameLabel(await this.resolveDownloadFilenameForFile(file), ' - KOReader', 'epub');
+    const filename = this.withDownloadFilenameLabel(await this.resolveDownloadFilenameForFile(file), ' - Text Only', 'epub');
+    if (this.deliverySelection) {
+      const artifact = await this.deliverySelection.prepare(user.id, 'web', file, 'audioless_epub');
+      return {
+        path: artifact.path,
+        size: artifact.sizeBytes,
+        artifact,
+        filename,
+        bookId: file.bookId,
+        removedEntries: artifact.actualVariant === 'audioless_epub' ? null : 0,
+        sanitizedEntries: artifact.actualVariant === 'audioless_epub' ? null : 0,
+        koreaderHash: artifact.fileHash,
+        cleanup: artifact.release,
+      };
+    }
     const tempDir = await mkdtemp(join(tmpdir(), 'bookorbit-koreader-epub-'));
     const tempPath = join(tempDir, 'download.epub');
     try {
       const result = await this.audiolessEpubService.writeArchive(file.absolutePath, tempPath);
       const [{ size }, koreaderHash] = await Promise.all([stat(tempPath), computeFileHash(tempPath)]);
       if (options.linkKoreaderHash) {
-        await this.bookRepo.upsertKoreaderBookHashLink(user.id, koreaderHash, file.id);
+        await this.bookRepo.recordFileHashHistory(file.id, koreaderHash);
       }
 
       return {
@@ -3374,6 +3392,8 @@ export class BookService {
         absolutePath: f.absolutePath,
         createdAt: f.createdAt,
         filename: basename(f.absolutePath),
+        fileHash: f.fileHash,
+        contentVersion: f.updatedAt.toISOString(),
         durationSeconds: f.durationSeconds,
         mediaOverlay: mediaOverlayByFileId.get(f.id) ?? null,
       })),

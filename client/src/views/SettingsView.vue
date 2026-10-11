@@ -30,7 +30,7 @@ watch(
 </script>
 
 <template>
-  <div class="mt-2 flex h-[calc(100%-0.5rem)] flex-col overflow-hidden rounded-lg border border-border/70 bg-card/40 shadow-sm">
+  <div class="flex h-full flex-col overflow-hidden rounded-lg border border-border/70 bg-card/40 shadow-sm">
     <div class="shrink-0 border-b border-border/70 bg-card/60 px-4 py-2.5 md:px-6" data-testid="settings-page-header">
       <div class="flex min-h-9 items-center gap-4">
         <div class="flex min-w-0 flex-1 items-baseline gap-2">

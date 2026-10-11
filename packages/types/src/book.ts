@@ -223,6 +223,8 @@ export type BookCard = {
 };
 
 export type BookDetailFile = {
+  fileHash?: string | null;
+  contentVersion?: string;
   id: number;
   format: string | null;
   role: string;

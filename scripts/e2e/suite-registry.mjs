@@ -16,6 +16,27 @@ const SHARED_AUTH_TYPE_PATHS = Object.freeze(["packages/types/src/auth.ts", "pac
 const SHARED_TYPES_PATHS = Object.freeze(["packages/types/src/**"]);
 
 export const E2E_SUITES = Object.freeze({
+  "read-aloud-delivery": {
+    id: "read-aloud-delivery",
+    name: "Read-aloud Delivery",
+    timeout: 30,
+    lane: "full",
+    description: "Variant byte stability, profile isolation, Kobo artifacts and replacement, and released-client settings semantics",
+    vitestTarget: "test/read-aloud-delivery.e2e-spec.ts",
+    junitOutput: `${TEST_RESULTS_DIR}/read-aloud-delivery-e2e-junit.xml`,
+    prepareDedicatedDatabase: true,
+    useDedicatedDatabase: true,
+    changedPaths: [
+      "server/src/modules/book/delivery*",
+      "server/src/modules/kobo/**",
+      "server/src/modules/koreader/**",
+      "server/src/modules/opds/**",
+      "server/src/modules/email/**",
+      "server/test/read-aloud-delivery.e2e-spec.ts",
+      ...SHARED_TYPES_PATHS,
+      ...SHARED_DB_AND_HELPER_PATHS,
+    ],
+  },
   "guard-mechanics": {
     id: "guard-mechanics",
     name: "Guard Mechanics",

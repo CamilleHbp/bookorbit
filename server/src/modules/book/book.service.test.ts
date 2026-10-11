@@ -4759,6 +4759,7 @@ describe('BookService', () => {
             format: 'm4b',
             role: 'content',
             sizeBytes: 20,
+            updatedAt: new Date('2026-01-01'),
             absolutePath: '/audio/Part 02.m4b',
             createdAt: new Date('2026-01-01T00:00:00.000Z'),
             durationSeconds: 60,
@@ -4768,6 +4769,7 @@ describe('BookService', () => {
             format: 'mp3',
             role: 'content',
             sizeBytes: 10,
+            updatedAt: new Date('2026-01-01'),
             absolutePath: '/audio/Part 01.mp3',
             createdAt: new Date('2026-01-01T00:00:00.000Z'),
             durationSeconds: 30,
@@ -4839,7 +4841,7 @@ describe('BookService', () => {
 
     function mockAudiobookDetail(
       bookRepo: ReturnType<typeof makeService>['bookRepo'],
-      fileRows: { id: number; absolutePath: string; durationSeconds: number | null; sortOrder: number | null }[],
+      fileRows: { id: number; updatedAt: Date; absolutePath: string; durationSeconds: number | null; sortOrder: number | null }[],
     ) {
       bookRepo.findById.mockResolvedValue({
         book: {
@@ -4875,9 +4877,9 @@ describe('BookService', () => {
       const { service, bookRepo } = makeService();
       vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
       mockAudiobookDetail(bookRepo, [
-        { id: 1, absolutePath: '/audio/Part 01.mp3', durationSeconds: 30, sortOrder: 2 },
-        { id: 2, absolutePath: '/audio/Part 02.mp3', durationSeconds: 60, sortOrder: 1 },
-        { id: 3, absolutePath: '/audio/Bonus.mp3', durationSeconds: 10, sortOrder: null },
+        { id: 1, updatedAt: new Date('2026-01-01'), absolutePath: '/audio/Part 01.mp3', durationSeconds: 30, sortOrder: 2 },
+        { id: 2, updatedAt: new Date('2026-01-01'), absolutePath: '/audio/Part 02.mp3', durationSeconds: 60, sortOrder: 1 },
+        { id: 3, updatedAt: new Date('2026-01-01'), absolutePath: '/audio/Bonus.mp3', durationSeconds: 10, sortOrder: null },
       ]);
 
       const result = await service.getDetail(21, makeUser());
@@ -4896,9 +4898,9 @@ describe('BookService', () => {
 
       for (const unknown of [null, 0]) {
         mockAudiobookDetail(bookRepo, [
-          { id: 1, absolutePath: '/audio/Part 01.mp3', durationSeconds: 30, sortOrder: null },
-          { id: 2, absolutePath: '/audio/Part 02.mp3', durationSeconds: unknown, sortOrder: null },
-          { id: 3, absolutePath: '/audio/Part 03.mp3', durationSeconds: 20, sortOrder: null },
+          { id: 1, updatedAt: new Date('2026-01-01'), absolutePath: '/audio/Part 01.mp3', durationSeconds: 30, sortOrder: null },
+          { id: 2, updatedAt: new Date('2026-01-01'), absolutePath: '/audio/Part 02.mp3', durationSeconds: unknown, sortOrder: null },
+          { id: 3, updatedAt: new Date('2026-01-01'), absolutePath: '/audio/Part 03.mp3', durationSeconds: 20, sortOrder: null },
         ]);
 
         const result = await service.getDetail(21, makeUser());
@@ -4933,6 +4935,7 @@ describe('BookService', () => {
             format: 'epub',
             role: 'primary',
             sizeBytes: 10,
+            updatedAt: new Date('2026-01-01'),
             absolutePath: '/books/me-talk/readaloud.epub',
             createdAt: new Date('2026-02-01T00:00:00.000Z'),
             durationSeconds: null,
@@ -4944,6 +4947,7 @@ describe('BookService', () => {
             format: 'm4b',
             role: 'content',
             sizeBytes: 20,
+            updatedAt: new Date('2026-01-01'),
             absolutePath: '/books/me-talk/audiobook.m4b',
             createdAt: new Date('2026-02-01T00:00:00.000Z'),
             durationSeconds: 21103,
@@ -5059,6 +5063,7 @@ describe('BookService', () => {
             format: 'epub',
             role: 'content',
             sizeBytes: 42,
+            updatedAt: new Date('2026-01-01'),
             absolutePath: '/books/foundation.epub',
             createdAt: new Date('2026-02-01T00:00:00.000Z'),
             durationSeconds: null,
@@ -5096,7 +5101,9 @@ describe('BookService', () => {
       const { service, bookRepo } = makeService();
       const user = makeUser();
       vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
-      bookRepo.findPrimaryFile.mockResolvedValueOnce(null).mockResolvedValueOnce({ absolutePath: '/books/a.bin', format: null });
+      bookRepo.findPrimaryFile
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/a.bin', format: null });
 
       await expect(service.getMetadataFromFile(1, user)).rejects.toThrow(NotFoundException);
       await expect(service.getMetadataFromFile(1, user)).resolves.toEqual({});
@@ -5105,7 +5112,7 @@ describe('BookService', () => {
     it('getMetadataFromFile returns an empty object for unsupported but known file formats', async () => {
       const { service, bookRepo } = makeService();
       vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
-      bookRepo.findPrimaryFile.mockResolvedValue({ absolutePath: '/books/archive.azw3', format: 'azw3' });
+      bookRepo.findPrimaryFile.mockResolvedValue({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/archive.azw3', format: 'azw3' });
 
       await expect(service.getMetadataFromFile(5, makeUser())).resolves.toEqual({});
     });
@@ -5113,7 +5120,7 @@ describe('BookService', () => {
     it('maps epub metadata to update payload shape', async () => {
       const { service, bookRepo } = makeService();
       vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
-      bookRepo.findPrimaryFile.mockResolvedValue({ absolutePath: '/books/dune.epub', format: 'epub' });
+      bookRepo.findPrimaryFile.mockResolvedValue({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/dune.epub', format: 'epub' });
       mockExtractEpubMetadata.mockResolvedValue({
         title: 'Dune',
         subtitle: 'Book One',
@@ -5149,7 +5156,7 @@ describe('BookService', () => {
     it('maps audio file metadata to update payload shape', async () => {
       const { service, bookRepo } = makeService();
       vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
-      bookRepo.findPrimaryFile.mockResolvedValue({ absolutePath: '/books/project-hail-mary.m4b', format: 'm4b' });
+      bookRepo.findPrimaryFile.mockResolvedValue({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/project-hail-mary.m4b', format: 'm4b' });
       mockExtractAudioMetadata.mockResolvedValue({
         title: 'Project Hail Mary',
         subtitle: null,
@@ -5185,7 +5192,7 @@ describe('BookService', () => {
     it('returns an empty object when audio extraction finds no usable tags', async () => {
       const { service, bookRepo } = makeService();
       vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
-      bookRepo.findPrimaryFile.mockResolvedValue({ absolutePath: '/books/empty.m4b', format: 'm4b' });
+      bookRepo.findPrimaryFile.mockResolvedValue({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/empty.m4b', format: 'm4b' });
       mockExtractAudioMetadata.mockResolvedValue({
         title: null,
         subtitle: null,
@@ -5211,13 +5218,14 @@ describe('BookService', () => {
       const { service, bookRepo } = makeService();
       const warnSpy = vi.spyOn((service as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn').mockImplementation();
       vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
-      bookRepo.findPrimaryFile.mockResolvedValue({ absolutePath: '/books/doc.pdf', format: 'pdf' });
+      bookRepo.findPrimaryFile.mockResolvedValue({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/doc.pdf', format: 'pdf' });
       mockParsePdfFile.mockImplementation(
         (
           _path: string,
           options: {
             onWarning: (warning: {
               code: string;
+              updatedAt: Date;
               absolutePath: string;
               sizeBytes?: number;
               thresholdBytes?: number;
@@ -5228,12 +5236,14 @@ describe('BookService', () => {
         ) => {
           options.onWarning({
             code: 'buffered-large-pdf',
+            updatedAt: new Date('2026-01-01'),
             absolutePath: '/books/doc.pdf',
             sizeBytes: 100,
             thresholdBytes: 10,
           });
           options.onWarning({
             code: 'parse-warning',
+            updatedAt: new Date('2026-01-01'),
             absolutePath: '/books/doc.pdf',
             errorClass: 'ParseWarning',
             errorMessage: 'metadata truncated',
@@ -5266,9 +5276,9 @@ describe('BookService', () => {
       const { service, bookRepo } = makeService();
       vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
       bookRepo.findPrimaryFile
-        .mockResolvedValueOnce({ absolutePath: '/books/dune.mobi', format: 'mobi' })
-        .mockResolvedValueOnce({ absolutePath: '/books/comic.cbr', format: 'cbr' })
-        .mockResolvedValueOnce({ absolutePath: '/books/novel.fb2', format: 'fb2' });
+        .mockResolvedValueOnce({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/dune.mobi', format: 'mobi' })
+        .mockResolvedValueOnce({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/comic.cbr', format: 'cbr' })
+        .mockResolvedValueOnce({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/novel.fb2', format: 'fb2' });
       mockParseMobiFile.mockResolvedValue({
         title: 'Mobi Title',
         description: 'Mobi Desc',

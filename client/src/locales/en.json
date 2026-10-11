@@ -5174,7 +5174,11 @@
       "exportFailed": "Export failed",
       "audiolessEpub": "KOReader EPUB",
       "audiolessEpubHint": "Download EPUB for KOReader with audio files removed",
-      "noAudio": "no audio"
+      "noAudio": "no audio",
+      "textOnlyEpub": "Text-only EPUB",
+      "textOnlyEpubHint": "Download a narration-free EPUB while preserving reading anchors.",
+      "originalNarrated": "Original EPUB with narration",
+      "originalNarratedEpub": "Original EPUB with narration"
     },
     "sort": {
       "moveUp": "Move up",
@@ -12676,6 +12680,41 @@
     },
     "errors": {
       "generic": "TTS error"
+    }
+  },
+  "delivery": {
+    "readAloud": {
+      "label": "Read-aloud EPUB delivery",
+      "automatic": "Automatic: prefer text-only, allow original fallback.",
+      "textOnly": "Text-only EPUB",
+      "original": "Original EPUB with narration",
+      "hint": "Applies to future deliveries. Originals preserve existing narration and can be much larger. Text-only preparation fails if a safe copy cannot be made.",
+      "koboHint": "Original EPUBs bypass KEPUB conversion. Native Kobo firmware may not play narration, and precise position and highlight sync are unavailable for that copy.",
+      "profileHint": "Use separate OPDS profiles for readers that need different EPUB variants.",
+      "replacementTitle": "Replace a Kobo copy",
+      "bookId": "Book ID",
+      "device": "Device",
+      "prepare": "Prepare replacement",
+      "offer": "I removed only the device copy; offer the replacement",
+      "confirm": "I installed the replacement",
+      "cancel": "Cancel replacement",
+      "replacementHint": "Prepare and review first. Removing a device copy does not delete the library book. Back up device-local notes yourself. BookOrbit preserves canonical progress and server annotations. Delayed events can limit precise sync.",
+      "prepared": "Replacement prepared: {format}, {size}. Remove this book only from the selected device, then offer the prepared replacement and sync.",
+      "offered": "Replacement offered. Sync and download on the device, then confirm installation. A completed HTTP transfer does not prove installation.",
+      "cancelled": "Replacement cancelled. Cancellation does not restore a removed or partially replaced device copy. Select the same book to prepare a recovery download.",
+      "failed": "Could not prepare or update this replacement.",
+      "searchBook": "Search for a book",
+      "chooseBook": "Select a book",
+      "moreResults": "Show more books",
+      "noResults": "No matching books found.",
+      "refresh": "Refresh delivery status",
+      "confirmed": "You confirmed installation. This records your confirmation, not device verification.",
+      "transferred": "The transfer completed. Open the replacement on the device before confirming installation.",
+      "koreaderDefaultTitle": "KOReader EPUB delivery",
+      "koreaderDefaultHint": "The default applies to future downloads on devices using these credentials. Device settings can override it. Existing copies and interrupted downloads stay unchanged. Automatic preserves existing device choices.",
+      "koreaderUseDefault": "Use credential default",
+      "koreaderSaveFailed": "Could not save the KOReader EPUB delivery setting. Try again.",
+      "koreaderSaved": "KOReader EPUB delivery setting saved."
     }
   }
 }
