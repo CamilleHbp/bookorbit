@@ -7,7 +7,7 @@ import { Clock, KeyRound, Link, LinkIcon, MapPin, Save, Trash2, Trophy, Upload }
 import { toast } from 'vue-sonner'
 import UserAvatar from '@/components/UserAvatar.vue'
 import { api } from '@/lib/api'
-import { generatePkce } from '@/features/auth/composables/useOidc'
+import { generateNonce, generatePkce } from '@/features/auth/composables/useOidc'
 import { useAuth } from '@/features/auth/composables/useAuth'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { MAX_PROFILE_AVATAR_BYTES, useProfileAvatar } from '@/features/auth/composables/useProfileAvatar'
@@ -279,7 +279,7 @@ async function initiateOidcLink(provider: OidcProviderPublic) {
       throw new Error(((err as Record<string, unknown>).message as string) ?? t('settings.account.connectedAccounts.linkStateFailed'))
     }
     const { state, authorizationEndpoint, clientId, scopes } = await stateRes.json()
-    const nonce = crypto.randomUUID()
+    const nonce = generateNonce()
     const { codeVerifier, codeChallenge } = await generatePkce()
     const params = new URLSearchParams({
       response_type: 'code',

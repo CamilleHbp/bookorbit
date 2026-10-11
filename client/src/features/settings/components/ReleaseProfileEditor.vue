@@ -13,6 +13,7 @@ import type {
 } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import TokenSelect from '@/components/ui/TokenSelect.vue'
+import { createUuid } from '@/lib/uuid'
 import { formatLanguageName } from '@/i18n/formatters'
 
 /**
@@ -123,7 +124,7 @@ function prune(conditions: ReleaseTierConditions): ReleaseTierConditions {
 function addTier() {
   if (!canAdd.value) return
   const tier: ReleaseTier = {
-    id: crypto.randomUUID(),
+    id: createUuid(),
     name: t('settings.system.requests.profiles.newTier', { position: tiers.value.length + 1 }),
     conditions: {},
   }

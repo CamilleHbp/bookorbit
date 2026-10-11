@@ -9,6 +9,7 @@ vi.mock('@/lib/api', () => ({ api: apiMock }))
 vi.mock('vue-sonner', () => ({ toast: { success: vi.fn<(message: string) => void>(), error: vi.fn<(message: string) => void>() } }))
 
 import { toast } from 'vue-sonner'
+import { stubInsecureOriginCrypto, UUID_V4 } from '@/lib/__tests__/insecure-origin'
 import RequestAutomationPanel from '../RequestAutomationPanel.vue'
 
 const PATH = '/api/v1/admin/book-request-automation'
@@ -345,6 +346,29 @@ describe('RequestAutomationPanel', () => {
         await vi.advanceTimersByTimeAsync(1000)
         expect(lastBody()).toEqual({ profiles: { ebook: [{ id: 'tier-1', name: 'Retail', conditions: { formats: ['cbz'] } }] } })
       } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    /** Issue 1722: a self-hosted install opened over plain HTTP has no `crypto.randomUUID`. */
+    it('saves a tier added on a plain-HTTP origin', async () => {
+      vi.useFakeTimers()
+      const insecure = stubInsecureOriginCrypto()
+      try {
+        const wrapper = await profilePanel()
+        const audiobook = wrapper.get('#release-profile-audiobook')
+
+        await audiobook
+          .findAll('button')
+          .find((button) => button.text() === 'Add tier')!
+          .trigger('click')
+        expect(audiobook.findAll('ol > li')).toHaveLength(1)
+
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(sentBodies()).toEqual([{ profiles: { audiobook: [{ id: expect.stringMatching(UUID_V4), name: 'Tier 1', conditions: {} }] } }])
+        expect(toast.error).not.toHaveBeenCalled()
+      } finally {
+        insecure.restore()
         vi.useRealTimers()
       }
     })

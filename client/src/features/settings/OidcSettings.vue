@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api'
-import { generatePkce } from '@/features/auth/composables/useOidc'
+import { generateNonce, generatePkce } from '@/features/auth/composables/useOidc'
 import { toast } from 'vue-sonner'
 import { OidcErrorCode, Permission, PERMISSION_LABELS } from '@bookorbit/types'
 import { ArrowLeft, Plus, ShieldCheck, Trash2 } from '@lucide/vue'
@@ -314,7 +314,7 @@ async function previewOidcClaims() {
     const stateRes = await api(`/api/v1/auth/oidc/${editingSlug.value}/preview-state`, { method: 'POST' })
     if (!stateRes.ok) throw new Error(t('settings.oidc.errors.previewState'))
     const { state, authorizationEndpoint } = await stateRes.json()
-    const nonce = crypto.randomUUID()
+    const nonce = generateNonce()
     const { codeVerifier, codeChallenge } = await generatePkce()
 
     const params = new URLSearchParams({
