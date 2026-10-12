@@ -59,7 +59,7 @@ export function bundledFfmpegPaths(): { ffmpeg: string; ffprobe: string } {
   return { ffmpeg: ffmpeg.path, ffprobe: ffprobe.path };
 }
 
-export async function createM4bFixture(rootPath: string, relativePath: string, input: { title: string }): Promise<string> {
+export async function createM4bFixture(rootPath: string, relativePath: string, input: { title: string; durationSeconds?: number }): Promise<string> {
   assertRelativePath(relativePath);
   const absolutePath = join(rootPath, relativePath);
   await mkdir(dirname(absolutePath), { recursive: true });
@@ -70,7 +70,7 @@ export async function createM4bFixture(rootPath: string, relativePath: string, i
     '-f',
     'lavfi',
     '-i',
-    'sine=frequency=440:sample_rate=8000:duration=1',
+    `sine=frequency=440:sample_rate=8000:duration=${input.durationSeconds ?? 1}`,
     '-c:a',
     'aac',
     '-b:a',
