@@ -1,3 +1,4 @@
+import { realignAudioTrackOrder } from '../../db/audio-track-order';
 import { deleteBookFilesWithHashInvalidation, deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
@@ -443,6 +444,10 @@ export class ScannerRepository {
       }
       return { bookmarks: bookmarksUpdated, progress: progressUpdated };
     });
+  }
+
+  realignAudioTrackOrder(bookId: number): Promise<number> {
+    return this.db.transaction((tx) => realignAudioTrackOrder(tx, bookId));
   }
 
   async findBookFilesByBookIds(bookIds: number[]): Promise<(typeof bookFiles.$inferSelect)[]> {
