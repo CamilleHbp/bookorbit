@@ -11,6 +11,7 @@ const NS = {
   NCX: 'http://www.daisy.org/z3986/2005/ncx/',
   XLINK: 'http://www.w3.org/1999/xlink',
   SMIL: 'http://www.w3.org/ns/SMIL',
+  SVG: 'http://www.w3.org/2000/svg',
 }
 
 const MIME = {
@@ -117,6 +118,11 @@ const resolveURL = (url, relativeTo) => {
 }
 
 const isExternal = (uri) => /^(?!blob)\w+:/i.test(uri)
+
+const isInSVG = (el) => {
+  for (let node = el; node; node = node.parentElement) if (node.namespaceURI === NS.SVG) return true
+  return false
+}
 
 // like `path.relative()` in Node.js
 const pathRelative = (from, to) => {
@@ -958,15 +964,31 @@ class Loader {
           ),
         )
       // replace inline styles
-      for (const el of doc.querySelectorAll('style')) if (el.textContent) el.textContent = await this.replaceCSS(el.textContent, href, parents)
-      for (const el of doc.querySelectorAll('[style]')) el.setAttribute('style', await this.replaceCSS(el.getAttribute('style'), href, parents))
+      for (const el of doc.querySelectorAll('style')) {
+        if (!el.textContent) continue
+        const css = await this.replaceCSS(el.textContent, href, parents)
+        el.textContent = isInSVG(el) ? css : await this.transformCSS(css, href)
+      }
+      for (const el of doc.querySelectorAll('[style]')) {
+        const css = await this.replaceCSS(el.getAttribute('style'), href, parents)
+        el.setAttribute('style', isInSVG(el) ? css : await this.transformCSS(css, href))
+      }
       // TODO: replace inline scripts? probably not worth the trouble
       const result = new XMLSerializer().serializeToString(doc)
       return this.createURL(href, result, item.mediaType, parent)
     }
 
-    const result = mediaType === MIME.CSS ? await this.replaceCSS(str, href, parents) : await this.replaceString(str, href, parents)
+    const result =
+      mediaType === MIME.CSS ? await this.transformCSS(await this.replaceCSS(str, href, parents), href) : await this.replaceString(str, href, parents)
     return this.createURL(href, result, mediaType, parent)
+  }
+  // Lets the host rewrite book CSS before it is used. CSS that styles SVG is never passed here,
+  // because its sizes belong to the drawing's coordinate system rather than to the text.
+  async transformCSS(css, href) {
+    const detail = { data: css }
+    Object.defineProperty(detail, 'name', { value: href })
+    this.eventTarget.dispatchEvent(new CustomEvent('css', { detail }))
+    return await detail.data
   }
   async replaceCSS(str, href, parents = []) {
     // For url() references, use direct URLs for fonts and images (lazy loading)

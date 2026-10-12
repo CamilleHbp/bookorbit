@@ -5,6 +5,7 @@ import { useFoliateAnnotations } from './useFoliateAnnotations'
 import { useFoliateSelection } from './useFoliateSelection'
 import { useFoliateInput } from './useFoliateInput'
 import { ensureMediaOverlayActiveClass } from '../../media-overlay/lib/media-overlay-highlight'
+import { scalePublisherFontSizes } from '../lib/publisher-font-sizes'
 import type { EpubBookInfo, EpubReaderSettings } from '@bookorbit/types'
 
 export interface RelocateDetail {
@@ -307,6 +308,7 @@ export function useFoliate(
         applyEpubOpenOptions(book, options)
         shouldRestoreByFraction = isFixedLayoutBook(book)
         isFixedLayout.value = shouldRestoreByFraction
+        if (!shouldRestoreByFraction) scalePublisherFontSizes(book)
         await view.open(book as never)
       } else {
         const mimeType = format === 'pdf' ? 'application/pdf' : 'application/zip'
