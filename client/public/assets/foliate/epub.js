@@ -90,8 +90,10 @@ const childGetter = (doc, ns) => {
       $$: () => [],
       $$$: () => [],
     }
-  // ignore the namespace if it doesn't appear in document at all
-  const useNS = doc.lookupNamespaceURI(null) === ns || doc.lookupPrefix(ns)
+  // match by namespace only when the document's elements are actually in it: an OPF whose
+  // <package> lost its default xmlns (e.g. a `mlns` typo) can still bind the namespace to a
+  // prefix for its `opf:` attributes, which must not make its unqualified elements invisible
+  const useNS = doc.documentElement.namespaceURI === ns
   const f = useNS ? (el, name) => (el) => el.namespaceURI === ns && el.localName === name : (el, name) => (el) => el.localName === name
   return {
     $: (el, name) => [...el.children].find(f(el, name)),
@@ -182,10 +184,12 @@ const getPropertyURL = (value, prefixes) => {
 const getMetadata = (opf) => {
   const { $ } = childGetter(opf, NS.OPF)
   const $metadata = $(opf.documentElement, 'metadata')
+  // without the package's default xmlns its own elements, `meta` included, have no namespace
+  const opfNS = opf.documentElement.namespaceURI === NS.OPF ? NS.OPF : null
 
   // first pass: convert to JS objects
   const els = Object.groupBy($metadata.children, (el) =>
-    el.namespaceURI === NS.DC ? 'dc' : el.namespaceURI === NS.OPF && el.localName === 'meta' ? (el.hasAttribute('name') ? 'legacyMeta' : 'meta') : '',
+    el.namespaceURI === NS.DC ? 'dc' : el.namespaceURI === opfNS && el.localName === 'meta' ? (el.hasAttribute('name') ? 'legacyMeta' : 'meta') : '',
   )
   const baseLang = $metadata.getAttribute('xml:lang') ?? opf.documentElement.getAttribute('xml:lang') ?? 'und'
   const prefixes = getPrefixes(opf)
