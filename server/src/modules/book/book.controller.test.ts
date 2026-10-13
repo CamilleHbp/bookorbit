@@ -135,6 +135,7 @@ function makeController() {
     globalQuery: vi.fn(),
     bulkRefreshMetadata: vi.fn(),
     bulkReExtractCover: vi.fn(),
+    reExtractCover: vi.fn(),
     bulkSetMetadata: vi.fn(),
     bulkEditMetadata: vi.fn(),
     bulkUpdateTags: vi.fn(),
@@ -860,24 +861,24 @@ describe('BookController', () => {
     await expect(controller.getThumbnail(7, makeUser(), reply, undefined, undefined)).rejects.toThrow(NotFoundException);
   });
 
-  it('delegates re-extract-cover endpoint to bulk cover flow', async () => {
+  it('delegates re-extract-cover endpoint to the single-book cover flow', async () => {
     const { controller, bookService } = makeController();
-    bookService.bulkReExtractCover.mockResolvedValue({ processed: 1, updated: 1 });
+    bookService.reExtractCover.mockResolvedValue({ processed: 1, updated: 1 });
     const user = makeUser();
 
-    await controller.reExtractCover(42, user);
+    await expect(controller.reExtractCover(42, user)).resolves.toEqual({ processed: 1, updated: 1 });
 
-    expect(bookService.bulkReExtractCover).toHaveBeenCalledWith([42], user);
+    expect(bookService.reExtractCover).toHaveBeenCalledWith(42, user, undefined);
   });
 
   it('passes an explicit medium through re-extract-cover', async () => {
     const { controller, bookService } = makeController();
     const user = makeUser();
-    bookService.bulkReExtractCover.mockResolvedValue({ processed: 1, updated: 1 });
+    bookService.reExtractCover.mockResolvedValue({ processed: 1, updated: 1 });
 
     await controller.reExtractCover(42, user, { medium: 'audio' });
 
-    expect(bookService.bulkReExtractCover).toHaveBeenCalledWith([42], user, undefined, { medium: 'audio' });
+    expect(bookService.reExtractCover).toHaveBeenCalledWith(42, user, 'audio');
   });
 
   it('logs and rethrows download failures', async () => {
@@ -1057,6 +1058,7 @@ describe('BookController', () => {
     const refreshAudit = Reflect.getMetadata(AUDITABLE_KEY, BookController.prototype.refreshMetadata) as {
       getResourceId: (req: { params: Record<string, string> }) => number;
       description: (req: { params: Record<string, string> }) => string;
+      when: (req: { query?: Record<string, string> }) => boolean;
     };
 
     const singleDeletion = { total: 1, books: [{ id: 1, title: 'Dune' }], omitted: 0 };
@@ -1080,6 +1082,9 @@ describe('BookController', () => {
     expect(updateLocksAudit.description({ params: { id: '44' } })).toBe('Updated metadata locks for book #44');
     expect(refreshAudit.getResourceId({ params: { id: '44' } })).toBe(44);
     expect(refreshAudit.description({ params: { id: '44' } })).toBe('Refreshed metadata for book #44');
+    expect(refreshAudit.when({ query: {} })).toBe(true);
+    expect(refreshAudit.when({ query: { preview: 'false' } })).toBe(true);
+    expect(refreshAudit.when({ query: { preview: 'true' } })).toBe(false);
   });
 
   it('marks bulk-edit endpoints as demo-restricted', () => {

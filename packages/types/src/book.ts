@@ -478,7 +478,5 @@ export type CoverSearchResult = {
   source: string;
 };
 
-export type CoverSearchResponse = {
-  results: CoverSearchResult[];
-  total: number;
-};
+/** `GET /books/cover/search` answers with a bare array of results, not an envelope. */
+export type CoverSearchResponse = CoverSearchResult[];

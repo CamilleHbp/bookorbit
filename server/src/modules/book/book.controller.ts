@@ -219,9 +219,7 @@ export class BookController {
   @Post(':id/re-extract-cover')
   @RequirePermission(Permission.LibraryEditMetadata)
   reExtractCover(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: RequestUser, @Query() query?: CoverMediumQueryDto) {
-    return query?.medium
-      ? this.bookService.bulkReExtractCover([id], user, undefined, { medium: query.medium })
-      : this.bookService.bulkReExtractCover([id], user);
+    return this.bookService.reExtractCover(id, user, query?.medium);
   }
 
   @Post('export')
@@ -658,6 +656,8 @@ export class BookController {
     resource: AuditResource.Book,
     getResourceId: (req) => parseInt(req.params['id'], 10),
     description: (req) => `Refreshed metadata for book #${req.params['id']}`,
+    // A preview writes nothing, so recording it would fill the log with refreshes that never happened.
+    when: (req) => (req.query as { preview?: string } | undefined)?.preview !== 'true',
   })
   refreshMetadata(@Param('id', ParseIntPipe) id: number, @Query('preview') preview: string | undefined, @CurrentUser() user: RequestUser) {
     return this.bookService.refreshMetadata(id, preview === 'true', user);

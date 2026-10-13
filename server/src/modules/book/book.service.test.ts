@@ -2546,6 +2546,54 @@ describe('BookService', () => {
       expect(onProgress).not.toHaveBeenCalled();
     });
 
+    it('reExtractCover answers 409 for a locked slot rather than an empty count', async () => {
+      const { service, bookRepo, bookMetadataLockService, metadataService } = makeService();
+      const user = makeUser();
+      bookRepo.findLibraryIdsByBookIds.mockResolvedValue([{ id: 1, libraryId: 7 }]);
+      bookRepo.findCoverSourceFilesByBookIds.mockResolvedValue([
+        {
+          id: 10,
+          bookId: 1,
+          absolutePath: '/books/1.epub',
+          format: 'epub',
+          role: 'content',
+          sizeBytes: 10,
+          mediaOverlayAvailable: false,
+          formatPriority: ['epub', 'm4b'],
+        },
+      ]);
+      bookMetadataLockService.getCoverLockedBookIds.mockResolvedValue(new Set([1]));
+      bookMetadataLockService.assertFieldsUnlocked.mockRejectedValue(new ConflictException('Metadata fields are locked: cover'));
+
+      await expect(service.reExtractCover(1, user, 'ebook')).rejects.toThrow(ConflictException);
+
+      expect(bookMetadataLockService.assertFieldsUnlocked).toHaveBeenCalledWith(1, ['cover']);
+      expect(metadataService.refreshCoverForBook).not.toHaveBeenCalled();
+    });
+
+    it('reExtractCover returns the count when nothing it would write is locked', async () => {
+      const { service, bookRepo, bookMetadataLockService, metadataService } = makeService();
+      const user = makeUser();
+      bookRepo.findLibraryIdsByBookIds.mockResolvedValue([{ id: 1, libraryId: 7 }]);
+      bookRepo.findCoverSourceFilesByBookIds.mockResolvedValue([
+        {
+          id: 10,
+          bookId: 1,
+          absolutePath: '/books/1.epub',
+          format: 'epub',
+          role: 'content',
+          sizeBytes: 10,
+          mediaOverlayAvailable: false,
+          formatPriority: ['epub', 'm4b'],
+        },
+      ]);
+      metadataService.refreshCoverForBook.mockResolvedValue(false);
+
+      await expect(service.reExtractCover(1, user)).resolves.toEqual({ processed: 1, updated: 0 });
+
+      expect(bookMetadataLockService.assertFieldsUnlocked).not.toHaveBeenCalled();
+    });
+
     it('stops bulk metadata refresh when cancelled', async () => {
       const { service, bookRepo } = makeService();
       const user = makeUser();
@@ -3870,15 +3918,29 @@ describe('BookService', () => {
         expect(result).toEqual({ id: 10, personalNote: 'Loved it.' });
       });
 
-      it('normalizes an undefined note to null when clearing', async () => {
+      it('clears the note with an explicit null', async () => {
         const { service, userBookNoteService } = makeService();
         const user = makeUser({ id: 77 });
         vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
         vi.spyOn(service, 'getDetail').mockResolvedValue({ id: 10, personalNote: null } as never);
 
-        await service.updatePersonalNote(10, {}, user);
+        await service.updatePersonalNote(10, { note: null }, user);
 
         expect(userBookNoteService.setNote).toHaveBeenCalledWith(77, 10, null);
+      });
+
+      it('leaves the note alone when the body has no note key', async () => {
+        const { service, userBookNoteService } = makeService();
+        const user = makeUser({ id: 77 });
+        const accessSpy = vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
+        const detailSpy = vi.spyOn(service, 'getDetail').mockResolvedValue({ id: 10, personalNote: 'Loved it.' } as never);
+
+        const result = await service.updatePersonalNote(10, {}, user);
+
+        expect(accessSpy).toHaveBeenCalledWith(10, user);
+        expect(userBookNoteService.setNote).not.toHaveBeenCalled();
+        expect(detailSpy).toHaveBeenCalledWith(10, user);
+        expect(result).toEqual({ id: 10, personalNote: 'Loved it.' });
       });
     });
 

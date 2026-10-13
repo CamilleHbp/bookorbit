@@ -3126,7 +3126,7 @@ export class BookService {
     bookIds: number[],
     user: RequestUser,
     onProgress?: (bookId: number) => void,
-    options?: { isCancelled?: () => boolean; medium?: CoverMedium },
+    options?: { isCancelled?: () => boolean; medium?: CoverMedium; onSkippedLocked?: (bookId: number) => void },
   ): Promise<{ processed: number; updated: number }> {
     const event = 'book.bulk_reextract_cover';
     const startedAt = Date.now();
@@ -3171,6 +3171,7 @@ export class BookService {
         const unlocked = targets.filter(({ medium }) => !(medium === 'audio' ? audioCoverLockedBookIds : coverLockedBookIds).has(id));
         if (unlocked.length === 0) {
           skipped++;
+          options?.onSkippedLocked?.(id);
           continue;
         }
         processed++;
@@ -3201,6 +3202,25 @@ export class BookService {
       );
       throw err;
     }
+  }
+
+  /**
+   * Re-extracts one book's cover. When every slot it would write is locked it answers 409, as the
+   * other cover writes do, rather than `{ processed: 0, updated: 0 }`, which a client cannot tell
+   * from a file with no art. Nothing is written in that case, so the check can follow the run.
+   */
+  async reExtractCover(id: number, user: RequestUser, medium?: CoverMedium): Promise<{ processed: number; updated: number }> {
+    let skippedLocked = false;
+    const result = await this.bulkReExtractCover([id], user, undefined, {
+      medium,
+      onSkippedLocked: () => {
+        skippedLocked = true;
+      },
+    });
+    if (skippedLocked) {
+      await this.bookMetadataLockService.assertFieldsUnlocked(id, medium ? [medium === 'audio' ? 'audioCover' : 'cover'] : ['cover', 'audioCover']);
+    }
+    return result;
   }
 
   private async resolveExportFileSize(file: ExportCandidateFile): Promise<number> {
@@ -3569,7 +3589,9 @@ export class BookService {
 
   async updatePersonalNote(id: number, dto: UpdatePersonalNoteDto, user: RequestUser): Promise<BookDetailDto> {
     await this.verifyBookAccess(id, user);
-    await this.userBookNoteService.setNote(user.id, id, dto.note ?? null);
+    // A body without `note` leaves the note alone, as an omitted key does on the other partial
+    // routes; `null` clears it. The web and every iOS build send the key, null included.
+    if (dto.note !== undefined) await this.userBookNoteService.setNote(user.id, id, dto.note);
     return this.getDetail(id, user);
   }
 
