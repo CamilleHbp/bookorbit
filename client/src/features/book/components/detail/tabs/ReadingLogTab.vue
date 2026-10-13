@@ -99,6 +99,7 @@ const {
   bookProgress: koreaderBookProgress,
   fetchBookProgress: fetchKoreaderBookProgress,
   releaseResetHold: releaseKoreaderResetHold,
+  clearBookProgress,
 } = useKoreaderBookProgress()
 
 const resetHeldDevices = computed(() => {
@@ -112,12 +113,23 @@ function loadResetHolds() {
   void fetchKoreaderBookProgress(props.book.id)
 }
 
-watch(bookIdRef, loadResetHolds, { immediate: true })
+let holdContext = 0
+watch(
+  [bookIdRef, canViewKoreader],
+  () => {
+    holdContext += 1
+    clearBookProgress()
+    loadResetHolds()
+  },
+  { immediate: true },
+)
 
 // Accepting the device position moves the book's progress and status, and can open an attempt.
 async function releaseResetHold(deviceId: string): Promise<boolean> {
+  if (!canViewKoreader.value) return false
+  const context = holdContext
   const released = await releaseKoreaderResetHold(props.book.id, deviceId)
-  if (released) {
+  if (released && context === holdContext) {
     void vitalsRef.value?.reloadProgress()
     void reload({ silent: true })
     void reloadAttempts({ silent: true })
@@ -225,6 +237,7 @@ async function handleStartReread(resetProgress: boolean) {
   const readStatus = await startReread(resetProgress)
   if (!readStatus) return
   await reload()
+  loadResetHolds()
   emit('saved', { ...props.book, readStatus })
 }
 
@@ -305,7 +318,7 @@ const quickFilters = computed<{ label: string; value: QuickFilter }[]>(() => [
         @add-session="handleOpenAddSession"
       >
         <template v-if="resetHeldDevices.length > 0" #notice>
-          <KoreaderResetHoldNotice :held="resetHeldDevices" :release="releaseResetHold" />
+          <KoreaderResetHoldNotice :key="book.id" :held="resetHeldDevices" :release="releaseResetHold" />
         </template>
       </ReadingLogVitals>
 

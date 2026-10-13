@@ -1,9 +1,16 @@
-import { mount, flushPromises } from '@vue/test-utils'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia } from 'pinia'
 import { RouterLinkStub } from '@vue/test-utils'
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
-import type { BookDetail, BookReadingSession, BookReadingSessionStats, KoreaderBookSyncInfo, ReadingAttempt } from '@bookorbit/types'
+import {
+  Permission,
+  type BookDetail,
+  type BookReadingSession,
+  type BookReadingSessionStats,
+  type KoreaderBookSyncInfo,
+  type ReadingAttempt,
+} from '@bookorbit/types'
 
 const mocks = vi.hoisted(() => ({
   api: vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(),
@@ -29,8 +36,42 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuTrigger: { template: '<div><slot /></div>' },
 }))
 
+import { i18n } from '@/i18n'
+import ReadingLogAttempts from '../../reading-log/ReadingLogAttempts.vue'
 import ReadingLogTab from '../ReadingLogTab.vue'
 import ResetReadingStateDialog from '@/features/book/components/ResetReadingStateDialog.vue'
+
+function makeHeldDevice(overrides: Partial<KoreaderBookSyncInfo['heldByReset'][number]> = {}) {
+  return { device: 'Kindle Paperwhite', deviceId: 'kindle-device', percentage: 42, updatedAt: '2026-09-10T12:00:00.000Z', ...overrides }
+}
+
+function makeHeldProgress(overrides: Partial<KoreaderBookSyncInfo> = {}): KoreaderBookSyncInfo {
+  return {
+    bookId: 10,
+    bookFileId: 17,
+    canonicalPercentage: 0,
+    canonicalChapterIndex: null,
+    canonicalChapterTitle: null,
+    canonicalSource: 'web_reader',
+    canonicalUpdatedAt: '2026-09-10T12:00:00.000Z',
+    devices: [],
+    fileModifiedSinceLastSync: false,
+    heldByReset: [makeHeldDevice()],
+    ...overrides,
+  }
+}
+
+function releaseButtons(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findAll('button').filter((button) => button.text() === "Use this device's position")
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
 
 function makeBook(overrides: Partial<BookDetail> = {}): BookDetail {
   return {
@@ -181,12 +222,20 @@ function makeKoreaderProgress(overrides: Partial<KoreaderBookSyncInfo> = {}): Ko
 const HELD_KINDLE = { device: 'Kindle', deviceId: 'kindle-1', percentage: 26.67, updatedAt: '2026-10-12T00:00:00.000Z' }
 
 /** Routes each request the tab makes on mount: sessions, attempts, the progress reads and KOReader holds. */
-function routeApi(options: { sessions?: BookReadingSession[]; attempts?: ReadingAttempt[]; koreader?: () => KoreaderBookSyncInfo } = {}) {
+function routeApi(
+  options: {
+    sessions?: BookReadingSession[]
+    attempts?: ReadingAttempt[]
+    koreader?: () => KoreaderBookSyncInfo
+    koreaderProgress?: KoreaderBookSyncInfo | null
+  } = {},
+) {
   const sessions = options.sessions ?? []
   const attempts = options.attempts ?? []
   return (input: RequestInfo | URL) => {
     const url = String(input)
-    if (url.includes('/koreader/books/')) return Promise.resolve(jsonResponse(options.koreader?.() ?? makeKoreaderProgress()))
+    if (url.includes('/koreader/books/'))
+      return Promise.resolve(jsonResponse(options.koreader?.() ?? options.koreaderProgress ?? makeKoreaderProgress()))
     if (url.includes('/reading-attempts')) return Promise.resolve(jsonResponse({ items: attempts, page: 1, pageSize: 50, total: attempts.length }))
     if (url.includes('/sessions')) {
       return Promise.resolve(jsonResponse({ items: sessions, total: sessions.length, page: 1, pageSize: 25, stats: makeStats(sessions) }))
@@ -203,6 +252,8 @@ function mountTab(book = makeBook()) {
   })
 }
 
+enableAutoUnmount(afterEach)
+
 describe('ReadingLogTab', () => {
   beforeEach(() => {
     mocks.api.mockReset()
@@ -210,6 +261,7 @@ describe('ReadingLogTab', () => {
     mocks.hasPermission.mockReset()
     mocks.hasPermission.mockReturnValue(true)
     localStorage.clear()
+    i18n.global.locale.value = 'en'
   })
 
   it('shows one explanation instead of four empty panels when nothing is logged', async () => {
@@ -524,5 +576,234 @@ describe('ReadingLogTab', () => {
     await flushPromises()
 
     expect(wrapper.findAll('button').some((button) => button.text() === 'Reset reading state')).toBe(false)
+  })
+  it('shows a held device and recovery action even when the reading log is empty', async () => {
+    mocks.api.mockImplementation(routeApi({ koreaderProgress: makeHeldProgress() }))
+    const wrapper = mountTab()
+    await flushPromises()
+
+    expect(mocks.api).toHaveBeenCalledWith('/api/v1/koreader/books/10/progress')
+    expect(wrapper.get('[role="status"]').text()).toContain('Kindle Paperwhite still has the old position (42%)')
+    expect(releaseButtons(wrapper)).toHaveLength(1)
+    expect(wrapper.text()).toContain('Nothing logged for this book yet')
+  })
+
+  it.each([null, makeHeldProgress({ heldByReset: [] }), { ...makeHeldProgress(), heldByReset: undefined }])(
+    'does not show a notice without held devices, including responses from older servers (%j)',
+    async (progress) => {
+      mocks.api.mockImplementation(routeApi({ koreaderProgress: progress as KoreaderBookSyncInfo | null }))
+      const wrapper = mountTab()
+      await flushPromises()
+      expect(wrapper.find('[role="status"]').exists()).toBe(false)
+      expect(releaseButtons(wrapper)).toHaveLength(0)
+    },
+  )
+
+  it('gates the hold read and release action on KOReader permission rather than metadata permission', async () => {
+    mocks.hasPermission.mockImplementation((permission) => permission !== Permission.KoreaderSync)
+    mocks.api.mockImplementation(routeApi({ sessions: [makeSession()], koreaderProgress: makeHeldProgress() }))
+    const wrapper = mountTab()
+    await flushPromises()
+
+    expect(mocks.api.mock.calls.some(([input]) => String(input).startsWith('/api/v1/koreader/'))).toBe(false)
+    expect(releaseButtons(wrapper)).toHaveLength(0)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Reset reading state')).toBe(true)
+  })
+
+  it('releases the selected device, refreshes its hold, and leaves the ledger usable', async () => {
+    let progress = makeHeldProgress()
+    mocks.api.mockImplementation((input) => {
+      if (String(input).endsWith('/reset-hold/release')) {
+        progress = makeHeldProgress({ heldByReset: [], canonicalPercentage: 42 })
+        return Promise.resolve(jsonResponse(null))
+      }
+      return routeApi({ sessions: [makeSession()], koreaderProgress: progress })(input)
+    })
+    const wrapper = mountTab()
+    await flushPromises()
+    await releaseButtons(wrapper)[0]!.trigger('click')
+    await flushPromises()
+
+    expect(mocks.api).toHaveBeenCalledWith(
+      '/api/v1/koreader/books/10/reset-hold/release',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ deviceId: 'kindle-device' }) }),
+    )
+    expect(releaseButtons(wrapper)).toHaveLength(0)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Sessions')
+  })
+
+  it('disables only the releasing device and prevents duplicate releases while its request is pending', async () => {
+    const progress = makeHeldProgress({
+      heldByReset: [makeHeldDevice(), makeHeldDevice({ device: 'Kobo Clara', deviceId: 'kobo-device', percentage: 17 })],
+    })
+    const pending = deferred<Response>()
+    mocks.api.mockImplementation((input) =>
+      String(input).endsWith('/reset-hold/release') ? pending.promise : routeApi({ koreaderProgress: progress })(input),
+    )
+    const wrapper = mountTab()
+    await flushPromises()
+    await releaseButtons(wrapper)[0]!.trigger('click')
+
+    const releasing = wrapper.get('button:disabled')
+    expect(releasing.text()).toBe('Releasing...')
+    expect(releaseButtons(wrapper)).toHaveLength(1)
+    expect(releaseButtons(wrapper)[0]!.attributes('disabled')).toBeUndefined()
+    await releasing.trigger('click')
+    expect(mocks.api.mock.calls.filter(([input]) => String(input).endsWith('/reset-hold/release'))).toHaveLength(1)
+    pending.resolve({ ok: false, status: 500 } as Response)
+    await flushPromises()
+    expect(releaseButtons(wrapper)).toHaveLength(2)
+  })
+
+  it.each(['http', 'network'] as const)('keeps the notice and offers a retry after a %s release failure', async (failure) => {
+    let fail = true
+    mocks.api.mockImplementation((input) => {
+      if (String(input).endsWith('/reset-hold/release')) {
+        if (fail) return failure === 'network' ? Promise.reject(new Error('Offline')) : Promise.resolve({ ok: false, status: 404 } as Response)
+        return Promise.resolve(jsonResponse(null))
+      }
+      return routeApi({ koreaderProgress: makeHeldProgress({ heldByReset: fail ? [makeHeldDevice()] : [] }) })(input)
+    })
+    const wrapper = mountTab()
+    await flushPromises()
+    await releaseButtons(wrapper)[0]!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('Could not use this position. Try again.')
+    expect(releaseButtons(wrapper)[0]!.attributes('disabled')).toBeUndefined()
+    fail = false
+    await releaseButtons(wrapper)[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(releaseButtons(wrapper)).toHaveLength(0)
+  })
+
+  it('keeps the recovery notice if the release succeeds but refreshing progress fails', async () => {
+    let released = false
+    mocks.api.mockImplementation((input) => {
+      if (String(input).endsWith('/reset-hold/release')) {
+        released = true
+        return Promise.resolve(jsonResponse(null))
+      }
+      if (String(input) === '/api/v1/koreader/books/10/progress' && released) return Promise.reject(new Error('Offline'))
+      return routeApi({ koreaderProgress: makeHeldProgress() })(input)
+    })
+    const wrapper = mountTab()
+    await flushPromises()
+    await releaseButtons(wrapper)[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('Could not use this position. Try again.')
+    expect(releaseButtons(wrapper)).toHaveLength(1)
+  })
+
+  it('refreshes held devices after resetting reading state from this tab', async () => {
+    let reset = false
+    mocks.api.mockImplementation((input) => {
+      if (String(input).endsWith('/reset-reading-state')) {
+        reset = true
+        return Promise.resolve(jsonResponse({ readStatus: { status: 'unread' } }))
+      }
+      return routeApi({ sessions: reset ? [] : [makeSession()], koreaderProgress: reset ? makeHeldProgress() : null })(input)
+    })
+    const wrapper = mountTab()
+    await flushPromises()
+    wrapper.findComponent(ResetReadingStateDialog).vm.$emit('confirm')
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toContain('Kindle Paperwhite')
+    expect(releaseButtons(wrapper)).toHaveLength(1)
+    expect(wrapper.text()).toContain('Nothing logged for this book yet')
+  })
+
+  it('refreshes a kept-alive tab after a device syncs while another tab is open', async () => {
+    let progress: KoreaderBookSyncInfo | null = null
+    mocks.api.mockImplementation((input) => routeApi({ koreaderProgress: progress })(input))
+    const visible = ref(true)
+    const book = makeBook()
+    const host = defineComponent({ setup: () => () => h(KeepAlive, null, { default: () => (visible.value ? h(ReadingLogTab, { book }) : null) }) })
+    const wrapper = mount(host, { global: { plugins: [createPinia()], stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(mocks.api.mock.calls.filter(([input]) => String(input) === '/api/v1/koreader/books/10/progress')).toHaveLength(1)
+    visible.value = false
+    await flushPromises()
+    progress = makeHeldProgress()
+    visible.value = true
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toContain('Kindle Paperwhite')
+    expect(mocks.api.mock.calls.filter(([input]) => String(input) === '/api/v1/koreader/books/10/progress')).toHaveLength(2)
+  })
+
+  it('does not show a late hold response for the previous book', async () => {
+    const previous = deferred<Response>()
+    mocks.api.mockImplementation((input) => (String(input) === '/api/v1/koreader/books/10/progress' ? previous.promise : routeApi()(input)))
+    const wrapper = mountTab()
+    await flushPromises()
+    await wrapper.setProps({ book: makeBook({ id: 20 }) })
+    await flushPromises()
+    previous.resolve(jsonResponse(makeHeldProgress()))
+    await flushPromises()
+    expect(mocks.api).toHaveBeenCalledWith('/api/v1/koreader/books/20/progress')
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(releaseButtons(wrapper)).toHaveLength(0)
+  })
+
+  it('allows KOReader recovery without the metadata-edit permission', async () => {
+    mocks.hasPermission.mockImplementation((permission) => permission === Permission.KoreaderSync)
+    mocks.api.mockImplementation(routeApi({ koreaderProgress: makeHeldProgress() }))
+    const wrapper = mountTab()
+    await flushPromises()
+    expect(releaseButtons(wrapper)).toHaveLength(1)
+  })
+
+  it('updates the notice when KOReader permission is granted or revoked', async () => {
+    const allowed = ref(false)
+    mocks.hasPermission.mockImplementation((permission) => (permission === Permission.KoreaderSync ? allowed.value : true))
+    mocks.api.mockImplementation(routeApi({ koreaderProgress: makeHeldProgress() }))
+    const wrapper = mountTab()
+    await flushPromises()
+    expect(releaseButtons(wrapper)).toHaveLength(0)
+    allowed.value = true
+    await flushPromises()
+    expect(releaseButtons(wrapper)).toHaveLength(1)
+    mocks.api.mockClear()
+    allowed.value = false
+    await flushPromises()
+    expect(releaseButtons(wrapper)).toHaveLength(0)
+    expect(mocks.api).not.toHaveBeenCalled()
+  })
+
+  it('does not attach an old release failure to the next book', async () => {
+    const release = deferred<Response>()
+    mocks.api.mockImplementation((input) =>
+      String(input).endsWith('/reset-hold/release')
+        ? release.promise
+        : routeApi({ koreaderProgress: makeHeldProgress({ bookId: String(input).includes('/20/') ? 20 : 10 }) })(input),
+    )
+    const wrapper = mountTab()
+    await flushPromises()
+    await releaseButtons(wrapper)[0]!.trigger('click')
+    await wrapper.setProps({ book: makeBook({ id: 20 }) })
+    await flushPromises()
+    release.resolve({ ok: false, status: 404 } as Response)
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(releaseButtons(wrapper)[0]!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('refreshes held devices after starting a reread with a progress reset', async () => {
+    let reset = false
+    mocks.api.mockImplementation((input) => {
+      if (String(input).endsWith('/start-reread')) {
+        reset = true
+        return Promise.resolve(jsonResponse({ status: 'reading' }))
+      }
+      return routeApi({ sessions: [makeSession()], koreaderProgress: reset ? makeHeldProgress() : null })(input)
+    })
+    const wrapper = mountTab()
+    await flushPromises()
+    wrapper.findComponent(ReadingLogAttempts).vm.$emit('start-reread', true)
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toContain('Kindle Paperwhite')
+    expect(releaseButtons(wrapper)).toHaveLength(1)
   })
 })

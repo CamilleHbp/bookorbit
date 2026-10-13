@@ -47,7 +47,7 @@ async function handleRelease(deviceId: string) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-2">
+  <div role="status" class="flex flex-col gap-2">
     <div v-for="device in held" :key="device.deviceId" class="flex items-start gap-1.5" data-testid="koreader-reset-hold">
       <TriangleAlert class="mt-0.5 size-3 shrink-0 text-warning" aria-hidden="true" />
       <div class="min-w-0">
@@ -56,7 +56,7 @@ async function handleRelease(deviceId: string) {
         </p>
         <button
           type="button"
-          class="mt-0.5 text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          class="mt-0.5 rounded-xs text-[11px] text-foreground underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed"
           :disabled="isReleasing(device.deviceId)"
           @click="handleRelease(device.deviceId)"
         >

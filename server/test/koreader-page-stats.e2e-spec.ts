@@ -443,4 +443,99 @@ describe('KOReader page stats derivation (e2e)', { timeout: 180_000 }, () => {
       [epub.bookFileId, sharing[1]!.id].sort((left, right) => left - right),
     );
   });
+  it('keeps accepting fresh reading events after deleting a KOReader session from the reading log', async () => {
+    const opening = cluster(BASE_EPOCH + 30_000_000, 4, 200);
+    await uploadPageStats(opening, epub.bookFileId);
+    const first = (await storedSessions()).find((row) => row.sessionId === buildSessionId(DEVICE_ID, epub.bookFileId, opening[0]!.startTime))!;
+
+    const deleted = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/v1/books/${epub.bookId}/sessions/${first.id}`,
+      headers: authHeader(ctx.adminToken),
+    });
+    expect(deleted.statusCode).toBe(204);
+    expect((await storedSessions()).some((row) => row.sessionId === first.sessionId)).toBe(false);
+    const resets = await ctx.db.select().from(schema.koreaderProgressResets).where(eq(schema.koreaderProgressResets.bookFileId, epub.bookFileId));
+    expect(resets).toHaveLength(0);
+
+    const replay = await uploadPageStats(opening, epub.bookFileId);
+    expect(replay.results[0]!.accepted).toBe(0);
+    expect(replay.results[0]!.duplicates).toBe(opening.length);
+    expect((await storedSessions()).some((row) => row.sessionId === first.sessionId)).toBe(false);
+
+    const continued = cluster(opening.at(-1)!.startTime + 60, 4, 204);
+    expect((await uploadPageStats(continued, epub.bookFileId)).results[0]!.accepted).toBe(continued.length);
+    const afterContinuation = await storedSessions();
+    expect(afterContinuation.some((row) => row.sessionId === first.sessionId)).toBe(false);
+    const newSession = afterContinuation.filter((row) => row.startedAt.getTime() === continued[0]!.startTime * 1000);
+    expect(comparable(newSession)).toEqual(expectedSessions(continued));
+
+    const later = cluster(BASE_EPOCH + 30_010_000, 4, 210);
+    expect((await uploadPageStats(later, epub.bookFileId)).results[0]!.accepted).toBe(later.length);
+    const log = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/books/${epub.bookId}/sessions?sortBy=startedAt&sortDir=desc`,
+      headers: authHeader(ctx.adminToken),
+    });
+    expect(log.statusCode).toBe(200);
+    expect(log.json().items[0].startedAt).toBe(new Date(later[0]!.startTime * 1000).toISOString());
+  });
+
+  it('exposes a reset hold while accepting fresh sessions, then restores the selected device position on release', async () => {
+    const reset = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/books/${epub.bookId}/reset-reading-state`,
+      headers: authHeader(ctx.adminToken),
+    });
+    expect(reset.statusCode).toBe(201);
+    expect(await storedSessions()).toHaveLength(0);
+
+    const pushed = await ctx.app.inject({
+      method: 'PUT',
+      url: '/api/v1/koreader/syncs/progress',
+      headers: deviceHeaders(),
+      payload: {
+        document: fileHash,
+        percentage: 0.42,
+        progress: '/body/DocFragment[8]/body/p[12]/text().0',
+        device: 'Kindle Paperwhite',
+        device_id: DEVICE_ID,
+      },
+    });
+    expect(pushed.statusCode).toBe(200);
+    const progress = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/koreader/books/${epub.bookId}/progress`,
+      headers: authHeader(ctx.adminToken),
+    });
+    expect(progress.statusCode).toBe(200);
+    expect(progress.json().heldByReset).toEqual([expect.objectContaining({ deviceId: DEVICE_ID, percentage: 42 })]);
+    expect(progress.json().canonicalPercentage).toBe(0);
+
+    const fresh = cluster(Math.floor(Date.now() / 1000) + 60, 4, 130);
+    expect((await uploadPageStats(fresh, epub.bookFileId)).results[0]!.accepted).toBe(fresh.length);
+    const log = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/books/${epub.bookId}/sessions`,
+      headers: authHeader(ctx.adminToken),
+    });
+    expect(log.statusCode).toBe(200);
+    expect(log.json().total).toBe(1);
+
+    const released = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/koreader/books/${epub.bookId}/reset-hold/release`,
+      headers: authHeader(ctx.adminToken),
+      payload: { deviceId: DEVICE_ID },
+    });
+    expect(released.statusCode).toBe(201);
+    const after = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/koreader/books/${epub.bookId}/progress`,
+      headers: authHeader(ctx.adminToken),
+    });
+    expect(after.statusCode).toBe(200);
+    expect(after.json().heldByReset).toEqual([]);
+    expect(after.json().canonicalPercentage).toBe(42);
+  });
 });
