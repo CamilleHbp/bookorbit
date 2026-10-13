@@ -2408,6 +2408,13 @@ export class BookRepository {
       ? { narrationPercentage: this.clampProgressPercentage(narration.percentage), narrationUpdatedAt: narration.updatedAt }
       : {};
     const textColumns = textUpdatedAt ? { textUpdatedAt } : {};
+    // A write that leaves out the narration marker keeps the one stored: a client that saves only
+    // its text position used to erase the marker another client had left. An explicit null clears.
+    const markerColumns = {
+      ...(positionSeconds !== undefined ? { positionSeconds } : {}),
+      ...(mediaOverlayFragment !== undefined ? { mediaOverlayFragment } : {}),
+      ...(mediaOverlaySectionIndex !== undefined ? { mediaOverlaySectionIndex } : {}),
+    };
     await this.db
       .insert(readingProgress)
       .values({
@@ -2434,9 +2441,7 @@ export class BookRepository {
           cfi,
           pageNumber,
           percentage,
-          positionSeconds: positionSeconds ?? null,
-          mediaOverlayFragment: mediaOverlayFragment ?? null,
-          mediaOverlaySectionIndex: mediaOverlaySectionIndex ?? null,
+          ...markerColumns,
           koboLocationSource: normalizedKoboLocationSource,
           koboLocationType: normalizedKoboLocationType,
           koboLocationValue: normalizedKoboLocationValue,
@@ -2467,6 +2472,12 @@ export class BookRepository {
     koreaderProgress: string | null;
     sourceUpdatedAt: Date;
   }): Promise<boolean> {
+    // A marker moved here moves the narration's stamp with it, or a comparison of stamps would
+    // prefer the text position over a newer marker.
+    const narrationColumns =
+      params.positionSeconds != null
+        ? { narrationPercentage: this.clampProgressPercentage(params.percentage), narrationUpdatedAt: params.sourceUpdatedAt }
+        : {};
     const rows = await this.db
       .insert(readingProgress)
       .values({
@@ -2482,6 +2493,7 @@ export class BookRepository {
         updatedAt: params.sourceUpdatedAt,
         lastReadAt: params.sourceUpdatedAt,
         textUpdatedAt: params.sourceUpdatedAt,
+        ...narrationColumns,
       })
       .onConflictDoUpdate({
         target: [readingProgress.bookFileId, readingProgress.userId],
@@ -2496,6 +2508,7 @@ export class BookRepository {
           updatedAt: params.sourceUpdatedAt,
           lastReadAt: params.sourceUpdatedAt,
           textUpdatedAt: params.sourceUpdatedAt,
+          ...narrationColumns,
         },
         setWhere: lte(readingProgress.updatedAt, params.sourceUpdatedAt),
       })

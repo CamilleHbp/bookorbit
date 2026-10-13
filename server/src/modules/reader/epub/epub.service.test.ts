@@ -363,6 +363,32 @@ describe('EpubService', () => {
     expect(result.data).toEqual(Buffer.from('2345'));
   });
 
+  // A player asks for many ranges of one clip. Each used to parse every SMIL in the book again.
+  it('builds the playlist once for every range of a clip', async () => {
+    mockOpenFile.mockImplementation(() => Promise.resolve(makeMediaOverlayArchive() as any));
+
+    await service.streamMediaOverlayFile(99, 'OPS/audio/ch1.mp3', undefined, 'bytes=0-1', user);
+    const opensForFirst = mockOpenFile.mock.calls.length;
+    const second = await service.streamMediaOverlayFile(99, 'OPS/audio/ch1.mp3', undefined, 'bytes=2-3', user);
+
+    expect(mockOpenFile.mock.calls.length - opensForFirst).toBe(1);
+    expect(second.data).toEqual(Buffer.from('23'));
+  });
+
+  it('answers a range past the end with 416 and ignores a header it cannot read', async () => {
+    mockOpenFile.mockImplementation(() => Promise.resolve(makeMediaOverlayArchive() as any));
+
+    const beyond = await service.streamMediaOverlayFile(99, 'OPS/audio/ch1.mp3', undefined, 'bytes=20-30', user);
+    expect(beyond.status).toBe(416);
+    expect(beyond.contentRange).toBe('bytes */10');
+    expect(beyond.data.length).toBe(0);
+
+    const unreadable = await service.streamMediaOverlayFile(99, 'OPS/audio/ch1.mp3', undefined, 'bytes=abc', user);
+    expect(unreadable.status).toBe(200);
+    expect(unreadable.contentRange).toBeNull();
+    expect(unreadable.data.length).toBe(10);
+  });
+
   it('rejects media-overlay file requests for non-playlist resources', async () => {
     mockOpenFile.mockResolvedValueOnce(makeMediaOverlayArchive() as any).mockResolvedValueOnce(makeMediaOverlayArchive() as any);
 

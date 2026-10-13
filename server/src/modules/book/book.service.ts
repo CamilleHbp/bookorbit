@@ -2299,9 +2299,10 @@ export class BookService {
       text.cfi,
       text.pageNumber,
       text.percentage,
-      dto.positionSeconds ?? null,
-      dto.mediaOverlayFragment ?? null,
-      dto.mediaOverlaySectionIndex ?? null,
+      // Omitted, these keep the narration marker the file holds; only an explicit null clears it.
+      dto.positionSeconds,
+      dto.mediaOverlayFragment,
+      dto.mediaOverlaySectionIndex,
       dto.koboLocationSource ?? null,
       dto.koboLocationType ?? null,
       dto.koboLocationValue ?? null,
