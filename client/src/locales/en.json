@@ -7054,6 +7054,22 @@
       "nFailed": "{count} failed",
       "nTotal": "{count} total"
     },
+    "uploadFailures": {
+      "heading": "{count, plural, one {Could not upload # file} other {Could not upload # files}}",
+      "dismissAll": "Dismiss all",
+      "retry": "Retry uploading {name}",
+      "dismiss": "Dismiss {name}",
+      "reason": {
+        "unsupported": "Unsupported file type: .{extension}",
+        "noExtension": "The file has no extension, so its format is unknown",
+        "tooLarge": "Larger than the {limit} upload limit",
+        "tooLargeServer": "Larger than the server upload limit",
+        "tooLargeProxy": "Rejected as too large before it reached BookOrbit, likely by a reverse proxy",
+        "storageFull": "The server is out of storage space",
+        "network": "Could not reach the server",
+        "status": "Upload failed (HTTP {status})"
+      }
+    },
     "fileList": {
       "emptyTitle": "No files in Book Dock",
       "emptyMessageDefault": "Upload files or drop them in the Book Dock folder",
