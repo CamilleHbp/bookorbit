@@ -127,6 +127,10 @@ function onLocksChanged(lockedFields: BookMetadataLockField[]) {
   if (detail.value) detail.value.lockedFields = lockedFields
 }
 
+function handleBookRefetch() {
+  void fetch(bookId.value)
+}
+
 // A cover write can change either slot, the summary and the face version, so take the server's view.
 function onCoverChanged() {
   void fetch(bookId.value)
@@ -152,7 +156,7 @@ function onCoverChanged() {
             @cover-changed="onCoverChanged"
           />
           <FilesTab v-else-if="tab === 'files'" :book="detail" @refetch="fetch(detail.id)" />
-          <ReadingLogTab v-else-if="tab === 'reading-log'" :book="detail" @saved="onMetadataSaved" />
+          <ReadingLogTab v-else-if="tab === 'reading-log'" :book="detail" @saved="onMetadataSaved" @refetch="handleBookRefetch" />
           <HighlightsTab v-else-if="tab === 'highlights'" :book="detail" />
         </KeepAlive>
       </div>
