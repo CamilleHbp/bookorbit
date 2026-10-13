@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, Max, Min, ValidateIf } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min, ValidateIf } from 'class-validator';
 
 /**
  * Which of a file's two positions this write moved. Text is the default so a client that predates
@@ -17,7 +17,9 @@ export class SaveProgressDto {
   cfi?: string | null;
 
   @ValidateIf((o: SaveProgressDto) => o.pageNumber != null)
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
   pageNumber?: number | null;
 
   @IsNumber()

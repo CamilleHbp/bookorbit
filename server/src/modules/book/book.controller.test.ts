@@ -10,6 +10,7 @@ import { AUDITABLE_KEY } from '../../common/decorators/auditable.decorator';
 import { FORBIDDEN_PERMISSION_KEY } from '../../common/decorators/forbid-permission.decorator';
 import { PERMISSION_KEY } from '../../common/decorators/require-permission.decorator';
 import { BookController } from './book.controller';
+import { FASTIFY_ROUTE_CONFIG_METADATA } from '@nestjs/platform-fastify/constants.js';
 import { EMPTY_CONTENT_FILTER_RULES } from '@bookorbit/types';
 
 vi.mock('archiver', () => ({
@@ -333,6 +334,121 @@ describe('BookController', () => {
     expect(reply.status).toHaveBeenCalledWith(416);
     expect(headers['Content-Range']).toBe('bytes */100');
     expect(mockCreateReadStream).not.toHaveBeenCalled();
+  });
+
+  describe('file byte routes', () => {
+    const MTIME_MS = Date.UTC(2026, 0, 2, 3, 4, 5);
+
+    function mockFile(bookService: ReturnType<typeof makeController>['bookService'], format = 'pdf') {
+      bookService.getFileInfo.mockResolvedValue({
+        path: `/tmp/book.${format}`,
+        size: 500,
+        mtimeMs: MTIME_MS,
+        format,
+        bookId: 5,
+        originalFilename: `book.${format}`,
+        mediaOverlayAvailable: false,
+      });
+      bookService.resolveDownloadFilename.mockResolvedValue(`book.${format}`);
+    }
+
+    it('sends validators and a revalidate-every-time cache policy with the whole file', async () => {
+      const { controller, bookService } = makeController();
+      const { reply, headers } = makeReply();
+      mockFile(bookService);
+
+      await controller.serveFile(1, makeUser(), undefined, reply);
+
+      expect(headers['ETag']).toMatch(/^"[0-9a-f]{64}"$/);
+      expect(headers['Last-Modified']).toBe('Fri, 02 Jan 2026 03:04:05 GMT');
+      expect(headers['Cache-Control']).toBe('private, no-cache');
+      expect(headers['Accept-Ranges']).toBe('bytes');
+      expect(headers['Content-Length']).toBe(500);
+      expect(reply.status).not.toHaveBeenCalled();
+      expect(mockCreateReadStream).toHaveBeenCalledWith('/tmp/book.pdf');
+    });
+
+    it('resumes from If-Range when it carries the current ETag', async () => {
+      const { controller, bookService } = makeController();
+      const first = makeReply();
+      mockFile(bookService);
+      await controller.serveFile(1, makeUser(), undefined, first.reply);
+      const etag = first.headers['ETag'] as string;
+      mockCreateReadStream.mockClear();
+
+      const { reply, headers } = makeReply();
+      await controller.serveFile(1, makeUser(), 'bytes=200-', reply, etag);
+
+      expect(reply.status).toHaveBeenCalledWith(206);
+      expect(headers['Content-Range']).toBe('bytes 200-499/500');
+      expect(headers['Content-Length']).toBe(300);
+      expect(mockCreateReadStream).toHaveBeenCalledWith('/tmp/book.pdf', { start: 200, end: 499 });
+    });
+
+    it('restarts with the whole file when If-Range names a file that has since changed', async () => {
+      const { controller, bookService } = makeController();
+      const { reply, headers } = makeReply();
+      mockFile(bookService);
+
+      await controller.serveFile(1, makeUser(), 'bytes=200-', reply, '"stale"');
+
+      expect(reply.status).not.toHaveBeenCalled();
+      expect(headers['Content-Range']).toBeUndefined();
+      expect(headers['Content-Length']).toBe(500);
+      expect(mockCreateReadStream).toHaveBeenCalledWith('/tmp/book.pdf');
+    });
+
+    it('serves suffix ranges and clamps an end past the file', async () => {
+      const { controller, bookService } = makeController();
+      mockFile(bookService);
+
+      const suffix = makeReply();
+      await controller.serveFile(1, makeUser(), 'bytes=-100', suffix.reply);
+      expect(suffix.headers['Content-Range']).toBe('bytes 400-499/500');
+
+      const clamped = makeReply();
+      await controller.serveFile(1, makeUser(), 'bytes=450-9999', clamped.reply);
+      expect(clamped.reply.status).toHaveBeenCalledWith(206);
+      expect(clamped.headers['Content-Range']).toBe('bytes 450-499/500');
+      expect(clamped.headers['Content-Length']).toBe(50);
+    });
+
+    it('answers 304 when If-None-Match matches on a plain GET', async () => {
+      const { controller, bookService } = makeController();
+      const first = makeReply();
+      mockFile(bookService);
+      await controller.serveFile(1, makeUser(), undefined, first.reply);
+      mockCreateReadStream.mockClear();
+
+      const { reply } = makeReply();
+      await controller.serveFile(1, makeUser(), undefined, reply, undefined, first.headers['ETag'] as string);
+
+      expect(reply.status).toHaveBeenCalledWith(304);
+      expect(mockCreateReadStream).not.toHaveBeenCalled();
+    });
+
+    it('honours Range on the download route with the same validators as serve', async () => {
+      const { controller, bookService } = makeController();
+      mockFile(bookService, 'epub');
+      const served = makeReply();
+      await controller.serveFile(1, makeUser(), undefined, served.reply);
+      mockCreateReadStream.mockClear();
+
+      const { reply, headers } = makeReply();
+      await controller.downloadFile(1, makeUser(), reply, 'bytes=100-199', served.headers['ETag'] as string);
+
+      expect(headers['ETag']).toBe(served.headers['ETag']);
+      expect(headers['Content-Disposition']).toContain('attachment');
+      expect(reply.status).toHaveBeenCalledWith(206);
+      expect(headers['Content-Range']).toBe('bytes 100-199/500');
+      expect(mockCreateReadStream).toHaveBeenCalledWith('/tmp/book.epub', { start: 100, end: 199 });
+    });
+
+    it('opts every raw file route out of response compression', () => {
+      for (const handler of ['serveFile', 'downloadFile', 'downloadAudiolessEpub', 'getCover', 'getThumbnail'] as const) {
+        expect(Reflect.getMetadata(FASTIFY_ROUTE_CONFIG_METADATA, BookController.prototype[handler])).toEqual({ compress: false });
+      }
+    });
   });
 
   it('streams server-sent events for bulk metadata refresh progress', async () => {

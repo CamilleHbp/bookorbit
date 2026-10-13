@@ -951,13 +951,14 @@ describe('BookService', () => {
     it('returns file info with unknown format fallback', async () => {
       const { service, bookRepo } = makeService();
       bookRepo.findFileById.mockResolvedValue({ id: 10, absolutePath: '/books/test.book', format: null, bookId: 1, libraryId: 7 });
-      mockStat.mockResolvedValue({ size: 1234 } as never);
+      mockStat.mockResolvedValue({ size: 1234, mtimeMs: 1_700_000_000_000 } as never);
 
       const result = await service.getFileInfo(10, makeUser());
 
       expect(result).toEqual({
         path: '/books/test.book',
         size: 1234,
+        mtimeMs: 1_700_000_000_000,
         format: 'unknown',
         bookId: 1,
         originalFilename: 'test.book',

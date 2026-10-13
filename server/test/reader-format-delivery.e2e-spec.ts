@@ -338,8 +338,17 @@ describe('Reader format delivery (e2e)', { timeout: SCENARIO_TIMEOUT_MS }, () =>
       });
       expect(firstPageResponse.statusCode).toBe(200);
       expect(firstPageResponse.headers['content-type']).toContain('image/png');
-      expect(firstPageResponse.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+      expect(firstPageResponse.headers['cache-control']).toBe('private, no-cache');
+      expect(firstPageResponse.headers.etag).toEqual(expect.stringMatching(/^".+"$/));
       expect(responseBuffer(firstPageResponse)).toEqual(PAGE_PNG);
+
+      const revalidatedPageResponse = await ctx.app.inject({
+        method: 'GET',
+        url: `/api/v1/cbz/files/${sharedCbz.bookFileId}/pages/0`,
+        headers: { ...authHeader(viewer.accessToken), 'if-none-match': String(firstPageResponse.headers.etag) },
+      });
+      expect(revalidatedPageResponse.statusCode).toBe(304);
+      expect(revalidatedPageResponse.headers.etag).toBe(firstPageResponse.headers.etag);
 
       const secondPageResponse = await ctx.app.inject({
         method: 'GET',
