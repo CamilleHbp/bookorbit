@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { MockedFunction } from 'vitest';
 import { ZipArchive } from 'archiver';
 import { createReadStream } from 'fs';
@@ -478,6 +478,21 @@ describe('BookController', () => {
     expect(raw.write).toHaveBeenNthCalledWith(1, `data: ${JSON.stringify({ bookId: 9, success: true })}\n\n`);
     expect(raw.write).toHaveBeenNthCalledWith(2, `data: ${JSON.stringify({ done: true, processed: 1, failed: 0 })}\n\n`);
     expect(raw.end).toHaveBeenCalled();
+  });
+
+  it.each(['bulkRefreshMetadata', 'bulkReExtractCover'] as const)('rejects an unauthorized %s selection before starting SSE', async (method) => {
+    const { controller, bookService } = makeController();
+    const { reply, raw } = makeReply();
+    const user = makeUser();
+    const error = new ForbiddenException('Editor access required');
+    bookService.resolveSelectionToIds.mockRejectedValue(error);
+
+    await expect(controller[method]({ bookIds: [9] }, user, reply)).rejects.toBe(error);
+
+    expect(bookService.resolveSelectionToIds).toHaveBeenCalledWith({ bookIds: [9] }, user, 'editor');
+    expect(bookService[method]).not.toHaveBeenCalled();
+    expect(raw.writeHead).not.toHaveBeenCalled();
+    expect(raw.write).not.toHaveBeenCalled();
   });
 
   it('stops sending SSE done event when client disconnects', async () => {

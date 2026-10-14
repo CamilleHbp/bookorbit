@@ -45,6 +45,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { api } from '@/lib/api'
 import { useAuth } from '@/features/auth/composables/useAuth'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
+import { useLibraryPermissions } from '@/features/library/composables/useLibraryPermissions'
 import { useDeleteBook } from '@/features/book/composables/useDeleteBook'
 import { useMetadataLocks } from '@/features/book/composables/useMetadataLocks'
 import { usePersonalNote, PERSONAL_NOTE_MAX_LENGTH } from '@/features/book/composables/usePersonalNote'
@@ -255,6 +256,7 @@ onBeforeUnmount(() => {
 })
 
 const { hasPermission } = usePermissions()
+const { hasLibraryPermission } = useLibraryPermissions()
 const { load: loadLocks, isLocked } = useMetadataLocks()
 watch(
   () => props.book,
@@ -265,7 +267,8 @@ watch(
 const isRatingLocked = computed(() => isLocked('rating'))
 const canViewKobo = computed(() => hasPermission('kobo_sync'))
 const canViewKoreader = computed(() => hasPermission('koreader_sync'))
-const canEditMetadata = computed(() => hasPermission('library_edit_metadata'))
+const canEditMetadata = computed(() => hasLibraryPermission('library_edit_metadata', props.book?.libraryId, 'editor'))
+const canManageReadingState = computed(() => hasPermission('library_edit_metadata'))
 const resetReadingStateBookId = computed(() => props.book.id)
 const {
   open: resetReadingStateDialogOpen,
@@ -1030,6 +1033,7 @@ function handleCoverLightboxOpenChange(open: boolean) {
 }
 
 function openEditCover() {
+  if (!canEditMetadata.value) return
   router.push({ name: 'book-detail', params: { bookId: props.book.id }, query: { tab: 'edit' } })
 }
 
@@ -1246,7 +1250,7 @@ watch(
                 :aria-label="t('book.detail.details.viewCover')"
                 @click="handleCoverClick"
               />
-              <Tooltip>
+              <Tooltip v-if="canEditMetadata">
                 <TooltipTrigger as-child>
                   <button
                     class="absolute top-1.5 right-1.5 z-10 p-1 rounded-xs bg-black/50 text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
@@ -1428,7 +1432,11 @@ watch(
             >
               <Send class="size-3.5" />
             </button>
-            <Popover v-if="canEditMetadata || hasPermission('library_delete_books')" :open="moreMenuOpen" @update:open="(v) => (moreMenuOpen = v)">
+            <Popover
+              v-if="canManageReadingState || canEditMetadata || hasPermission('library_delete_books')"
+              :open="moreMenuOpen"
+              @update:open="(v) => (moreMenuOpen = v)"
+            >
               <PopoverTrigger as-child>
                 <button
                   class="flex flex-1 items-center justify-center h-9 rounded-md border border-border bg-background text-foreground hover:bg-muted transition-colors"
@@ -1438,7 +1446,7 @@ watch(
               </PopoverTrigger>
               <PopoverContent class="w-44 p-1" align="end">
                 <button
-                  v-if="canEditMetadata"
+                  v-if="canManageReadingState"
                   class="flex w-full items-center gap-2 px-2 py-1.5 rounded-xs text-sm text-foreground hover:bg-muted transition-colors"
                   @click="handleOpenResetReadingState"
                 >
@@ -1446,7 +1454,7 @@ watch(
                   Reset reading state
                 </button>
                 <button
-                  v-if="hasPermission('library_edit_metadata')"
+                  v-if="canEditMetadata"
                   class="flex w-full items-center gap-2 px-2 py-1.5 rounded-xs text-sm hover:bg-muted transition-colors"
                   @click="handleMoveFromMenu"
                 >

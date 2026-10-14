@@ -166,7 +166,7 @@ export class BookController {
     },
   })
   async bulkRefreshMetadata(@Body() dto: BulkRefreshMetadataDto, @CurrentUser() user: RequestUser, @Res() reply: FastifyReply) {
-    const ids = await this.bookService.resolveSelectionToIds(dto, user);
+    const ids = await this.bookService.resolveSelectionToIds(dto, user, 'editor');
     const stream = this.createSseStream(reply);
     try {
       const result = await this.bookService.bulkRefreshMetadata(
@@ -197,7 +197,7 @@ export class BookController {
     },
   })
   async bulkReExtractCover(@Body() dto: BulkBookIdsDto, @CurrentUser() user: RequestUser, @Res() reply: FastifyReply) {
-    const ids = await this.bookService.resolveSelectionToIds(dto, user);
+    const ids = await this.bookService.resolveSelectionToIds(dto, user, 'editor');
     const stream = this.createSseStream(reply);
     try {
       const result = await this.bookService.bulkReExtractCover(

@@ -12,7 +12,7 @@ import { useBookEvents } from '@/features/book/composables/useBookEvents'
 import { useScanProgress } from '@/features/scanner/composables/useScanProgress'
 import { usePageTitle } from '@/composables/usePageTitle'
 import { normalizeBookDetailTab } from '@/features/book/lib/book-detail-tabs'
-import { usePermissions } from '@/features/auth/composables/usePermissions'
+import { useLibraryPermissions } from '@/features/library/composables/useLibraryPermissions'
 import { useLibraries } from '@/features/library/composables/useLibraries'
 import { COVER_ASPECT_RATIO_KEY, DEFAULT_COVER_ASPECT_RATIO } from '@/features/book/lib/cover-aspect-ratio'
 import { useCoverVersions } from '@/features/book/composables/useCoverVersions'
@@ -29,7 +29,7 @@ const KEPT_ALIVE_TABS = ['ReadingLogTab', 'HighlightsTab']
 
 const { t } = useI18n()
 const route = useRoute()
-const { hasPermission } = usePermissions()
+const { hasLibraryPermission } = useLibraryPermissions()
 const { libraries } = useLibraries()
 
 provide(
@@ -43,9 +43,13 @@ provide(
 )
 
 const bookId = computed(() => Number(route.params.bookId))
-const tab = computed(() => normalizeBookDetailTab(route.query.tab))
+const tab = computed(() => {
+  const requested = normalizeBookDetailTab(route.query.tab)
+  return requested === 'edit' && detail.value && !canEditMetadata.value ? 'details' : requested
+})
 
 const { detail, loading, notFound, fetch } = useBookDetail()
+const canEditMetadata = computed(() => hasLibraryPermission('library_edit_metadata', detail.value?.libraryId, 'editor'))
 const pageTitle = computed(() => {
   const title = detail.value?.title?.trim()
   const base = title || (Number.isFinite(bookId.value) ? t('views.bookDetail.titleWithId', { id: bookId.value }) : t('views.bookDetail.title'))
@@ -138,7 +142,7 @@ function onCoverChanged() {
 </script>
 
 <template>
-  <BookDetailLayout :book-id="bookId" :cover-tint="coverTint">
+  <BookDetailLayout :book-id="bookId" :cover-tint="coverTint" :can-edit-metadata="canEditMetadata">
     <Transition name="content" mode="out-in">
       <div v-if="detail" key="detail" class="@container/book-detail h-full">
         <!--
@@ -149,7 +153,7 @@ function onCoverChanged() {
         <KeepAlive :include="KEPT_ALIVE_TABS">
           <DetailsTab v-if="tab === 'details'" :book="detail" @saved="onMetadataSaved" @moved="handleMovedToLibrary" />
           <EditMetadataTab
-            v-else-if="tab === 'edit' && hasPermission('library_edit_metadata')"
+            v-else-if="tab === 'edit' && canEditMetadata"
             :book="detail"
             @saved="onMetadataSaved"
             @locks-changed="onLocksChanged"

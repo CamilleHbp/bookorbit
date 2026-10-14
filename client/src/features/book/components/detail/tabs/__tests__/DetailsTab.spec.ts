@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, shallowMount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, ref } from 'vue'
 import type { BookDetail } from '@bookorbit/types'
 import DetailsTab from '../DetailsTab.vue'
 import BookReadingActivityCard from '../../details/BookReadingActivityCard.vue'
@@ -26,8 +26,17 @@ vi.mock('@/lib/api', () => ({
   api: mocks.api,
 }))
 
+vi.mock('@/features/library/composables/useLibraries', () => ({
+  useLibraries: () => ({
+    libraries: ref([
+      { id: 1, accessLevel: 'editor' },
+      { id: 2, accessLevel: 'viewer' },
+    ]),
+  }),
+}))
+
 vi.mock('@/features/auth/composables/usePermissions', () => ({
-  usePermissions: () => ({ hasPermission: mocks.hasPermission }),
+  usePermissions: () => ({ hasPermission: mocks.hasPermission, isSuperuser: { value: false } }),
 }))
 
 vi.mock('@/features/auth/composables/useAuth', () => ({
@@ -722,6 +731,16 @@ describe('DetailsTab cover surface', () => {
     await flushPromises()
 
     expect(wrapper.findAll('button').some((button) => button.text().includes('Reset reading state'))).toBe(false)
+  })
+
+  it('keeps personal reading reset available to viewers while hiding library metadata controls', async () => {
+    mocks.hasPermission.mockImplementation((permission) => permission === 'library_edit_metadata')
+    const wrapper = mountDetails(makeBook({ libraryId: 2 }))
+    await flushPromises()
+
+    expect(wrapper.findAll('button').some((button) => button.text().includes('Reset reading state'))).toBe(true)
+    expect(wrapper.find('button[aria-label="Edit date added"]').exists()).toBe(false)
+    expect(wrapper.find('button[aria-label="Edit cover"]').exists()).toBe(false)
   })
 
   it('edits and saves the added date inline', async () => {

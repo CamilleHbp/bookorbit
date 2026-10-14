@@ -73,6 +73,7 @@ type BookRepositoryTx = Parameters<Parameters<NodePgDatabase<typeof schema>['tra
 
 type CollapsedRawRow = {
   id: number | null;
+  library_id: number;
   status: string;
   cover_aspect_ratio: string;
   primary_file_id: number | null;
@@ -554,6 +555,7 @@ export class BookRepository {
     const rows = await this.db
       .select({
         id: books.id,
+        libraryId: books.libraryId,
         status: books.status,
         coverAspectRatio: libraries.coverAspectRatio,
         primaryFileId: books.primaryFileId,
@@ -1051,6 +1053,7 @@ export class BookRepository {
       representatives AS (
         SELECT DISTINCT ON (${sql.raw(COLLAPSE_GROUP_KEY_SQL)})
           base.id,
+          base.library_id,
           base.status,
           base.cover_aspect_ratio,
           base.primary_file_id,
@@ -1131,6 +1134,7 @@ export class BookRepository {
 
     const mappedRows = rawRows.map((r) => ({
       id: r.id,
+      libraryId: r.library_id,
       status: r.status,
       coverAspectRatio: r.cover_aspect_ratio,
       primaryFileId: r.primary_file_id,
@@ -2051,6 +2055,15 @@ export class BookRepository {
       .leftJoin(bookMetadata, eq(bookMetadata.bookId, books.id))
       .where(this.visibleWhere(where));
     return rows.map((r) => r.id);
+  }
+
+  async findDistinctLibraryIdsByWhere(where: SQL | undefined): Promise<number[]> {
+    const rows = await this.db
+      .selectDistinct({ libraryId: books.libraryId })
+      .from(books)
+      .leftJoin(bookMetadata, eq(bookMetadata.bookId, books.id))
+      .where(this.visibleWhere(where));
+    return rows.map((r) => r.libraryId);
   }
 
   async findPrimaryFile(bookId: number): Promise<{ absolutePath: string; format: string | null } | null> {
