@@ -25,7 +25,14 @@ import type {
   MetadataProviderInfo,
   WriteResult,
 } from '@bookorbit/types'
-import { BOOK_FILE_WRITE_FIELD_LABELS, FORMAT_TO_GROUP, getPrimaryBookFile, isValidSeriesIndex, parseSeriesIndex } from '@bookorbit/types'
+import {
+  BOOK_FILE_WRITE_FIELD_LABELS,
+  FORMAT_TO_GROUP,
+  getPrimaryBookFile,
+  isValidSeriesIndex,
+  parseSeriesIndex,
+  isComicFormat,
+} from '@bookorbit/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { api } from '@/lib/api'
@@ -119,7 +126,7 @@ const COMIC_FIELD_MAP = {
 
 const primaryFile = computed(() => getPrimaryBookFile(props.book.files))
 const isPrimaryAudio = computed(() => primaryFile.value?.format != null && FORMAT_TO_GROUP[primaryFile.value.format] === 'audio')
-const isPrimaryComic = computed(() => primaryFile.value?.format != null && FORMAT_TO_GROUP[primaryFile.value.format] === 'cbx')
+const isPrimaryComic = computed(() => primaryFile.value?.format != null && isComicFormat(primaryFile.value.format))
 const fileWriteStatus = computed(() => props.book.fileWriteStatus ?? null)
 const fileWriteWritableFormats = computed(() => fileWriteStatus.value?.writableFormats ?? [])
 const fileWriteFieldLabels = computed(() => (fileWriteStatus.value?.writableFields ?? []).map((field) => BOOK_FILE_WRITE_FIELD_LABELS[field]))

@@ -5099,6 +5099,7 @@
       "audiobook": "Audiobook"
     },
     "formats": {
+      "djvu": "DjVu document",
       "epub": "EPUB e-book",
       "kepub": "KEPUB e-book",
       "pdf": "PDF document",
@@ -10472,6 +10473,22 @@
     }
   },
   "reader": {
+    "pageImages": {
+      "loadFailed": "Could not open this document. Check your access or try again.",
+      "pageFailed": "This page could not be loaded. Retry when the server is available.",
+      "pageAlt": "Page {page}",
+      "previousPage": "Previous page",
+      "nextPage": "Next page",
+      "goToPage": "Go to page",
+      "pin": "Pin reader menu",
+      "unpin": "Unpin reader menu"
+    },
+    "djvu": {
+      "pageText": "Embedded page text",
+      "textDescription": "Text stored in the DjVu document. OCR may contain mistakes.",
+      "noText": "This page has no embedded text.",
+      "textFailed": "Could not load this page's embedded text."
+    },
     "retry": "Retry",
     "pdf": {
       "openError": "Unable to open this PDF",

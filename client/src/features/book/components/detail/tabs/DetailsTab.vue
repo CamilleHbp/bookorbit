@@ -32,7 +32,7 @@ import { readingDateToDateKey } from '@/features/book/lib/reading-date'
 import { getProviderColor, PROVIDER_SHORT_LABELS } from '@/lib/provider-colors'
 import { useCoverVersions } from '@/features/book/composables/useCoverVersions'
 import { useBookCoverAspectRatio } from '@/features/book/composables/useBookCoverAspectRatio'
-import { FORMAT_TO_GROUP, getPrimaryBookFile, READER_OPENABLE_FORMATS } from '@bookorbit/types'
+import { FORMAT_TO_GROUP, getPrimaryBookFile, READER_OPENABLE_FORMATS, isComicFormat } from '@bookorbit/types'
 import type { BookDetail, BookKoboState, CustomMetadataBookValue, ReadAloudProgressSync, ReadStatus, UserBookStatus } from '@bookorbit/types'
 import { STATUS_OPTIONS, STATUS_ICONS, STATUS_COLORS, useBookStatus } from '@/features/book/composables/useBookStatus'
 import BookDownloadButton from '@/features/book/components/BookDownloadButton.vue'
@@ -364,7 +364,7 @@ const isFaceAudio = computed(() => {
   if (!props.book.covers.ebook && !props.book.covers.audio) return isPrimaryAudio.value
   return faceMedium(props.book, coverAspectRatio.value) === 'audio'
 })
-const isPrimaryComic = computed(() => primaryFile.value?.format != null && FORMAT_TO_GROUP[primaryFile.value.format] === 'cbx')
+const isPrimaryComic = computed(() => primaryFile.value?.format != null && isComicFormat(primaryFile.value.format))
 const formatEntries = computed(() => bookFormatEntries(props.book.files, props.book.formatPriority))
 const isMultiTrackAudio = computed(() => formatEntries.value.some((entry) => entry.audio && entry.files.length > 1))
 // A multi-file audiobook opens from its first track, so it is one entry in the menu.

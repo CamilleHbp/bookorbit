@@ -85,6 +85,8 @@ function matchesFormatSignature(bytes: Buffer, format: string): boolean {
       return bytes[0] === 0x50 && bytes[1] === 0x4b;
     case 'pdf':
       return ascii.startsWith('%PDF-');
+    case 'djvu':
+      return bytes.length >= 16 && ascii.startsWith('AT&TFORM') && ['DJVU', 'DJVM'].includes(ascii.slice(12, 16));
     case 'cbr':
       return ascii.startsWith('Rar!\x1a\x07');
     case 'cb7':

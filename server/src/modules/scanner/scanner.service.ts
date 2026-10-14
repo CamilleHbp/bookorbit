@@ -70,6 +70,8 @@ interface FileByPathEntry {
   sortOrder: number | null;
   mediaOverlayAvailable: boolean;
   mediaOverlayCheckedAt: Date | null;
+  /** Absent when the caller did not load it, which leaves the stored role alone. */
+  role?: string | null;
 }
 
 interface FileByInoEntry {
@@ -110,6 +112,7 @@ const METADATA_FORMATS = new Set([
   'cb7',
   'fb2',
   'pdf',
+  'djvu',
   'm4b',
   'mp3',
   'm4a',
@@ -353,6 +356,7 @@ export class ScannerService implements OnApplicationBootstrap {
       sortOrder?: number | null;
       mediaOverlayAvailable?: boolean | null;
       mediaOverlayCheckedAt?: Date | null;
+      role?: string | null;
     }>,
   ): ScanLookupMaps {
     const bookByFolderPath = new Map<string, BookEntry>(
@@ -398,6 +402,7 @@ export class ScannerService implements OnApplicationBootstrap {
           sortOrder: f.sortOrder ?? null,
           mediaOverlayAvailable: f.mediaOverlayAvailable === true,
           mediaOverlayCheckedAt: f.mediaOverlayCheckedAt ?? null,
+          role: f.role,
         },
       ]),
     );
@@ -1126,6 +1131,7 @@ export class ScannerService implements OnApplicationBootstrap {
         sortOrder: f.sortOrder,
         mediaOverlayAvailable: f.mediaOverlayAvailable,
         mediaOverlayCheckedAt: f.mediaOverlayCheckedAt,
+        role: f.role,
       })),
     );
   }
@@ -2539,10 +2545,13 @@ export class ScannerService implements OnApplicationBootstrap {
     const reassigned = byPath.bookId !== bookId;
     const previousBookId = reassigned ? byPath.bookId : undefined;
     const sortOrderUnchanged = sortOrder === byPath.sortOrder;
+    // A file stored under an older classification, such as DjVu before it was a content format,
+    // is promoted even though the file itself is unchanged.
+    const roleUnchanged = byPath.role == null || byPath.role === role;
     let mediaOverlayAvailable = byPath.mediaOverlayAvailable;
     let mediaOverlayCheckedAt = byPath.mediaOverlayCheckedAt;
 
-    if (sizeUnchanged && mtimeUnchanged && inoUnchanged && relPathUnchanged && !reassigned && sortOrderUnchanged) {
+    if (sizeUnchanged && mtimeUnchanged && inoUnchanged && relPathUnchanged && !reassigned && sortOrderUnchanged && roleUnchanged) {
       if (format?.toLowerCase() === 'epub' && byPath.mediaOverlayCheckedAt == null) {
         const mediaOverlayFields = await this.inspectMediaOverlayFields(fileStat.absolutePath, format);
         await this.scannerRepo.updateBookFile(byPath.id, mediaOverlayFields);
@@ -2564,7 +2573,7 @@ export class ScannerService implements OnApplicationBootstrap {
       mediaOverlayCheckedAt = mediaOverlayFields.mediaOverlayCheckedAt ?? null;
     }
 
-    if (!sizeUnchanged || !mtimeUnchanged || !inoUnchanged || !relPathUnchanged || reassigned) {
+    if (!sizeUnchanged || !mtimeUnchanged || !inoUnchanged || !relPathUnchanged || reassigned || !roleUnchanged) {
       await this.scannerRepo.updateBookFile(byPath.id, {
         ...(reassigned && { bookId }),
         libraryFolderId,
@@ -2598,6 +2607,7 @@ export class ScannerService implements OnApplicationBootstrap {
       sortOrder,
       mediaOverlayAvailable,
       mediaOverlayCheckedAt,
+      role,
     });
     if (fileStat.ino !== 0n) {
       fileByIno.set(fileStat.ino, {
@@ -2608,7 +2618,7 @@ export class ScannerService implements OnApplicationBootstrap {
         mtime: fileStat.mtime,
       });
     }
-    return { isNew: false, reassigned, changed: !sizeUnchanged || !mtimeUnchanged, fileId: byPath.id, previousBookId };
+    return { isNew: false, reassigned, changed: !sizeUnchanged || !mtimeUnchanged || !roleUnchanged, fileId: byPath.id, previousBookId };
   }
 
   private async resolveByLocalIno(

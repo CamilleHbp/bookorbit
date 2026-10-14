@@ -85,6 +85,7 @@ const METADATA_FORMATS = new Set([
   'cb7',
   'fb2',
   'pdf',
+  'djvu',
   'm4b',
   'm4a',
   'mp3',

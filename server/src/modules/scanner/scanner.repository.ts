@@ -259,6 +259,7 @@ export class ScannerRepository {
         mtime: bookFiles.mtime,
         fileHash: bookFiles.fileHash,
         format: bookFiles.format,
+        role: bookFiles.role,
         sortOrder: bookFiles.sortOrder,
         durationSeconds: bookFiles.durationSeconds,
         mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,

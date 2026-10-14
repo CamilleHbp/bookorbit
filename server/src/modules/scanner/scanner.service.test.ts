@@ -1186,6 +1186,46 @@ describe('file identity resolution', () => {
     expect(repo.createBookFile).not.toHaveBeenCalled();
   });
 
+  it('promotes an unchanged file whose format became a content format, such as DjVu stored as a supplement', async () => {
+    const mtime = new Date('2024-01-01');
+    const epub = makeFileStat({ mtime });
+    const djvu = makeFileStat({ absolutePath: '/library/Author/Book/scan.djvu', relPath: 'Author/Book/scan.djvu', ino: 1002n, mtime });
+    const repo = makeRepo({
+      findBookFilesByLibraryFolder: vi.fn().mockResolvedValue([
+        makeBookFile({ mtime, sizeBytes: epub.sizeBytes, mediaOverlayCheckedAt: mtime }),
+        makeBookFile({
+          id: 2,
+          absolutePath: djvu.absolutePath,
+          relPath: djvu.relPath,
+          ino: djvu.ino,
+          mtime,
+          sizeBytes: djvu.sizeBytes,
+          format: 'djvu',
+          role: 'supplement',
+          sortOrder: 1,
+        }),
+      ]),
+      findBooksByLibraryFolder: vi
+        .fn()
+        .mockResolvedValue([{ id: 1, libraryId: 1, libraryFolderId: 1, folderPath: '/library/Author/Book', status: 'present' }]),
+    });
+    mockFindCandidates.mockResolvedValue({
+      candidates: [makeCandidate('/library/Author/Book', [epub, djvu])],
+      skippedDirs: new Set(),
+      unchangedDirs: new Set(),
+      dirMtimes: new Map(),
+    });
+
+    const done = awaitScan(repo);
+    const { service } = makeService(repo);
+    await service.startScan(1, 'manual');
+    await done;
+
+    expect(repo.updateBookFile).toHaveBeenCalledWith(2, expect.objectContaining({ format: 'djvu', role: 'content' }));
+    expect(repo.updateBookFile).not.toHaveBeenCalledWith(1, expect.objectContaining({ role: expect.anything() }));
+    expect(repo.createBookFile).not.toHaveBeenCalled();
+  });
+
   it('repairs a stale relPath when the absolute path and file state are unchanged', async () => {
     const mtime = new Date('2024-01-01');
     const fileStat = makeFileStat({ absolutePath: '/library/Author/Book/new.epub', relPath: 'Author/Book/new.epub', mtime });

@@ -85,6 +85,7 @@ import { UpdateBookFileDto } from './dto/update-book-file.dto';
 import { AppSettingsService } from '../app-settings/app-settings.service';
 import { BookEmbedderService } from '../embedding/book-embedder.service';
 import { MetadataService } from '../metadata/metadata.service';
+import { MetadataExtractionService } from '../metadata/metadata-extraction.service';
 import { MetadataScoreService } from '../metadata-score/metadata-score.service';
 import { LibraryService } from '../library/library.service';
 import { books } from '../../db/schema';
@@ -316,6 +317,7 @@ export class BookService {
     @Optional() private readonly coverReconciler?: CoverSlotReconciler,
     @Optional() private readonly readingAttemptEvents?: ReadingAttemptEventsService,
     @Optional() private readonly deliverySelection?: DeliverySelectionService,
+    @Optional() private readonly metadataExtraction?: MetadataExtractionService,
   ) {
     this.appDataPath = this.config.get<string>('storage.appDataPath')!;
   }
@@ -3626,6 +3628,11 @@ export class BookService {
     if (!format) return {};
 
     switch (format) {
+      case 'djvu': {
+        const parsed = await this.metadataExtraction?.extractDjvuDetails(absolutePath);
+        if (!parsed) return {};
+        return { title: parsed.title, publishedYear: parsed.publishedYear, pageCount: parsed.pageCount };
+      }
       case 'epub': {
         const parsed = await extractEpubMetadata(absolutePath);
         if (!parsed) return {};

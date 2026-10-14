@@ -16,6 +16,26 @@ const SHARED_AUTH_TYPE_PATHS = Object.freeze(["packages/types/src/auth.ts", "pac
 const SHARED_TYPES_PATHS = Object.freeze(["packages/types/src/**"]);
 
 export const E2E_SUITES = Object.freeze({
+  "djvu-reader": {
+    id: "djvu-reader",
+    name: "DjVuLibre Reader",
+    timeout: 30,
+    lane: "full",
+    description: "Native decoding, OCR, authenticated cache revalidation, paged progress and reader preference isolation",
+    vitestTarget: "test/djvu-reader.e2e-spec.ts",
+    junitOutput: `${TEST_RESULTS_DIR}/djvu-reader-e2e-junit.xml`,
+    prepareDedicatedDatabase: true,
+    useDedicatedDatabase: true,
+    changedPaths: [
+      "server/src/modules/reader/djvu/**",
+      "server/src/modules/djvu/**",
+      "client/src/features/reader/**",
+      "server/test/djvu-reader.e2e-spec.ts",
+      "server/test/e2e/djvu-fixture.ts",
+      ...SHARED_TYPES_PATHS,
+      ...SHARED_DB_AND_HELPER_PATHS,
+    ],
+  },
   "read-aloud-delivery": {
     id: "read-aloud-delivery",
     name: "Read-aloud Delivery",

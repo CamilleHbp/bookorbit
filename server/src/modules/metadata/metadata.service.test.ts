@@ -222,7 +222,7 @@ describe('MetadataService', () => {
   ) {
     return new MetadataService(
       db as never,
-      new MetadataExtractionService(),
+      new MetadataExtractionService({ extractMetadata: vi.fn(), extractCover: vi.fn() } as never),
       (overrides?.scoreService ?? { calculateAndSave: vi.fn().mockResolvedValue(undefined) }) as never,
       (overrides?.narratorService ?? { replaceForBook: vi.fn().mockResolvedValue(undefined) }) as never,
       (overrides?.comicMetadataRepository ?? { upsert: vi.fn().mockResolvedValue(undefined) }) as never,

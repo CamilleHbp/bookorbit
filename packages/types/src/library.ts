@@ -20,6 +20,7 @@ export const DEFAULT_FORMAT_PRIORITY = [
   "azw3",
   "azw",
   "fb2",
+  "djvu",
   "m4b",
   "mp3",
   "m4a",
