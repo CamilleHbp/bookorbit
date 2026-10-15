@@ -281,6 +281,7 @@ const {
 
 const coverSeed = computed(() => props.book.title ?? props.book.folderPath.split('/').pop() ?? String(props.book.id))
 const coverPlaceholderTitle = computed(() => props.book.title ?? props.book.folderPath.split('/').pop() ?? null)
+const coverAuthors = computed(() => props.book.authors.map((a) => a.name))
 const hasCover = computed(() => props.book.coverSource !== null)
 const { coverUrl } = useCoverVersions()
 const coverSrc = computed(() => coverUrl(props.book.id, 'cover', props.book.coverVersion))
@@ -1275,6 +1276,11 @@ watch(
                 backdrop-class="blur-lg brightness-50"
                 :spine="!isFaceAudio"
                 :is-comic="isPrimaryComic"
+                :authors="coverAuthors"
+                :subtitle="book.subtitle"
+                :series-name="book.seriesName"
+                :series-index="book.seriesIndex"
+                :genres="book.genres"
                 @load="handleCoverLoad"
                 @error="handleCoverError"
               />

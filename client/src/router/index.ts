@@ -263,7 +263,7 @@ export const routes: RouteRecordRaw[] = [
             path: 'appearance/book-covers',
             name: 'settings-appearance-book-covers',
             component: () => import('@/features/settings/AppearanceBookCoverSettings.vue'),
-            meta: { title: () => t('titles.appearance.book-covers') },
+            meta: { maxWidth: 'max-w-4xl', title: () => t('titles.appearance.book-covers') },
           },
           {
             path: 'appearance/icons',

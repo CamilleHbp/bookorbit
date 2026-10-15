@@ -283,6 +283,21 @@
           "loadError": "Failed to load the default cover search provider",
           "saveError": "Failed to save the default cover search provider"
         },
+        "placeholderStyle": {
+          "title": "Placeholder style",
+          "hint": "Books without cover art are drawn in this style.",
+          "options": {
+            "bauhaus": "Bauhaus",
+            "constructivist": "Constructivist",
+            "memphis": "Memphis",
+            "clothbound": "Clothbound",
+            "poster": "Poster",
+            "aurora": "Aurora",
+            "vista": "Vista",
+            "marbled": "Marbled",
+            "paperback": "Paperback"
+          }
+        },
         "displayMode": {
           "title": "Cover display mode",
           "hint": "Controls how real covers fit inside book slots when aspect ratios differ",
@@ -5085,6 +5100,19 @@
   },
   "book": {
     "untitled": "Untitled",
+    "placeholder": {
+      "volume": "Vol. {number}",
+      "genre": {
+        "horror": "Horror",
+        "romance": "Romance",
+        "fantasy": "Fantasy",
+        "scifi": "Sci-fi",
+        "mystery": "Mystery",
+        "classic": "Classics",
+        "nonfiction": "Non-fiction",
+        "young": "Young readers"
+      }
+    },
     "unknownFormat": "unknown",
     "collapsedSeries": {
       "label": "Series",

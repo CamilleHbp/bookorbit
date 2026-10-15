@@ -75,6 +75,7 @@ const seriesLine = computed(() => {
 })
 
 const authorLine = computed(() => detail.value?.authors.map((a) => a.name).join(', ') ?? null)
+const coverAuthors = computed(() => detail.value?.authors.map((a) => a.name) ?? null)
 const ratingStars = [1, 2, 3, 4, 5]
 const providerLinks = computed(() => (detail.value ? createBookProviderLinks(detail.value.providerIds) : []))
 
@@ -214,6 +215,11 @@ function handleDelete() {
                   loading="eager"
                   :spine="!isPrimaryAudio"
                   :is-comic="isPrimaryComic"
+                  :authors="coverAuthors"
+                  :subtitle="detail.subtitle"
+                  :series-name="detail.seriesName"
+                  :series-index="detail.seriesIndex"
+                  :genres="detail.genres"
                   @load="handleCoverLoad"
                   @error="handleCoverError"
                 />
