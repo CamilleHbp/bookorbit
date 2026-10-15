@@ -7,6 +7,9 @@ import { uploadError } from './upload-errors';
 
 export const SUPPORTED_BOOK_FORMATS = new Set<string>(UPLOAD_SUPPORTED_FORMATS);
 
+/** How much of a file's start `validateContent` reads to recognise its format. */
+export const CONTENT_SIGNATURE_BYTES = 512;
+
 @Injectable()
 export class UploadValidatorService {
   /**
@@ -63,7 +66,7 @@ export class UploadValidatorService {
   async validateContent(absolutePath: string, format: string): Promise<void> {
     const handle = await open(absolutePath, 'r');
     try {
-      const header = Buffer.alloc(512);
+      const header = Buffer.alloc(CONTENT_SIGNATURE_BYTES);
       const { bytesRead } = await handle.read(header, 0, header.length, 0);
       const bytes = header.subarray(0, bytesRead);
       if (!matchesFormatSignature(bytes, format)) {
