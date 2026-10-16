@@ -40,16 +40,17 @@ describe('useFailedFontFaces', () => {
     delete (document as { fonts?: unknown }).fonts
   })
 
-  it('collects the server families the browser refused, and only those', () => {
+  it('collects the uploaded families the browser refused, and only those', () => {
     installFontSet([
       { family: '"__serverfont_big_caslon"', status: 'error' },
       { family: '__serverfont_courgette', status: 'loaded' },
       { family: '__userfont_georgia', status: 'error' },
+      { family: 'Inter Variable', status: 'error' },
     ])
 
     const { failed } = mountProbe()
 
-    expect([...failed.value]).toEqual(['__serverfont_big_caslon'])
+    expect([...failed.value]).toEqual(['__serverfont_big_caslon', '__userfont_georgia'])
   })
 
   it('picks up a face that fails after the page has loaded', async () => {

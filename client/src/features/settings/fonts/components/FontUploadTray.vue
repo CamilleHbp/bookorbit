@@ -2,11 +2,12 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronRight, CircleCheck, CircleDashed, CircleX, Clock, LoaderCircle, Upload } from '@lucide/vue'
+import type { FontScope } from '@bookorbit/types'
 import { fontCssFamilyGroupName } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { fontVariantLabel } from '@/features/reader/shared/lib/font-variants'
 import { formatBytes } from '@/lib/formatting'
-import type { UploadEntry } from '../composables/useServerFontLibrary'
+import type { UploadEntry } from '../composables/useFontLibrary'
 import { refusalMessageKey } from '../lib/upload-outcome'
 
 /**
@@ -14,7 +15,7 @@ import { refusalMessageKey } from '../lib/upload-outcome'
  * already on the server, or why it was refused. Replaces a toast per file, which scrolled away before
  * a ten-file family had finished.
  */
-const props = defineProps<{ entries: UploadEntry[] }>()
+const props = withDefaults(defineProps<{ entries: UploadEntry[]; scope?: FontScope }>(), { scope: 'server' })
 const emit = defineEmits<{ dismiss: [] }>()
 
 const { t } = useI18n()
@@ -40,7 +41,7 @@ function iconClass(entry: UploadEntry): string {
 function faceStyle(entry: UploadEntry) {
   if (!entry.face) return {}
   return {
-    fontFamily: `'${fontCssFamilyGroupName(entry.face.familyName, 'server')}', sans-serif`,
+    fontFamily: `'${fontCssFamilyGroupName(entry.face.familyName, props.scope)}', sans-serif`,
     fontWeight: entry.face.weight,
     fontStyle: entry.face.style,
   }
@@ -53,7 +54,7 @@ function faceLabel(entry: UploadEntry): string {
 }
 
 function reason(entry: UploadEntry): string {
-  return t(refusalMessageKey(entry.code), entry.meta)
+  return t(refusalMessageKey(entry.code, props.scope), entry.meta)
 }
 
 function handleDismiss() {

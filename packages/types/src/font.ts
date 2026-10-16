@@ -92,11 +92,29 @@ export interface ServerFontUsageResponse {
   families: ServerFontFamilyUsage[];
 }
 
+/**
+ * How the current reader uses one custom font, keyed by the CSS family name their saved settings
+ * store. Covers their own fonts and the server's, since both are offered in the same picker.
+ */
+export interface FontFamilyUseCount {
+  cssFamily: string;
+  /** This reader's books set to the family. */
+  books: number;
+  /** The family is this reader's default eBook font. */
+  isDefault: boolean;
+}
+
+export interface UserFontUsageResponse {
+  fonts: FontFamilyUseCount[];
+}
+
 /** Renames every file of a family together, so a failure cannot leave the family split in two. */
-export interface RenameServerFontFamilyRequest {
+export interface RenameFontFamilyRequest {
   familyName: string;
   newFamilyName: string;
 }
+
+export type RenameServerFontFamilyRequest = RenameFontFamilyRequest;
 
 export const FONT_FORMATS: readonly FontFormat[] = ["ttf", "otf", "woff", "woff2"];
 

@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { EyeOff, FileUp, MoreHorizontal, Pencil, Trash2, TriangleAlert } from '@lucide/vue'
-import type { FontStyle, ServerFontFamilyUsage, UserFont } from '@bookorbit/types'
+import type { FontScope, FontStyle, UserFont } from '@bookorbit/types'
 import { FONT_WEIGHTS, fontCssFamilyGroupName, isVariableFont } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -10,28 +10,45 @@ import type { FontFamily } from '@/features/reader/epub/composables/useCustomFon
 import { FONT_WEIGHT_LABEL_KEYS, familyVariants, fontVariantLabel } from '@/features/reader/shared/lib/font-variants'
 import { formatNumber } from '@/i18n/formatters'
 import { formatBytes } from '@/lib/formatting'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import SettingsEditorSheet from '../../components/SettingsEditorSheet.vue'
 import { useFontLabels } from '../composables/useFontLabels'
+import type { FamilyUse } from '../composables/useFontLibrary'
 import FontPagePreview, { type PreviewPaper } from './FontPagePreview.vue'
 import ReaderFontPickerPreview from './ReaderFontPickerPreview.vue'
 
-const props = defineProps<{
-  open: boolean
-  family: FontFamily | null
-  usage: ServerFontFamilyUsage
-  /** Every server family, for the copy of the reader's font list. */
-  pickerFamilies: FontFamily[]
-  totalFiles: number
-  maxFiles: number
-  readonly: boolean
-  busy: boolean
-  /** Opens with "Remove family" already asked, for the row menu's entry of the same name. */
-  armRemove: boolean
-  /** Opens with the name field focused, for the row menu's "Rename family". */
-  focusName: boolean
-  /** The browser refused the family's files, so every preview here is a fallback face. */
-  loadFailed: boolean
-}>()
+/**
+ * One family, previewed and managed. `server` is an administrator looking after the shared
+ * collection; `own` is a reader looking after their own fonts, or (in `view` mode) looking at a
+ * server font they can only show or hide.
+ */
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    family: FontFamily | null
+    scope: FontScope
+    perspective: 'server' | 'own'
+    mode?: 'edit' | 'view'
+    usage: FamilyUse
+    /** The families a reader's font list offers, for the copy of it. */
+    pickerServerFamilies: FontFamily[]
+    pickerUserFamilies?: FontFamily[]
+    totalFiles: number
+    maxFiles: number
+    readonly: boolean
+    busy: boolean
+    /** Opens with "Remove family" already asked, for the row menu's entry of the same name. */
+    armRemove?: boolean
+    /** Opens with the name field focused, for the row menu's "Rename family". */
+    focusName?: boolean
+    /** The browser refused the family's files, so every preview here is a fallback face. */
+    loadFailed?: boolean
+    /** View mode: whether this reader's font list offers the family. */
+    shown?: boolean
+    showPending?: boolean
+  }>(),
+  { mode: 'edit', pickerUserFamilies: () => [], armRemove: false, focusName: false, loadFailed: false, shown: true, showPending: false },
+)
 
 const emit = defineEmits<{
   close: []
@@ -40,6 +57,7 @@ const emit = defineEmits<{
   addFiles: []
   updateFile: [fontId: number, data: { weight: number; style: FontStyle }]
   removeFile: [fontId: number]
+  'update:shown': [shown: boolean]
 }>()
 
 const { t } = useI18n()
@@ -85,17 +103,37 @@ const dirty = computed(() => props.family !== null && trimmedDraft.value !== '' 
 
 /** Saved reader settings name a family by its CSS name, so a rename that changes it strands them. */
 const renameStrandsBooks = computed(
-  () => dirty.value && props.usage.books > 0 && fontCssFamilyGroupName(trimmedDraft.value, 'server') !== fontCssFamilyGroupName(name.value, 'server'),
+  () =>
+    dirty.value &&
+    (props.usage.books > 0 || props.usage.defaults > 0) &&
+    fontCssFamilyGroupName(trimmedDraft.value, props.scope) !== fontCssFamilyGroupName(name.value, props.scope),
 )
+
+const editable = computed(() => props.mode === 'edit' && !props.readonly)
 
 const removeConsequence = computed(() => {
   const parts: string[] = []
-  if (props.usage.books > 0) {
-    parts.push(t('settings.admin.serverFonts.sheet.removeConsequenceBooks', { books: props.usage.books, readers: props.usage.readers }))
+  if (props.perspective === 'server') {
+    if (props.usage.books > 0) {
+      parts.push(t('settings.admin.serverFonts.sheet.removeConsequenceBooks', { books: props.usage.books, readers: props.usage.readers }))
+    }
+  } else {
+    if (props.usage.books > 0) parts.push(t('settings.reader.fonts.library.removeConsequenceBooks', { count: props.usage.books }))
+    if (props.usage.defaults > 0) parts.push(t('settings.reader.fonts.library.removeConsequenceDefault'))
   }
   parts.push(t('settings.admin.serverFonts.sheet.removeConsequenceFiles', { count: files.value.length }))
   return parts.join(' ')
 })
+
+const filesUsed = computed(() =>
+  props.perspective === 'server'
+    ? t('settings.admin.serverFonts.sheet.filesUsed', { count: formatNumber(props.totalFiles), max: formatNumber(props.maxFiles) })
+    : t('settings.reader.fonts.library.filesUsed', { count: formatNumber(props.totalFiles), max: formatNumber(props.maxFiles) }),
+)
+
+function handleShown(shown: boolean) {
+  emit('update:shown', shown)
+}
 
 const weightOptions = computed(() => FONT_WEIGHTS.map((weight) => ({ value: weight, label: `${t(FONT_WEIGHT_LABEL_KEYS[weight]!)} (${weight})` })))
 
@@ -151,9 +189,13 @@ function confirmRemoveFile() {
     :description="t('settings.admin.serverFonts.sheet.description', { name })"
     :dirty="dirty"
     :busy="busy"
-    :removable="!readonly"
+    :removable="editable"
     :remove-label="t('settings.admin.serverFonts.sheet.removeLabel')"
-    :remove-confirm="t('settings.admin.serverFonts.sheet.removeQuestion', { name })"
+    :remove-confirm="
+      perspective === 'server'
+        ? t('settings.admin.serverFonts.sheet.removeQuestion', { name })
+        : t('settings.reader.fonts.library.removeQuestion', { name })
+    "
     :remove-consequence="removeConsequence"
     :armed-action="armRemove ? REMOVE_ACTION : null"
     @save="handleSave"
@@ -205,19 +247,23 @@ function confirmRemoveFile() {
 
       <section class="flex flex-col gap-2.5">
         <span class="settings-group-label mb-0">{{ t('settings.admin.serverFonts.sheet.inReader') }}</span>
-        <ReaderFontPickerPreview :families="pickerFamilies" :selected="family" />
-        <p class="text-xs text-muted-foreground">{{ t('settings.admin.serverFonts.sheet.inReaderHint', { name: family.name }) }}</p>
+        <ReaderFontPickerPreview :server-families="pickerServerFamilies" :user-families="pickerUserFamilies" :selected="family" />
+        <p class="text-xs text-muted-foreground">
+          {{
+            perspective === 'server'
+              ? t('settings.admin.serverFonts.sheet.inReaderHint', { name: family.name })
+              : t('settings.reader.fonts.library.inReaderHint', { name: family.name })
+          }}
+        </p>
       </section>
 
       <section class="flex flex-col gap-2.5">
         <div class="flex items-baseline justify-between gap-3">
           <span class="settings-group-label mb-0">{{ t('settings.admin.serverFonts.sheet.files') }}</span>
-          <span class="text-xs text-muted-foreground tabular-nums">{{
-            t('settings.admin.serverFonts.sheet.filesUsed', { count: formatNumber(totalFiles), max: formatNumber(maxFiles) })
-          }}</span>
+          <span v-if="mode === 'edit'" class="text-xs text-muted-foreground tabular-nums">{{ filesUsed }}</span>
         </div>
         <ul class="settings-card">
-          <li v-for="font in files" :key="font.id" class="bg-card px-3.5 py-2.5" data-testid="server-font-file">
+          <li v-for="font in files" :key="font.id" class="bg-card px-3.5 py-2.5" data-testid="font-family-file">
             <div class="flex items-center gap-3">
               <span
                 class="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase"
@@ -229,7 +275,7 @@ function confirmRemoveFile() {
                 <p class="text-[12.5px] leading-[18px] text-muted-foreground">{{ fileDetail(font) }}</p>
               </div>
               <span class="shrink-0 text-[12.5px] text-muted-foreground tabular-nums max-sm:hidden">{{ formatBytes(font.fileSize) }}</span>
-              <DropdownMenu v-if="!readonly">
+              <DropdownMenu v-if="editable">
                 <DropdownMenuTrigger as-child>
                   <Button
                     variant="ghost"
@@ -287,11 +333,13 @@ function confirmRemoveFile() {
         </ul>
       </section>
 
-      <section class="flex flex-col gap-2">
-        <label for="server-font-family-name" class="settings-group-label mb-0">{{ t('settings.admin.serverFonts.sheet.name') }}</label>
-        <input id="server-font-family-name" ref="nameInput" v-model="nameDraft" class="input-field h-9 w-full" :disabled="readonly" maxlength="200" />
-        <p class="text-xs text-muted-foreground">{{ t('settings.admin.serverFonts.sheet.nameHint') }}</p>
-        <p v-if="dirty && usage.hidden > 0" class="flex items-start gap-1.5 text-xs text-muted-foreground">
+      <section v-if="mode === 'edit'" class="flex flex-col gap-2">
+        <label for="font-family-name" class="settings-group-label mb-0">{{ t('settings.admin.serverFonts.sheet.name') }}</label>
+        <input id="font-family-name" ref="nameInput" v-model="nameDraft" class="input-field h-9 w-full" :disabled="readonly" maxlength="200" />
+        <p class="text-xs text-muted-foreground">
+          {{ perspective === 'server' ? t('settings.admin.serverFonts.sheet.nameHint') : t('settings.reader.fonts.library.nameHint') }}
+        </p>
+        <p v-if="dirty && perspective === 'server' && usage.hidden > 0" class="flex items-start gap-1.5 text-xs text-muted-foreground">
           <EyeOff :size="13" class="mt-0.5 shrink-0" aria-hidden="true" />
           {{ t('settings.admin.serverFonts.sheet.nameHiddenWarning', { count: usage.hidden, name: family.name }) }}
         </p>
@@ -301,7 +349,7 @@ function confirmRemoveFile() {
         </p>
       </section>
 
-      <section class="flex flex-col gap-2.5">
+      <section v-if="perspective === 'server'" class="flex flex-col gap-2.5">
         <span class="settings-group-label mb-0">{{ t('settings.admin.serverFonts.sheet.readers') }}</span>
         <dl class="grid grid-cols-3 overflow-hidden rounded-xl border border-border bg-card">
           <div class="flex flex-col gap-0.5 px-4 py-3">
@@ -327,11 +375,27 @@ function confirmRemoveFile() {
       </section>
     </template>
 
-    <template v-if="!readonly" #actions>
+    <template v-if="editable" #actions>
       <Button size="sm" variant="outline" type="button" :disabled="busy" @click="handleAddFiles">
         <FileUp :size="14" aria-hidden="true" />
         {{ t('settings.admin.serverFonts.menu.addFiles') }}
       </Button>
+    </template>
+
+    <!-- A server font on a reader's own page: nothing to save, only whether their list offers it. -->
+    <template v-if="mode === 'view'" #footer="{ requestClose }">
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="flex min-w-0 flex-1 items-center gap-3 text-sm text-foreground">
+          <ToggleSwitch
+            :model-value="shown"
+            :disabled="showPending || readonly"
+            :aria-label="t('settings.reader.fonts.library.showInReader')"
+            @update:model-value="handleShown"
+          />
+          {{ t('settings.reader.fonts.library.showInReader') }}
+        </label>
+        <Button size="sm" variant="outline" type="button" @click="requestClose">{{ t('common.close') }}</Button>
+      </div>
     </template>
   </SettingsEditorSheet>
 </template>

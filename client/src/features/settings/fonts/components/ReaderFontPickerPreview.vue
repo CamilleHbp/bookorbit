@@ -6,17 +6,29 @@ import { BUILTIN_READER_FONT_OPTIONS } from '@/features/reader/shared/constants/
 import { formatFontFamilyLabel } from '@/features/reader/shared/lib/font-display'
 import { closestVariant, familyVariants, fontVariantLabel, isSameVariant } from '@/features/reader/shared/lib/font-variants'
 
-/**
- * The Font section of the reader's settings panel, drawn with this server's families and one of them
- * chosen, so an administrator sees exactly what readers will be offered. It mirrors
- * ReaderSettingsPanel's markup and is display-only.
- */
-const props = defineProps<{
-  families: FontFamily[]
-  selected: FontFamily | null
-}>()
-
 const { t } = useI18n()
+
+/**
+ * The Font section of the reader's settings panel, drawn with real families and one of them chosen,
+ * so whoever manages fonts sees exactly what a reader's list offers. It mirrors ReaderSettingsPanel's
+ * markup and is display-only.
+ */
+const props = withDefaults(
+  defineProps<{
+    serverFamilies: FontFamily[]
+    userFamilies?: FontFamily[]
+    selected: FontFamily | null
+  }>(),
+  { userFamilies: () => [] },
+)
+
+/** In the reader's own order: server fonts, then the reader's own. */
+const sections = computed(() =>
+  [
+    { key: 'server', label: t('reader.settings.fontServer'), families: props.serverFamilies },
+    { key: 'user', label: t('reader.settings.fontYours'), families: props.userFamilies },
+  ].filter((section) => section.families.length > 0),
+)
 
 const chips = computed(() => (props.selected ? familyVariants(props.selected.variants) : []))
 /** A reader arriving with default settings lands on the style nearest Regular, as the reader picks it. */
@@ -41,11 +53,11 @@ const tile = 'flex h-10 items-center truncate rounded-lg border px-2 text-sm'
       >
     </div>
 
-    <template v-if="families.length > 0">
-      <p :class="groupLabel" class="mt-3">{{ t('reader.settings.fontServer') }}</p>
+    <template v-for="section in sections" :key="section.key">
+      <p :class="groupLabel" class="mt-3">{{ section.label }}</p>
       <div class="grid grid-cols-2 gap-2">
         <span
-          v-for="family in families"
+          v-for="family in section.families"
           :key="family.cssFamilyName"
           :class="[
             tile,

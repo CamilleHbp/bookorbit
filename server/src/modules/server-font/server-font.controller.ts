@@ -9,7 +9,7 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import type { MultipartRequest } from '../../common/types/multipart-request';
 import type { RequestUser } from '../../common/types/request-user';
 import { UpdateFontDto } from '../font/dto/update-font.dto';
-import { RenameServerFontFamilyDto } from './dto/rename-server-font-family.dto';
+import { RenameFontFamilyDto } from '../font/dto/rename-font-family.dto';
 import { ServerFontService } from './server-font.service';
 
 const CANNOT_MANAGE = 'Demo-restricted account cannot manage server fonts';
@@ -37,7 +37,7 @@ export class ServerFontController {
   @Patch('families')
   @RequirePermission(Permission.ManageAppSettings)
   @ForbidPermission(Permission.DemoRestricted, CANNOT_MANAGE)
-  async renameFamily(@Body() dto: RenameServerFontFamilyDto) {
+  async renameFamily(@Body() dto: RenameFontFamilyDto) {
     return this.serverFontService.renameFamily(dto.familyName, dto.newFamilyName);
   }
 

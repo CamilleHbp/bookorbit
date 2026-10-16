@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   FONT_CSS_FAMILY_PREFIXES,
   MAX_SERVER_FONTS,
@@ -14,6 +14,7 @@ import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import type { ServerFontRow } from '../../db/schema';
 import { toFontResponse } from '../font/dto/font-response.dto';
 import type { UpdateFontDto } from '../font/dto/update-font.dto';
+import { duplicateFont, faceTaken, familyFaceTaken, isUniqueViolation } from '../font/font-errors';
 import { inspectFontUpload, resolveFontIdentity } from '../font/font-upload.pipeline';
 import { FontValidationService } from '../font/font.validation.service';
 import { ServerFontRepository } from './server-font.repository';
@@ -21,20 +22,6 @@ import { ServerFontStorageService } from './server-font.storage.service';
 
 /** The user-preferences category holding each reader's hidden server families. */
 const HIDDEN_FAMILIES_CATEGORY = 'server-fonts';
-
-const faceTaken = (familyName: string, weight: number, style: string, message: string) =>
-  new ConflictException({ message, errorCode: 'FONT_FACE_TAKEN' satisfies FontUploadErrorCode, errorMeta: { familyName, weight, style } });
-
-function isUniqueViolation(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-
-  const directCode = (error as { code?: unknown }).code;
-  if (directCode === '23505') return true;
-
-  if (!(error instanceof Error)) return false;
-  const causeCode = (error.cause as { code?: unknown } | undefined)?.code;
-  return causeCode === '23505';
-}
 
 /**
  * Manages the administrator-curated font collection offered to every reader. Shares the
@@ -67,13 +54,7 @@ export class ServerFontService {
       const { format, fileHash } = inspectFontUpload(this.validation, buffer, originalFilename);
 
       const existing = await this.repo.findByHash(fileHash);
-      if (existing) {
-        throw new ConflictException({
-          message: 'This font file has already been uploaded',
-          errorCode: 'FONT_DUPLICATE' satisfies FontUploadErrorCode,
-          errorMeta: { familyName: existing.familyName, weight: existing.weight, style: existing.style },
-        });
-      }
+      if (existing) throw duplicateFont(existing);
 
       const fontCount = await this.repo.countAll();
       if (fontCount >= MAX_SERVER_FONTS) {
@@ -189,13 +170,7 @@ export class ServerFontService {
       this.logger.warn(
         `[${event}] [fail] familyName=${sanitizeLogValue(familyName)} durationMs=${Date.now() - startedAt} errorClass=${errorClass} error="${sanitizeLogValue(err instanceof Error ? err.message.slice(0, 200) : String(err))}" - server font family rename failed`,
       );
-      if (isUniqueViolation(err)) {
-        throw new ConflictException({
-          message: `"${next}" already has a file at the same weight and style`,
-          errorCode: 'FONT_FACE_TAKEN' satisfies FontUploadErrorCode,
-          errorMeta: { familyName: next },
-        });
-      }
+      if (isUniqueViolation(err)) throw familyFaceTaken(next);
       throw err;
     }
     this.logger.log(

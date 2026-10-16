@@ -1,14 +1,27 @@
 import { computed, ref } from 'vue'
-import type { ServerFontFamilyUsage, ServerFontUsageResponse, UserFont } from '@bookorbit/types'
-import { FONT_FORMAT_EXTENSIONS, MAX_FONT_FILE_SIZE } from '@bookorbit/types'
+import type { FontScope, ServerFontUsageResponse, UserFont, UserFontUsageResponse } from '@bookorbit/types'
+import { FONT_FORMAT_EXTENSIONS, MAX_FONT_FILE_SIZE, fontCssFamilyGroupName } from '@bookorbit/types'
 import { api } from '@/lib/api'
 import { useCustomFonts, type FontUpdate } from '@/features/reader/epub/composables/useCustomFonts'
 import { familyVariants } from '@/features/reader/shared/lib/font-variants'
 import { outcomeOfError, type UploadFace, type UploadState } from '../lib/upload-outcome'
 import type { FontUploadErrorCode } from '@bookorbit/types'
 
-const ENDPOINT = '/api/v1/server-fonts'
+const ENDPOINTS: Record<FontScope, string> = { server: '/api/v1/server-fonts', user: '/api/v1/fonts' }
 const ACCEPTED = Object.values(FONT_FORMAT_EXTENSIONS)
+
+/**
+ * How a family is used. On the Server Fonts page these count every reader; on a reader's own Fonts
+ * page they count that reader alone, so readers is 0 or 1 and defaults says whether it is their default.
+ */
+export interface FamilyUse {
+  books: number
+  readers: number
+  defaults: number
+  hidden: number
+}
+
+const NO_USE: FamilyUse = { books: 0, readers: 0, defaults: 0, hidden: 0 }
 
 export interface UploadEntry {
   id: number
@@ -18,7 +31,7 @@ export interface UploadEntry {
   face: UploadFace | null
   /** The style's own name in the font ("Italic", "SemiBold"), when the font names it. */
   styleName: string | null
-  /** The file started a family the server did not have. */
+  /** The file started a family the collection did not have. */
   newFamily: boolean
   code: FontUploadErrorCode | null
   meta: Record<string, string | number>
@@ -26,17 +39,19 @@ export interface UploadEntry {
 
 export type RenameResult = { ok: true } | { ok: false; code: string | null }
 
-const NO_USAGE = (familyName: string): ServerFontFamilyUsage => ({ familyName, books: 0, readers: 0, defaults: 0, hidden: 0 })
-
 /**
- * The server collection as the Server Fonts page manages it: the files, how readers use each
- * family, and a queue that uploads dropped files one at a time and remembers how each one ended.
+ * One font collection as a settings page manages it: the files, how each family is used, and a
+ * queue that uploads dropped files one at a time and remembers how each one ended.
+ *
+ * Pass the page's own useCustomFonts() when it also shows the other collection, so both read the
+ * same state.
  */
-export function useServerFontLibrary() {
-  const customFonts = useCustomFonts()
-  const store = customFonts.scopeStore('server')
+export function useFontLibrary(scope: FontScope, customFonts: ReturnType<typeof useCustomFonts> = useCustomFonts()) {
+  const ENDPOINT = ENDPOINTS[scope]
+  const store = customFonts.scopeStore(scope)
 
-  const usage = ref(new Map<string, ServerFontFamilyUsage>())
+  /** Keyed by CSS family name, which is what readers' saved settings store. */
+  const usage = ref(new Map<string, FamilyUse>())
   const uploads = ref<UploadEntry[]>([])
   /** Families this visit's uploads created, marked until the tray is dismissed. */
   const newFamilies = ref(new Set<string>())
@@ -48,8 +63,19 @@ export function useServerFontLibrary() {
     try {
       const res = await api(`${ENDPOINT}/usage`)
       if (!res.ok) return
-      const body: ServerFontUsageResponse = await res.json()
-      usage.value = new Map(body.families.map((family) => [family.familyName, family]))
+      if (scope === 'server') {
+        const body: ServerFontUsageResponse = await res.json()
+        usage.value = new Map(body.families.map(({ familyName, ...use }) => [fontCssFamilyGroupName(familyName, 'server'), use]))
+      } else {
+        // A reader's own counts cover their fonts and the server's, so one call serves both lists.
+        const body: UserFontUsageResponse = await res.json()
+        usage.value = new Map(
+          body.fonts.map((font) => [
+            font.cssFamily,
+            { books: font.books, readers: font.books > 0 ? 1 : 0, defaults: font.isDefault ? 1 : 0, hidden: 0 },
+          ]),
+        )
+      }
     } catch {
       // Usage is context for the decision, not the decision; the page works without it.
     }
@@ -59,11 +85,11 @@ export function useServerFontLibrary() {
     await Promise.all([store.fetchFonts(), fetchUsage()])
   }
 
-  function usageOf(familyName: string): ServerFontFamilyUsage {
-    return usage.value.get(familyName) ?? NO_USAGE(familyName)
+  function usageOf(cssFamilyName: string): FamilyUse {
+    return usage.value.get(cssFamilyName) ?? NO_USE
   }
 
-  /** The name the reader's Style row will show for this face, taken from the family on the server. */
+  /** The name the reader's Style row will show for this face, taken from the family as stored. */
   function styleNameOf(face: UploadFace | null): string | null {
     if (!face) return null
     const variants = familyVariants(store.fonts.value.filter((font) => font.familyName === face.familyName))

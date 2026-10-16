@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { computed } from 'vue'
 import ServerFontsSettings from '../ServerFontsSettings.vue'
-import ServerFontRow from '../server-fonts/components/ServerFontRow.vue'
+import FontFamilyMenu from '../fonts/components/FontFamilyMenu.vue'
 import { makeCustomFontsMock, makeFontStore, mockFont, type MockFontStore } from './font-store-fixture'
 
 const apiMock = vi.hoisted(() => vi.fn<(input: string, init?: RequestInit) => Promise<{ ok: boolean; json: () => Promise<unknown> }>>())
@@ -63,7 +63,7 @@ function mountPage(fonts = [courgette, ...literata, bigCaslon]): VueWrapper {
 }
 
 function rowNamed(wrapper: VueWrapper, name: string) {
-  const row = wrapper.findAll('[data-testid="server-font-row"]').find((candidate) => candidate.find('button').text() === name)
+  const row = wrapper.findAll('[data-testid="font-family-row"]').find((candidate) => candidate.find('button').text() === name)
   if (!row) throw new Error(`no row for ${name}`)
   return row
 }
@@ -123,7 +123,7 @@ describe('ServerFontsSettings', () => {
       const wrapper = mountPage()
       await flushPromises()
 
-      const names = wrapper.findAll('[data-testid="server-font-row"]').map((row) => row.find('button').text())
+      const names = wrapper.findAll('[data-testid="font-family-row"]').map((row) => row.find('button').text())
       expect(names).toEqual(['Big Caslon', 'Courgette', 'Literata'])
       expect(rowNamed(wrapper, 'Literata').find('button').attributes('style')).toContain('__serverfont_literata')
     })
@@ -140,16 +140,16 @@ describe('ServerFontsSettings', () => {
       const wrapper = mountPage()
       await flushPromises()
 
-      expect(rowNamed(wrapper, 'Courgette').get('[data-testid="server-font-usage"]').text()).toBe('On 2 books')
-      expect(rowNamed(wrapper, 'Big Caslon').get('[data-testid="server-font-usage"]').text()).toBe('Hidden by 1 reader')
-      expect(rowNamed(wrapper, 'Literata').get('[data-testid="server-font-usage"]').text()).toBe('')
+      expect(rowNamed(wrapper, 'Courgette').get('[data-testid="font-family-use"]').text()).toBe('On 2 books')
+      expect(rowNamed(wrapper, 'Big Caslon').get('[data-testid="font-family-use"]').text()).toBe('Hidden by 1 reader')
+      expect(rowNamed(wrapper, 'Literata').get('[data-testid="font-family-use"]').text()).toBe('')
     })
 
     it('counts families and files separately, against the server cap', async () => {
       const wrapper = mountPage()
       await flushPromises()
 
-      const totals = wrapper.get('[data-testid="server-fonts-totals"]').text().replace(/\s+/g, ' ')
+      const totals = wrapper.get('[data-testid="font-totals"]').text().replace(/\s+/g, ' ')
       expect(totals).toContain('3 families')
       expect(totals).toContain('4 of 200 files')
     })
@@ -160,7 +160,7 @@ describe('ServerFontsSettings', () => {
 
       await wrapper.get('input[type="text"]').setValue('Sphinx of black quartz')
 
-      expect(wrapper.findAll('[data-testid="server-font-row"] p').every((p) => p.text() === 'Sphinx of black quartz')).toBe(true)
+      expect(wrapper.findAll('[data-testid="font-family-row"] p').every((p) => p.text() === 'Sphinx of black quartz')).toBe(true)
     })
 
     it('filters families by name and says when none match', async () => {
@@ -168,7 +168,7 @@ describe('ServerFontsSettings', () => {
       await flushPromises()
 
       await wrapper.get('input[type="search"]').setValue('lit')
-      expect(wrapper.findAll('[data-testid="server-font-row"]')).toHaveLength(1)
+      expect(wrapper.findAll('[data-testid="font-family-row"]')).toHaveLength(1)
 
       await wrapper.get('input[type="search"]').setValue('zzz')
       expect(wrapper.text()).toContain('No families match “zzz”')
@@ -209,7 +209,7 @@ describe('ServerFontsSettings', () => {
 
       expect(dialogText()).toContain('Literata')
       expect(dialogText()).toContain('In the reader')
-      expect(document.body.querySelectorAll('[data-testid="server-font-file"]')).toHaveLength(2)
+      expect(document.body.querySelectorAll('[data-testid="font-family-file"]')).toHaveLength(2)
     })
 
     it('opens with the removal already asked when chosen from the row menu, naming what it costs', async () => {
@@ -217,8 +217,8 @@ describe('ServerFontsSettings', () => {
       await flushPromises()
 
       wrapper
-        .findAllComponents(ServerFontRow)
-        .find((row) => row.props('family').name === 'Courgette')!
+        .findAllComponents(FontFamilyMenu)
+        .find((menu) => menu.props('name') === 'Courgette')!
         .vm.$emit('remove', 'Courgette')
       await flushPromises()
 
@@ -232,8 +232,8 @@ describe('ServerFontsSettings', () => {
       const wrapper = mountPage()
       await flushPromises()
       wrapper
-        .findAllComponents(ServerFontRow)
-        .find((row) => row.props('family').name === 'Literata')!
+        .findAllComponents(FontFamilyMenu)
+        .find((menu) => menu.props('name') === 'Literata')!
         .vm.$emit('remove', 'Literata')
       await flushPromises()
 
@@ -251,7 +251,7 @@ describe('ServerFontsSettings', () => {
       await rowNamed(wrapper, 'Courgette').trigger('click')
       await flushPromises()
 
-      const input = document.body.querySelector<HTMLInputElement>('#server-font-family-name')!
+      const input = document.body.querySelector<HTMLInputElement>('#font-family-name')!
       input.value = 'Courgette Script'
       input.dispatchEvent(new Event('input'))
       await flushPromises()
@@ -270,7 +270,7 @@ describe('ServerFontsSettings', () => {
       await rowNamed(wrapper, 'Big Caslon').trigger('click')
       await flushPromises()
 
-      const input = document.body.querySelector<HTMLInputElement>('#server-font-family-name')!
+      const input = document.body.querySelector<HTMLInputElement>('#font-family-name')!
       input.value = 'Caslon'
       input.dispatchEvent(new Event('input'))
       await flushPromises()

@@ -1,4 +1,4 @@
-import type { FontStyle, FontUploadErrorCode } from '@bookorbit/types'
+import type { FontScope, FontStyle, FontUploadErrorCode } from '@bookorbit/types'
 import { FONT_UPLOAD_ERROR_CODES } from '@bookorbit/types'
 import { FontUploadError } from '@/features/reader/epub/composables/useCustomFonts'
 
@@ -41,8 +41,8 @@ export function outcomeOfError(err: unknown): UploadOutcome {
   return { state: 'failed', face: null, code: null, meta }
 }
 
-/** Translation key for a refusal's reason. */
-export function refusalMessageKey(code: FontUploadErrorCode | null): string {
+/** Translation key for a refusal's reason. The cap reads differently for a reader's own collection. */
+export function refusalMessageKey(code: FontUploadErrorCode | null, scope: FontScope = 'server'): string {
   switch (code) {
     case 'FONT_TOO_LARGE':
       return 'settings.admin.serverFonts.upload.reasons.tooLarge'
@@ -53,7 +53,7 @@ export function refusalMessageKey(code: FontUploadErrorCode | null): string {
     case 'FONT_FACE_TAKEN':
       return 'settings.admin.serverFonts.upload.reasons.faceTaken'
     case 'FONT_LIMIT_REACHED':
-      return 'settings.admin.serverFonts.upload.reasons.limitReached'
+      return scope === 'user' ? 'settings.reader.fonts.library.limitReached' : 'settings.admin.serverFonts.upload.reasons.limitReached'
     default:
       return 'settings.admin.serverFonts.upload.reasons.failed'
   }

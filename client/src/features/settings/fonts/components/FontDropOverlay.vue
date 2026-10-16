@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { Upload } from '@lucide/vue'
 
 /** Covers the page while files are dragged over it. Browsers give the count, not the names, until the drop. */
-defineProps<{ count: number }>()
+defineProps<{ count: number; titleKey: string }>()
 
 const { t } = useI18n()
 </script>
@@ -15,7 +15,7 @@ const { t } = useI18n()
         <div class="mx-auto mb-3.5 grid size-14 place-items-center rounded-full bg-primary/15 text-primary">
           <Upload :size="26" />
         </div>
-        <p class="text-lg font-semibold text-foreground">{{ t('settings.admin.serverFonts.drop.title', { count }) }}</p>
+        <p class="text-lg font-semibold text-foreground">{{ t(titleKey, { count }) }}</p>
         <p class="mt-1 text-[13px] text-muted-foreground">{{ t('settings.reader.fonts.fileTypesHint') }}</p>
       </div>
     </div>

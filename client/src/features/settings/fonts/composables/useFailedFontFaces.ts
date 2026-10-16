@@ -2,7 +2,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { FONT_CSS_FAMILY_PREFIXES } from '@bookorbit/types'
 
 /**
- * CSS family names of server fonts this browser refused to load. A file can pass the server's checks
+ * CSS family names of uploaded fonts this browser refused to load. A file can pass the server's checks
  * and still be rejected by the browser's font sanitizer (some system fonts carry tables it will not
  * accept), and then every reader silently gets a fallback face instead.
  */
@@ -14,7 +14,7 @@ export function useFailedFontFaces() {
     const next = new Set<string>()
     document.fonts.forEach((face) => {
       const family = face.family.replace(/^["']|["']$/g, '')
-      if (face.status === 'error' && family.startsWith(FONT_CSS_FAMILY_PREFIXES.server)) next.add(family)
+      if (face.status === 'error' && Object.values(FONT_CSS_FAMILY_PREFIXES).some((prefix) => family.startsWith(prefix))) next.add(family)
     })
     if (next.size !== failed.value.size || [...next].some((family) => !failed.value.has(family))) failed.value = next
   }

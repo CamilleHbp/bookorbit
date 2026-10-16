@@ -327,7 +327,7 @@ export const routes: RouteRecordRaw[] = [
             path: 'reader/fonts',
             name: 'settings-reader-fonts',
             component: () => import('@/features/settings/FontsSettings.vue'),
-            meta: { title: () => t('titles.reader.fonts') },
+            meta: { maxWidth: 'max-w-[82rem]', title: () => t('titles.reader.fonts') },
           },
           {
             path: 'reader/general',

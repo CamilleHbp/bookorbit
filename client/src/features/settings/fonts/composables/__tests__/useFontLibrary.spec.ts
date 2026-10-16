@@ -11,7 +11,7 @@ vi.mock('@/features/reader/epub/composables/useCustomFonts', async (importOrigin
 }))
 
 import { FontUploadError, useCustomFonts } from '@/features/reader/epub/composables/useCustomFonts'
-import { useServerFontLibrary } from '../useServerFontLibrary'
+import { useFontLibrary } from '../useFontLibrary'
 
 const USAGE = {
   families: [
@@ -26,11 +26,11 @@ function respond(body: unknown, ok = true) {
 
 function setup(fonts = [mockFont(3, 'Courgette'), mockFont(2, 'Big Caslon', 500)]): {
   store: MockFontStore
-  library: ReturnType<typeof useServerFontLibrary>
+  library: ReturnType<typeof useFontLibrary>
 } {
   const store = makeFontStore('server', fonts)
   vi.mocked(useCustomFonts).mockReturnValue(makeCustomFontsMock({ server: store }) as never)
-  return { store, library: useServerFontLibrary() }
+  return { store, library: useFontLibrary('server') }
 }
 
 const fontFile = (name: string, size = 1000) => {
@@ -39,7 +39,7 @@ const fontFile = (name: string, size = 1000) => {
   return file
 }
 
-describe('useServerFontLibrary', () => {
+describe('useFontLibrary', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMock.mockImplementation((url: string) => (url.endsWith('/usage') ? respond(USAGE) : respond({}, false)))
@@ -53,14 +53,14 @@ describe('useServerFontLibrary', () => {
 
       expect(store.fetchFonts).toHaveBeenCalled()
       expect(apiMock).toHaveBeenCalledWith('/api/v1/server-fonts/usage')
-      expect(library.usageOf('Courgette')).toMatchObject({ books: 2, readers: 1 })
+      expect(library.usageOf('__serverfont_courgette')).toMatchObject({ books: 2, readers: 1 })
     })
 
     it('answers zeros for a family the server did not count', async () => {
       const { library } = setup()
       await library.load()
 
-      expect(library.usageOf('Literata')).toEqual({ familyName: 'Literata', books: 0, readers: 0, defaults: 0, hidden: 0 })
+      expect(library.usageOf('__serverfont_literata')).toEqual({ books: 0, readers: 0, defaults: 0, hidden: 0 })
     })
 
     it('keeps working when the counts cannot be loaded', async () => {
@@ -68,7 +68,7 @@ describe('useServerFontLibrary', () => {
       const { library } = setup()
 
       await expect(library.load()).resolves.toBeUndefined()
-      expect(library.usageOf('Courgette').books).toBe(0)
+      expect(library.usageOf('__serverfont_courgette').books).toBe(0)
     })
   })
 
@@ -235,5 +235,51 @@ describe('useServerFontLibrary', () => {
 
       await expect(library.removeFamily('Literata')).resolves.toEqual({ removed: 1, failed: 1 })
     })
+  })
+})
+
+describe("useFontLibrary('user')", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("reads the reader's own counts, which cover their fonts and the server's, by CSS name", async () => {
+    apiMock.mockImplementation((url: string) =>
+      url === '/api/v1/fonts/usage'
+        ? respond({
+            fonts: [
+              { cssFamily: '__userfont_georgia', books: 2, isDefault: false },
+              { cssFamily: '__serverfont_courgette', books: 0, isDefault: true },
+            ],
+          })
+        : respond({}, false),
+    )
+    const store = makeFontStore('user', [mockFont(1, 'Georgia')])
+    vi.mocked(useCustomFonts).mockReturnValue(makeCustomFontsMock({ user: store }) as never)
+    const library = useFontLibrary('user')
+
+    await library.load()
+
+    expect(store.fetchFonts).toHaveBeenCalled()
+    expect(library.usageOf('__userfont_georgia')).toEqual({ books: 2, readers: 1, defaults: 0, hidden: 0 })
+    expect(library.usageOf('__serverfont_courgette')).toEqual({ books: 0, readers: 0, defaults: 1, hidden: 0 })
+  })
+
+  it('renames a family through the personal route', async () => {
+    apiMock.mockImplementation((url: string) => (url === '/api/v1/fonts/families' ? respond([mockFont(1, 'Georgia Pro')]) : respond({ fonts: [] })))
+    const store = makeFontStore('user', [mockFont(1, 'Georgia')])
+    vi.mocked(useCustomFonts).mockReturnValue(makeCustomFontsMock({ user: store }) as never)
+    const library = useFontLibrary('user')
+
+    await expect(library.renameFamily('Georgia', 'Georgia Pro')).resolves.toEqual({ ok: true })
+    expect(store.fonts.value.map((font) => font.familyName)).toEqual(['Georgia Pro'])
+  })
+
+  it("shares the page's useCustomFonts state when given one", () => {
+    const customFonts = makeCustomFontsMock()
+    useFontLibrary('user', customFonts as never)
+
+    expect(customFonts.scopeStore).toHaveBeenCalledWith('user')
+    expect(useCustomFonts).not.toHaveBeenCalled()
   })
 })
