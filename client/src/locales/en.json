@@ -1587,7 +1587,132 @@
         "subtitle": "Upload fonts that every user can pick in the eBook reader, without uploading their own.",
         "listLabel": "Server fonts",
         "noFontsYet": "No server fonts yet",
-        "noFontsHint": "Fonts you add here appear in every user's reader."
+        "noFontsHint": "Fonts you add here appear in every user's reader.",
+        "addFonts": "Add fonts",
+        "filterLabel": "Filter families",
+        "filterPlaceholder": "Filter families",
+        "filterClear": "Clear filter",
+        "noMatches": "No families match “{query}”",
+        "previewLabel": "Preview text",
+        "previewPlaceholder": "Type to preview it in every family",
+        "previewSize": "Preview size",
+        "previewSizeOption": "{size} px",
+        "familiesUnit": "{count, plural, one {family} other {families}}",
+        "filesOfMax": "{count} of {max} files",
+        "onDisk": "{size} on disk",
+        "columns": {
+          "family": "Family",
+          "specimen": "Specimen",
+          "styles": "Styles",
+          "readers": "Readers"
+        },
+        "fileSummary": "{count, plural, one {# file} other {# files}} · {size}",
+        "newBadge": "New",
+        "styles": {
+          "single": "{style} only",
+          "many": "{count} styles",
+          "manyNoItalics": "{count} styles, no italics"
+        },
+        "facts": {
+          "books": "{count, plural, one {On # book} other {On # books}}",
+          "booksDetail": "{books, plural, one {Set on # book} other {Set on # books}} by {readers, plural, one {# reader} other {# readers}}",
+          "defaults": "{count, plural, one {Default for # reader} other {Default for # readers}}",
+          "hidden": "{count, plural, one {Hidden by # reader} other {Hidden by # readers}}"
+        },
+        "moreActions": "More for {name}",
+        "menu": {
+          "rename": "Rename family",
+          "addFiles": "Add files",
+          "remove": "Remove family…"
+        },
+        "footerHint": "Every reader sees these in the reader's font list and can hide any of them under Reader › Fonts.",
+        "empty": {
+          "dropHint": "or drop files anywhere on this page",
+          "tip": "A family reads best as four files: Regular, Italic, Bold and Bold Italic. One variable file can stand in for every weight."
+        },
+        "drop": {
+          "title": "{count, plural, one {Drop to add # file for every reader} other {Drop to add # files for every reader}}"
+        },
+        "upload": {
+          "ariaLabel": "Upload progress",
+          "title": "{count, plural, one {Adding # file} other {Adding # files}}",
+          "progress": "{done} of {total} done",
+          "addedCount": "{count} added",
+          "duplicateCount": "{count} already here",
+          "refusedCount": "{count} not added",
+          "dismiss": "Dismiss",
+          "newFamily": "new family",
+          "states": {
+            "queued": "Waiting",
+            "uploading": "Uploading",
+            "added": "Added",
+            "duplicate": "Already on the server",
+            "refused": "Not added",
+            "failed": "Failed"
+          },
+          "reasons": {
+            "tooLarge": "Larger than {maxMb} MB.",
+            "unsupportedType": "Not a font file. Use TTF, OTF, WOFF or WOFF2.",
+            "invalidFile": "The file is damaged or is not really a font.",
+            "faceTaken": "{familyName} already has a file at this weight and style.",
+            "limitReached": "The server already holds {limit} font files.",
+            "failed": "Upload failed. Try again."
+          }
+        },
+        "sheet": {
+          "description": "Preview, rename and manage the files of {name}",
+          "variable": "Variable",
+          "preview": "Preview",
+          "pageColour": "Page colour",
+          "papers": {
+            "app": "App surface",
+            "white": "White page",
+            "sepia": "Sepia page",
+            "night": "Night page"
+          },
+          "previewHeading": "The Garden of Live Flowers",
+          "previewParagraph1": "Alice looked round her in great surprise. “Why, I do believe we’ve been under this tree the whole time! Everything’s just as it was!”",
+          "previewParagraph2": "“Now, here, you see, it takes all the running you can do, to keep in the same place. If you want to get somewhere else, you must run at least twice as fast as that!”",
+          "styles": "Styles",
+          "stylesHint": "What the reader's Style row offers",
+          "singleStyleNote": "One style, so readers get no Style row. Bold and italic text in books is faked by the browser from {style}.",
+          "inReader": "In the reader",
+          "inReaderHint": "The font list every reader gets in Reader › Settings, with {name} chosen.",
+          "pickerLabel": "Preview of the reader's font list",
+          "files": "Files",
+          "filesUsed": "{count} of {max} used on this server",
+          "fileDetail": "{summary} · Added {date}",
+          "upright": "Upright",
+          "italic": "Italic",
+          "fileActions": "More for {name}",
+          "changeStyle": "Change weight and style",
+          "removeFile": "Remove file",
+          "removeFileQuestion": "Remove this file for every reader?",
+          "weight": "Weight",
+          "style": "Style",
+          "name": "Family name",
+          "nameHint": "Readers pick fonts by this name.",
+          "nameHiddenWarning": "{count, plural, one {# reader hid {name}} other {# readers hid {name}}}; a new name shows it to them again.",
+          "nameBooksWarning": "A new name sends {count, plural, one {the # book that uses it} other {the # books that use it}} back to the book’s own font.",
+          "readers": "Readers",
+          "stats": {
+            "books": "{count, plural, one {book uses it} other {books use it}}",
+            "defaults": "{count, plural, one {reader's default} other {readers' default}}",
+            "hidden": "{count, plural, one {reader hid it} other {readers hid it}}"
+          },
+          "readersPrivacy": "Counts only. Which books and which readers stay private to them.",
+          "removeLabel": "Remove family",
+          "removeQuestion": "Remove {name} for every reader?",
+          "removeConsequenceBooks": "{books, plural, one {It is set on # book} other {It is set on # books}} by {readers, plural, one {# reader} other {# readers}}; those books go back to the book's own font.",
+          "removeConsequenceFiles": "{count, plural, one {Its file is deleted from the server.} other {All # files are deleted from the server.}}",
+          "loadFailedNote": "This browser could not load the font file, so the previews show a fallback face. Readers' browsers will most likely refuse it too; try a different copy of the font."
+        },
+        "toasts": {
+          "removed": "{name} removed",
+          "removePartial": "{failed, plural, one {# file} other {# files}} of {name} could not be removed",
+          "renameTaken": "{name} already has a file at the same weight and style"
+        },
+        "loadFailed": "This browser can't load it"
       }
     },
     "common": {

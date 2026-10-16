@@ -1,5 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { MAX_SERVER_FONTS } from '@bookorbit/types';
+import {
+  FONT_CSS_FAMILY_PREFIXES,
+  MAX_SERVER_FONTS,
+  fontCssFamilyGroupName,
+  type FontUploadErrorCode,
+  type ServerFontFamilyUsage,
+  type ServerFontUsageResponse,
+  type UserFont,
+} from '@bookorbit/types';
 
 import type { RequestUser } from '../../common/types/request-user';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
@@ -10,6 +18,12 @@ import { inspectFontUpload, resolveFontIdentity } from '../font/font-upload.pipe
 import { FontValidationService } from '../font/font.validation.service';
 import { ServerFontRepository } from './server-font.repository';
 import { ServerFontStorageService } from './server-font.storage.service';
+
+/** The user-preferences category holding each reader's hidden server families. */
+const HIDDEN_FAMILIES_CATEGORY = 'server-fonts';
+
+const faceTaken = (familyName: string, weight: number, style: string, message: string) =>
+  new ConflictException({ message, errorCode: 'FONT_FACE_TAKEN' satisfies FontUploadErrorCode, errorMeta: { familyName, weight, style } });
 
 function isUniqueViolation(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
@@ -54,12 +68,20 @@ export class ServerFontService {
 
       const existing = await this.repo.findByHash(fileHash);
       if (existing) {
-        throw new ConflictException('This font file has already been uploaded');
+        throw new ConflictException({
+          message: 'This font file has already been uploaded',
+          errorCode: 'FONT_DUPLICATE' satisfies FontUploadErrorCode,
+          errorMeta: { familyName: existing.familyName, weight: existing.weight, style: existing.style },
+        });
       }
 
       const fontCount = await this.repo.countAll();
       if (fontCount >= MAX_SERVER_FONTS) {
-        throw new BadRequestException(`Maximum of ${MAX_SERVER_FONTS} server fonts reached`);
+        throw new BadRequestException({
+          message: `Maximum of ${MAX_SERVER_FONTS} server fonts reached`,
+          errorCode: 'FONT_LIMIT_REACHED' satisfies FontUploadErrorCode,
+          errorMeta: { limit: MAX_SERVER_FONTS },
+        });
       }
 
       const { familyName, weight, style, weightMin, weightMax, instances, suggestedFamilyName } = resolveFontIdentity(
@@ -91,7 +113,7 @@ export class ServerFontService {
         // A family/weight/style clash is a plausible admin mistake (the same face uploaded
         // under two filenames), so report it rather than letting it surface as a 500.
         if (isUniqueViolation(err)) {
-          throw new ConflictException(`A server font already exists for "${familyName}" at weight ${weight} (${style})`);
+          throw faceTaken(familyName, weight, style, `A server font already exists for "${familyName}" at weight ${weight} (${style})`);
         }
         throw err;
       }
@@ -133,13 +155,81 @@ export class ServerFontService {
       updated = await this.repo.update(fontId, data);
     } catch (err) {
       if (isUniqueViolation(err)) {
-        throw new ConflictException('Another server font already uses that family, weight, and style');
+        throw faceTaken(
+          data.familyName ?? font.familyName,
+          data.weight ?? font.weight,
+          data.style ?? font.style,
+          'Another server font already uses that family, weight, and style',
+        );
       }
       throw err;
     }
 
     if (!updated) throw new NotFoundException('Font not found');
     return toFontResponse(updated);
+  }
+
+  async renameFamily(familyName: string, newFamilyName: string): Promise<UserFont[]> {
+    const event = 'server_font.rename_family';
+    const startedAt = Date.now();
+    const next = newFamilyName.trim();
+    const current = await this.repo.findByFamily(familyName);
+    if (current.length === 0) throw new NotFoundException('Font family not found');
+    if (!next) throw new BadRequestException('Family name cannot be empty');
+    if (next === familyName) return current.map(toFontResponse);
+
+    this.logger.log(
+      `[${event}] [start] familyName=${sanitizeLogValue(familyName)} newFamilyName=${sanitizeLogValue(next)} files=${current.length} - server font family rename started`,
+    );
+    let rows: ServerFontRow[];
+    try {
+      rows = await this.repo.renameFamily(familyName, next);
+    } catch (err) {
+      const errorClass = err instanceof Error ? err.name : 'Error';
+      this.logger.warn(
+        `[${event}] [fail] familyName=${sanitizeLogValue(familyName)} durationMs=${Date.now() - startedAt} errorClass=${errorClass} error="${sanitizeLogValue(err instanceof Error ? err.message.slice(0, 200) : String(err))}" - server font family rename failed`,
+      );
+      if (isUniqueViolation(err)) {
+        throw new ConflictException({
+          message: `"${next}" already has a file at the same weight and style`,
+          errorCode: 'FONT_FACE_TAKEN' satisfies FontUploadErrorCode,
+          errorMeta: { familyName: next },
+        });
+      }
+      throw err;
+    }
+    this.logger.log(
+      `[${event}] [end] familyName=${sanitizeLogValue(next)} files=${rows.length} durationMs=${Date.now() - startedAt} - server font family rename completed`,
+    );
+    return rows.map(toFontResponse);
+  }
+
+  /**
+   * Readers' saved settings name a family by its CSS group name, so counts are gathered per CSS
+   * name and handed back to every family that produces it.
+   */
+  async usage(): Promise<ServerFontUsageResponse> {
+    const [rows, books, defaults, hidden] = await Promise.all([
+      this.repo.findAll(),
+      this.repo.countBooksByCssFamily(FONT_CSS_FAMILY_PREFIXES.server),
+      this.repo.countDefaultsByCssFamily(FONT_CSS_FAMILY_PREFIXES.server),
+      this.repo.countHiddenByFamily(HIDDEN_FAMILIES_CATEGORY),
+    ]);
+    const booksByCss = new Map(books.map((b) => [b.cssFamily, b]));
+    const defaultsByCss = new Map(defaults.map((d) => [d.cssFamily, d.readers]));
+    const hiddenByName = new Map(hidden.map((h) => [h.familyName, h.readers]));
+
+    const families: ServerFontFamilyUsage[] = [...new Set(rows.map((row) => row.familyName))].map((familyName) => {
+      const css = fontCssFamilyGroupName(familyName, 'server');
+      return {
+        familyName,
+        books: booksByCss.get(css)?.books ?? 0,
+        readers: booksByCss.get(css)?.readers ?? 0,
+        defaults: defaultsByCss.get(css) ?? 0,
+        hidden: hiddenByName.get(familyName) ?? 0,
+      };
+    });
+    return { families };
   }
 
   async remove(fontId: number): Promise<void> {

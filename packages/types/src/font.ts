@@ -58,6 +58,46 @@ export interface FontUploadResult {
   suggestedStyle: FontStyle;
 }
 
+/**
+ * Why an upload was refused, carried as `errorCode` on the error body so a client can say it in
+ * the reader's language. The English `message` stays beside it for clients that predate the codes.
+ */
+export const FONT_UPLOAD_ERROR_CODES = [
+  "FONT_TOO_LARGE",
+  "FONT_UNSUPPORTED_TYPE",
+  "FONT_INVALID_FILE",
+  "FONT_DUPLICATE",
+  "FONT_FACE_TAKEN",
+  "FONT_LIMIT_REACHED",
+] as const;
+export type FontUploadErrorCode = (typeof FONT_UPLOAD_ERROR_CODES)[number];
+
+/**
+ * How readers use one server family. Counts only: which books and which readers stay private to
+ * them, because the people who curate fonts are not necessarily allowed to see reading activity.
+ */
+export interface ServerFontFamilyUsage {
+  familyName: string;
+  /** Books some reader has set to this family. */
+  books: number;
+  /** Readers with at least one such book. */
+  readers: number;
+  /** Readers whose default eBook font is this family. */
+  defaults: number;
+  /** Readers who hid the family from their font list. */
+  hidden: number;
+}
+
+export interface ServerFontUsageResponse {
+  families: ServerFontFamilyUsage[];
+}
+
+/** Renames every file of a family together, so a failure cannot leave the family split in two. */
+export interface RenameServerFontFamilyRequest {
+  familyName: string;
+  newFamilyName: string;
+}
+
 export const FONT_FORMATS: readonly FontFormat[] = ["ttf", "otf", "woff", "woff2"];
 
 export const FONT_FORMAT_EXTENSIONS: Record<FontFormat, string> = {

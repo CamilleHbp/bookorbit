@@ -521,7 +521,7 @@ export const routes: RouteRecordRaw[] = [
             name: 'settings-admin-server-fonts',
             component: () => import('@/features/settings/ServerFontsSettings.vue'),
             props: { embedded: true },
-            meta: { maxWidth: 'max-w-3xl', title: () => t('titles.admin.server-fonts') },
+            meta: { maxWidth: 'max-w-[82rem]', title: () => t('titles.admin.server-fonts') },
           },
           {
             path: 'admin/tts',
