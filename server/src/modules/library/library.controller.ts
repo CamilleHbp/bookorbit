@@ -1,3 +1,4 @@
+import { RegexMetadataPreviewDto, RegexMetadataValidationDto } from './dto/regex-metadata.dto';
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 
@@ -46,6 +47,20 @@ export class LibraryController {
   @RequirePermission(Permission.ManageLibraries)
   getOverview(@CurrentUser() user: RequestUser) {
     return this.libraryService.getOverview(user);
+  }
+
+  @Post('regex-metadata/validate')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission(Permission.ManageLibraries)
+  validateRegexMetadata(@Body() dto: RegexMetadataValidationDto) {
+    return this.libraryService.validateRegexMetadata(dto);
+  }
+
+  @Post('regex-metadata/preview')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission(Permission.ManageLibraries)
+  previewRegexMetadata(@Body() dto: RegexMetadataPreviewDto) {
+    return this.libraryService.previewRegexMetadata(dto);
   }
 
   @Get(':id')
