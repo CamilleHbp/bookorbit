@@ -2188,7 +2188,145 @@
         "selectAll": "Select all",
         "clear": "Clear",
         "noLibraries": "No libraries available yet.",
-        "allLibraries": "All libraries"
+        "allLibraries": "All libraries",
+        "pageFacts": "{fields, plural, one {# field} other {# fields}} · {values, plural, one {# value stored} other {# values stored}}",
+        "newFieldAction": "New field",
+        "views": {
+          "label": "Show active or archived fields",
+          "active": "Active",
+          "archived": "Archived"
+        },
+        "columns": {
+          "order": "Order",
+          "field": "Field",
+          "type": "Type",
+          "libraries": "Libraries",
+          "filled": "Filled",
+          "valuesKept": "Values kept",
+          "archived": "Archived",
+          "actions": "Actions"
+        },
+        "orderHint": "Drag to set the order fields appear in on Edit Metadata, in table columns and in exports.",
+        "archivedHint": "Archived fields are hidden from books, filters and exports. Their values stay stored until the field is deleted.",
+        "coverage": "{filled} of {total}",
+        "coverageAria": "{filled} of {total} books have a value",
+        "onNoLibrary": "No libraries",
+        "onNoLibraryHint": "On no library, so this field appears nowhere",
+        "moreLibraries": "+{count}",
+        "noValues": "None",
+        "rowActions": {
+          "edit": "Edit",
+          "editField": "Edit field",
+          "moveUp": "Move up",
+          "moveDown": "Move down",
+          "archive": "Archive",
+          "restore": "Restore",
+          "deletePermanently": "Delete permanently…",
+          "more": "More actions for {label}"
+        },
+        "toasts": {
+          "loadFailed": "Couldn't load custom fields",
+          "created": "{label} created",
+          "createFailed": "Couldn't create {label}",
+          "saved": "{label} saved",
+          "saveFailed": "Couldn't save {label}",
+          "archived": "{label} archived",
+          "archiveFailed": "Couldn't archive {label}",
+          "restored": "{label} restored",
+          "restoreFailed": "Couldn't restore {label}",
+          "deleted": "{label} deleted",
+          "deleteFailed": "Couldn't delete {label}",
+          "reorderFailed": "Couldn't save the new order"
+        },
+        "empty": {
+          "body": "Track what BookOrbit has no field for, like where a book sits on your shelf or who has borrowed it. Fields appear on Edit Metadata, in table columns and in filters.",
+          "examples": "Start from an example",
+          "shelfNumber": "Shelf Number",
+          "acquiredOn": "Acquired On",
+          "signedCopy": "Signed Copy",
+          "loanedTo": "Loaned To"
+        },
+        "types": {
+          "text": {
+            "label": "Text",
+            "hint": "Any words",
+            "example": "First printing, signed bookplate"
+          },
+          "url": {
+            "label": "Link",
+            "hint": "Opens in a new tab",
+            "example": "https://example.com/book"
+          },
+          "number": {
+            "label": "Number",
+            "hint": "Sorts by value",
+            "example": "42"
+          },
+          "date": {
+            "label": "Date",
+            "hint": "A calendar day",
+            "example": "2024-03-09"
+          },
+          "boolean": {
+            "label": "Yes / No",
+            "hint": "A checkbox",
+            "example": "Yes"
+          }
+        },
+        "sheet": {
+          "newTitle": "New field",
+          "editDescription": "Edit a custom field's label and libraries, and see where it appears.",
+          "newDescription": "Name a new custom field, pick its type and choose its libraries.",
+          "archivedDescription": "An archived custom field. Restore it, or delete it with its values.",
+          "statusFilled": "{filled} of {total, plural, one {# book} other {# books}} filled",
+          "statusNone": "Not on any library",
+          "statusHidden": "{count} hidden",
+          "statusCreated": "created {date}",
+          "labelHint": "Shown on Edit Metadata, in table columns and in filters.",
+          "renameHint": "Renaming keeps every stored value and the file key {key}.",
+          "keyHint": "Saved in files and exports as {key}, which stays the same if you rename the field.",
+          "typeLocked": "Set when created",
+          "typeLockedHint": "The type cannot change later, so stored values always match it.",
+          "libraries": "Libraries",
+          "books": "{count, plural, one {# book} other {# books}}",
+          "filledOfBooks": "{filled} of {total, plural, one {# book} other {# books}}",
+          "hiddenCount": "{count} hidden",
+          "leavingNote": "{count, plural, one {# value in {libraries} stays stored but hidden while the field is off there.} other {# values in {libraries} stay stored but hidden while the field is off there.}} Turning it back on brings them back.",
+          "noLibraryWarning": "With no libraries this field appears nowhere: not on Edit Metadata, in filters or in exports.",
+          "appears": {
+            "title": "Where it appears",
+            "editMetadata": "Edit Metadata",
+            "details": "Details tab",
+            "filters": "Filters",
+            "table": "Table and sort",
+            "tableBody": "Available as a table column and a sort option",
+            "files": "Files",
+            "filesWritten": "Written into EPUB and FB2 files in {libraries}, where writing metadata to files is on.",
+            "filesNotWritten": "Not written into files: none of these libraries write metadata to EPUB or FB2 files.",
+            "exports": "Exports"
+          },
+          "archiveAction": "Archive field",
+          "archiveConfirm": "Archive {label}?",
+          "archiveConsequence": "{count, plural, =0 {It leaves Edit Metadata, filters and exports. Restore it from Archived at any time.} one {It leaves Edit Metadata, filters and exports. # value stays stored until the field is deleted.} other {It leaves Edit Metadata, filters and exports. # values stay stored until the field is deleted.}}",
+          "create": "Create field",
+          "onLibraries": "On {count} of {total} libraries",
+          "onAllLibraries": "On all {total} libraries",
+          "archivedBadge": "Archived",
+          "archivedTitle": "Archived {when}.",
+          "archivedBody": "{count, plural, =0 {This field is hidden from books, filters and exports. It holds no values.} one {This field is hidden from books, filters and exports. # stored value is kept and comes back on restore.} other {This field is hidden from books, filters and exports. # stored values are kept and come back on restore.}}",
+          "facts": {
+            "type": "Type",
+            "libraries": "Libraries",
+            "valuesKept": "Values kept",
+            "fileKey": "File key",
+            "created": "Created",
+            "archived": "Archived"
+          },
+          "deleteQuestion": "Delete {label} for good?",
+          "deleteConsequence": "{count, plural, =0 {It holds no values. This cannot be undone.} one {Its # stored value is removed from every book. Files already written keep their copy. This cannot be undone.} other {Its # stored values are removed from every book. Files already written keep their copy. This cannot be undone.}}",
+          "deleteConfirmLabel": "Type the field name to confirm",
+          "deleteConfirmPlaceholder": "Type {label} to confirm"
+        }
       },
       "tabs": {
         "providers": "Providers",

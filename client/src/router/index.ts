@@ -373,7 +373,8 @@ export const routes: RouteRecordRaw[] = [
             path: 'metadata/custom-fields',
             name: 'settings-metadata-custom-fields',
             component: () => import('@/features/settings/metadata-preferences/CustomMetadataSettings.vue'),
-            meta: { maxWidth: 'max-w-4xl', title: () => t('titles.metadata.custom-fields') },
+            // The roster's five columns need the width Users gets; 4xl left half of a 1080p pane empty.
+            meta: { maxWidth: 'max-w-6xl', title: () => t('titles.metadata.custom-fields') },
           },
           {
             path: 'metadata/score',
