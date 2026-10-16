@@ -265,6 +265,10 @@ describe('KoboProxyService', () => {
       expect((await sentHeaders({ 'x-kobo-synctoken': composite }))['x-kobo-synctoken']).toBe('kobo-cursor-9');
     });
 
+    it('substitutes the Kobo cursor for a compact composite token', async () => {
+      expect((await sentHeaders({ 'x-kobo-synctoken': 'PX2.4.eyJ0Ijo5fQ.c2ln' }))['x-kobo-synctoken']).toBe('eyJ0Ijo5fQ.c2ln');
+    });
+
     it('drops a composite token it cannot decode rather than forwarding it', async () => {
       expect(await sentHeaders({ 'x-kobo-synctoken': 'PX.not-base64-json' })).not.toHaveProperty('x-kobo-synctoken');
     });

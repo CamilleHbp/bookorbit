@@ -280,10 +280,7 @@ describe('KoboSyncController', () => {
       await runSync(reply, 'kobo-native-token');
 
       expect(proxyService.request).not.toHaveBeenCalled();
-      expect(reply.header).toHaveBeenCalledWith(
-        'x-kobo-synctoken',
-        `PX.${Buffer.from(JSON.stringify({ snapshotId: 4, koboSyncToken: 'kobo-native-token' })).toString('base64')}`,
-      );
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', 'PX2.4.kobo-native-token');
     });
 
     it('appends store entitlements and stamps Kobo’s cursor into the sync token', async () => {
@@ -298,10 +295,7 @@ describe('KoboSyncController', () => {
         expect.objectContaining({ extraHeaders: { 'x-kobo-synctoken': 'kobo-cursor-1' } }),
       );
       expect(reply.send).toHaveBeenCalledWith([{ Local: 1 }, { Store: 1 }, { Store: 2 }]);
-      expect(reply.header).toHaveBeenCalledWith(
-        'x-kobo-synctoken',
-        `PX.${Buffer.from(JSON.stringify({ snapshotId: 4, koboSyncToken: 'kobo-cursor-2' })).toString('base64')}`,
-      );
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', 'PX2.4.kobo-cursor-2');
       expect(historyService.recordSuccess).toHaveBeenCalledWith(
         expect.objectContaining({ counts: { entitlements: 3, hasMore: false, storeEntitlements: 2 } }),
       );
@@ -388,7 +382,7 @@ describe('KoboSyncController', () => {
     });
 
     it('drops an upstream cursor too large to carry and leaves the token without one', async () => {
-      const oversized = 'x'.repeat(4097);
+      const oversized = 'x'.repeat(7001);
       proxyService.request.mockResolvedValue(storeResponse([{ Store: 1 }], { 'x-kobo-synctoken': oversized }));
       const reply = makeReply();
 
@@ -398,15 +392,49 @@ describe('KoboSyncController', () => {
       expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', SNAPSHOT_TOKEN);
     });
 
+    it('stops paging when the store says continue with a cursor too large to carry, since the next page would restart the store', async () => {
+      proxyService.request.mockResolvedValue(storeResponse([{ Store: 1 }], { 'x-kobo-sync': 'continue', 'x-kobo-synctoken': 'x'.repeat(7001) }));
+      const reply = makeReply();
+
+      await runSync(reply, SNAPSHOT_TOKEN);
+
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-sync', '');
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', SNAPSHOT_TOKEN);
+      expect(reply.send).toHaveBeenCalledWith([{ Local: 1 }, { Store: 1 }]);
+      expect(historyService.recordSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({ counts: { entitlements: 2, hasMore: false, storeEntitlements: 1 } }),
+      );
+    });
+
+    it('keeps paging with a cursor the size of a real continuation token', async () => {
+      const continuation = `eyJ${'a'.repeat(4600)}.${'b'.repeat(40)}`;
+      proxyService.request.mockResolvedValue(storeResponse([{ Store: 1 }], { 'x-kobo-sync': 'continue', 'x-kobo-synctoken': continuation }));
+      const reply = makeReply();
+
+      await runSync(reply, SNAPSHOT_TOKEN);
+
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-sync', 'continue');
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', `PX2.4.${continuation}`);
+    });
+
     it('preserves a known Kobo cursor across a failed store call so paging resumes next sync', async () => {
       proxyService.request.mockRejectedValue(new Error('upstream down'));
       const reply = makeReply();
 
       await runSync(reply, `PX.${Buffer.from(JSON.stringify({ snapshotId: 4, koboSyncToken: 'kobo-cursor-1' })).toString('base64')}`);
 
-      expect(reply.header).toHaveBeenCalledWith(
-        'x-kobo-synctoken',
-        `PX.${Buffer.from(JSON.stringify({ snapshotId: 4, koboSyncToken: 'kobo-cursor-1' })).toString('base64')}`,
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', 'PX2.4.kobo-cursor-1');
+    });
+
+    it('forwards the Kobo cursor from a compact token upstream', async () => {
+      proxyService.request.mockResolvedValue(storeResponse([]));
+
+      await runSync(makeReply(), 'PX2.4.eyJhbGciOiJub25lIn0.eyJ0Ijo1fQ');
+
+      expect(proxyService.request).toHaveBeenCalledWith(
+        expect.anything(),
+        'token-9',
+        expect.objectContaining({ extraHeaders: { 'x-kobo-synctoken': 'eyJhbGciOiJub25lIn0.eyJ0Ijo1fQ' } }),
       );
     });
   });

@@ -176,15 +176,17 @@ export class KoboSyncController {
 
     // Kobo's cursor rides inside our token, so one too large to carry means the next store sync
     // starts over. Say so rather than letting the store silently resend its whole library.
-    if (store?.syncToken !== undefined && !isUsableKoboSyncToken(store.syncToken)) {
+    const storeCursorCarried = store?.syncToken !== undefined && isUsableKoboSyncToken(store.syncToken);
+    if (store?.syncToken !== undefined && !storeCursorCarried) {
       this.logger.warn(
         `[kobo.store_sync] [fail] userId=${user.id} deviceId=${device.deviceId} errorClass=StoreCursorTooLarge tokenLength=${store.syncToken.length} - upstream cursor dropped, the next store sync starts from the beginning`,
       );
     }
 
-    // Replaying an unchanged cursor returns the same page forever, so keep paging the store only
-    // while its token actually advances. The page just fetched is still delivered either way.
-    const storeCursorAdvanced = store?.syncToken !== undefined && store.syncToken !== incomingKoboSyncToken;
+    // Replaying an unchanged cursor returns the same page forever, and so does a dropped one, which
+    // sends the store back to its first page. Keep paging the store only while the cursor the device
+    // will send back actually advances. The page just fetched is still delivered either way.
+    const storeCursorAdvanced = storeCursorCarried && store?.syncToken !== incomingKoboSyncToken;
     if (store?.hasMore === true && !storeCursorAdvanced) {
       this.logger.warn(
         `[kobo.store_sync] [fail] userId=${user.id} deviceId=${device.deviceId} errorClass=StoreCursorStalled error="continue without an advanced sync token" - store paging stopped to avoid a sync loop`,

@@ -12,6 +12,23 @@ describe('kobo sync token', () => {
     expect(decodeSyncToken(encodeSyncToken(7, 'kobo-cursor'))).toEqual({ snapshotId: 7, koboSyncToken: 'kobo-cursor' });
   });
 
+  it('carries Kobo’s cursor verbatim instead of re-encoding it', () => {
+    const cursor = 'eyJJbnRlcm5hbFN5bmNUb2tlbiI6ImV5SjAifQ.eyJ0eXAiOjF9';
+
+    expect(encodeSyncToken(7, cursor)).toBe(`PX2.7.${cursor}`);
+    expect(decodeSyncToken(`PX2.7.${cursor}`)).toEqual({ snapshotId: 7, koboSyncToken: cursor });
+  });
+
+  it('still reads a Kobo cursor from tokens minted in the JSON format', () => {
+    const legacy = `PX.${Buffer.from(JSON.stringify({ snapshotId: 3, koboSyncToken: 'kobo-cursor' })).toString('base64')}`;
+
+    expect(decodeSyncToken(legacy)).toEqual({ snapshotId: 3, koboSyncToken: 'kobo-cursor' });
+  });
+
+  it('keeps the header within a proxy line limit for the largest cursor it carries', () => {
+    expect(encodeSyncToken(2_147_483_647, 'x'.repeat(7000)).length).toBeLessThan(8000);
+  });
+
   it('reads tokens minted before store sync existed', () => {
     const legacy = `PX.${Buffer.from(JSON.stringify({ snapshotId: 3 })).toString('base64')}`;
 
@@ -29,6 +46,8 @@ describe('kobo sync token', () => {
     ['malformed base64 payload', 'PX.!!!not-base64!!!'],
     ['a JSON array payload', `PX.${Buffer.from(JSON.stringify([1, 2])).toString('base64')}`],
     ['a non-object payload', `PX.${Buffer.from(JSON.stringify('nope')).toString('base64')}`],
+    ['a compact token with a non-numeric snapshot', 'PX2.abc.kobo-cursor'],
+    ['a compact token with nothing after the prefix', 'PX2.'],
   ])('never throws on %s', (_label, raw) => {
     expect(() => decodeSyncToken(raw)).not.toThrow();
     expect(decodeSyncToken(raw).snapshotId).toBeUndefined();
@@ -36,13 +55,13 @@ describe('kobo sync token', () => {
 
   it('reports which upstream cursors can be carried, so callers can log the ones that cannot', () => {
     expect(isUsableKoboSyncToken('kobo-cursor')).toBe(true);
-    expect(isUsableKoboSyncToken('x'.repeat(4096))).toBe(true);
-    expect(isUsableKoboSyncToken('x'.repeat(4097))).toBe(false);
+    expect(isUsableKoboSyncToken('x'.repeat(7000))).toBe(true);
+    expect(isUsableKoboSyncToken('x'.repeat(7001))).toBe(false);
     expect(isUsableKoboSyncToken('')).toBe(false);
   });
 
   it('drops an oversized upstream cursor rather than growing the response header without bound', () => {
-    const oversized = 'x'.repeat(4097);
+    const oversized = 'x'.repeat(7001);
 
     expect(decodeSyncToken(oversized)).toEqual({});
     expect(decodeSyncToken(encodeSyncToken(7, oversized))).toEqual({ snapshotId: 7, koboSyncToken: undefined });

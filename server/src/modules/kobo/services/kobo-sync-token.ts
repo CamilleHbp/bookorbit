@@ -1,9 +1,14 @@
 const TOKEN_PREFIX = 'PX.';
+// Carries Kobo's cursor verbatim after the snapshot id: `PX2.<snapshotId>.<kobo token>`. Kobo's token
+// already travels in a header, and wrapping it in JSON and base64 again grew it by a third.
+const COMPACT_TOKEN_PREFIX = 'PX2.';
 
 // Kobo's own sync tokens are opaque and we round-trip them through the device inside ours, so a
 // hostile or corrupted upstream value cannot be allowed to grow the response header without bound.
-// Kobo's real tokens sit far under this; anything larger is dropped and store paging restarts.
-const MAX_KOBO_SYNC_TOKEN_LENGTH = 4096;
+// A small store library already produces a 3,300 character cursor and continuation pages carry more,
+// so this leaves room for those while the whole header stays under the common 8 KB proxy line limit.
+// Anything larger is dropped, and store paging for that sync stops instead of restarting.
+const MAX_KOBO_SYNC_TOKEN_LENGTH = 7000;
 
 export type KoboSyncTokenParts = {
   snapshotId?: number;
@@ -20,8 +25,8 @@ export function isUsableKoboSyncToken(koboSyncToken: string): boolean {
 
 export function encodeSyncToken(snapshotId: number, koboSyncToken?: string): string {
   const usableKoboToken = koboSyncToken && isUsableKoboSyncToken(koboSyncToken) ? koboSyncToken : undefined;
-  const payload: KoboSyncTokenParts = usableKoboToken ? { snapshotId, koboSyncToken: usableKoboToken } : { snapshotId };
-  return TOKEN_PREFIX + Buffer.from(JSON.stringify(payload)).toString('base64');
+  if (usableKoboToken) return `${COMPACT_TOKEN_PREFIX}${snapshotId}.${usableKoboToken}`;
+  return TOKEN_PREFIX + Buffer.from(JSON.stringify({ snapshotId })).toString('base64');
 }
 
 /**
@@ -33,6 +38,16 @@ export function encodeSyncToken(snapshotId: number, koboSyncToken?: string): str
 export function decodeSyncToken(raw: string | undefined): KoboSyncTokenParts {
   const value = raw?.trim();
   if (!value) return {};
+  if (value.startsWith(COMPACT_TOKEN_PREFIX)) {
+    const rest = value.slice(COMPACT_TOKEN_PREFIX.length);
+    const separator = rest.indexOf('.');
+    const id = separator === -1 ? rest : rest.slice(0, separator);
+    const koboSyncToken = separator === -1 ? '' : rest.slice(separator + 1);
+    return {
+      snapshotId: /^\d{1,15}$/.test(id) ? Number(id) : undefined,
+      koboSyncToken: isUsableKoboSyncToken(koboSyncToken) ? koboSyncToken : undefined,
+    };
+  }
   if (!value.startsWith(TOKEN_PREFIX)) {
     return isUsableKoboSyncToken(value) ? { koboSyncToken: value } : {};
   }
