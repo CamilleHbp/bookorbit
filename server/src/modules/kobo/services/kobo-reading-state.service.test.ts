@@ -64,7 +64,7 @@ describe('KoboReadingStateService', () => {
   const bookAccessService = { assertBookAccessible: vi.fn() };
   const userBookStatusService = { autoUpdate: vi.fn() };
   const bookIdentityService = { ensureForBook: vi.fn() };
-  const progressBridge = { koboBookmarkToCanonical: vi.fn(), cfiToKoboBookmark: vi.fn() };
+  const progressBridge = { koboBookmarkToCanonical: vi.fn(), cfiToKoboBookmark: vi.fn(), narrationToKoboBookmark: vi.fn() };
   const settingsService = { getSettings: vi.fn() };
   const achievementEvents = { emit: vi.fn() };
   const analyticsResolver = { resolveBookFileId: vi.fn() };
@@ -583,6 +583,38 @@ describe('KoboReadingStateService', () => {
         Location: { Source: 'OEBPS/ch7.xhtml', Type: 'KoboSpan', Value: 'kobo.31.1' },
       });
       expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ currentBookmark: state.CurrentBookmark }));
+    });
+
+    it('places a read-along narration marker on the device when the saved progress has no text position', async () => {
+      const db = makeDb();
+      db.update = vi.fn(() => makeUpdateChain()) as never;
+      db.query.books.findFirst.mockResolvedValue({ id: 44 });
+      db.query.koboReadingStates.findFirst.mockResolvedValue(storedState);
+      db.select
+        .mockReturnValueOnce(makeSelectChain([{ fileId: 55 }]))
+        .mockReturnValueOnce(
+          makeSelectChain([
+            { cfi: null, percentage: 70, koboLocationValue: null, mediaOverlayFragment: 'OEBPS/ch6.xhtml#s161', mediaOverlaySectionIndex: 9 },
+          ]),
+        );
+      settingsService.getSettings.mockResolvedValue({ twoWayProgressSync: true });
+      progressBridge.narrationToKoboBookmark.mockResolvedValue({ source: 'OEBPS/ch6.xhtml', value: 'kobo.43.3', contentSourceProgressPercent: 61.9 });
+
+      const state = (await makeService(db).getRawState(1, 44)) as Record<string, Record<string, unknown>>;
+
+      expect(progressBridge.narrationToKoboBookmark).toHaveBeenCalledWith(
+        1,
+        44,
+        55,
+        { fragment: 'OEBPS/ch6.xhtml#s161', sectionIndex: 9 },
+        undefined,
+      );
+      expect(progressBridge.cfiToKoboBookmark).not.toHaveBeenCalled();
+      expect(state.CurrentBookmark).toMatchObject({
+        ProgressPercent: 70,
+        ContentSourceProgressPercent: 61.9,
+        Location: { Source: 'OEBPS/ch6.xhtml', Type: 'KoboSpan', Value: 'kobo.43.3' },
+      });
     });
 
     // A Kobo clock running ahead is stored verbatim on the device push. Stamping the refresh at

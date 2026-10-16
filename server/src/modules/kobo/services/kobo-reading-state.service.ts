@@ -549,8 +549,17 @@ export class KoboReadingStateService {
     const devicePercentage = this.extractPercent(bookmark);
     if (!settings.twoWayProgressSync && devicePercentage !== null && progress.percentage <= devicePercentage) return null;
 
-    const point =
-      settings.twoWayProgressSync && progress.cfi ? await this.progressBridge.cfiToKoboBookmark(userId, bookId, progress.cfi, deviceId) : null;
+    const narration =
+      progress.mediaOverlayFragment && progress.mediaOverlaySectionIndex !== null
+        ? { fragment: progress.mediaOverlayFragment, sectionIndex: progress.mediaOverlaySectionIndex }
+        : null;
+    const point = !settings.twoWayProgressSync
+      ? null
+      : progress.cfi
+        ? await this.progressBridge.cfiToKoboBookmark(userId, bookId, progress.cfi, deviceId)
+        : narration
+          ? await this.progressBridge.narrationToKoboBookmark(userId, bookId, fileId, narration, deviceId)
+          : null;
 
     const existingLocation = this.asJsonObj(bookmark?.Location ?? null);
     const sameLocation = point && existingLocation?.Value === point.value && existingLocation?.Source === point.source;

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { sanitizeLogValue } from '../../../common/utils/log-sanitize.utils';
 import { KoboSpanConverterService } from '../../position-converter/kobo-span-converter.service';
+import { PositionConverterService } from '../../position-converter/position-converter.service';
 import { KoboKepubContextService } from './kobo-kepub-context.service';
 
 const EVENT = 'kobo.progress_bridge';
@@ -29,7 +30,32 @@ export class KoboProgressBridgeService {
   constructor(
     private readonly kepubContextService: KoboKepubContextService,
     private readonly koboSpanConverter: KoboSpanConverterService,
+    private readonly positionConverter: PositionConverterService,
   ) {}
+
+  /**
+   * Places a narration marker on the device. A read-along save can hold the sentence being narrated
+   * without a text position, and a bookmark sent as a bare percent opens the book at its start.
+   */
+  async narrationToKoboBookmark(
+    userId: number,
+    bookId: number,
+    bookFileId: number,
+    marker: { fragment: string; sectionIndex: number },
+    deviceId?: number,
+  ): Promise<KoboBookmarkPoint | null> {
+    try {
+      const fragment = marker.fragment.slice(marker.fragment.lastIndexOf('#') + 1);
+      const outcome = await this.positionConverter.fragmentToPositions({ bookFileId, chapterIndex: marker.sectionIndex, fragment });
+      if (outcome.status === 'failed' || !outcome.cfi) {
+        return this.logDegraded('narration_to_bookmark', userId, bookId, outcome.reason ?? 'incomplete_outcome');
+      }
+      return await this.cfiToKoboBookmark(userId, bookId, outcome.cfi, deviceId);
+    } catch (error) {
+      this.logWarn('narration_to_bookmark', userId, bookId, error);
+      return null;
+    }
+  }
 
   async koboBookmarkToCanonical(
     userId: number,

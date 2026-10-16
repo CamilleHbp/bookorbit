@@ -28,6 +28,8 @@ export class KoboReadingProgressRepository {
         koboLocationType: schema.readingProgress.koboLocationType,
         koboLocationValue: schema.readingProgress.koboLocationValue,
         koboContentSourceProgressPercent: schema.readingProgress.koboContentSourceProgressPercent,
+        mediaOverlayFragment: schema.readingProgress.mediaOverlayFragment,
+        mediaOverlaySectionIndex: schema.readingProgress.mediaOverlaySectionIndex,
         updatedAt: schema.readingProgress.updatedAt,
       })
       .from(schema.readingProgress)
