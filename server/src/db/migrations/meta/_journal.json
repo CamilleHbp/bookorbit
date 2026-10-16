@@ -799,6 +799,13 @@
       "when": 1792002996105,
       "tag": "0113_add_djvu_email_format",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1792163623360,
+      "tag": "0114_add_book_metadata_page_count_index",
+      "breakpoints": true
     }
   ]
 }

@@ -494,6 +494,18 @@
   {
     "file": "server/src/modules/achievement/achievement.controller.ts",
     "className": "AchievementController",
+    "methodName": "getHints",
+    "httpMethod": "GET",
+    "path": "/achievements/hints",
+    "permissions": [],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": ["JwtAuthGuard"]
+  },
+  {
+    "file": "server/src/modules/achievement/achievement.controller.ts",
+    "className": "AchievementController",
     "methodName": "acknowledgeCelebration",
     "httpMethod": "POST",
     "path": "/achievements/celebrations/:claimId/acknowledge",

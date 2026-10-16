@@ -10,29 +10,22 @@ const props = defineProps<{
   activeFilter: FilterState
   totalEarned: number
   totalAvailable: number
-  earnedCount: number
-  inProgressCount: number
-  lockedCount: number
+  counts: Record<FilterState, number>
 }>()
 
 const emit = defineEmits<{
   change: [filter: FilterState]
 }>()
 
-function handleAll(): void {
-  emit('change', 'all')
-}
+const FILTERS: Array<{ id: FilterState; label: string }> = [
+  { id: 'all', label: 'achievements.filters.all' },
+  { id: 'earned', label: 'achievements.filters.earned' },
+  { id: 'in-progress', label: 'achievements.filters.inProgress' },
+  { id: 'locked', label: 'achievements.filters.locked' },
+]
 
-function handleEarned(): void {
-  emit('change', 'earned')
-}
-
-function handleInProgress(): void {
-  emit('change', 'in-progress')
-}
-
-function handleLocked(): void {
-  emit('change', 'locked')
+function handleSelect(filter: FilterState): void {
+  emit('change', filter)
 }
 
 function pillClass(filter: FilterState): string {
@@ -45,25 +38,23 @@ function pillClass(filter: FilterState): string {
 <template>
   <PageTitleRow :eyebrow="t('components.sidebar.zones.reading')" :title="t('achievements.title')" :icon="Trophy">
     <template #facts>
-      <span class="tabular-nums">{{ t('achievements.tiersCount', { earned: totalEarned, total: totalAvailable }) }}</span>
+      <span class="tabular-nums">{{ t('achievements.tiersEarnedFact', { earned: totalEarned, total: totalAvailable }) }}</span>
     </template>
     <template #inline>
-      <div class="-mx-1 overflow-x-auto px-1 pb-0.5 sm:mx-0 sm:px-0 sm:pb-0">
-        <div class="inline-flex min-w-max items-center gap-1 rounded-lg bg-muted p-1">
-          <button :class="['shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors', pillClass('all')]" @click="handleAll">
-            {{ t('achievements.filter.all') }}
-          </button>
-          <button :class="['shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors', pillClass('earned')]" @click="handleEarned">
-            {{ t('achievements.filter.earned', { count: earnedCount }) }}
-          </button>
+      <div class="-mx-1 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] sm:mx-0 sm:px-0 sm:pb-0">
+        <div class="inline-flex min-w-max items-center gap-1 rounded-lg bg-muted p-1" role="group" :aria-label="t('achievements.filters.label')">
           <button
-            :class="['shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors', pillClass('in-progress')]"
-            @click="handleInProgress"
+            v-for="filter in FILTERS"
+            :key="filter.id"
+            type="button"
+            :class="['shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors max-sm:px-2.5 max-sm:text-[13px]', pillClass(filter.id)]"
+            :aria-pressed="activeFilter === filter.id"
+            @click="handleSelect(filter.id)"
           >
-            {{ t('achievements.filter.inProgress', { count: inProgressCount }) }}
-          </button>
-          <button :class="['shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors', pillClass('locked')]" @click="handleLocked">
-            {{ t('achievements.filter.locked', { count: lockedCount }) }}
+            {{ t(filter.label) }}
+            <span class="ms-0.5 tabular-nums" :class="activeFilter === filter.id ? 'text-foreground' : 'text-muted-foreground'">{{
+              counts[filter.id]
+            }}</span>
           </button>
         </div>
       </div>

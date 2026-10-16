@@ -3932,6 +3932,201 @@
       "earned": "Earned ({count})",
       "inProgress": "In Progress ({count})",
       "locked": "Locked ({count})"
+    },
+    "tiersEarnedFact": "{earned} of {total} tiers",
+    "loading": "Loading achievements",
+    "filters": {
+      "label": "Filter achievements",
+      "all": "All",
+      "earned": "Earned",
+      "inProgress": "In progress",
+      "locked": "Locked"
+    },
+    "showcase": {
+      "label": "Highlights",
+      "latest": "Latest unlock",
+      "newToday": "{count, plural, one {# new today} other {# new today}}",
+      "secretRevealed": "Secret revealed",
+      "categoryAndDate": "{category} · {date}",
+      "alsoNew": "Also new",
+      "openMedal": "Open {name}",
+      "emptyTitle": "Your first medal is waiting",
+      "emptyBody": "Finish a book, rate one or highlight a passage, and it lands here.",
+      "collection": "Collection",
+      "shareOfTiers": "{percent} of every tier",
+      "tiersEarned": "{earned} of {total} tiers earned",
+      "closest": "Closest to unlocking",
+      "allInProgress": "All {count}",
+      "tierOfSet": "Tier {tier} of {set}",
+      "nothingCounting": "Nothing is counting toward a medal yet."
+    },
+    "shelf": {
+      "tiers": "{earned} / {total}",
+      "progressLabel": "{category} tiers earned"
+    },
+    "medal": {
+      "label": "{name}, {rarity}, {status}",
+      "tier": "Tier {tier}",
+      "allTiers": "{count, plural, one {The only tier} other {All # tiers}}",
+      "keepReading": "Keep reading",
+      "notStarted": "Not started"
+    },
+    "progress": {
+      "generic": "{current} / {threshold}",
+      "toGo": "{count, plural, one {# to go} other {# to go}}"
+    },
+    "hints": {
+      "howToGetIt": "How to get it",
+      "readingPace": "{count, plural, one {You read # hour in the last {days} days.} other {You read # hours in the last {days} days.}}",
+      "etaDays": "{count, plural, one {About # day at this pace.} other {About # days at this pace.}}",
+      "etaWeeks": "{count, plural, one {About # week at this pace.} other {About # weeks at this pace.}}",
+      "etaMonths": "{count, plural, one {About # month at this pace.} other {About # months at this pace.}}",
+      "decadeUnread": "{count, plural, one {# book from the {decade}s is waiting on your shelves.} other {# books from the {decade}s are waiting on your shelves.}}",
+      "centuryUnread": "{count, plural, one {# book from the {century}s is waiting on your shelves.} other {# books from the {century}s are waiting on your shelves.}}",
+      "stalled": "{title} is {percent} read and was started on {date}.",
+      "stalledNoProgress": "{title} was started on {date}.",
+      "untitledBook": "A book in progress",
+      "nearlyFinished": "{count, plural, one {# book in progress is past {percent}.} other {# books in progress are past {percent}.}}",
+      "unratedFinished": "{count, plural, one {# book you finished has no rating yet.} other {# books you finished have no rating yet.}}",
+      "shortBooks": "{count, plural, one {# book under {pages} pages is waiting on your shelves.} other {# books under {pages} pages are waiting on your shelves.}}",
+      "alreadyStarted": "{count, plural, one {# is already in progress.} other {# are already in progress.}}",
+      "longBooks": "{count, plural, one {# book of {pages} pages or more is waiting on your shelves.} other {# books of {pages} pages or more are waiting on your shelves.}}",
+      "oldBooks": "{count, plural, one {# book published before {year} is waiting on your shelves.} other {# books published before {year} are waiting on your shelves.}}",
+      "authorUnread": "{author}: {finished, plural, one {# finished} other {# finished}}, {count, plural, one {# more on your shelves} other {# more on your shelves}}.",
+      "languageUnread": "{count, plural, one {# book in {language} is waiting on your shelves.} other {# books in {language} are waiting on your shelves.}}",
+      "monthsRead": "{count, plural, one {You have read in # month of {year} so far.} other {You have read in # months of {year} so far.}}",
+      "monthsLeft": "{count, plural, one {{months} is left.} other {{months} are left.}}",
+      "noLongBook": "No book on your shelves has {pages} pages or more yet.",
+      "nothingBeforeYear": "Nothing on your shelves was published before {year}.",
+      "tooFewDecades": "{count, plural, one {Your shelves span only # decade so far.} other {Your shelves span only # decades so far.}}",
+      "tooFewCenturies": "{count, plural, one {Your shelves span only # century so far.} other {Your shelves span only # centuries so far.}}",
+      "missedMonth": "You did not read in {month}, so {year} is out of reach. The count starts again in January.",
+      "continueReading": "Continue reading",
+      "rateFinished": "Rate a finished book",
+      "viewAuthor": "View author",
+      "openBook": "Open {title}",
+      "openUntitledBook": "Open book"
+    },
+    "sets": {
+      "booksFinished": "Books finished",
+      "pagesRead": "Pages read",
+      "hoursRead": "Hours read",
+      "longestBook": "Longest book finished",
+      "librarySize": "Library size",
+      "annotations": "Annotations",
+      "booksRated": "Books rated",
+      "genresFinished": "Genres finished",
+      "languagesFinished": "Languages finished",
+      "readingStreak": "Reading streak"
+    },
+    "units": {
+      "books": {
+        "progress": "{current} / {threshold} books",
+        "toGo": "{count, plural, one {# book to go} other {# books to go}}"
+      },
+      "pages": {
+        "progress": "{current} / {threshold} pages",
+        "toGo": "{count, plural, one {# page to go} other {# pages to go}}"
+      },
+      "hours": {
+        "progress": "{current} / {threshold} hours",
+        "toGo": "{count, plural, one {# hour to go} other {# hours to go}}"
+      },
+      "annotations": {
+        "progress": "{current} / {threshold} annotations",
+        "toGo": "{count, plural, one {# annotation to go} other {# annotations to go}}"
+      },
+      "ratings": {
+        "progress": "{current} / {threshold} ratings",
+        "toGo": "{count, plural, one {# rating to go} other {# ratings to go}}"
+      },
+      "genres": {
+        "progress": "{current} / {threshold} genres",
+        "toGo": "{count, plural, one {# genre to go} other {# genres to go}}"
+      },
+      "languages": {
+        "progress": "{current} / {threshold} languages",
+        "toGo": "{count, plural, one {# language to go} other {# languages to go}}"
+      },
+      "days": {
+        "progress": "{current} / {threshold} days",
+        "toGo": "{count, plural, one {# day to go} other {# days to go}}"
+      }
+    },
+    "moments": {
+      "nthBook": "Book {number} was {title}",
+      "pagesAtUnlock": "{count, plural, one {# page} other {# pages}} when it unlocked",
+      "hoursAtUnlock": "{count, plural, one {# hour} other {# hours}} when it unlocked",
+      "titleWithPages": "{title}, {count, plural, one {# page} other {# pages}}",
+      "booksAtUnlock": "{count, plural, one {# book} other {# books}} in your library when it unlocked",
+      "annotationsAtUnlock": "{count, plural, one {# annotation} other {# annotations}} when it unlocked",
+      "ratingsAtUnlock": "{count, plural, one {# rating} other {# ratings}} when it unlocked",
+      "genresAtUnlock": "{count, plural, one {# genre} other {# genres}} when it unlocked",
+      "languagesAtUnlock": "{count, plural, one {# language} other {# languages}} when it unlocked",
+      "streakAtUnlock": "{count, plural, one {# day} other {# days}} in a row at the time",
+      "longSession": "One session ran {duration}",
+      "durationHours": "{hours} h {minutes} min",
+      "durationMinutes": "{minutes} min",
+      "sessionStartedAt": "A session that started at {time}",
+      "oneDayBook": "{title}, start to finish in one day",
+      "booksInWeek": "{count, plural, one {# book} other {# books}} finished in one week",
+      "booksInMonth": "{count, plural, one {# book} other {# books}} finished in {month}",
+      "booksInYear": "{count, plural, one {# book} other {# books}} finished in {year}",
+      "wholeBookOneSession": "A whole book in one session",
+      "pagesInSession": "{count, plural, one {# page} other {# pages}} in one session",
+      "pagesInDay": "{count, plural, one {# page} other {# pages}} in one day",
+      "slowBurn": "{title}, finished after {count, plural, one {# day} other {# days}}",
+      "formatsOwned": "{count, plural, one {# format} other {# formats}} on your shelves",
+      "annotationsWithNote": "{count, plural, one {# annotation} other {# annotations}} with a note",
+      "annotationsInDay": "{count, plural, one {# annotation} other {# annotations}} in one day",
+      "everyStar": "Every rating from one star to five",
+      "everyColour": "Every highlight colour used",
+      "titlePublished": "{title}, published {year}",
+      "booksInGenre": "{count, plural, one {# book} other {# books}} in one genre",
+      "firstInSeries": "{title}, from the {series} series",
+      "centuries": "Books from {count, plural, one {# century} other {# centuries}}",
+      "booksBySameAuthor": "{count, plural, one {# book} other {# books}} by one author",
+      "decades": "Books from {count, plural, one {# decade} other {# decades}}",
+      "shortBooks": "{count, plural, one {# short book} other {# short books}} finished",
+      "allSeasons": "All four seasons of {year}",
+      "consistentDays": "{count, plural, one {# day} other {# days}} of 30 minutes or more",
+      "weekendsInRow": "{count, plural, one {# weekend} other {# weekends}} in a row",
+      "weekendHours": "{count, plural, one {# hour} other {# hours}} over the weekend of {date}",
+      "categoriesCovered": "{count, plural, one {# category} other {# categories}} with an achievement",
+      "readingSources": "{count, plural, one {# reading source} other {# reading sources}}",
+      "oneBookSources": "One book read from {count, plural, one {# source} other {# sources}}"
+    },
+    "records": {
+      "title": "Record book",
+      "subtitle": "The numbers behind your medals, as they stood when each unlocked",
+      "value": "{value}",
+      "oneSession": "One reading session",
+      "pagesInSession": "Pages in one session",
+      "pagesInDay": "Pages in one day",
+      "booksInWeek": "Books in one week",
+      "booksInMonth": "Books in {month}",
+      "booksInYear": "Books finished in {year}",
+      "annotations": "Annotations",
+      "genresFinished": "Genres finished",
+      "daysInRow": "Days in a row",
+      "booksInLibrary": "Books in your library"
+    },
+    "detail": {
+      "categoryTierSet": "{category} · Tier set",
+      "secretHint": "Keep reading to reveal this one.",
+      "tierOf": "Tier {earned} of {total}",
+      "current": "Current",
+      "noneYet": "None yet",
+      "progress": "Progress",
+      "allTiersEarned": "Every tier earned",
+      "tiers": "Tiers",
+      "earned": "Earned",
+      "status": "Status",
+      "hidden": "Hidden",
+      "rarity": "Rarity",
+      "category": "Category",
+      "theSet": "The set",
+      "theMoment": "The moment"
     }
   },
   "adminFeature": {
