@@ -1,7 +1,7 @@
 {
-  "totalRoutes": 649,
+  "totalRoutes": 650,
   "byPermission": {
-    "(none)": 281,
+    "(none)": 282,
     "Permission.ManageMetadataConfig": 38,
     "Permission.EmailSend": 34,
     "Permission.LibraryEditMetadata": 35,
@@ -35,7 +35,7 @@
     "Permission.PodcastDownload": 4
   },
   "byLibraryAccess": {
-    "'viewer'": 9,
+    "'viewer'": 10,
     "'editor'": 15,
     "'owner'": 4
   },

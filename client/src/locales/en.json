@@ -8335,6 +8335,69 @@
         "table": "Table view"
       }
     },
+    "browseHeader": {
+      "eyebrow": {
+        "library": "Library",
+        "smartScope": "Smart scope",
+        "collection": "Collection",
+        "browse": "Browse"
+      },
+      "facts": {
+        "books": "{count, plural, one {# book} other {# books}}",
+        "booksOf": "{matching} of {total, plural, one {# book} other {# books}}",
+        "authors": "{count, plural, one {# author} other {# authors}}",
+        "series": "{count, plural, one {# series} other {# series}}",
+        "scanned": "Scanned {time}",
+        "scanningProgress": "Scanning {processed} / {total}",
+        "syncsToKobo": "Syncs to Kobo"
+      },
+      "switcher": {
+        "open": "Switch from {name}",
+        "jumpTo": "Jump to...",
+        "libraries": "Libraries",
+        "smartScopes": "Smart scopes",
+        "collections": "Collections",
+        "empty": "Nothing matches"
+      },
+      "search": {
+        "removeToken": "Remove filter {label}",
+        "clearAll": "Clear search and filters",
+        "save": "Save",
+        "summaryToken": "{count, plural, one {# filter} other {# filters}}"
+      },
+      "tokens": {
+        "anyOf": "Any of {count, plural, one {# rule} other {# rules}}",
+        "allOf": "All of {count, plural, one {# rule} other {# rules}}"
+      },
+      "sort": {
+        "sortBy": "Sort by {field}",
+        "ascending": "Ascending. Switch to descending",
+        "descending": "Descending. Switch to ascending"
+      },
+      "facets": {
+        "format": "Format",
+        "rules": "Rules",
+        "show": "Show",
+        "library": "Library",
+        "status": "Status",
+        "ruleCount": "{count, plural, one {# rule} other {# rules}}"
+      },
+      "menu": {
+        "more": "More for {name}",
+        "editRules": "Edit rules",
+        "deleteSmartScope": "Delete Smart Scope",
+        "deleteCollection": "Delete collection",
+        "confirmDelete": "Delete \"{name}\"? This cannot be undone.",
+        "upload": "Upload books"
+      },
+      "scan": {
+        "scanning": "Scanning",
+        "started": "Scanning {name}",
+        "finished": "Scan of {name} finished"
+      },
+      "viewModes": "View mode",
+      "legend": "Volume colours"
+    },
     "iconPicker": {
       "clearSelectionAria": "Clear selected icon",
       "searchLucide": "Search Lucide icons...",

@@ -37,6 +37,7 @@ import { basename, dirname, extname, join, relative } from 'path';
 import { tmpdir } from 'os';
 
 import {
+  BOOK_FORMATS,
   BOOK_METADATA_LOCK_FIELDS,
   DEFAULT_DOWNLOAD_PATTERN,
   COVER_MEDIA,
@@ -69,6 +70,7 @@ import type {
   GroupRule,
   JumpBucketsResponse,
   JumpBucketsQuery,
+  LibraryBookFacets,
   MetadataFetchDiagnostics,
   ReadStatus,
   ReadAloudProgressSync,
@@ -280,6 +282,20 @@ export type ProgressStatusFileContext = {
   bookId: number;
   libraryId: number;
 };
+
+/**
+ * Format facets are counted disjunctively: without the root-level "format includes any of" rules the
+ * chips write, so choosing one format still shows how many books the others hold. Any other format
+ * rule, such as an exclusion built in the filter panel, keeps applying. That is only sound when the
+ * root joins with AND; under OR, dropping a branch would widen the result rather than relax one
+ * dimension.
+ */
+function withoutRootFormatRules(filter: GroupRule | undefined): GroupRule | undefined {
+  if (!filter || filter.join !== 'AND') return filter;
+  const rules = filter.rules.filter((rule) => rule.type !== 'rule' || rule.field !== 'format' || rule.operator !== 'includesAny');
+  if (rules.length === filter.rules.length) return filter;
+  return rules.length > 0 ? { ...filter, rules } : undefined;
+}
 
 @Injectable()
 export class BookService {
@@ -1118,6 +1134,39 @@ export class BookService {
       contentFilters: this.isSuperuser(user) ? undefined : user.contentFilters,
     });
     return this.executeBooksQuery(user.id, where, query);
+  }
+
+  /** Browse-header counts from the listing's own where clause; sort, paging and collapse are ignored. */
+  async facetsForLibrary(user: RequestUser, libraryId: number, query: BookQuery): Promise<LibraryBookFacets> {
+    await this.libraryService.verifyUserAccess(user.id, libraryId, this.isSuperuser(user));
+    const start = Date.now();
+    const scope = {
+      accessibleLibraryIds: [libraryId],
+      implicitLibraryId: libraryId,
+      userId: user.id,
+      timeZone: this.resolveUserTimeZone(user),
+      contentFilters: this.isSuperuser(user) ? undefined : user.contentFilters,
+    };
+    const where = this.queryBuilder.buildWhere(query.filter, { ...scope, q: query.q });
+    const formatFilter = withoutRootFormatRules(query.filter);
+    const formatWhere = formatFilter === query.filter ? where : this.queryBuilder.buildWhere(formatFilter, { ...scope, q: query.q });
+    const hasQuery = Boolean(query.q?.trim());
+    const narrowed = Boolean(query.filter) || hasQuery;
+
+    const [total, libraryTotal, formatCounts] = await Promise.all([
+      this.bookRepo.countWhere(where),
+      narrowed ? this.bookRepo.countWhere(this.queryBuilder.buildWhere(undefined, scope)) : null,
+      this.bookRepo.countFormatFacets(formatWhere, BOOK_FORMATS),
+    ]);
+    const formats = formatCounts.filter((facet) => facet.count > 0).sort((a, b) => b.count - a.count || a.format.localeCompare(b.format));
+
+    const durationMs = Date.now() - start;
+    if (durationMs >= 500) {
+      this.logger.warn(
+        `[book.facets_query] [end] userId=${user.id} libraryId=${libraryId} filterCount=${query.filter?.rules?.length ?? 0} hasQuery=${hasQuery} total=${total} formatCount=${formats.length} durationMs=${durationMs} - slow query`,
+      );
+    }
+    return { total, libraryTotal: libraryTotal ?? total, formats };
   }
 
   async globalQuery(user: RequestUser, query: BookQuery): Promise<BooksPage> {

@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPip
 import type { FastifyReply } from 'fastify';
 
 import { Permission, AuditAction, AuditResource } from '@bookorbit/types';
-import type { BookQuery, BulkRenameProgressEvent, JumpBucketsQuery, LibraryFileSyncProgressEvent } from '@bookorbit/types';
+import type { BookQuery, BulkRenameProgressEvent, JumpBucketsQuery, LibraryBookFacets, LibraryFileSyncProgressEvent } from '@bookorbit/types';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireLibraryAccess } from '../../common/decorators/require-library-access.decorator';
 import { RequireLibraryType } from '../../common/decorators/require-library-type.decorator';
@@ -59,6 +59,17 @@ export class LibraryController {
   @RequireLibraryType('books')
   queryBooks(@Param('id', ParseIntPipe) libraryId: number, @Body(BookQueryPipe) query: BookQuery, @CurrentUser() user: RequestUser) {
     return this.bookService.queryForLibrary(user, libraryId, query);
+  }
+
+  @Post(':id/books/facets')
+  @RequireLibraryAccess('viewer')
+  @RequireLibraryType('books')
+  getBookFacets(
+    @Param('id', ParseIntPipe) libraryId: number,
+    @Body(BookQueryPipe) query: BookQuery,
+    @CurrentUser() user: RequestUser,
+  ): Promise<LibraryBookFacets> {
+    return this.bookService.facetsForLibrary(user, libraryId, query);
   }
 
   @Post(':id/books/jump-buckets')
