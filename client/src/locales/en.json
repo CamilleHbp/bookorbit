@@ -5121,7 +5121,13 @@
       "user": "User",
       "action": "Action",
       "description": "Description",
-      "ip": "IP"
+      "ip": "IP",
+      "time": "Time",
+      "person": "Person",
+      "source": "Source",
+      "open": "Open",
+      "network": "Network",
+      "activity": "Activity"
     },
     "categories": {
       "authentication": "Authentication",
@@ -5131,7 +5137,10 @@
       "collections": "Collections",
       "integrations": "Integrations",
       "settings": "Settings",
-      "other": "Other"
+      "other": "Other",
+      "access": "Sign-in & access",
+      "requests": "Requests",
+      "devices": "Devices & email"
     },
     "resourceLabels": {
       "User": "User",
@@ -5295,7 +5304,159 @@
       "MaintenanceMissingBooksClean": "Cleaned missing books",
       "MaintenanceBrokenCoversClean": "Cleaned broken covers",
       "MaintenanceOrphanedCoversClean": "Cleaned orphaned cover folders"
-    }
+    },
+    "views": {
+      "label": "Show",
+      "changes": "Changes",
+      "signins": "Sign-ins",
+      "security": "Security",
+      "all": "All"
+    },
+    "search": {
+      "label": "Search events",
+      "placeholder": "Search people, targets or IP addresses",
+      "placeholderShort": "Search events"
+    },
+    "range": {
+      "label": "Date range: {range}",
+      "today": "Today",
+      "7d": "Last 7 days",
+      "30d": "Last 30 days",
+      "all": "Everything kept",
+      "custom": "Custom range",
+      "from": "From",
+      "to": "To",
+      "between": "{from} to {to}",
+      "since": "Since {date}",
+      "until": "Until {date}",
+      "sinceOldest": "Since {date}"
+    },
+    "filterMenu": {
+      "button": "Filters",
+      "category": "Category",
+      "person": "Person",
+      "findPerson": "Find a person",
+      "noPeople": "No matching people",
+      "clear": "Clear",
+      "done": "Done"
+    },
+    "activeFilters": {
+      "target": "{type}: {name}",
+      "clearAll": "Clear all"
+    },
+    "securityGroups": {
+      "label": "Security event type",
+      "all": "Everything",
+      "failed": "Failed sign-ins",
+      "accounts": "Accounts",
+      "passwords": "Passwords",
+      "permissions": "Permissions",
+      "access": "Library access",
+      "links": "Sign-in links"
+    },
+    "day": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "changes": "{count, plural, one {# change} other {# changes}}",
+      "events": "{count, plural, one {# event} other {# events}}"
+    },
+    "person": {
+      "system": "System",
+      "deleted": "Deleted account",
+      "automation": "Automation"
+    },
+    "source": {
+      "server": "This server",
+      "local": "Local network",
+      "internet": "Internet",
+      "job": "Background job",
+      "unknown": "Not recorded"
+    },
+    "target": {
+      "none": "No target",
+      "more": "+{count}",
+      "sinceDeleted": "Since deleted",
+      "withId": "{type} #{id}"
+    },
+    "openEvent": "Open details: {event}",
+    "signIns": {
+      "signIns": "{count, plural, one {# sign-in} other {# sign-ins}}",
+      "signOuts": "{count, plural, one {# sign-out} other {# sign-outs}}",
+      "failed": "{count, plural, one {# failed attempt} other {# failed attempts}}",
+      "failedAs": "{count, plural, one {# failed as {names}} other {# failed as {names}}}",
+      "range": "{from} – {to}",
+      "footer": "{count, plural, one {{events} sign-in events, folded into # row by person, day and network} other {{events} sign-in events, folded into # rows by person, day and network}}"
+    },
+    "pager": {
+      "label": "Pages",
+      "previous": "Previous page",
+      "next": "Next page",
+      "page": "Page {page}",
+      "changes": "{from}–{to} of {count, plural, one {# change} other {# changes}}",
+      "events": "{from}–{to} of {count, plural, one {# event} other {# events}}"
+    },
+    "drawer": {
+      "description": "Details of one audit event",
+      "close": "Close",
+      "subtitle": "{category} · {day}, {time}",
+      "when": "When",
+      "person": "Person",
+      "source": "Source",
+      "target": "Target",
+      "usernameTried": "Username tried",
+      "deletedHere": "{type} · deleted by this event",
+      "deletedSince": "{type} · since deleted",
+      "inThisRow": "{count, plural, one {# event in this row} other {# events in this row}}",
+      "around": "Around this event",
+      "aroundHint": "{name}, 40 minutes either side",
+      "aroundEmpty": "Nothing else from {name} within 40 minutes.",
+      "history": "History",
+      "historyCount": "{count, plural, one {# event} other {# events}}",
+      "historyMeta": "{name} · {date}, {time}",
+      "thisEvent": "This event",
+      "raw": "Raw event",
+      "rawEventId": "Event ID",
+      "rawAction": "Action",
+      "rawTarget": "Target type",
+      "rawNote": "Server note",
+      "only": "Only {name}"
+    },
+    "facts": {
+      "format": "Format",
+      "size": "Size",
+      "download": "Download",
+      "dockFile": "Book Dock file",
+      "rejected": "Rejected",
+      "failed": "Failed",
+      "cleaned": "Cleaned",
+      "skipped": "Skipped",
+      "remaining": "Remaining",
+      "sharingLevel": "Sharing level",
+      "sharing": {
+        "private": "Not shared",
+        "summary": "Summary",
+        "detailed": "Detailed"
+      }
+    },
+    "retention": {
+      "button": "{count, plural, one {Kept for # day} other {Kept for # days}}",
+      "title": "Keep events for",
+      "days": "{count, plural, one {# day} other {# days}}",
+      "hint": "Older events are deleted every night at midnight.",
+      "hintWithOldest": "Older events are deleted every night at midnight. The oldest event kept is from {date}.",
+      "readOnly": "Only people who can change app settings can change this.",
+      "saved": "{count, plural, one {Audit events are now kept for # day.} other {Audit events are now kept for # days.}}",
+      "saveFailed": "Could not change how long events are kept."
+    },
+    "export": {
+      "button": "Export",
+      "title": "Export what is shown",
+      "hint": "Uses the current view, filters and date range.",
+      "csv": "CSV",
+      "json": "JSON",
+      "failed": "Could not export the audit log."
+    },
+    "emptyFiltered": "No events match these filters."
   },
   "auth": {
     "backToSignIn": "Back to sign in",

@@ -806,6 +806,13 @@
       "when": 1792163623360,
       "tag": "0114_add_book_metadata_page_count_index",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1792168359342,
+      "tag": "0115_add_audit_resource_label",
+      "breakpoints": true
     }
   ]
 }

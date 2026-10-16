@@ -288,6 +288,9 @@
   --path-fold: oklch(0.62 0.02 var(--tint-h));
 
   --audit-authentication: oklch(0.55 0.17 295);
+  --audit-requests: oklch(0.56 0.17 350);
+  /* Settings events sit on a neutral, so red in the audit log only ever means something was deleted. */
+  --audit-config: oklch(0.56 0.035 255);
   --audit-books: oklch(0.55 0.16 245);
   --audit-users: oklch(0.62 0.14 70);
   --audit-libraries: oklch(0.55 0.1 195);
@@ -522,6 +525,8 @@
   --path-fold: oklch(0.6 0.01 var(--tint-h));
 
   --audit-authentication: oklch(0.72 0.17 295);
+  --audit-requests: oklch(0.74 0.14 350);
+  --audit-config: oklch(0.74 0.035 255);
   --audit-books: oklch(0.72 0.14 245);
   --audit-users: oklch(0.78 0.13 70);
   --audit-libraries: oklch(0.74 0.1 195);

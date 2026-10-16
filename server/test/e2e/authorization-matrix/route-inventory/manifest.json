@@ -1,5 +1,5 @@
 {
-  "totalRoutes": 651,
+  "totalRoutes": 654,
   "byPermission": {
     "(none)": 283,
     "Permission.ManageMetadataConfig": 38,
@@ -15,7 +15,7 @@
     "Permission.DemoRestricted": 6,
     "Permission.KoreaderSync": 9,
     "Permission.OpdsAccess": 4,
-    "Permission.ViewAuditLog": 1,
+    "Permission.ViewAuditLog": 4,
     "Permission.ViewUserActivity": 6,
     "Permission.LibraryDeleteBooks": 14,
     "Permission.LibraryDownload": 4,
