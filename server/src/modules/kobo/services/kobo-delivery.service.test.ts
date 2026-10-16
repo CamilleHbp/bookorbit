@@ -149,3 +149,93 @@ describe('KoboDeliveryService.transferObserved', () => {
     expect(repository.adoptForDeviceReadingState).not.toHaveBeenCalled();
   });
 });
+
+function makeOfferService(current: KoboDeliveryRecord | null, previous: KoboDeliveryRecord | null = null) {
+  const fresh = record({ id: 'fresh', state: 'offered', metadata: { ...record().metadata, format: 'pdf' } });
+  const repository = {
+    assertDevice: vi.fn().mockResolvedValue(undefined),
+    findCurrent: vi.fn().mockResolvedValue(current),
+    findById: vi.fn().mockResolvedValue(previous),
+    retire: vi.fn().mockResolvedValue(undefined),
+    offer: vi.fn().mockResolvedValue(fresh),
+    cancel: vi.fn().mockResolvedValue(true),
+    reoffer: vi.fn().mockResolvedValue(undefined),
+  };
+  const downloads = {
+    findBook: vi.fn().mockResolvedValue({ id: 3, primaryFileId: 4 }),
+    findPrimaryFile: vi.fn().mockResolvedValue({ id: 4, absolutePath: '/library/book.pdf', format: 'pdf', mediaOverlayAvailable: false }),
+  };
+  const settings = {
+    getSettings: vi
+      .fn()
+      .mockResolvedValue({ readAloudDelivery: null, convertToKepub: false, forceEnableHyphenation: false, kepubConversionLimitMb: 100 }),
+  };
+  const artifacts = {
+    prepare: vi.fn().mockResolvedValue({ ...fresh.metadata, path: '/library/book.pdf', release: vi.fn().mockResolvedValue(undefined) }),
+  };
+  const service = new KoboDeliveryService(
+    repository as never,
+    downloads as never,
+    { assertBookAccessible: vi.fn().mockResolvedValue(undefined) } as never,
+    settings as never,
+    artifacts as never,
+    {} as never,
+    {} as never,
+  );
+  return { service, repository, fresh };
+}
+
+const replacement = (overrides: Partial<KoboDeliveryRecord> = {}) =>
+  record({ id: 'replacement', state: 'prepared', options: { hyphenate: false, converterVersion: 'v1', replacement: true }, ...overrides });
+
+describe('KoboDeliveryService.offer', () => {
+  it.each(['prepared', 'cancelled'])('gives a book a first offer when a %s replacement has no earlier copy to stand back for', async (state) => {
+    const { service, repository, fresh } = makeOfferService(replacement({ state }));
+
+    await expect(service.offer(1, 2, 3)).resolves.toBe(fresh);
+
+    expect(repository.retire).toHaveBeenCalledWith(1, 2, 'replacement');
+    expect(repository.offer).toHaveBeenCalledWith(expect.objectContaining({ state: 'offered', sourceFileId: 4 }), false);
+  });
+
+  it('keeps serving the earlier copy while a replacement is only prepared', async () => {
+    const previous = record({ id: 'previous', current: false });
+    const { service, repository } = makeOfferService(replacement({ previousId: 'previous' }), previous);
+
+    await expect(service.offer(1, 2, 3)).resolves.toBe(previous);
+
+    expect(repository.retire).not.toHaveBeenCalled();
+    expect(repository.offer).not.toHaveBeenCalled();
+  });
+
+  it('returns a current delivery unchanged', async () => {
+    const current = record();
+    const { service, repository } = makeOfferService(current);
+
+    await expect(service.offer(1, 2, 3)).resolves.toBe(current);
+
+    expect(repository.retire).not.toHaveBeenCalled();
+  });
+});
+
+describe('KoboDeliveryService.cancelReplacement', () => {
+  it('tells the device again which copy stands once an offered replacement is cancelled', async () => {
+    const { service, repository } = makeOfferService(null, replacement({ state: 'offered' }));
+
+    await service.cancelReplacement(1, 2, 'replacement');
+
+    expect(repository.cancel).toHaveBeenCalledWith(1, 2, 'replacement');
+    expect(repository.reoffer).toHaveBeenCalledWith(1, 2, 3);
+  });
+
+  it('does not re-announce a replacement the device was never told about, or one that was not cancelled', async () => {
+    const prepared = makeOfferService(null, replacement());
+    await prepared.service.cancelReplacement(1, 2, 'replacement');
+    expect(prepared.repository.reoffer).not.toHaveBeenCalled();
+
+    const confirmed = makeOfferService(null, replacement({ state: 'offered' }));
+    confirmed.repository.cancel.mockResolvedValue(false);
+    await confirmed.service.cancelReplacement(1, 2, 'replacement');
+    expect(confirmed.repository.reoffer).not.toHaveBeenCalled();
+  });
+});

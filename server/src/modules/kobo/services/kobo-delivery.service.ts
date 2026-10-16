@@ -46,12 +46,12 @@ export class KoboDeliveryService {
     const startedAt = Date.now();
     const current = await this.current(userId, deviceId, bookId);
     if (current && replacementVariant === undefined) {
-      if (['prepared', 'cancelled'].includes(current.state)) {
-        const previous = current.previousId ? await this.repository.findById(userId, deviceId, current.previousId) : null;
-        if (previous) return previous;
-        throw new ConflictException({ code: 'KOBO_REPLACEMENT_NOT_OFFERED' });
-      }
-      return current;
+      if (!['prepared', 'cancelled'].includes(current.state)) return current;
+      const previous = current.previousId ? await this.repository.findById(userId, deviceId, current.previousId) : null;
+      if (previous) return previous;
+      // A replacement prepared before this device ever received the book has no copy to stand back
+      // for, so it stops standing for the book and the book gets an ordinary first offer.
+      await this.repository.retire(userId, deviceId, current.id);
     }
     const book = await this.downloads.findBook(bookId);
     if (!book) throw new NotFoundException();
@@ -252,7 +252,9 @@ export class KoboDeliveryService {
   async cancelReplacement(userId: number, deviceId: number, id: string) {
     const record = await this.byId(userId, deviceId, id);
     if (!record) throw new NotFoundException();
-    await this.repository.cancel(userId, deviceId, id);
+    const cancelled = await this.repository.cancel(userId, deviceId, id);
+    // The device was told about an offered replacement, so it must hear which copy stands for the book now.
+    if (cancelled && record.state === 'offered') await this.repository.reoffer(userId, deviceId, record.bookId);
     return this.byId(userId, deviceId, id);
   }
 

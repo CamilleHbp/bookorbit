@@ -413,6 +413,32 @@ describe('Read-aloud delivery contracts (e2e)', { timeout: 180_000 }, () => {
     expect((await action('cancel')).json().state).toBe('user_confirmed');
   });
 
+  it('delivers a book whose replacement was prepared before any copy, and an unfetched cancel hands back the earlier copy', async () => {
+    const device = (await request('POST', '/api/v1/kobo/devices', { name: 'Replacement before delivery' })).json();
+    await request('PATCH', '/api/v1/kobo/settings', { readAloudDelivery: 'original' });
+    const base = `/api/v1/kobo/devices/${device.id}`;
+    const download = () => ctx.app.inject({ method: 'GET', url: `/api/v1/kobo/${device.token}/v1/books/${book.bookId}/download` });
+
+    const early = (await request('POST', `${base}/books/${book.bookId}/replacement`, { variant: 'audioless_epub' })).json();
+    expect(early).toMatchObject({ state: 'prepared', previousId: null });
+    const first = await download();
+    expect(first.statusCode).toBe(200);
+    expect(first.rawPayload).toEqual(sourceBytes);
+    const delivered = (await request('GET', `${base}/books/${book.bookId}/delivery`)).json();
+    expect(delivered.id).not.toBe(early.id);
+    expect(delivered.options.replacement).toBe(false);
+    await waitForCondition(async () => {
+      const row = await ctx.db.query.koboDeviceDeliveries.findFirst({ where: eq(schema.koboDeviceDeliveries.id, delivered.id) });
+      expect(row?.state).toBe('transfer_observed');
+    });
+
+    const pending = (await request('POST', `${base}/books/${book.bookId}/replacement`, { variant: 'audioless_epub' })).json();
+    expect((await request('POST', `${base}/replacements/${pending.id}/offer`)).json().state).toBe('offered');
+    expect((await request('POST', `${base}/replacements/${pending.id}/cancel`)).json()).toMatchObject({ state: 'cancelled', current: false });
+    expect((await request('GET', `${base}/books/${book.bookId}/delivery`)).json()).toMatchObject({ id: delivered.id, state: 'transfer_observed' });
+    expect((await download()).rawPayload).toEqual(sourceBytes);
+  });
+
   describe('Storyteller progress-reset regressions over live HTTP', () => {
     let origin: string;
     const cfi = 'epubcfi(/6/2!/4/2/2/1:3)';

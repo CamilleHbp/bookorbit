@@ -61,7 +61,12 @@ export class KoboDeliveryRepository {
     });
   }
 
-  async cancel(userId: number, deviceId: number, id: string) {
+  /**
+   * Cancels a pending replacement and returns whether it was cancelled. One the device has not fetched
+   * hands the book back to the delivery it replaced, or, when it replaced nothing, stops standing for the
+   * book so the next offer starts fresh.
+   */
+  async cancel(userId: number, deviceId: number, id: string): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const record = await tx.query.koboDeviceDeliveries.findFirst({
         where: and(
@@ -76,11 +81,12 @@ export class KoboDeliveryRepository {
         !record.options.replacement ||
         !['prepared', 'offered', 'transfer_observed', 'cancelled'].includes(record.state)
       )
-        return;
+        return false;
       await tx.execute(sql`select pg_advisory_xact_lock(${deviceId}, ${record.bookId})`);
+      const unfetched = record.state === 'prepared' || record.state === 'offered';
       const cancelled = await tx
         .update(schema.koboDeviceDeliveries)
-        .set({ state: 'cancelled', current: record.state === 'prepared' && record.previousId ? false : record.current, updatedAt: new Date() })
+        .set({ state: 'cancelled', current: unfetched ? false : record.current, updatedAt: new Date() })
         .where(
           and(
             eq(schema.koboDeviceDeliveries.id, id),
@@ -89,8 +95,10 @@ export class KoboDeliveryRepository {
           ),
         )
         .returning();
-      if (cancelled.length && record.state === 'prepared' && record.previousId)
+      if (!cancelled.length) return false;
+      if (unfetched && record.previousId)
         await tx.update(schema.koboDeviceDeliveries).set({ current: true }).where(eq(schema.koboDeviceDeliveries.id, record.previousId));
+      return true;
     });
   }
 
