@@ -94,6 +94,39 @@ export class KoboDeliveryRepository {
     });
   }
 
+  /** Stops a delivery from standing for its book, so the next offer starts a fresh one. */
+  async retire(userId: number, deviceId: number, id: string): Promise<void> {
+    await this.db
+      .update(schema.koboDeviceDeliveries)
+      .set({ current: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.koboDeviceDeliveries.userId, userId),
+          eq(schema.koboDeviceDeliveries.deviceId, deviceId),
+          eq(schema.koboDeviceDeliveries.id, id),
+          eq(schema.koboDeviceDeliveries.current, true),
+        ),
+      );
+  }
+
+  /**
+   * Points the device's stored bookmark at a delivery it has just downloaded. Without this, a bookmark
+   * first attributed to an earlier copy keeps every later push from the new copy uncertain.
+   */
+  async adoptForDeviceReadingState(userId: number, deviceId: number, bookId: number, id: string): Promise<void> {
+    await this.db
+      .update(schema.koboDeviceReadingStates)
+      .set({ deliveryId: id, updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.koboDeviceReadingStates.userId, userId),
+          eq(schema.koboDeviceReadingStates.deviceId, deviceId),
+          eq(schema.koboDeviceReadingStates.bookId, bookId),
+          sql`${schema.koboDeviceReadingStates.deliveryId} is distinct from ${id}`,
+        ),
+      );
+  }
+
   transition(userId: number, deviceId: number, id: string, expected: string[], state: string) {
     return this.db
       .update(schema.koboDeviceDeliveries)

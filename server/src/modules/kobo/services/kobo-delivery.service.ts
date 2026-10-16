@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { open } from 'fs/promises';
-import { ConflictException, Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { ConflictException, HttpException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import type { ReadAloudDeliveryPreference } from '@bookorbit/types';
 import { DeliveryArtifactService, type DeliveryArtifact } from '../../book/delivery-artifact.service';
 import { KoboDeliveryRepository } from '../kobo-delivery.repository';
@@ -13,6 +13,15 @@ import { sanitizeLogValue } from '../../../common/utils/log-sanitize.utils';
 import { computeFileHashFromHandle } from '../../../common/utils/file-hash.utils';
 
 export type KoboDeliveryRecord = NonNullable<Awaited<ReturnType<KoboDeliveryRepository['findCurrent']>>>;
+
+/** Failures meaning the source can no longer rebuild an offer's bytes, as opposed to the book being unreadable. */
+const STALE_DELIVERY_CODES = new Set(['DELIVERY_SOURCE_CHANGED', 'DELIVERY_ARTIFACT_UNAVAILABLE']);
+
+export function deliveryErrorCode(error: unknown): string | null {
+  if (!(error instanceof HttpException)) return null;
+  const response = error.getResponse();
+  return typeof response === 'object' && response !== null && 'code' in response && typeof response.code === 'string' ? response.code : null;
+}
 
 @Injectable()
 export class KoboDeliveryService {
@@ -123,6 +132,42 @@ export class KoboDeliveryService {
     }
   }
 
+  /**
+   * The bytes a device download is served from. A download asks for the book now, so an offer whose source
+   * can no longer rebuild it, because the file changed after it was offered, is replaced by a fresh offer of
+   * the current file instead of failing that book on every attempt. Pending replacements keep their guided flow.
+   */
+  async prepareDownload(
+    userId: number,
+    deviceId: number,
+    bookId: number,
+    deliveryId?: string,
+  ): Promise<{ record: KoboDeliveryRecord; artifact: DeliveryArtifact }> {
+    const record = await this.offer(userId, deviceId, bookId);
+    if (deliveryId && record.id !== deliveryId) throw new NotFoundException('Delivery offer is no longer current');
+    try {
+      return { record, artifact: await this.resolve(userId, deviceId, record) };
+    } catch (error) {
+      const code = deliveryErrorCode(error);
+      if (!record.current || record.options.replacement || !code || !STALE_DELIVERY_CODES.has(code)) throw error;
+      const startedAt = Date.now();
+      await this.repository.retire(userId, deviceId, record.id);
+      const fresh = await this.offer(userId, deviceId, bookId);
+      // The device learns the fresh offer's size and URL on its next sync either way.
+      await this.repository.reoffer(userId, deviceId, bookId);
+      if (fresh.metadata.format !== record.metadata.format) {
+        this.logger.warn(
+          `[kobo.delivery_refresh] [fail] userId=${userId} deviceId=${deviceId} bookId=${bookId} staleId=${record.id} freshId=${fresh.id} reason=${code} durationMs=${Date.now() - startedAt} - fresh offer changes format, the device must sync before downloading`,
+        );
+        throw new ConflictException({ code: 'KOBO_DELIVERY_FORMAT_CHANGED' });
+      }
+      this.logger.log(
+        `[kobo.delivery_refresh] [end] userId=${userId} deviceId=${deviceId} bookId=${bookId} staleId=${record.id} freshId=${fresh.id} reason=${code} durationMs=${Date.now() - startedAt} - stale offer replaced from the current file`,
+      );
+      return { record: fresh, artifact: await this.resolve(userId, deviceId, fresh) };
+    }
+  }
+
   async resolve(userId: number, deviceId: number, record: KoboDeliveryRecord): Promise<DeliveryArtifact> {
     await this.repository.assertDevice(userId, deviceId);
     await this.access.assertBookAccessible(userId, record.bookId);
@@ -222,6 +267,7 @@ export class KoboDeliveryService {
   }
 
   async transferObserved(userId: number, deviceId: number, record: KoboDeliveryRecord) {
-    await this.repository.transition(userId, deviceId, record.id, ['offered', 'transfer_observed'], 'transfer_observed');
+    const moved = await this.repository.transition(userId, deviceId, record.id, ['offered', 'transfer_observed'], 'transfer_observed');
+    if (moved.length && !record.options.replacement) await this.repository.adoptForDeviceReadingState(userId, deviceId, record.bookId, record.id);
   }
 }

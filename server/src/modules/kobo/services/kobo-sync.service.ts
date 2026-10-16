@@ -14,7 +14,7 @@ import { ContentFilterRepository } from '../../user/content-filter.repository';
 import { BookQueryBuilder } from '../../book/book-query-builder.service';
 import { MetadataExtractionService } from '../../metadata/metadata-extraction.service';
 import { SmartScopeService } from '../../smart-scope/smart-scope.service';
-import { KoboDeliveryService } from './kobo-delivery.service';
+import { KoboDeliveryService, deliveryErrorCode } from './kobo-delivery.service';
 import { KoboBookAccessService } from './kobo-book-access.service';
 import { KoboBookIdentityService } from './kobo-book-identity.service';
 import { normalizeKoboLanguage, selectKoboIsbn } from './kobo-metadata.utils';
@@ -657,7 +657,7 @@ export class KoboSyncService {
         }
       } catch (error) {
         this.logger.warn(
-          `[kobo.delivery] [fail] userId=${userId} deviceId=${snapshot?.deviceId ?? 'none'} bookId=${row.bookId} errorClass=${error instanceof Error ? error.name : 'Error'} error="${sanitizeLogValue(error instanceof Error ? error.message : String(error))}" - preparation deferred for retry`,
+          `[kobo.delivery] [fail] userId=${userId} deviceId=${snapshot?.deviceId ?? 'none'} bookId=${row.bookId} code=${deliveryErrorCode(error) ?? 'none'} errorClass=${error instanceof Error ? error.name : 'Error'} error="${sanitizeLogValue(error instanceof Error ? error.message : String(error))}" - preparation deferred for retry`,
         );
         await this.db
           .update(schema.koboSnapshotBooks)
