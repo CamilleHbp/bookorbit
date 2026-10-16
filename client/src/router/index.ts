@@ -388,7 +388,7 @@ export const routes: RouteRecordRaw[] = [
             path: 'metadata/auto-fetch',
             name: 'settings-metadata-auto-fetch',
             component: () => import('@/features/settings/metadata-auto-fetch/BookMetadataFetchSettings.vue'),
-            meta: { maxWidth: 'max-w-3xl', title: () => t('titles.metadata.auto-fetch') },
+            meta: { maxWidth: 'max-w-[100rem]', title: () => t('titles.metadata.auto-fetch') },
           },
           {
             path: 'metadata/authors',

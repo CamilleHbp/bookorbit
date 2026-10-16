@@ -13,7 +13,7 @@ const contentScroll = ref<HTMLElement | null>(null)
 
 const maxWidth = computed(() => (route.meta.maxWidth as string | undefined) ?? 'max-w-3xl')
 const match = computed(() => findSettingsNavItem(typeof route.name === 'string' ? route.name : ''))
-const pageTitle = computed(() => (match.value ? t(match.value.item.labelKey) : t('settings.nav.title')))
+const pageTitle = computed(() => (match.value ? t(match.value.item.titleKey ?? match.value.item.labelKey) : t('settings.nav.title')))
 const pageIcon = computed(() => match.value?.item.icon ?? Settings)
 /**
  * The header wants a sentence; the nav search keeps the terse one. A locale without the longer

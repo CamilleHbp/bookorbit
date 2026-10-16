@@ -61,6 +61,8 @@ export interface SettingsNavItem {
   id: string
   routeName: string
   labelKey: string
+  /** The page heading, when the short nav label would not say what the page is on its own. */
+  titleKey?: string
   descriptionKey?: string
   icon: Component
   /** Extra English search terms so the rail search finds a page by concept, not just by title. */
@@ -321,6 +323,7 @@ export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
             id: 'metadata-auto-fetch',
             routeName: 'settings-metadata-auto-fetch',
             labelKey: 'settings.metadata.tabs.auto-fetch',
+            titleKey: 'titles.metadata.auto-fetch',
             descriptionKey: 'settings.metadata.tabSubtitles.auto-fetch',
             icon: Zap,
             keywords: 'auto fetch schedule missing fields import books conditions',

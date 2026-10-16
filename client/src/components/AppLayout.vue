@@ -78,7 +78,7 @@ const viewKey = computed(() => {
         </router-view>
       </div>
     </SidebarInset>
-    <BookMetadataFetchWidget />
+    <BookMetadataFetchWidget :hide-book-card="route.name === 'settings-metadata-auto-fetch'" />
     <CommandPalette />
   </SidebarProvider>
 </template>

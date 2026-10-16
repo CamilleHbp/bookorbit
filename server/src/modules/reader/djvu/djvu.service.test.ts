@@ -189,13 +189,19 @@ describe('DjVu reader service', () => {
       await blocked;
       return '1';
     });
-    const first = service.getPageCount(1, user);
-    const second = service.getPageCount(1, user);
-    const third = service.getPageCount(1, user);
-    const rejected = expect(third).rejects.toMatchObject({ status: 503 });
-    await rejected;
+    // Requests join the queue once their file is open, so which call waits is decided by I/O, not by
+    // call order. Whichever it is, it must be the one that times out while the other two hold the slots.
+    const outcomes = [service.getPageCount(1, user), service.getPageCount(1, user), service.getPageCount(1, user)].map((request) =>
+      request.then(
+        () => 'served',
+        (error: { status?: number }) => error.status,
+      ),
+    );
+    await expect(Promise.race(outcomes)).resolves.toBe(503);
     expect(run).toHaveBeenCalledTimes(1);
     release();
-    await Promise.all([first, second]);
+    const settled = await Promise.all(outcomes);
+    expect(settled.filter((outcome) => outcome === 503)).toHaveLength(1);
+    expect(settled.filter((outcome) => outcome === 'served')).toHaveLength(2);
   });
 });

@@ -1866,6 +1866,92 @@
           "inheritFromGlobal": "Inherit from global",
           "usingGlobalDefaults": "Using global defaults.",
           "saveOverride": "Save override"
+        },
+        "scope": {
+          "ownSettings": "{count, plural, one {# own setting} other {# own settings}}",
+          "globalIntro": "Every library follows this rule unless it has its own.",
+          "globalCoverage": "{libraryCount, plural, one {Applies to # library} other {Applies to # libraries}}, {bookCount, plural, one {# book} other {# books}}.",
+          "ownLibraries": "{names} {count, plural, one {has its own rule.} other {have their own rules.}}",
+          "libraryFollows": "{library} follows the global rule. Change anything here to give it its own.",
+          "libraryOwn": "{library} has its own rule for {count, plural, one {# setting} other {# settings}}. Everything else follows the global rule.",
+          "lastRun": "Last run {when}, queued {count, plural, one {# book} other {# books}}.",
+          "neverRun": "Not run yet.",
+          "useGlobalRule": "Use the global rule",
+          "loadFailed": "Auto-fetch settings could not be loaded. Reload the page to try again.",
+          "saved": "Saved {scope}",
+          "saveFailed": "Could not save {scope}. Try again."
+        },
+        "run": {
+          "all": "Run for every library",
+          "library": "Run for {library}",
+          "saveFirst": "Runs use the saved rule. Save first.",
+          "failed": "The run could not be started. Try again."
+        },
+        "onImport": {
+          "label": "Fetch metadata for new books",
+          "hint": "Scans and uploads queue matching books right away. A fetch on import only fills empty fields; locked fields are never changed.",
+          "follow": "Follow global",
+          "on": "On",
+          "off": "Off"
+        },
+        "columns": {
+          "books": "{count, plural, one {book} other {books}}",
+          "ofTotal": "of {total}",
+          "off": "Off",
+          "own": "Own",
+          "global": "Global",
+          "useGlobal": "Use global",
+          "globalValue": "Global rule: {value}",
+          "on": "On",
+          "scoreBelowValue": "Score below {threshold}",
+          "neverFetchedSplit": "{count, plural, one {# never fetched} other {# never fetched}}",
+          "fetchedBeforeSplit": "{count, plural, one {# fetched before} other {# fetched before}}",
+          "lowScoreLabel": "Low confidence score",
+          "lowScoreHint": "Fetch books whose confidence score is under the line.",
+          "outOf": "/ 100",
+          "lowerThreshold": "Lower the threshold",
+          "raiseThreshold": "Raise the threshold",
+          "missingHint": "Fetch if any selected field is empty. Each field shows how many books lack it.",
+          "audioGroup": "Books with audio",
+          "audioHint": "{count, plural, =0 {None here have audio.} one {Only the # book with audio can lack these.} other {Only the # with audio can lack these.}}",
+          "fieldCount": "{field}: {count, plural, one {# book lacks it} other {# books lack it}}"
+        },
+        "histogram": {
+          "label": "Confidence score threshold",
+          "valueText": "Score below {threshold}"
+        },
+        "preview": {
+          "title": "What a run would fetch",
+          "matching": "{matching, plural, one {# of {total} books matches} other {# of {total} books match}}",
+          "showing": "{count, plural, one {showing the least complete} other {showing the # least complete}}",
+          "empty": "No book matches this rule, so a run would queue nothing.",
+          "unknownAuthor": "Unknown author",
+          "score": "Score {score}",
+          "more": "+{count}",
+          "missing": {
+            "title": "No title",
+            "subtitle": "No subtitle",
+            "description": "No description",
+            "cover": "No cover",
+            "audioCover": "No audiobook cover",
+            "authors": "No authors",
+            "publisher": "No publisher",
+            "isbn": "No ISBN",
+            "publishedYear": "No published year",
+            "language": "No language",
+            "pageCount": "No page count",
+            "communityRating": "No community rating",
+            "seriesName": "No series name",
+            "seriesIndex": "No series index",
+            "genres": "No genres",
+            "narrators": "No narrators",
+            "duration": "No duration",
+            "abridged": "Abridged not set"
+          }
+        },
+        "queue": {
+          "progress": "{done} of {total}",
+          "failed": "{count, plural, one {# book could not be fetched} other {# books could not be fetched}}"
         }
       },
       "providers": {
