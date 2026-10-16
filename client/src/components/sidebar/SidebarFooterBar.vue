@@ -28,7 +28,7 @@ function handleNavigate() {
 </script>
 
 <template>
-  <SidebarFooter class="border-t border-sidebar-border px-4 py-2 group-data-[collapsible=icon]:px-2">
+  <SidebarFooter class="border-t border-sidebar-border px-4 py-1 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-2">
     <div
       class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 group-data-[collapsible=icon]:grid-cols-1 group-data-[collapsible=icon]:justify-items-center group-data-[collapsible=icon]:gap-1"
     >
@@ -44,9 +44,9 @@ function handleNavigate() {
               target="_blank"
               rel="noopener noreferrer"
               :aria-label="t('components.sidebar.supportAria')"
-              class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-destructive outline-hidden transition-colors duration-150 hover:bg-(--shell-accent-wash) focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+              class="inline-flex size-[26px] shrink-0 items-center justify-center rounded-md text-destructive outline-hidden transition-colors duration-150 hover:bg-(--shell-accent-wash) focus-visible:ring-2 focus-visible:ring-sidebar-ring"
             >
-              <Heart :size="16" class="fill-current" aria-hidden="true" />
+              <Heart :size="15" class="fill-current" aria-hidden="true" />
             </a>
           </TooltipTrigger>
           <TooltipContent :side="isRail ? 'right' : 'top'">{{ t('components.sidebar.support') }}</TooltipContent>
@@ -57,7 +57,7 @@ function handleNavigate() {
         <RouterLink
           v-if="versionUi.currentLabel"
           to="/whats-new"
-          class="inline-flex min-w-0 items-center gap-1.5 rounded-md text-[13px] font-medium text-muted-foreground outline-hidden transition-colors duration-150 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+          class="inline-flex min-w-0 items-center gap-1.5 rounded-md text-[12.5px] font-medium text-muted-foreground outline-hidden transition-colors duration-150 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
           @click="handleNavigate"
         >
           <span class="truncate">{{ versionUi.currentLabel }}</span>

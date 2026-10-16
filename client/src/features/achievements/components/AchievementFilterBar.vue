@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Medal, Trophy } from '@lucide/vue'
+import { Trophy } from '@lucide/vue'
+import PageTitleRow from '@/components/page-header/PageTitleRow.vue'
 import type { FilterState } from '../types'
 
 const { t } = useI18n()
@@ -42,26 +43,13 @@ function pillClass(filter: FilterState): string {
 </script>
 
 <template>
-  <div class="relative overflow-hidden rounded-lg border border-border/60 bg-muted/35 p-2">
-    <Medal class="pointer-events-none absolute right-0 top-0 text-muted-foreground opacity-[0.05]" :size="72" aria-hidden="true" />
-
-    <div class="relative flex flex-col gap-3 sm:flex-row sm:items-center">
-      <div class="flex min-w-0 shrink-0 items-center gap-3">
-        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-background/60">
-          <Trophy class="size-6 text-primary" />
-        </div>
-        <div class="min-w-0">
-          <h1 class="text-base font-semibold tracking-tight text-foreground sm:text-md">{{ t('achievements.title') }}</h1>
-          <span class="text-muted-foreground text-sm tabular-nums">{{
-            t('achievements.tiersCount', { earned: totalEarned, total: totalAvailable })
-          }}</span>
-        </div>
-      </div>
-
-      <div class="bg-border h-px w-full sm:h-8 sm:w-px" />
-
+  <PageTitleRow :eyebrow="t('components.sidebar.zones.reading')" :title="t('achievements.title')" :icon="Trophy">
+    <template #facts>
+      <span class="tabular-nums">{{ t('achievements.tiersCount', { earned: totalEarned, total: totalAvailable }) }}</span>
+    </template>
+    <template #inline>
       <div class="-mx-1 overflow-x-auto px-1 pb-0.5 sm:mx-0 sm:px-0 sm:pb-0">
-        <div class="inline-flex min-w-max items-center gap-1 rounded-md border border-border/50 bg-background/70 p-1">
+        <div class="inline-flex min-w-max items-center gap-1 rounded-lg bg-muted p-1">
           <button :class="['shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors', pillClass('all')]" @click="handleAll">
             {{ t('achievements.filter.all') }}
           </button>
@@ -79,6 +67,6 @@ function pillClass(filter: FilterState): string {
           </button>
         </div>
       </div>
-    </div>
-  </div>
+    </template>
+  </PageTitleRow>
 </template>

@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Orbit } from '@lucide/vue'
 import type { Library, LibraryType } from '@bookorbit/types'
 import { formatCompactNumber } from '@/i18n/formatters'
-import { Sidebar, SidebarContent, SidebarHeader, SidebarRail, SidebarSeparator, useSidebar } from '@/components/ui/sidebar'
+import { Sidebar, SidebarContent, SidebarHeader, SidebarRail, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import SidebarZone from '@/components/sidebar/SidebarZone.vue'
 import SidebarNavItem from '@/components/sidebar/SidebarNavItem.vue'
 import SidebarBadge from '@/components/sidebar/SidebarBadge.vue'
@@ -13,6 +13,8 @@ import SidebarEntitySection from '@/components/sidebar/SidebarEntitySection.vue'
 import SidebarModeSwitch from '@/components/sidebar/SidebarModeSwitch.vue'
 import SidebarSectionPopover from '@/components/sidebar/SidebarSectionPopover.vue'
 import SidebarFooterBar from '@/components/sidebar/SidebarFooterBar.vue'
+import SidebarDock from '@/components/sidebar/SidebarDock.vue'
+import SidebarSearchItem from '@/components/sidebar/SidebarSearchItem.vue'
 import { useSidebarDataSync } from '@/composables/useSidebarDataSync'
 import { useSidebarNav } from '@/composables/useSidebarNav'
 import { useSidebarSections, type SidebarListKind, type SidebarSection } from '@/composables/useSidebarSections'
@@ -37,6 +39,9 @@ const { handleLibraryCreated } = useLibraryCreationRedirect()
 
 const isRail = computed(() => state.value === 'collapsed' && !isMobile.value)
 const isSettingsRoute = computed(() => typeof route.name === 'string' && route.name.startsWith('settings-'))
+/** Reading sits below the libraries and lists; everything else stays above them. */
+const topZones = computed(() => zones.value.filter((zone) => zone.id !== 'reading'))
+const bottomZones = computed(() => zones.value.filter((zone) => zone.id === 'reading'))
 
 watch(
   () => route.name,
@@ -98,22 +103,28 @@ async function onLibrarySaved(library: Library) {
   <Sidebar variant="floating" collapsible="icon">
     <!-- px-4 puts the logo on the same left edge as the nav row icons (group px-2 + row px-2). -->
     <SidebarHeader class="border-b border-sidebar-border px-4 py-2.5 group-data-[collapsible=icon]:px-2">
-      <RouterLink
-        to="/"
-        class="flex h-9 items-center gap-3 rounded-(--shell-radius) outline-hidden group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-        :aria-label="t('components.sidebar.dashboard')"
-        @click="handleNavigate"
-      >
-        <div
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--shell-radius) bg-primary ring-1 ring-(--shell-accent-line)"
-          aria-hidden="true"
+      <div class="flex min-w-0 items-center gap-1.5 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-1.5">
+        <RouterLink
+          to="/"
+          class="flex h-9 min-w-0 flex-1 items-center gap-3 rounded-(--shell-radius) outline-hidden group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+          :aria-label="t('components.sidebar.dashboard')"
+          @click="handleNavigate"
         >
-          <Orbit :size="21" class="text-primary-foreground" />
-        </div>
-        <span class="truncate font-serif text-[18px] font-semibold leading-none text-sidebar-foreground group-data-[collapsible=icon]:hidden">
-          Book<span class="text-primary"> Orbit</span>
-        </span>
-      </RouterLink>
+          <div
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--shell-radius) bg-primary ring-1 ring-(--shell-accent-line)"
+            aria-hidden="true"
+          >
+            <Orbit :size="21" class="text-primary-foreground" />
+          </div>
+          <span class="truncate font-serif text-[18px] font-semibold leading-none text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+            Book<span class="text-primary"> Orbit</span>
+          </span>
+        </RouterLink>
+        <SidebarTrigger
+          v-if="!isMobile"
+          class="-me-1.5 size-7 shrink-0 rounded-md text-sidebar-foreground hover:bg-(--shell-accent-wash) group-data-[collapsible=icon]:me-0"
+        />
+      </div>
       <SidebarModeSwitch v-if="podcastsAvailable" :mode="mode" :rail="isRail" class="mt-1.5" @switch="handleModeSwitch" />
     </SidebarHeader>
 
@@ -125,12 +136,13 @@ async function onLibrarySaved(library: Library) {
         <!-- Fixed destinations come first: they are a known height, so the variable-length
              entity sections below can never push them out of the first screenful. -->
         <SidebarZone
-          v-for="zone in zones"
+          v-for="zone in topZones"
           :key="zone.id"
           :label="zone.labelKey ? t(zone.labelKey) : null"
           :section-id="zone.sectionId ?? undefined"
           :always-open="isRail"
         >
+          <SidebarSearchItem v-if="zone.id === 'primary'" />
           <SidebarNavItem
             v-for="entry in zone.entries"
             :key="entry.id"
@@ -177,9 +189,39 @@ async function onLibrarySaved(library: Library) {
             @navigate="handleNavigate"
           />
         </template>
+
+        <template v-if="bottomZones.length">
+          <SidebarSeparator />
+          <SidebarZone
+            v-for="zone in bottomZones"
+            :key="zone.id"
+            :label="zone.labelKey ? t(zone.labelKey) : null"
+            :section-id="zone.sectionId ?? undefined"
+            :always-open="isRail"
+          >
+            <SidebarNavItem
+              v-for="entry in zone.entries"
+              :key="entry.id"
+              :is-active="entry.isActive"
+              :tooltip="entry.badge?.label ?? entry.label"
+              :to="entry.to"
+              :icon="entry.icon"
+              :label="entry.label"
+              :data-tour="entry.tourId"
+              @navigate="handleNavigate"
+            >
+              <template #badge>
+                <SidebarBadge v-if="entry.badge !== null" :tone="entry.badge.tone" :label="entry.badge.label">{{
+                  formatCompactNumber(entry.badge.value)
+                }}</SidebarBadge>
+              </template>
+            </SidebarNavItem>
+          </SidebarZone>
+        </template>
       </template>
     </SidebarContent>
 
+    <SidebarDock :is-rail="isRail" :is-mobile="isMobile" @navigate="handleNavigate" />
     <SidebarFooterBar v-if="!isSettingsRoute" :is-rail="isRail" @navigate="handleNavigate" />
 
     <SidebarRail />

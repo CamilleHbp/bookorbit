@@ -153,9 +153,9 @@
   /* Accent glow behind the top of the main column (.shell-glow). --glow-band is the style's own reach and
      --glow-reach the user's multiplier on it, written on <html>. A texture keeps its tile size at any reach;
      only the fade that reveals it follows the band. */
-  --glow-reach: 0.8;
-  --glow-band: 12rem;
-  --glow-image: radial-gradient(50% 50% at center -25px, color-mix(in oklch, var(--primary) 35%, transparent) 0%, transparent 100%);
+  --glow-reach: 0.5;
+  --glow-image: radial-gradient(50% 50% at center -25px, color-mix(in oklch, var(--primary) 38%, transparent) 0%, transparent 100%);
+  --glow-band: 20rem;
   --glow-texture: none;
   --glow-texture-size: auto;
 
@@ -309,6 +309,10 @@
 }
 
 .dark {
+  /* Every style shares one glow reach and strength, so a percentage looks the same in each; only
+     Nostalgia lays its square texture over it. */
+  --glow-image: radial-gradient(50% 50% at center -25px, color-mix(in oklch, var(--primary) 60%, transparent) 0%, transparent 100%);
+
   color-scheme: dark;
   --tint-c: 0.0175;
   --tint-c-surface: var(--tint-c);

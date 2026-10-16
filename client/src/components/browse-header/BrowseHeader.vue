@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onActivated, onBeforeUnmount, onDeactivated, provide, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
+import PageTitleRow from '@/components/page-header/PageTitleRow.vue'
+import PageMenuButton from '@/components/page-header/PageMenuButton.vue'
 import BrowseTitleSwitcher from './BrowseTitleSwitcher.vue'
 import { BROWSE_BAR_KEY, barDivider, type BrowsePlace } from './browse-header'
 
@@ -57,50 +59,36 @@ onBeforeUnmount(detach)
 </script>
 
 <template>
-  <header class="mt-2 mb-3 flex shrink-0 flex-col">
+  <!-- Folded, the bar is the page's top box, so it meets the sidebar's top edge instead of
+       keeping the title row's offset. -->
+  <header
+    class="mb-3 flex shrink-0 flex-col transition-[margin] duration-200 ease-out motion-reduce:transition-none"
+    :class="folded ? 'mt-0' : 'mt-2'"
+  >
     <div
       class="grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none"
       :class="folded ? 'mb-0 grid-rows-[0fr] opacity-0' : 'mb-3 grid-rows-[1fr] opacity-100'"
       :inert="folded || undefined"
     >
       <div class="min-h-0 overflow-hidden">
-        <div class="flex min-h-11 items-center gap-3 sm:gap-3.5">
-          <span
-            class="grid size-9 shrink-0 place-items-center rounded-[9px] border border-primary/30 bg-primary/12 text-primary sm:size-11 sm:rounded-[10px]"
-            aria-hidden="true"
-          >
-            <AppIcon :icon="icon" :fallback="fallbackIcon" :size="20" />
-          </span>
-          <div class="flex min-w-0 flex-1 flex-col justify-center">
-            <span class="text-[10.5px] leading-[13px] font-bold tracking-[0.08em] text-muted-foreground uppercase">{{ eyebrow }}</span>
-            <div class="flex min-w-0 items-baseline gap-3">
-              <h1 class="flex max-w-full min-w-0 shrink-0">
-                <BrowseTitleSwitcher v-if="switcher" :place="switcher" :title="title" />
-                <span
-                  v-else
-                  class="block truncate text-[19px] leading-[25px] font-bold tracking-[-0.015em] text-foreground sm:text-[22px] sm:leading-[27px]"
-                >
-                  {{ title }}
-                </span>
-              </h1>
-              <p
-                v-if="$slots.facts"
-                class="flex min-w-0 shrink-[3] items-center gap-2 overflow-hidden text-[13px] whitespace-nowrap text-muted-foreground"
-              >
-                <slot name="facts" />
-              </p>
-            </div>
-          </div>
-          <div v-if="$slots.actions" class="flex shrink-0 items-center gap-2">
+        <PageTitleRow :eyebrow="eyebrow" :title="title" :icon="icon" :fallback-icon="fallbackIcon">
+          <template v-if="switcher" #title>
+            <BrowseTitleSwitcher :place="switcher" :title="title" />
+          </template>
+          <template v-if="$slots.facts" #facts>
+            <slot name="facts" />
+          </template>
+          <template v-if="$slots.actions" #actions>
             <slot name="actions" />
-          </div>
-        </div>
+          </template>
+        </PageTitleRow>
       </div>
     </div>
 
     <div ref="barRef" class="flex h-12 min-w-0 items-center gap-1 rounded-[10px] border border-border bg-card px-[7px] shadow-xs">
       <template v-if="folded">
         <div class="flex shrink-0 items-center gap-2 ps-1 pe-1">
+          <PageMenuButton class="-ms-1 size-8" />
           <span class="grid size-[26px] place-items-center rounded-[7px] bg-primary/12 text-primary" aria-hidden="true">
             <AppIcon :icon="icon" :fallback="fallbackIcon" :size="15" />
           </span>

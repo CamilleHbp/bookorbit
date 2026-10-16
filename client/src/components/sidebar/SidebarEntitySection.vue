@@ -260,7 +260,7 @@ function onGripBlur(id: number) {
               <template v-if="dragEnabled" #trailing>
                 <button
                   type="button"
-                  class="drag-handle flex h-8 w-4 shrink-0 cursor-grab items-center justify-center rounded-sm transition-colors duration-150 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                  class="drag-handle flex h-7 w-4 shrink-0 cursor-grab items-center justify-center rounded-sm transition-colors duration-150 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
                   :class="liftedId === item.id ? 'text-primary' : 'text-muted-foreground'"
                   :aria-label="gripLabel(item)"
                   :aria-pressed="liftedId === item.id"

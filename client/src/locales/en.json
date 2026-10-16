@@ -3846,9 +3846,58 @@
         "serverFonts": "Fonts installed for every reader on this server.",
         "bookDock": "Quick actions shown on book pages.",
         "auditLog": "Who changed what, and when.",
-        "requests": "Sources, download clients, and what happens to a book once it downloads."
+        "requests": "Sources, download clients, and what happens to a book once it downloads.",
+        "readerTts": "Read-aloud voice, speed, and narration defaults.",
+        "adminTts": "Text-to-speech engines available to every reader on this server."
       },
-      "backToApp": "Back to library"
+      "backToApp": "Back to library",
+      "pageDescriptions": {
+        "profile": "Your name, photo, timezone and achievement tracking, plus your password and the sign-in providers linked to this account.",
+        "appearance-theme": "Choose where your appearance settings are saved, then set the style, colour scheme, accent, corners, surface brightness and the pattern behind your library.",
+        "appearance-book-covers": "How covers look across the app: placeholder art for books without one, how covers fit their slots, spine and gloss effects, and the cover tint on book pages.",
+        "appearance-icons": "Upload your own icons to use alongside the built-in set for libraries, smart scopes and collections.",
+        "appearance-layout": "Cover sizes and spacing for the library grid, the cover shown for a collapsed series, and how the author grid is laid out.",
+        "appearance-behavior": "What opening a book from a grid or list does, whether series collapse into one card, and whether Book Requests appear in this account.",
+        "appearance-language": "The language BookOrbit uses for menus, labels and messages, and the regional formats for dates and numbers.",
+        "reader-ebook": "Defaults for the eBook reader: whether new books start with your settings, page flow and columns, theme, and typography such as font, size and spacing.",
+        "reader-pdf": "How PDFs open: page by page or one continuous scroll, which page starts a two-page spread, and the default zoom fit.",
+        "reader-comics": "How comics read: reading mode and direction, single or two-page spreads, fit, wide-page handling, and moving on to the next book in the series.",
+        "reader-audio": "The starting speed and volume for new audiobooks, and how far the skip back and skip forward buttons jump.",
+        "reader-fonts": "Upload your own fonts for the reader, and choose which fonts shared by your server administrator appear in it.",
+        "reader-general": "Where your reader preferences are saved, and the defaults shared by every reading mode.",
+        "tts": "Your default voice and speed when BookOrbit reads a book aloud.",
+        "notifications": "Choose which events notify you, from finished scans and metadata fetches to file renames, imports and Book Dock results.",
+        "privacy": "Decide how much of your reading activity administrators can see, preview your shared profile, and check who has viewed it.",
+        "restrictions": "Content limits set on this account, such as age ratings and hidden content, and what they keep out of your libraries.",
+        "libraries": "Every library at a glance: its folders, what it holds, how it is scanned and when it last ran. Add, edit or rescan libraries here.",
+        "metadata-providers": "Turn metadata sources on or off, add API keys or cookies where a source needs them, and test the credentials against the live service.",
+        "metadata-field-rules": "Choose which providers fill each metadata field and in what order, how values are merged, and how genres and provider IDs are collected.",
+        "metadata-custom-fields": "Create your own metadata fields, choose their type and the libraries that use them, and reorder or archive them.",
+        "metadata-score": "Decide how much each metadata field counts towards the completeness score shown on every book.",
+        "metadata-auto-fetch": "Fetch book metadata automatically when books are imported or are missing details, with overrides for each library.",
+        "metadata-authors": "Fetch author biographies and photos automatically, choose the order sources are tried, and decide which authors qualify.",
+        "metadata-search-cache": "Keep provider answers so repeat searches are fast and still work when a provider is down, and control how long and how much is kept.",
+        "metadata-genre-blocklist": "Genre values listed here are stripped from provider results before metadata is written, so labels like Audiobook stay out of your books.",
+        "metadata-reminders": "Choose which missing fields show up in book reminders. This changes the reminders only, not metadata scores.",
+        "file-naming": "Folder and file name patterns used when BookOrbit renames books on disk, with a preview of the result and what happens when a value is missing.",
+        "maintenance": "Server housekeeping: the upload size limit, past imports, rebuilding recommendations, backfilling achievements and checking for updates.",
+        "kobo": "Connect Kobo e-readers, choose how books, shelves and reading progress sync, and follow each device's recent sync activity.",
+        "koreader": "Sync progress, reading activity and highlights with KOReader, get the sync URL and plugin, and manage the devices that connect.",
+        "opds": "Turn on the OPDS catalog and create accounts so third-party reading apps can browse and download your books.",
+        "email": "Manage the addresses books are sent to, such as Kindle inboxes, star the default one, and group recipients to send to several at once.",
+        "hardcover": "Connect your Hardcover account and choose when reading status, progress and ratings sync, and how synced books appear there.",
+        "readwise": "Connect your Readwise account to send your highlights there automatically.",
+        "storygraph": "Connect your StoryGraph account using your browser session cookies to sync reading progress and status.",
+        "users": "Create and manage accounts, their roles, permissions and library access, and see which accounts need attention.",
+        "account-activity": "See when each account was last active and how it signs in, and open per-user reading and session insights.",
+        "magic-links": "Create shareable links that sign someone in without a password, and revoke them when they are no longer needed.",
+        "oidc": "Connect a single sign-on provider such as Keycloak, map its claims, and decide how new accounts are created.",
+        "requests": "Where BookOrbit searches for requested books, which download clients fetch them, and what happens once a download finishes.",
+        "admin-tts": "The text-to-speech engines readers can use for read-aloud, the voices offered from each, and the order they appear in.",
+        "book-dock": "The Book Dock drop folder, automatic metadata fetching for new files, and the score at which files are finalized on their own.",
+        "server-fonts": "Upload fonts once for every reader on this server. Each reader can still hide any of them.",
+        "audit-log": "A searchable record of who changed what and when, filterable by event, person, affected item and date."
+      }
     },
     "field": {
       "required": "(required)"
@@ -5503,7 +5552,8 @@
       },
       "header": {
         "previousBook": "Previous book",
-        "nextBook": "Next book"
+        "nextBook": "Next book",
+        "backToLibrary": "Back to {library}"
       },
       "tabs": {
         "details": "Details",
@@ -8241,7 +8291,8 @@
       "updateTooltip": "{version} update available",
       "openUpdateRelease": "Open the {version} release on GitHub",
       "zones": {
-        "browse": "Browse"
+        "browse": "Browse",
+        "reading": "Reading"
       },
       "reorder": {
         "gripAria": "Reorder {name}",
@@ -13143,5 +13194,56 @@
       "koreaderSaveFailed": "Could not save the KOReader EPUB delivery setting. Try again.",
       "koreaderSaved": "KOReader EPUB delivery setting saved."
     }
+  },
+  "commandPalette": {
+    "title": "Search",
+    "description": "Search books, authors, series and settings, jump to a place, or run an action.",
+    "placeholder": "Search books, authors, series, or go to…",
+    "close": "Close search",
+    "clear": "Clear search",
+    "tabs": {
+      "all": "All",
+      "books": "Books",
+      "authors": "Authors",
+      "series": "Series",
+      "settings": "Settings"
+    },
+    "sections": {
+      "continueReading": "Continue Reading",
+      "goTo": "Go to",
+      "actions": "Actions",
+      "books": "Books",
+      "authors": "Authors",
+      "series": "Series",
+      "settings": "Settings"
+    },
+    "kinds": {
+      "author": "Author",
+      "series": "Series",
+      "library": "Library",
+      "smartScope": "Smart scope",
+      "collection": "Collection",
+      "page": "Page",
+      "setting": "Setting"
+    },
+    "showAllBooks": "{count, plural, one {Show # book} other {Show all # books}}",
+    "showAllAuthors": "{count, plural, one {Show # author} other {Show all # authors}}",
+    "showAllSeries": "{count, plural, one {Show # series} other {Show all # series}}",
+    "showAllSettings": "{count, plural, one {Show # setting} other {Show all # settings}}",
+    "actions": {
+      "lightTheme": "Switch to light theme",
+      "darkTheme": "Switch to dark theme"
+    },
+    "hints": {
+      "navigate": "Navigate",
+      "open": "Open",
+      "filter": "Filter",
+      "close": "Close"
+    },
+    "keys": {
+      "escape": "esc",
+      "tab": "tab"
+    },
+    "resultCount": "{count, plural, =0 {No results} one {# result} other {# results}}"
   }
 }

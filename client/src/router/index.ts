@@ -203,10 +203,11 @@ export const routes: RouteRecordRaw[] = [
         path: '',
         name: 'dashboard',
         component: () => import('@/views/DashboardView.vue'),
-        meta: { title: () => t('titles.dashboard') },
+        meta: { titleRow: true, title: () => t('titles.dashboard') },
       },
       {
         path: '/settings',
+        meta: { titleRow: true },
         component: () => import('@/views/SettingsView.vue'),
         children: [
           { path: '', redirect: { name: 'settings-appearance-theme' } },
@@ -581,7 +582,7 @@ export const routes: RouteRecordRaw[] = [
         path: '/book-dock',
         name: 'book-dock',
         component: () => import('@/views/BookDockView.vue'),
-        meta: { title: () => t('titles.bookDock') },
+        meta: { titleRow: true, title: () => t('titles.bookDock') },
       },
       // A request opens as a drawer over the list rather than as its own page, but it keeps its
       // own URL: these are children so a hard load of /requests/:id renders the list underneath.
@@ -589,7 +590,7 @@ export const routes: RouteRecordRaw[] = [
         path: '/requests',
         name: 'book-requests',
         component: () => import('@/features/book-requests/BookRequestsPage.vue'),
-        meta: { title: () => t('titles.bookRequests') },
+        meta: { titleRow: true, title: () => t('titles.bookRequests') },
         children: [
           {
             path: ':id',
@@ -609,19 +610,19 @@ export const routes: RouteRecordRaw[] = [
         path: '/whats-new',
         name: 'whats-new',
         component: () => import('@/features/whats-new/WhatsNewView.vue'),
-        meta: { title: () => t('titles.whatsNew') },
+        meta: { titleRow: true, title: () => t('titles.whatsNew') },
       },
       {
         path: '/annotations',
         name: 'annotations',
         component: () => import('@/features/annotations/views/AnnotationsHubView.vue'),
-        meta: { title: () => t('titles.annotations') },
+        meta: { titleRow: true, title: () => t('titles.annotations') },
       },
       {
         path: '/statistics',
         name: 'statistics',
         component: () => import('@/features/statistics/components/StatisticsPage.vue'),
-        meta: { title: resolveStatisticsTitle },
+        meta: { titleRow: true, title: resolveStatisticsTitle },
         beforeEnter: (to) => {
           if (to.query.tab === 'achievements') {
             return { name: 'achievements' }
@@ -632,56 +633,50 @@ export const routes: RouteRecordRaw[] = [
         path: '/achievements',
         name: 'achievements',
         component: () => import('@/views/AchievementsView.vue'),
-        meta: { title: () => t('titles.achievements') },
+        meta: { titleRow: true, title: () => t('titles.achievements') },
       },
       {
         path: '/libraries',
         name: 'libraries',
         component: () => import('@/features/library/views/LibrariesView.vue'),
-        meta: { title: () => t('titles.libraries') },
+        meta: { titleRow: true, title: () => t('titles.libraries') },
       },
       {
         path: '/smart-scopes',
         name: 'smart-scopes',
         component: () => import('@/features/smart-scope/views/SmartScopesView.vue'),
-        meta: { title: () => t('titles.smartScopes') },
+        meta: { titleRow: true, title: () => t('titles.smartScopes') },
       },
       {
         path: '/collections',
         name: 'collections',
         component: () => import('@/features/collection/views/CollectionsView.vue'),
-        meta: { title: () => t('titles.collections') },
+        meta: { titleRow: true, title: () => t('titles.collections') },
       },
       {
         path: '/library/:id',
         name: 'library',
         component: () => import('@/views/HomeView.vue'),
-        meta: {
-          title: (to) => fallbackById('titles.library', numericParam(to, 'id')),
-        },
+        meta: { titleRow: true, title: (to) => fallbackById('titles.library', numericParam(to, 'id')) },
       },
       ...PODCAST_APP_ROUTES,
       {
         path: '/smart-scope/:id',
         name: 'smartScope',
         component: () => import('@/views/SmartScopeView.vue'),
-        meta: {
-          title: (to) => fallbackById('titles.smartScope', numericParam(to, 'id')),
-        },
+        meta: { titleRow: true, title: (to) => fallbackById('titles.smartScope', numericParam(to, 'id')) },
       },
       {
         path: '/collection/:id',
         name: 'collection',
         component: () => import('@/views/CollectionView.vue'),
-        meta: {
-          title: (to) => fallbackById('titles.collection', numericParam(to, 'id')),
-        },
+        meta: { titleRow: true, title: (to) => fallbackById('titles.collection', numericParam(to, 'id')) },
       },
       {
         path: '/authors',
         name: 'authors',
         component: () => import('@/features/author/views/AuthorsView.vue'),
-        meta: { title: () => t('titles.authors') },
+        meta: { titleRow: true, title: () => t('titles.authors') },
       },
       {
         path: '/authors/:id',
@@ -695,7 +690,7 @@ export const routes: RouteRecordRaw[] = [
         path: '/series',
         name: 'series',
         component: () => import('@/features/series/views/SeriesView.vue'),
-        meta: { title: () => t('titles.series') },
+        meta: { titleRow: true, title: () => t('titles.series') },
       },
       {
         path: '/series/:seriesId',
