@@ -1546,7 +1546,7 @@ watch(
           </template>
         </div>
 
-        <div class="mt-3 flex items-center gap-1" @mouseleave="hoverRating = null">
+        <div class="mt-3 flex flex-wrap items-center gap-x-1 gap-y-1.5" @mouseleave="hoverRating = null">
           <div class="flex items-center gap-1">
             <template v-if="canEditMetadata">
               <Tooltip v-for="star in ratingStars" :key="star">
@@ -1757,7 +1757,7 @@ watch(
           <div
             ref="genreMeasureContainer"
             aria-hidden="true"
-            class="pointer-events-none invisible absolute left-0 top-0 -z-10 flex w-full items-center gap-1.5 whitespace-nowrap"
+            class="pointer-events-none invisible absolute left-0 top-0 -z-10 flex w-full items-center gap-1.5 overflow-hidden whitespace-nowrap"
           >
             <span
               v-for="(genre, index) in book.genres"
