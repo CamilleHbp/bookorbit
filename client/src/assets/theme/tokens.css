@@ -331,6 +331,11 @@
   --medal-blank-glyph: color-mix(in oklch, var(--muted-foreground) 70%, var(--card));
   --medal-shadow: oklch(0.2 0.02 260 / 0.22);
   --shelf-line: color-mix(in oklch, var(--foreground) 14%, transparent);
+  /* Sign-in pages: a bookplate pasted on an endpaper. Light mode prints the plate on a warm sheet. */
+  --plate: oklch(0.975 0.012 84);
+  --plate-rule: color-mix(in oklch, var(--foreground) 42%, transparent);
+  --endpaper: color-mix(in oklch, var(--primary) 5%, var(--background));
+  --endpaper-ink: color-mix(in oklch, var(--primary) 14%, var(--background));
 }
 
 @media (min-width: 40rem) {
@@ -548,4 +553,8 @@
   --medal-blank-glyph: color-mix(in oklch, var(--muted-foreground) 62%, var(--card));
   --medal-shadow: oklch(0 0 0 / 0.55);
   --shelf-line: color-mix(in oklch, var(--foreground) 12%, transparent);
+  --plate: var(--card);
+  --plate-rule: color-mix(in oklch, var(--foreground) 34%, transparent);
+  --endpaper: color-mix(in oklch, var(--primary) 7%, var(--background));
+  --endpaper-ink: color-mix(in oklch, var(--primary) 17%, var(--background));
 }
