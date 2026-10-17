@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 
-import { KoboDeliveryService, isSettledDelivery } from './kobo-delivery.service';
+import { KoboDeliveryService, isSettledDelivery, isUnconfirmedReplacement } from './kobo-delivery.service';
 import { DeliveryArtifactService } from '../../book/delivery-artifact.service';
 import { KepubContext } from '../../position-converter/kobo-span-converter.service';
 import { BookReadService } from '../../book/book-read.service';
@@ -72,20 +72,25 @@ export class KoboKepubContextService {
    * `followDeliverySource` resolves a device whose copy was built from a file that is no longer the
    * book's primary against that file, for callers that keep the device's progress on it. Without it such
    * a copy is unavailable, since its positions do not belong to the primary file.
+   *
+   * `outgoing` also resolves a book's first delivery before the device has downloaded it, for a bookmark
+   * sent to the device: it downloads exactly those bytes, so a location in them is where the book opens.
+   * Positions coming from the device are not trusted until the transfer is observed.
    */
   async resolveForBook(
     userId: number,
     bookId: number,
     deviceId?: number,
-    options: { followDeliverySource?: boolean } = {},
+    options: { followDeliverySource?: boolean; outgoing?: boolean } = {},
   ): Promise<KepubContextResult> {
     if (deviceId && this.deliveries) {
       const settings = await this.koboSettingsService.getSettings(userId);
       const record = await this.deliveries.current(userId, deviceId, bookId);
       if (record && record.state === 'prepared' && record.previousId) return this.resolveForDelivery(userId, bookId, deviceId, record.previousId);
-      if (!record || record.state === 'offered' || record.state === 'prepared' || record.state === 'cancelled')
+      const firstOffer = Boolean(options.outgoing && record?.state === 'offered' && !isUnconfirmedReplacement(record));
+      if (!record || (!firstOffer && ['offered', 'prepared', 'cancelled'].includes(record.state)))
         return { ok: false, reason: 'unknown_delivery', settings };
-      if (!isSettledDelivery(record)) return { ok: false, reason: 'replacement_events_ambiguous', settings };
+      if (!firstOffer && !isSettledDelivery(record)) return { ok: false, reason: 'replacement_events_ambiguous', settings };
       if (record.metadata.format !== 'kepub') return { ok: false, reason: 'kepub_required', settings };
       try {
         const artifact = await this.deliveries.resolve(userId, deviceId, record);

@@ -95,7 +95,7 @@ export class KoboProgressBridgeService {
 
   async cfiToKoboBookmark(userId: number, bookId: number, cfi: string, deviceId?: number): Promise<KoboBookmarkPoint | null> {
     try {
-      const kepub = await this.kepubContextService.resolveForBook(userId, bookId, deviceId, { followDeliverySource: true });
+      const kepub = await this.kepubContextService.resolveForBook(userId, bookId, deviceId, { followDeliverySource: true, outgoing: true });
       if (!kepub.ok) return this.logDegraded('cfi_to_bookmark', userId, bookId, kepub.reason);
 
       try {

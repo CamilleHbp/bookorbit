@@ -86,4 +86,36 @@ describe('KoboKepubContextService', () => {
       ctx: { kepubPath: '/cache/copy.kepub.epub', fileHash: 'sha' },
     });
   });
+
+  it('resolves a first delivery the device has not downloaded yet only for a bookmark sent to it', async () => {
+    const { file, conversion, binary } = makeContext('epub');
+    const offered = {
+      id: 'first',
+      state: 'offered',
+      previousId: null,
+      sourceFileId: 12,
+      options: { hyphenate: false, converterVersion: 'v1' },
+      metadata: { format: 'kepub' },
+    };
+    const deliveries = {
+      current: vi.fn().mockResolvedValue(offered),
+      resolve: vi.fn().mockResolvedValue({ path: '/cache/first.kepub.epub', sha256: 'sha', release: vi.fn() }),
+      findSourceFile: vi.fn(),
+    };
+    const service = new KoboKepubContextService(
+      { findPrimaryReaderFilesByBookIds: vi.fn().mockResolvedValue([file]) } as never,
+      { getSettings: vi.fn().mockResolvedValue({ convertToKepub: true }) } as never,
+      conversion as never,
+      binary as never,
+      deliveries as never,
+    );
+
+    await expect(service.resolveForBook(7, 3, 11)).resolves.toMatchObject({ ok: false, reason: 'unknown_delivery' });
+    await expect(service.resolveForBook(7, 3, 11, { outgoing: true })).resolves.toMatchObject({
+      ok: true,
+      ctx: { kepubPath: '/cache/first.kepub.epub' },
+    });
+    deliveries.current.mockResolvedValue({ ...offered, previousId: 'earlier', options: { ...offered.options, replacement: true } });
+    await expect(service.resolveForBook(7, 3, 11, { outgoing: true })).resolves.toMatchObject({ ok: false, reason: 'unknown_delivery' });
+  });
 });

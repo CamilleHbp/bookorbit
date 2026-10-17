@@ -23,6 +23,16 @@ describe('KoboProgressBridgeService', () => {
     warnSpy.mockRestore();
   });
 
+  it('lets only a bookmark sent to the device use a copy it has not downloaded yet', async () => {
+    kepubContextService.resolveForBook.mockResolvedValue({ ok: false, reason: 'unknown_delivery', settings: {} });
+
+    await makeService().cfiToKoboBookmark(1, 44, 'epubcfi(/6/8!/4/2/2/1:0)', 7);
+    await makeService().koboBookmarkToCanonical(1, 44, 'OEBPS/ch7.xhtml', 'kobo.31.1', 7);
+
+    expect(kepubContextService.resolveForBook).toHaveBeenNthCalledWith(1, 1, 44, 7, { followDeliverySource: true, outgoing: true });
+    expect(kepubContextService.resolveForBook).toHaveBeenNthCalledWith(2, 1, 44, 7, { followDeliverySource: true });
+  });
+
   describe('narrationToKoboBookmark', () => {
     it('turns the narrated sentence into a text position, then into a Kobo span', async () => {
       positionConverter.fragmentToPositions.mockResolvedValue({ status: 'exact', cfi: 'epubcfi(/6/20!/4/2/82/8,/1:0,/1:0)' });
@@ -38,7 +48,7 @@ describe('KoboProgressBridgeService', () => {
         makeService().narrationToKoboBookmark(1, 44, 55, { fragment: 'OEBPS/xhtml/chapter6.xhtml#chapter6-s161', sectionIndex: 9 }, 7),
       ).resolves.toEqual({ source: 'OEBPS/xhtml/chapter6.xhtml', value: 'kobo.43.3', contentSourceProgressPercent: 61.9 });
       expect(positionConverter.fragmentToPositions).toHaveBeenCalledWith({ bookFileId: 55, chapterIndex: 9, fragment: 'chapter6-s161' });
-      expect(kepubContextService.resolveForBook).toHaveBeenCalledWith(1, 44, 7, { followDeliverySource: true });
+      expect(kepubContextService.resolveForBook).toHaveBeenCalledWith(1, 44, 7, { followDeliverySource: true, outgoing: true });
     });
 
     it('degrades to a percent and says why when the narrated sentence cannot be found', async () => {
