@@ -786,6 +786,17 @@ describe('KoboReadingStateService', () => {
       expect(insert.values).toHaveBeenCalledWith(expect.objectContaining({ bookFileId: 55, percentage, cfi: null }));
       expect(userBookStatusService.autoUpdate).toHaveBeenCalled();
     });
+    it('keeps a device copy built from a file that stopped being primary on that file', async () => {
+      const { db, insert } = resetDb();
+      const queue = [[{ fileId: 55 }], [{ id: 66 }], [{ percentage: 61, cfi: savedCfi, updatedAt: new Date(previousAt) }]];
+      db.select.mockImplementation(() => makeSelectChain(queue.shift() ?? []));
+      await makeService(db, {
+        current: vi.fn().mockResolvedValue({ id: 'old', state: 'transfer_observed', options: {}, sourceFileId: 66 }),
+      }).upsertState(1, 5, { CurrentBookmark: { ProgressPercent: 70, LastModified: incomingAt } }, 1, 99, true, 77);
+      expect(insert.values).toHaveBeenCalledWith(expect.objectContaining({ bookFileId: 66, percentage: 70 }));
+      expect(insert.values).not.toHaveBeenCalledWith(expect.objectContaining({ bookFileId: 55 }));
+      expect(bookService.syncAudioProgressForExternalEbookProgress).toHaveBeenCalledWith(1, 5, 66, 70, expect.anything());
+    });
     it('keeps the previous copy attributable while replacement is only prepared', async () => {
       const { db, insert } = resetDb();
       await makeService(db, {

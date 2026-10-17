@@ -70,7 +70,7 @@ export class KoboProgressBridgeService {
     deviceId?: number,
   ): Promise<CanonicalProgressPoint | null> {
     try {
-      const kepub = await this.kepubContextService.resolveForBook(userId, bookId, deviceId);
+      const kepub = await this.kepubContextService.resolveForBook(userId, bookId, deviceId, { followDeliverySource: true });
       if (!kepub.ok) return this.logDegraded('bookmark_to_canonical', userId, bookId, kepub.reason);
 
       try {
@@ -95,7 +95,7 @@ export class KoboProgressBridgeService {
 
   async cfiToKoboBookmark(userId: number, bookId: number, cfi: string, deviceId?: number): Promise<KoboBookmarkPoint | null> {
     try {
-      const kepub = await this.kepubContextService.resolveForBook(userId, bookId, deviceId);
+      const kepub = await this.kepubContextService.resolveForBook(userId, bookId, deviceId, { followDeliverySource: true });
       if (!kepub.ok) return this.logDegraded('cfi_to_bookmark', userId, bookId, kepub.reason);
 
       try {

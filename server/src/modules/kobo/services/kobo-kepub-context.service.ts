@@ -68,7 +68,17 @@ export class KoboKepubContextService {
     }
   }
 
-  async resolveForBook(userId: number, bookId: number, deviceId?: number): Promise<KepubContextResult> {
+  /**
+   * `followDeliverySource` resolves a device whose copy was built from a file that is no longer the
+   * book's primary against that file, for callers that keep the device's progress on it. Without it such
+   * a copy is unavailable, since its positions do not belong to the primary file.
+   */
+  async resolveForBook(
+    userId: number,
+    bookId: number,
+    deviceId?: number,
+    options: { followDeliverySource?: boolean } = {},
+  ): Promise<KepubContextResult> {
     if (deviceId && this.deliveries) {
       const settings = await this.koboSettingsService.getSettings(userId);
       const record = await this.deliveries.current(userId, deviceId, bookId);
@@ -79,8 +89,23 @@ export class KoboKepubContextService {
       if (record.metadata.format !== 'kepub') return { ok: false, reason: 'kepub_required', settings };
       try {
         const artifact = await this.deliveries.resolve(userId, deviceId, record);
-        const file = await this.resolveReaderFile(bookId);
-        if (!file || file.id !== record.sourceFileId) {
+        const primary = await this.resolveReaderFile(bookId);
+        const source = primary?.id !== record.sourceFileId && options.followDeliverySource ? await this.deliveries.findSourceFile(record) : null;
+        const file: KepubReaderFile | null =
+          primary && primary.id === record.sourceFileId
+            ? primary
+            : source
+              ? {
+                  id: source.id,
+                  bookId: source.bookId,
+                  absolutePath: source.absolutePath,
+                  format: source.format,
+                  fileHash: source.fileHash,
+                  sizeBytes: source.sizeBytes,
+                  mediaOverlayAvailable: source.mediaOverlayAvailable,
+                }
+              : null;
+        if (!file) {
           await artifact.release();
           return { ok: false, reason: 'historical_source_unavailable', settings };
         }

@@ -38,7 +38,7 @@ describe('KoboProgressBridgeService', () => {
         makeService().narrationToKoboBookmark(1, 44, 55, { fragment: 'OEBPS/xhtml/chapter6.xhtml#chapter6-s161', sectionIndex: 9 }, 7),
       ).resolves.toEqual({ source: 'OEBPS/xhtml/chapter6.xhtml', value: 'kobo.43.3', contentSourceProgressPercent: 61.9 });
       expect(positionConverter.fragmentToPositions).toHaveBeenCalledWith({ bookFileId: 55, chapterIndex: 9, fragment: 'chapter6-s161' });
-      expect(kepubContextService.resolveForBook).toHaveBeenCalledWith(1, 44, 7);
+      expect(kepubContextService.resolveForBook).toHaveBeenCalledWith(1, 44, 7, { followDeliverySource: true });
     });
 
     it('degrades to a percent and says why when the narrated sentence cannot be found', async () => {

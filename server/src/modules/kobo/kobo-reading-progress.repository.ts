@@ -18,6 +18,15 @@ export class KoboReadingProgressRepository {
     return file?.fileId ?? null;
   }
 
+  async isReaderFileOfBook(bookId: number, fileId: number): Promise<boolean> {
+    const [file] = await this.db
+      .select({ id: schema.bookFiles.id })
+      .from(schema.bookFiles)
+      .where(and(eq(schema.bookFiles.id, fileId), eq(schema.bookFiles.bookId, bookId), inArray(schema.bookFiles.format, ['epub', 'kepub'])))
+      .limit(1);
+    return Boolean(file);
+  }
+
   async findForFile(userId: number, fileId: number) {
     const [progress] = await this.db
       .select({

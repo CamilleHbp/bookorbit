@@ -17,7 +17,7 @@ import {
 } from '../kobo-statistics-session.util';
 import { KoboAnalyticsResolverService } from './kobo-analytics-resolver.service';
 import { KoboReadingProgressRepository } from '../kobo-reading-progress.repository';
-import { KoboDeliveryService, isSettledDelivery, isUnconfirmedReplacement } from './kobo-delivery.service';
+import { KoboDeliveryService, isSettledDelivery, isUnconfirmedReplacement, type KoboDeliveryRecord } from './kobo-delivery.service';
 import { KoboBookAccessService } from './kobo-book-access.service';
 import { KoboBookIdentityService } from './kobo-book-identity.service';
 import { KoboProgressBridgeService, type CanonicalProgressPoint } from './kobo-progress-bridge.service';
@@ -187,7 +187,7 @@ export class KoboReadingStateService {
     };
     let guardBackwards = uncertainDelivery || initialZero || replacedCopy;
     if (guardBackwards && mergedPercent !== null) {
-      const fileId = await this.progressRepository.findPrimaryFileId(bookId);
+      const fileId = await this.progressFileFor(bookId, delivery);
       const canonical = fileId ? await this.progressRepository.findForFile(userId, fileId) : null;
       const savedPercent = canonical?.percentage ?? this.extractPercent(this.asJsonObj(shared?.currentBookmark));
       protectedRegression = savedPercent !== null && savedPercent > mergedPercent + PROGRESS_EPSILON;
@@ -225,6 +225,7 @@ export class KoboReadingStateService {
         uncertainDelivery ? null : this.extractContentSourceProgressPercent(mergedBookmark),
         point,
         guardBackwards,
+        delivery,
       ));
     }
 
@@ -495,7 +496,7 @@ export class KoboReadingStateService {
         ('deliveryId' in row && row.deliveryId !== delivery.id) ||
         this.extractPercent(this.asJsonObj(row.currentBookmark)) === 0),
     );
-    const refreshed = await this.refreshBookmarkFromHub(userId, bookId, row, deviceId, retainSavedProgress).catch((error: unknown) => {
+    const refreshed = await this.refreshBookmarkFromHub(userId, bookId, row, deviceId, retainSavedProgress, delivery).catch((error: unknown) => {
       const err = error instanceof Error ? error : new Error(String(error));
       this.logger.warn(
         `[kobo.reading_state_refresh] [fail] userId=${userId} bookId=${bookId} errorClass=${err.constructor.name} error="${sanitizeLogValue(err.message)}" - hub bookmark refresh failed, serving stored bookmark`,
@@ -556,12 +557,13 @@ export class KoboReadingStateService {
     state: { currentBookmark: unknown; lastModifiedKobo: string | null; priorityTimestamp: string | null },
     deviceId?: number,
     retainSavedProgress = false,
+    delivery?: KoboDeliveryRecord | null,
   ): Promise<{ bookmark: JsonObj; lastModifiedKobo: string } | null> {
     const bookmark = this.asJsonObj(state.currentBookmark);
     const settings = await this.settingsService.getSettings(userId);
     if (!settings.twoWayProgressSync && !retainSavedProgress) return null;
 
-    const fileId = await this.progressRepository.findPrimaryFileId(bookId);
+    const fileId = deviceId ? await this.progressFileFor(bookId, delivery) : await this.progressRepository.findPrimaryFileId(bookId);
     if (!fileId) return null;
     const progress = await this.progressRepository.findForFile(userId, fileId);
     if (!progress || (!deviceId && progress.koboLocationValue)) return null;
@@ -669,6 +671,18 @@ export class KoboReadingStateService {
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
+  /**
+   * The file a device's progress is kept on: the one its copy was built from, which stops being the
+   * book's primary when the library's format order or the book's files change. The device's positions
+   * belong to that file, and BookOrbit's sibling sync carries progress from it to the book's other EPUBs.
+   */
+  private async progressFileFor(bookId: number, delivery: KoboDeliveryRecord | null | undefined): Promise<number | null> {
+    const primary = await this.progressRepository.findPrimaryFileId(bookId);
+    const source = delivery?.sourceFileId ?? null;
+    if (source === null || source === primary) return primary;
+    return (await this.progressRepository.isReaderFileOfBook(bookId, source)) ? source : primary;
+  }
+
   private async syncPercentToInternalProgress(
     userId: number,
     bookId: number,
@@ -680,8 +694,9 @@ export class KoboReadingStateService {
     koboContentSourceProgressPercent: number | null,
     precise: { cfi: string; xpointer: string } | null,
     uncertainDelivery: boolean,
+    delivery: KoboDeliveryRecord | null | undefined,
   ): Promise<boolean> {
-    const fileId = await this.progressRepository.findPrimaryFileId(bookId);
+    const fileId = await this.progressFileFor(bookId, delivery);
     if (!fileId) return true;
     const existing = await this.progressRepository.findForFile(userId, fileId);
     if (uncertainDelivery && existing && existing.percentage > percentage + PROGRESS_EPSILON) return false;

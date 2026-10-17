@@ -149,8 +149,9 @@ export class KoboDeliveryService {
 
   /**
    * The bytes a device download is served from. A download asks for the book now, so an offer whose source
-   * can no longer rebuild it, because the file changed after it was offered, is replaced by a fresh offer of
-   * the current file instead of failing that book on every attempt. Pending replacements keep their guided flow.
+   * can no longer rebuild it, because the file changed after it was offered or stopped being the book's
+   * primary, is replaced by a fresh offer of the current primary instead of serving a stale copy or failing
+   * that book on every attempt. Pending replacements keep their guided flow.
    */
   async prepareDownload(
     userId: number,
@@ -160,27 +161,43 @@ export class KoboDeliveryService {
   ): Promise<{ record: KoboDeliveryRecord; artifact: DeliveryArtifact }> {
     const record = await this.offer(userId, deviceId, bookId);
     if (deliveryId && record.id !== deliveryId) throw new NotFoundException('Delivery offer is no longer current');
-    try {
-      return { record, artifact: await this.resolve(userId, deviceId, record) };
-    } catch (error) {
-      const code = deliveryErrorCode(error);
-      if (!record.current || record.options.replacement || !code || !STALE_DELIVERY_CODES.has(code)) throw error;
-      const startedAt = Date.now();
-      await this.repository.retire(userId, deviceId, record.id);
-      const fresh = await this.offer(userId, deviceId, bookId);
-      // The device learns the fresh offer's size and URL on its next sync either way.
-      await this.repository.reoffer(userId, deviceId, bookId);
-      if (fresh.metadata.format !== record.metadata.format) {
-        this.logger.warn(
-          `[kobo.delivery_refresh] [fail] userId=${userId} deviceId=${deviceId} bookId=${bookId} staleId=${record.id} freshId=${fresh.id} reason=${code} durationMs=${Date.now() - startedAt} - fresh offer changes format, the device must sync before downloading`,
-        );
-        throw new ConflictException({ code: 'KOBO_DELIVERY_FORMAT_CHANGED' });
-      }
-      this.logger.log(
-        `[kobo.delivery_refresh] [end] userId=${userId} deviceId=${deviceId} bookId=${bookId} staleId=${record.id} freshId=${fresh.id} reason=${code} durationMs=${Date.now() - startedAt} - stale offer replaced from the current file`,
-      );
-      return { record: fresh, artifact: await this.resolve(userId, deviceId, fresh) };
+    const replaceable = record.current && !record.options.replacement;
+    let reason: string | null = null;
+    if (replaceable) {
+      const book = await this.downloads.findBook(bookId);
+      if (book?.primaryFileId != null && record.sourceFileId !== book.primaryFileId) reason = 'PRIMARY_FILE_CHANGED';
     }
+    if (!reason) {
+      try {
+        return { record, artifact: await this.resolve(userId, deviceId, record) };
+      } catch (error) {
+        const code = deliveryErrorCode(error);
+        if (!replaceable || !code || !STALE_DELIVERY_CODES.has(code)) throw error;
+        reason = code;
+      }
+    }
+    const startedAt = Date.now();
+    await this.repository.retire(userId, deviceId, record.id);
+    const fresh = await this.offer(userId, deviceId, bookId);
+    // The device learns the fresh offer's size and URL on its next sync either way.
+    await this.repository.reoffer(userId, deviceId, bookId);
+    if (fresh.metadata.format !== record.metadata.format) {
+      this.logger.warn(
+        `[kobo.delivery_refresh] [fail] userId=${userId} deviceId=${deviceId} bookId=${bookId} staleId=${record.id} freshId=${fresh.id} reason=${reason} durationMs=${Date.now() - startedAt} - fresh offer changes format, the device must sync before downloading`,
+      );
+      throw new ConflictException({ code: 'KOBO_DELIVERY_FORMAT_CHANGED' });
+    }
+    this.logger.log(
+      `[kobo.delivery_refresh] [end] userId=${userId} deviceId=${deviceId} bookId=${bookId} staleId=${record.id} freshId=${fresh.id} reason=${reason} durationMs=${Date.now() - startedAt} - stale offer replaced from the current file`,
+    );
+    return { record: fresh, artifact: await this.resolve(userId, deviceId, fresh) };
+  }
+
+  /** The book file a delivery was built from, while it still belongs to the book as an EPUB. */
+  async findSourceFile(record: KoboDeliveryRecord) {
+    if (record.sourceFileId === null) return null;
+    const file = await this.downloads.findPrimaryFile(record.bookId, record.sourceFileId);
+    return file && (file.format === 'epub' || file.format === 'kepub') ? file : null;
   }
 
   async resolve(userId: number, deviceId: number, record: KoboDeliveryRecord): Promise<DeliveryArtifact> {

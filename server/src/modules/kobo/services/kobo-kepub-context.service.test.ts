@@ -44,4 +44,46 @@ describe('KoboKepubContextService', () => {
     expect(await makeContext('pdf').service.resolveForBook(7, 3)).toMatchObject({ ok: false, reason: 'kepub_required' });
     expect(await makeContext('epub', false).service.resolveForBook(7, 3)).toMatchObject({ ok: false, reason: 'kepub_required' });
   });
+
+  it('resolves a device copy built from a former primary only for callers that follow its source file', async () => {
+    const { file, conversion, binary } = makeContext('epub');
+    const reader = { findPrimaryReaderFilesByBookIds: vi.fn().mockResolvedValue([file]) };
+    const source = {
+      id: 66,
+      bookId: 3,
+      absolutePath: '/library/readalong.epub',
+      format: 'epub',
+      fileHash: 'old',
+      sizeBytes: 900,
+      mediaOverlayAvailable: true,
+    };
+    const release = vi.fn().mockResolvedValue(undefined);
+    const deliveries = {
+      current: vi.fn().mockResolvedValue({
+        id: 'copy',
+        state: 'transfer_observed',
+        previousId: null,
+        sourceFileId: 66,
+        options: { hyphenate: false, converterVersion: 'v1' },
+        metadata: { format: 'kepub' },
+      }),
+      resolve: vi.fn().mockResolvedValue({ path: '/cache/copy.kepub.epub', sha256: 'sha', release }),
+      findSourceFile: vi.fn().mockResolvedValue(source),
+    };
+    const service = new KoboKepubContextService(
+      reader as never,
+      { getSettings: vi.fn().mockResolvedValue({ convertToKepub: true }) } as never,
+      conversion as never,
+      binary as never,
+      deliveries as never,
+    );
+
+    await expect(service.resolveForBook(7, 3, 11)).resolves.toMatchObject({ ok: false, reason: 'historical_source_unavailable' });
+    expect(release).toHaveBeenCalled();
+    await expect(service.resolveForBook(7, 3, 11, { followDeliverySource: true })).resolves.toMatchObject({
+      ok: true,
+      file: { id: 66, absolutePath: '/library/readalong.epub' },
+      ctx: { kepubPath: '/cache/copy.kepub.epub', fileHash: 'sha' },
+    });
+  });
 });

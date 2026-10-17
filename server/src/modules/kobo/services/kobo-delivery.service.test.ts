@@ -44,11 +44,12 @@ function makeService() {
     transition: vi.fn().mockResolvedValue([{}]),
     adoptForDeviceReadingState: vi.fn().mockResolvedValue(undefined),
   };
-  const service = new KoboDeliveryService(repository as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+  const downloads = { findBook: vi.fn().mockResolvedValue({ id: 3, primaryFileId: 4 }) };
+  const service = new KoboDeliveryService(repository as never, downloads as never, {} as never, {} as never, {} as never, {} as never, {} as never);
   const offer = vi.spyOn(service, 'offer');
   const resolve = vi.spyOn(service, 'resolve');
   const artifact = (id: string) => ({ path: `/cache/${id}`, release: vi.fn() }) as never;
-  return { service, repository, offer, resolve, artifact };
+  return { service, repository, downloads, offer, resolve, artifact };
 }
 
 describe('KoboDeliveryService.prepareDownload', () => {
@@ -125,6 +126,21 @@ describe('KoboDeliveryService.prepareDownload', () => {
       expect(repository.retire).not.toHaveBeenCalled();
     },
   );
+
+  it('serves a fresh offer of the new primary when the device downloads a copy built from a former primary', async () => {
+    const { service, repository, downloads, offer, resolve, artifact } = makeService();
+    downloads.findBook.mockResolvedValue({ id: 3, primaryFileId: 9 });
+    const fresh = record({ id: 'fresh', sourceFileId: 9, state: 'offered' });
+    offer.mockResolvedValueOnce(record()).mockResolvedValueOnce(fresh);
+    const freshArtifact = artifact('fresh');
+    resolve.mockResolvedValueOnce(freshArtifact);
+
+    await expect(service.prepareDownload(1, 2, 3)).resolves.toEqual({ record: fresh, artifact: freshArtifact });
+
+    expect(repository.retire).toHaveBeenCalledWith(1, 2, 'stale');
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith(1, 2, fresh);
+  });
 
   it('rejects a delivery id that is no longer current without preparing any bytes', async () => {
     const { service, offer, resolve } = makeService();
