@@ -206,6 +206,25 @@ export class KoboSyncService {
     return [this.buildBookMetadata(book, deviceToken, baseUrl)];
   }
 
+  /** Of the given books, those this device holds: in its library snapshot, and not removed or being removed. */
+  async findBookIdsOnDevice(userId: number, deviceId: number, bookIds: number[]): Promise<number[]> {
+    if (bookIds.length === 0) return [];
+    const rows = await this.db
+      .select({ bookId: schema.koboSnapshotBooks.bookId })
+      .from(schema.koboSnapshotBooks)
+      .innerJoin(schema.koboLibrarySnapshots, eq(schema.koboLibrarySnapshots.id, schema.koboSnapshotBooks.snapshotId))
+      .where(
+        and(
+          eq(schema.koboLibrarySnapshots.userId, userId),
+          eq(schema.koboLibrarySnapshots.deviceId, deviceId),
+          inArray(schema.koboSnapshotBooks.bookId, bookIds),
+          eq(schema.koboSnapshotBooks.pendingDelete, false),
+          eq(schema.koboSnapshotBooks.removedByDevice, false),
+        ),
+      );
+    return rows.map((row) => row.bookId);
+  }
+
   async removeBookFromSync(userId: number, deviceId: number, bookId: number): Promise<void> {
     const snapshot = await this.findDeviceSnapshot(userId, deviceId);
     if (!snapshot) return;

@@ -19,6 +19,7 @@ import {
 
 import { books, bookFiles } from './books';
 import { users } from './auth';
+import { bookmarks } from './reader';
 
 export const koboDevices = pgTable(
   'kobo_devices',
@@ -317,3 +318,46 @@ export const koboDeviceReadingStates = pgTable(
     }).onDelete('cascade'),
   ],
 );
+
+/**
+ * One row per (bookmark, Kobo device): a bookmark the device holds as a dogear, under the
+ * annotation id it gave it, with the location it reported. The device reconciles its annotations
+ * against the set it is served, so this keeps the dogear served back as a dogear, and lets a
+ * bookmark deleted in BookOrbit leave the device by being left out.
+ */
+export const koboBookmarkLinks = pgTable(
+  'kobo_bookmark_links',
+  {
+    id: serial('id').primaryKey(),
+    bookmarkId: integer('bookmark_id')
+      .notNull()
+      .references(() => bookmarks.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    deviceId: integer('device_id').notNull(),
+    bookId: integer('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    externalKey: varchar('external_key', { length: 64 }).notNull(),
+    location: jsonb('location').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdateFn(() => new Date()),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.deviceId, table.userId],
+      foreignColumns: [koboDevices.id, koboDevices.userId],
+      name: 'kobo_bookmark_links_owner_fk',
+    }).onDelete('cascade'),
+    uniqueIndex('kobo_bookmark_links_bookmark_device_uidx').on(table.bookmarkId, table.deviceId),
+    uniqueIndex('kobo_bookmark_links_device_key_uidx').on(table.deviceId, table.externalKey),
+    index('kobo_bookmark_links_user_device_book_idx').on(table.userId, table.deviceId, table.bookId),
+  ],
+);
+
+export type KoboBookmarkLink = typeof koboBookmarkLinks.$inferSelect;
+export type NewKoboBookmarkLink = typeof koboBookmarkLinks.$inferInsert;

@@ -827,6 +827,13 @@
       "when": 1792191772317,
       "tag": "0117_add_reading_session_sync_interval",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1792201109071,
+      "tag": "0118_add_kobo_bookmark_links",
+      "breakpoints": true
     }
   ]
 }
