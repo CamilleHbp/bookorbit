@@ -17,6 +17,21 @@ export type KoboDeliveryRecord = NonNullable<Awaited<ReturnType<KoboDeliveryRepo
 /** Failures meaning the source can no longer rebuild an offer's bytes, as opposed to the book being unreadable. */
 const STALE_DELIVERY_CODES = new Set(['DELIVERY_SOURCE_CHANGED', 'DELIVERY_ARTIFACT_UNAVAILABLE']);
 
+type DeliveryStanding = Pick<KoboDeliveryRecord, 'state' | 'previousId' | 'options'>;
+
+/**
+ * A replacement leaves the device's old copy in doubt until the user confirms they removed it and
+ * downloaded the new one, since a completed transfer does not prove the device switched copies.
+ */
+export function isUnconfirmedReplacement(delivery: DeliveryStanding): boolean {
+  return (Boolean(delivery.previousId) || delivery.options.replacement === true) && delivery.state !== 'user_confirmed';
+}
+
+/** Whether the device is known to hold this delivery's bytes, so the positions it reports can be trusted. */
+export function isSettledDelivery(delivery: DeliveryStanding): boolean {
+  return delivery.state === 'user_confirmed' || (delivery.state === 'transfer_observed' && !isUnconfirmedReplacement(delivery));
+}
+
 export function deliveryErrorCode(error: unknown): string | null {
   if (!(error instanceof HttpException)) return null;
   const response = error.getResponse();
@@ -265,6 +280,7 @@ export class KoboDeliveryService {
     if (!['transfer_observed', 'user_confirmed'].includes(record.state))
       throw new ConflictException({ code: 'KOBO_REPLACEMENT_TRANSFER_NOT_OBSERVED' });
     await this.repository.transition(userId, deviceId, id, ['transfer_observed', 'user_confirmed'], 'user_confirmed');
+    await this.repository.adoptForDeviceReadingState(userId, deviceId, record.bookId, id);
     return this.repository.findById(userId, deviceId, id);
   }
 

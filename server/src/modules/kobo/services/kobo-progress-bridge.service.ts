@@ -33,6 +33,11 @@ export class KoboProgressBridgeService {
     private readonly positionConverter: PositionConverterService,
   ) {}
 
+  /** Orders two canonical positions: negative when `a` comes first, null when either cannot be read. */
+  comparePositions(a: string, b: string): number | null {
+    return this.positionConverter.compareCfi(a, b);
+  }
+
   /**
    * Places a narration marker on the device. A read-along save can hold the sentence being narrated
    * without a text position, and a bookmark sent as a bare percent opens the book at its start.

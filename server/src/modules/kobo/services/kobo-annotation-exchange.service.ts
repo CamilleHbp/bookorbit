@@ -8,7 +8,7 @@ import { AnnotationSyncService, formatDeviceDatetime, type IncomingDeviceAnnotat
 import { AnnotationConversionService } from '../../annotation/annotation-conversion.service';
 import { KoboSpanConverterService, serializeKoboSpanPos } from '../../position-converter/kobo-span-converter.service';
 import { parseSpanSelector } from '../../position-converter/kobo-span.core';
-import { KoboDeliveryService } from './kobo-delivery.service';
+import { KoboDeliveryService, isUnconfirmedReplacement } from './kobo-delivery.service';
 import { KoboBookIdentityService } from './kobo-book-identity.service';
 import { KoboAnnotationMaterializerService } from './kobo-annotation-materializer.service';
 import { KoboKepubContextService } from './kobo-kepub-context.service';
@@ -236,7 +236,7 @@ export class KoboAnnotationExchangeService {
           deliveryId: delivery?.id ?? null,
           sourceRevision: delivery?.metadata.sourceRevision ?? null,
           artifactId: delivery?.metadata.artifactId ?? null,
-          uncertainDelivery: !kepub.ok || !!delivery?.previousId || !!delivery?.options.replacement,
+          uncertainDelivery: !kepub.ok || (!!delivery && isUnconfirmedReplacement(delivery)),
         };
         return annotation;
       });

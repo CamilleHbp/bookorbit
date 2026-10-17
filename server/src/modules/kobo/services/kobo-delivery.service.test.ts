@@ -1,7 +1,13 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
-import { KoboDeliveryService, deliveryErrorCode, type KoboDeliveryRecord } from './kobo-delivery.service';
+import {
+  KoboDeliveryService,
+  deliveryErrorCode,
+  isSettledDelivery,
+  isUnconfirmedReplacement,
+  type KoboDeliveryRecord,
+} from './kobo-delivery.service';
 
 function record(overrides: Partial<KoboDeliveryRecord> = {}): KoboDeliveryRecord {
   return {
@@ -237,5 +243,44 @@ describe('KoboDeliveryService.cancelReplacement', () => {
     confirmed.repository.cancel.mockResolvedValue(false);
     await confirmed.service.cancelReplacement(1, 2, 'replacement');
     expect(confirmed.repository.reoffer).not.toHaveBeenCalled();
+  });
+});
+
+describe('delivery standing', () => {
+  it('settles a first delivery on transfer and a replacement only on confirmation', () => {
+    expect(isSettledDelivery(record({ state: 'transfer_observed' }))).toBe(true);
+    expect(isSettledDelivery(record({ state: 'offered' }))).toBe(false);
+    expect(isSettledDelivery(replacement({ state: 'transfer_observed', previousId: 'previous' }))).toBe(false);
+    expect(isSettledDelivery(replacement({ state: 'user_confirmed', previousId: 'previous' }))).toBe(true);
+    expect(isUnconfirmedReplacement(replacement({ state: 'transfer_observed', previousId: 'previous' }))).toBe(true);
+    expect(isUnconfirmedReplacement(replacement({ state: 'user_confirmed', previousId: 'previous' }))).toBe(false);
+    expect(isUnconfirmedReplacement(record({ state: 'transfer_observed' }))).toBe(false);
+  });
+});
+
+describe('KoboDeliveryService.confirm', () => {
+  it('moves the device bookmark onto the replacement the user confirmed', async () => {
+    const transferred = replacement({ state: 'transfer_observed', previousId: 'previous' });
+    const repository = {
+      findById: vi.fn().mockResolvedValue(transferred),
+      assertDevice: vi.fn().mockResolvedValue(undefined),
+      findCurrent: vi.fn().mockResolvedValue(transferred),
+      transition: vi.fn().mockResolvedValue([{}]),
+      adoptForDeviceReadingState: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new KoboDeliveryService(
+      repository as never,
+      {} as never,
+      { assertBookAccessible: vi.fn().mockResolvedValue(undefined) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await service.confirm(1, 2, 'replacement');
+
+    expect(repository.transition).toHaveBeenCalledWith(1, 2, 'replacement', ['transfer_observed', 'user_confirmed'], 'user_confirmed');
+    expect(repository.adoptForDeviceReadingState).toHaveBeenCalledWith(1, 2, 3, 'replacement');
   });
 });

@@ -64,7 +64,12 @@ describe('KoboReadingStateService', () => {
   const bookAccessService = { assertBookAccessible: vi.fn() };
   const userBookStatusService = { autoUpdate: vi.fn() };
   const bookIdentityService = { ensureForBook: vi.fn() };
-  const progressBridge = { koboBookmarkToCanonical: vi.fn(), cfiToKoboBookmark: vi.fn(), narrationToKoboBookmark: vi.fn() };
+  const progressBridge = {
+    koboBookmarkToCanonical: vi.fn(),
+    cfiToKoboBookmark: vi.fn(),
+    narrationToKoboBookmark: vi.fn(),
+    comparePositions: vi.fn(),
+  };
   const settingsService = { getSettings: vi.fn() };
   const achievementEvents = { emit: vi.fn() };
   const analyticsResolver = { resolveBookFileId: vi.fn() };
@@ -724,26 +729,23 @@ describe('KoboReadingStateService', () => {
       return { db, insert };
     }
     const resetPayload = { CurrentBookmark: { ProgressPercent: 0, LastModified: incomingAt } };
-    it.each(['offered', 'transfer_observed', 'user_confirmed', 'cancelled'])(
-      'retains canonical progress and raw events during %s replacement',
-      async (state) => {
-        const { db, insert } = resetDb();
-        const deliveries = { current: vi.fn().mockResolvedValue({ id: 'new', previousId: 'old', state, options: { replacement: true } }) };
-        await expect(makeService(db, deliveries).upsertState(1, 5, resetPayload, 1, 99, true, 77)).resolves.toEqual(ACK('entitlement-5', 'Success'));
-        expect(db.insert).toHaveBeenCalledTimes(1);
-        expect(insert.values).toHaveBeenCalledWith(
-          expect.objectContaining({
-            deviceId: 77,
-            deliveryId: 'old',
-            currentBookmark: resetPayload.CurrentBookmark,
-          }),
-        );
-        expect(userBookStatusService.autoUpdate).not.toHaveBeenCalled();
-        expect(bookService.syncAudioProgressForExternalEbookProgress).not.toHaveBeenCalled();
-        expect(achievementEvents.emit).not.toHaveBeenCalled();
-        expect(db.execute).toHaveBeenCalledTimes(1);
-      },
-    );
+    it.each(['offered', 'transfer_observed', 'cancelled'])('retains canonical progress and raw events during %s replacement', async (state) => {
+      const { db, insert } = resetDb();
+      const deliveries = { current: vi.fn().mockResolvedValue({ id: 'new', previousId: 'old', state, options: { replacement: true } }) };
+      await expect(makeService(db, deliveries).upsertState(1, 5, resetPayload, 1, 99, true, 77)).resolves.toEqual(ACK('entitlement-5', 'Success'));
+      expect(db.insert).toHaveBeenCalledTimes(1);
+      expect(insert.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          deviceId: 77,
+          deliveryId: 'old',
+          currentBookmark: resetPayload.CurrentBookmark,
+        }),
+      );
+      expect(userBookStatusService.autoUpdate).not.toHaveBeenCalled();
+      expect(bookService.syncAudioProgressForExternalEbookProgress).not.toHaveBeenCalled();
+      expect(achievementEvents.emit).not.toHaveBeenCalled();
+      expect(db.execute).toHaveBeenCalledTimes(1);
+    });
     it('does not accept an initial zero echo for an unknown device copy', async () => {
       const { db } = resetDb();
       await makeService(db, { current: vi.fn().mockResolvedValue(null) }).upsertState(1, 5, resetPayload, 1, 99, true, 77);
@@ -803,7 +805,7 @@ describe('KoboReadingStateService', () => {
     it('accepts forward percentage progress without decoding an ambiguous replacement location', async () => {
       const { db, insert } = resetDb();
       await makeService(db, {
-        current: vi.fn().mockResolvedValue({ id: 'new', previousId: 'old', state: 'user_confirmed', options: { replacement: true } }),
+        current: vi.fn().mockResolvedValue({ id: 'new', previousId: 'old', state: 'transfer_observed', options: { replacement: true } }),
       }).upsertState(
         1,
         5,
@@ -821,6 +823,69 @@ describe('KoboReadingStateService', () => {
       );
       expect(insert.values).toHaveBeenCalledWith(expect.objectContaining({ bookFileId: 55, percentage: 65, koboLocationValue: null }));
       expect(progressBridge.koboBookmarkToCanonical).not.toHaveBeenCalled();
+    });
+    it('still holds saved progress against a backwards push from a confirmed replacement', async () => {
+      const { db, insert } = resetDb();
+      await makeService(db, {
+        current: vi.fn().mockResolvedValue({ id: 'new', previousId: 'old', state: 'user_confirmed', options: { replacement: true } }),
+      }).upsertState(1, 5, { CurrentBookmark: { ProgressPercent: 3, LastModified: incomingAt } }, 1, 99, true, 77);
+      expect(insert.values).not.toHaveBeenCalledWith(expect.objectContaining({ bookFileId: 55 }));
+      expect(insert.values).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 77, deliveryId: 'new' }));
+      expect(userBookStatusService.autoUpdate).not.toHaveBeenCalled();
+    });
+    it.each([
+      ['accepts', 1, 58],
+      ['holds back', -1, 61],
+    ])('%s a confirmed replacement push whose position is later or earlier than its lower percentage suggests', async (_label, order, saved) => {
+      const { db, insert } = resetDb();
+      progressBridge.koboBookmarkToCanonical.mockResolvedValue({ cfi: 'epubcfi(/6/4!/4/2/1:0)', xpointer: '/body/p[2]' });
+      progressBridge.comparePositions.mockReturnValue(order);
+      await makeService(db, {
+        current: vi.fn().mockResolvedValue({ id: 'new', previousId: 'old', state: 'user_confirmed', options: { replacement: true } }),
+      }).upsertState(
+        1,
+        5,
+        {
+          CurrentBookmark: {
+            ProgressPercent: 58,
+            LastModified: incomingAt,
+            Location: { Type: 'KoboSpan', Source: 'chapter.xhtml', Value: 'kobo.43.4' },
+          },
+        },
+        1,
+        99,
+        true,
+        77,
+      );
+      expect(progressBridge.comparePositions).toHaveBeenCalledWith('epubcfi(/6/4!/4/2/1:0)', savedCfi);
+      if (saved === 58)
+        expect(insert.values).toHaveBeenCalledWith(
+          expect.objectContaining({ bookFileId: 55, percentage: 58, cfi: 'epubcfi(/6/4!/4/2/1:0)', koboLocationValue: 'kobo.43.4' }),
+        );
+      else expect(insert.values).not.toHaveBeenCalledWith(expect.objectContaining({ bookFileId: 55 }));
+    });
+    it('trusts a confirmed replacement, even while the device bookmark still names the copy it replaced', async () => {
+      const { db, insert } = resetDb();
+      await makeService(db, {
+        current: vi.fn().mockResolvedValue({ id: 'new', previousId: 'old', state: 'user_confirmed', options: { replacement: true } }),
+      }).upsertState(
+        1,
+        5,
+        {
+          CurrentBookmark: {
+            ProgressPercent: 65,
+            LastModified: incomingAt,
+            Location: { Type: 'KoboSpan', Source: 'chapter.xhtml', Value: 'kobo.1.1' },
+          },
+        },
+        1,
+        99,
+        true,
+        77,
+      );
+      expect(progressBridge.koboBookmarkToCanonical).toHaveBeenCalledWith(1, 5, 'chapter.xhtml', 'kobo.1.1', 77);
+      expect(insert.values).toHaveBeenCalledWith(expect.objectContaining({ bookFileId: 55, percentage: 65, koboLocationValue: 'kobo.1.1' }));
+      expect(insert.values).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 77, deliveryId: 'new' }));
     });
     it('acknowledges an equal-percent echo without reopening a synced device', async () => {
       const { db } = resetDb();

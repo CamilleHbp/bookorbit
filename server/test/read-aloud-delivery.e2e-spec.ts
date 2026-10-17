@@ -550,7 +550,8 @@ describe('Read-aloud delivery contracts (e2e)', { timeout: 180_000 }, () => {
           where: and(eq(schema.koboDeviceReadingStates.deviceId, device.id), eq(schema.koboDeviceReadingStates.bookId, book.bookId)),
         });
         expect(raw?.currentBookmark).toMatchObject({ ProgressPercent: 0 });
-        expect(raw?.deliveryId).not.toBe(replacement.id);
+        if (stage === 'user_confirmed') expect(raw?.deliveryId).toBe(replacement.id);
+        else expect(raw?.deliveryId).not.toBe(replacement.id);
         const pulled = await (await http('GET', devicePath(device, `library/${book.bookId}/state`), undefined, false)).json();
         expect(pulled[0].CurrentBookmark.ProgressPercent).toBe(61);
         expect(pulled[0].StatusInfo.Status).toBe('Reading');

@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 
-import { KoboDeliveryService } from './kobo-delivery.service';
+import { KoboDeliveryService, isSettledDelivery } from './kobo-delivery.service';
 import { DeliveryArtifactService } from '../../book/delivery-artifact.service';
 import { KepubContext } from '../../position-converter/kobo-span-converter.service';
 import { BookReadService } from '../../book/book-read.service';
@@ -75,7 +75,7 @@ export class KoboKepubContextService {
       if (record && record.state === 'prepared' && record.previousId) return this.resolveForDelivery(userId, bookId, deviceId, record.previousId);
       if (!record || record.state === 'offered' || record.state === 'prepared' || record.state === 'cancelled')
         return { ok: false, reason: 'unknown_delivery', settings };
-      if (record.previousId || record.options.replacement) return { ok: false, reason: 'replacement_events_ambiguous', settings };
+      if (!isSettledDelivery(record)) return { ok: false, reason: 'replacement_events_ambiguous', settings };
       if (record.metadata.format !== 'kepub') return { ok: false, reason: 'kepub_required', settings };
       try {
         const artifact = await this.deliveries.resolve(userId, deviceId, record);

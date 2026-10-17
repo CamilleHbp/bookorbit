@@ -17,10 +17,10 @@ import {
 } from '../kobo-statistics-session.util';
 import { KoboAnalyticsResolverService } from './kobo-analytics-resolver.service';
 import { KoboReadingProgressRepository } from '../kobo-reading-progress.repository';
-import { KoboDeliveryService } from './kobo-delivery.service';
+import { KoboDeliveryService, isSettledDelivery, isUnconfirmedReplacement } from './kobo-delivery.service';
 import { KoboBookAccessService } from './kobo-book-access.service';
 import { KoboBookIdentityService } from './kobo-book-identity.service';
-import { KoboProgressBridgeService } from './kobo-progress-bridge.service';
+import { KoboProgressBridgeService, type CanonicalProgressPoint } from './kobo-progress-bridge.service';
 import { KoboSettingsService } from './kobo-settings.service';
 import { advanceIsoTimestamp, maxIsoTimestamp } from '../../../common/utils/iso-timestamp.utils';
 import { sanitizeLogValue } from '../../../common/utils/log-sanitize.utils';
@@ -157,19 +157,50 @@ export class KoboReadingStateService {
     const delivery = await this.deliveries?.current(userId, sourceDeviceId, bookId);
     const preparedPrevious = delivery?.state === 'prepared' ? delivery.previousId : null;
     const deliveryId = preparedPrevious ?? delivery?.id ?? null;
+    // Confirming a replacement moves the stored bookmark onto it, but one confirmed before that did
+    // still points at the copy it replaced; the confirmation already says the device switched.
+    const confirmedOverPrevious = delivery?.state === 'user_confirmed' && existing?.deliveryId === delivery.previousId;
     const uncertainDelivery = Boolean(
       this.deliveries &&
       (!delivery ||
-        (!preparedPrevious && (delivery.previousId || delivery.options.replacement || delivery.state !== 'transfer_observed')) ||
-        (existing?.deliveryId && existing.deliveryId !== deliveryId)),
+        (!preparedPrevious && !isSettledDelivery(delivery)) ||
+        (existing?.deliveryId && existing.deliveryId !== deliveryId && !confirmedOverPrevious)),
     );
     let protectedRegression = false;
     const initialZero = Boolean(this.deliveries && mergedPercent === 0 && (previousPercent === null || previousPercent === 0));
-    if ((uncertainDelivery || initialZero) && mergedPercent !== null) {
+    // A replacement copy opens wherever the device left it after the re-download, often its start, so
+    // even once confirmed it may only move saved progress forward; its precise locations still count.
+    const replacedCopy = !preparedPrevious && Boolean(delivery && (delivery.previousId || delivery.options.replacement));
+    const locationSource = uncertainDelivery ? null : this.extractKoboLocationSource(mergedBookmark);
+    const locationType = uncertainDelivery ? null : this.extractKoboLocationType(mergedBookmark);
+    const locationValue = uncertainDelivery ? null : this.extractKoboLocationValue(mergedBookmark);
+    // KoboSpan bookmarks convert to precise canonical points; web and KOReader
+    // resume at the same paragraph instead of a percent approximation.
+    let precise: CanonicalProgressPoint | null | undefined;
+    const resolvePrecise = async () => {
+      if (precise === undefined)
+        precise =
+          twoWayProgressSync && locationType === 'KoboSpan' && locationSource && locationValue
+            ? await this.progressBridge.koboBookmarkToCanonical(userId, bookId, locationSource, locationValue, sourceDeviceId)
+            : null;
+      return precise;
+    };
+    let guardBackwards = uncertainDelivery || initialZero || replacedCopy;
+    if (guardBackwards && mergedPercent !== null) {
       const fileId = await this.progressRepository.findPrimaryFileId(bookId);
       const canonical = fileId ? await this.progressRepository.findForFile(userId, fileId) : null;
       const savedPercent = canonical?.percentage ?? this.extractPercent(this.asJsonObj(shared?.currentBookmark));
       protectedRegression = savedPercent !== null && savedPercent > mergedPercent + PROGRESS_EPSILON;
+      // A replacement copy's percentages run on its own scale, so where it names its position exactly,
+      // that position, not the percentage, says whether it moved back.
+      if (protectedRegression && !uncertainDelivery && !initialZero && canonical?.cfi) {
+        const point = await resolvePrecise();
+        const order = point ? this.progressBridge.comparePositions(point.cfi, canonical.cfi) : null;
+        if (order !== null && order >= 0) {
+          protectedRegression = false;
+          guardBackwards = false;
+        }
+      }
     }
     const mergedTimesStarted = typeof mergedStatus?.TimesStartedReading === 'number' ? mergedStatus.TimesStartedReading : null;
     const strongRereadEvidence =
@@ -182,17 +213,7 @@ export class KoboReadingStateService {
     const effectivePriority = maxIsoTimestamp(priorityTimestamp, existing?.priorityTimestamp, bookmarkModified) ?? priorityTimestamp;
 
     if (!protectedRegression && bookmarkChanged && mergedPercent !== null) {
-      const locationSource = uncertainDelivery ? null : this.extractKoboLocationSource(mergedBookmark);
-      const locationType = uncertainDelivery ? null : this.extractKoboLocationType(mergedBookmark);
-      const locationValue = uncertainDelivery ? null : this.extractKoboLocationValue(mergedBookmark);
-
-      // KoboSpan bookmarks convert to precise canonical points; web and KOReader
-      // resume at the same paragraph instead of a percent approximation.
-      const precise =
-        twoWayProgressSync && locationType === 'KoboSpan' && locationSource && locationValue
-          ? await this.progressBridge.koboBookmarkToCanonical(userId, bookId, locationSource, locationValue, sourceDeviceId)
-          : null;
-
+      const point = await resolvePrecise();
       protectedRegression = !(await this.syncPercentToInternalProgress(
         userId,
         bookId,
@@ -202,8 +223,8 @@ export class KoboReadingStateService {
         locationType,
         locationValue,
         uncertainDelivery ? null : this.extractContentSourceProgressPercent(mergedBookmark),
-        precise,
-        uncertainDelivery || initialZero,
+        point,
+        guardBackwards,
       ));
     }
 
@@ -470,9 +491,7 @@ export class KoboReadingStateService {
       deviceId &&
       this.deliveries &&
       (!delivery ||
-        delivery.previousId ||
-        delivery.options.replacement ||
-        delivery.state !== 'transfer_observed' ||
+        !isSettledDelivery(delivery) ||
         ('deliveryId' in row && row.deliveryId !== delivery.id) ||
         this.extractPercent(this.asJsonObj(row.currentBookmark)) === 0),
     );
@@ -494,7 +513,7 @@ export class KoboReadingStateService {
       };
     }
     let rawBookmark = row.currentBookmark;
-    if (deviceId && (!delivery || delivery.previousId || delivery.options.replacement || ('deliveryId' in row && row.deliveryId !== delivery.id))) {
+    if (deviceId && (!delivery || isUnconfirmedReplacement(delivery) || ('deliveryId' in row && row.deliveryId !== delivery.id))) {
       const safe = this.asJsonObj(rawBookmark);
       if (safe) {
         const { Location: ignoredLocation, ...rest } = safe;
