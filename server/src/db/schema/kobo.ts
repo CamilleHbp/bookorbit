@@ -58,6 +58,7 @@ export const koboSyncSettings = pgTable(
     syncBookOrbitAnnotationsToKobo: boolean('sync_bookorbit_annotations_to_kobo').notNull().default(false),
     readAloudDelivery: varchar('read_aloud_delivery', { length: 20 }).$type<'original' | 'audioless_epub'>(),
     storeSync: boolean('store_sync').notNull().default(false),
+    fullSizeCovers: boolean('full_size_covers').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()

@@ -834,6 +834,13 @@
       "when": 1792201109071,
       "tag": "0118_add_kobo_bookmark_links",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1792206724086,
+      "tag": "0119_add_kobo_full_size_covers",
+      "breakpoints": true
     }
   ]
 }
