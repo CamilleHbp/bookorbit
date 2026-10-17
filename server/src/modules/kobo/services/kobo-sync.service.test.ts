@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { sql } from 'drizzle-orm';
 import * as schema from '../../../db/schema';
+import { encodeSyncToken } from './kobo-sync-token';
 import { KoboSyncService } from './kobo-sync.service';
 
 // Recursively counts bound query params (drizzle-orm's `Param` chunks) in a built SQL tree,
@@ -511,7 +512,7 @@ describe('KoboSyncService', () => {
     expect(result).toEqual({
       entitlements: [{ ChangedTag: {} }],
       hasMore: false,
-      syncToken: expect.stringMatching(/^PX\./),
+      syncToken: encodeSyncToken(),
     });
   });
   it('getPageFromSnapshot returns page entitlements for removed/new/changed books', async () => {

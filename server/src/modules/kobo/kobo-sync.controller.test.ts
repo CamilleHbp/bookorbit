@@ -1,5 +1,6 @@
 import { BadRequestException, HttpStatus } from '@nestjs/common';
 
+import { encodeSyncToken } from './services/kobo-sync-token';
 import { KoboSyncController } from './kobo-sync.controller';
 
 function makeReply() {
@@ -231,7 +232,7 @@ describe('KoboSyncController', () => {
   });
 
   describe('store sync', () => {
-    const SNAPSHOT_TOKEN = `PX.${Buffer.from(JSON.stringify({ snapshotId: 4 })).toString('base64')}`;
+    const SNAPSHOT_TOKEN = encodeSyncToken();
 
     function syncRequest(incomingSyncToken?: string) {
       return {
@@ -280,7 +281,7 @@ describe('KoboSyncController', () => {
       await runSync(reply, 'kobo-native-token');
 
       expect(proxyService.request).not.toHaveBeenCalled();
-      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', 'PX2.4.kobo-native-token');
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', 'kobo-native-token');
     });
 
     it('appends store entitlements and stamps Kobo’s cursor into the sync token', async () => {
@@ -295,7 +296,7 @@ describe('KoboSyncController', () => {
         expect.objectContaining({ extraHeaders: { 'x-kobo-synctoken': 'kobo-cursor-1' } }),
       );
       expect(reply.send).toHaveBeenCalledWith([{ Local: 1 }, { Store: 1 }, { Store: 2 }]);
-      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', 'PX2.4.kobo-cursor-2');
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', 'kobo-cursor-2');
       expect(historyService.recordSuccess).toHaveBeenCalledWith(
         expect.objectContaining({ counts: { entitlements: 3, hasMore: false, storeEntitlements: 2 } }),
       );
@@ -414,7 +415,7 @@ describe('KoboSyncController', () => {
       await runSync(reply, SNAPSHOT_TOKEN);
 
       expect(reply.header).toHaveBeenCalledWith('x-kobo-sync', 'continue');
-      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', `PX2.4.${continuation}`);
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', continuation);
     });
 
     it('preserves a known Kobo cursor across a failed store call so paging resumes next sync', async () => {
@@ -423,7 +424,7 @@ describe('KoboSyncController', () => {
 
       await runSync(reply, `PX.${Buffer.from(JSON.stringify({ snapshotId: 4, koboSyncToken: 'kobo-cursor-1' })).toString('base64')}`);
 
-      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', 'PX2.4.kobo-cursor-1');
+      expect(reply.header).toHaveBeenCalledWith('x-kobo-synctoken', 'kobo-cursor-1');
     });
 
     it('forwards the Kobo cursor from a compact token upstream', async () => {

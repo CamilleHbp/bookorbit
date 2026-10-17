@@ -620,7 +620,7 @@ export class KoboSyncService {
     smartScopeMatchCache: SmartScopeMatchCache,
     resolveEligibleIds: EligibleIdsResolver,
   ): Promise<{ entitlements: unknown[]; hasMore: boolean; syncToken: string }> {
-    const syncToken = encodeSyncToken(snapshotId);
+    const syncToken = encodeSyncToken();
 
     const pending = await this.db
       .select()
