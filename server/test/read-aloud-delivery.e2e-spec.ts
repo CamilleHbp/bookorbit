@@ -439,6 +439,21 @@ describe('Read-aloud delivery contracts (e2e)', { timeout: 180_000 }, () => {
     expect((await download()).rawPayload).toEqual(sourceBytes);
   });
 
+  it('keeps the current delivery instead of offering a replacement with the bytes the device already has', async () => {
+    const device = (await request('POST', '/api/v1/kobo/devices', { name: 'Identical replacement' })).json();
+    await request('PATCH', '/api/v1/kobo/settings', { readAloudDelivery: 'audioless_epub' });
+    const base = `/api/v1/kobo/devices/${device.id}`;
+    expect((await ctx.app.inject({ method: 'GET', url: `/api/v1/kobo/${device.token}/v1/books/${book.bookId}/download` })).statusCode).toBe(200);
+    const delivered = (await request('GET', `${base}/books/${book.bookId}/delivery`)).json();
+
+    const prepared = await request('POST', `${base}/books/${book.bookId}/replacement`, { variant: 'audioless_epub' });
+
+    expect(prepared.statusCode).toBe(201);
+    expect(prepared.json()).toMatchObject({ id: delivered.id, options: { replacement: false } });
+    const rows = await ctx.db.query.koboDeviceDeliveries.findMany({ where: eq(schema.koboDeviceDeliveries.deviceId, device.id) });
+    expect(rows).toHaveLength(1);
+  });
+
   describe('Storyteller progress-reset regressions over live HTTP', () => {
     let origin: string;
     const cfi = 'epubcfi(/6/2!/4/2/2/1:3)';

@@ -52,6 +52,9 @@ export class KoboDeliveryRepository {
           throw new ConflictException({ code: 'KOBO_REPLACEMENT_ALREADY_PENDING' });
         return existing;
       }
+      // The device already holds these exact bytes. A replacement it never needs to download would stay
+      // offered, and keep every bookmark it pushes from counting, so there is nothing to replace.
+      if (replace && existing && !existing.options.replacement && existing.metadata.sha256 === values.metadata.sha256) return existing;
       if (existing) await tx.update(schema.koboDeviceDeliveries).set({ current: false }).where(eq(schema.koboDeviceDeliveries.id, existing.id));
       const [row] = await tx
         .insert(schema.koboDeviceDeliveries)

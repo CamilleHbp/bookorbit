@@ -13986,6 +13986,7 @@
       "prepared": "Replacement prepared: {format}, {size}. Remove this book only from the selected device, then offer the prepared replacement and sync.",
       "offered": "Replacement offered. Sync and download on the device, then confirm installation. A completed HTTP transfer does not prove installation.",
       "cancelled": "Replacement cancelled. Cancellation does not restore a removed or partially replaced device copy. Select the same book to prepare a recovery download.",
+      "alreadyOnDevice": "The device already has this exact copy, so there is nothing to replace.",
       "failed": "Could not prepare or update this replacement.",
       "searchBook": "Search for a book",
       "chooseBook": "Select a book",
