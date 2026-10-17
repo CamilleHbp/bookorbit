@@ -841,6 +841,13 @@
       "when": 1792206724086,
       "tag": "0119_add_kobo_full_size_covers",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1792209194389,
+      "tag": "0120_record_kobo_snapshot_cover_ids",
+      "breakpoints": true
     }
   ]
 }

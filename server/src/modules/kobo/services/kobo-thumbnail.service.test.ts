@@ -172,6 +172,17 @@ describe('KoboThumbnailService', () => {
       expect(createReadStreamMock).not.toHaveBeenCalled();
     });
 
+    it('serves a tile-size request at a full-screen size, so the sleep screen never stretches a tile', async () => {
+      resolveCoverAt(await writeCover(1600, 2400));
+      statMock.mockResolvedValueOnce({ mtimeMs: 4321 } as never);
+      const reply = makeReply();
+
+      await service.serveThumbnail(7, 12, { width: 355, height: 530, quality: 80, greyscale: false }, undefined, reply as never);
+
+      await expect(sharp(reply.send.mock.calls[0][0] as Buffer).metadata()).resolves.toMatchObject({ width: 1280, height: 1920 });
+      expect(reply.header).toHaveBeenCalledWith('ETag', '"4321-1440x1920-q80"');
+    });
+
     it('never enlarges a cover smaller than the box', async () => {
       resolveCoverAt(await writeCover(300, 450));
       statMock.mockResolvedValueOnce({ mtimeMs: 1 } as never);

@@ -157,6 +157,9 @@ export const koboSnapshotBooks = pgTable(
     fileHash: varchar('file_hash', { length: 64 }),
     deliveryHash: varchar('delivery_hash', { length: 64 }),
     metadataHash: varchar('metadata_hash', { length: 64 }),
+    // The versioned cover id the device was last told about. A Kobo downloads a cover only for a
+    // NewEntitlement, so a moved id re-announces the book as one instead of changed metadata.
+    coverImageId: varchar('cover_image_id', { length: 128 }),
   },
   (t) => [
     primaryKey({ columns: [t.snapshotId, t.bookId] }),

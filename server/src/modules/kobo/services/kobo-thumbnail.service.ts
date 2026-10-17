@@ -18,6 +18,8 @@ export interface KoboCoverRequest {
 }
 
 const MAX_COVER_EDGE = 2400;
+const SMALLEST_KOBO_SCREEN = { width: 600, height: 800 };
+const FULL_SCREEN_BOX = { width: 1440, height: 1920 };
 const DEFAULT_COVER_QUALITY = 85;
 const MAX_INPUT_PIXELS = 100_000_000;
 const RENDER_CONCURRENCY = 2;
@@ -33,6 +35,15 @@ export function parseKoboCoverRequest(width: string, height: string, quality?: s
     quality: parsedQuality >= 1 && parsedQuality <= 100 ? parsedQuality : DEFAULT_COVER_QUALITY,
     greyscale: greyscale?.toLowerCase() === 'true',
   };
+}
+
+/**
+ * A Kobo fetching a changed cover asks only for its home-screen tile, and its sleep screen then
+ * stretches that tile. A box smaller than any Kobo screen is served at a size that fills every one.
+ */
+function coverBox(request: KoboCoverRequest): KoboCoverRequest {
+  if (request.width >= SMALLEST_KOBO_SCREEN.width || request.height >= SMALLEST_KOBO_SCREEN.height) return request;
+  return { ...request, ...FULL_SCREEN_BOX };
 }
 
 function parseEdge(value: string): number | null {
@@ -102,7 +113,8 @@ export class KoboThumbnailService {
    * screen or full-screen cover is not the grid thumbnail stretched. Resolves false when there is
    * no cover to scale, leaving the thumbnail to answer.
    */
-  private async serveSizedCover(bookId: number, request: KoboCoverRequest, ifNoneMatch: string | undefined, reply: FastifyReply): Promise<boolean> {
+  private async serveSizedCover(bookId: number, requested: KoboCoverRequest, ifNoneMatch: string | undefined, reply: FastifyReply): Promise<boolean> {
+    const request = coverBox(requested);
     const coverPath = await this.coverStore.resolve(bookId, { medium: 'ebook', variant: 'cover' });
     if (!coverPath) return false;
     let mtimeMs: number;
