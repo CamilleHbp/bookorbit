@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpException,
   HttpStatus,
+  Inject,
   Logger,
   Param,
   Post,
@@ -17,6 +18,7 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { Public } from '../../common/decorators/public.decorator';
@@ -32,6 +34,7 @@ import { KoboReadingStateService } from './services/kobo-reading-state.service';
 import type { KoboProxyResponse } from './services/kobo-proxy.service';
 import { KoboProxyService } from './services/kobo-proxy.service';
 import { DEV_CLIENT_ORIGIN } from '../../config/dev-client-origin';
+import { appConfig } from '../../config/config';
 import { KOBO_STORE_RESOURCES } from './kobo-store-resources';
 import { KoboBookIdentityService } from './services/kobo-book-identity.service';
 import { KoboSyncHistoryService } from './services/kobo-sync-history.service';
@@ -62,7 +65,7 @@ function isBookOrbitTag(tagId: string): boolean {
   return tagId.startsWith('col-') || tagId.startsWith('ss-');
 }
 
-function buildBaseUrl(req: FastifyRequest): string {
+function buildBaseUrl(req: FastifyRequest, appUrl: string): string {
   const fwdHost = readHeaderValue(req.headers['x-forwarded-host']);
   const fwdPort = readHeaderValue(req.headers['x-forwarded-port']);
   const fwdProto = readHeaderValue(req.headers['x-forwarded-proto']);
@@ -77,6 +80,8 @@ function buildBaseUrl(req: FastifyRequest): string {
       const isDefault = (proto === 'http' && port === '80') || (proto === 'https' && port === '443');
       if (!isDefault) host = host + ':' + port;
     } else if (!hasForwarded) {
+      const appOrigin = appOriginForHost(appUrl, host);
+      if (appOrigin) return appOrigin;
       const localPort = req.socket?.localPort;
       const isDefault = (proto === 'http' && localPort === 80) || (proto === 'https' && localPort === 443);
       if (localPort && !isDefault) host = host + ':' + String(localPort);
@@ -84,6 +89,20 @@ function buildBaseUrl(req: FastifyRequest): string {
   }
 
   return proto + '://' + host;
+}
+
+/**
+ * A Kobo leaves the port out of its Host header, and behind a published port mapping the port the
+ * server listens on is not the one the Kobo reached (#1281). APP_URL names the reachable origin, so
+ * it is used when it is for the same host; any other host keeps the listening port.
+ */
+function appOriginForHost(appUrl: string, host: string): string | null {
+  try {
+    const url = new URL(appUrl);
+    return url.hostname.toLowerCase() === host.toLowerCase() ? url.origin : null;
+  } catch {
+    return null;
+  }
 }
 
 function buildReadingServicesBaseUrl(req: FastifyRequest, baseUrl: string): string {
@@ -112,12 +131,13 @@ export class KoboSyncController {
     private readonly proxyService: KoboProxyService,
     private readonly bookIdentityService: KoboBookIdentityService,
     private readonly historyService: KoboSyncHistoryService,
+    @Inject(appConfig.KEY) private readonly app: ConfigType<typeof appConfig>,
   ) {}
 
   @Get('v1/initialization')
   @Header('x-kobo-apitoken', 'e30=')
   initialization(@KoboDevice() device: KoboDeviceContext, @Req() req: FastifyRequest) {
-    const baseUrl = buildBaseUrl(req);
+    const baseUrl = buildBaseUrl(req, this.app.appUrl);
     const readingServicesBaseUrl = buildReadingServicesBaseUrl(req, baseUrl);
     const t = device.deviceToken;
     return {
@@ -144,7 +164,7 @@ export class KoboSyncController {
   ) {
     const startedAt = Date.now();
     this.logger.debug(`[kobo.library_sync] [start] userId=${user.id} deviceId=${device.deviceId} - library sync started`);
-    const baseUrl = buildBaseUrl(req);
+    const baseUrl = buildBaseUrl(req, this.app.appUrl);
     let result: { entitlements: unknown[]; hasMore: boolean; syncToken: string };
     try {
       result = await this.syncService.getDelta(user.id, device.deviceId, device.deviceToken, baseUrl);
@@ -352,7 +372,7 @@ export class KoboSyncController {
   ) {
     const id = await this.bookIdentityService.resolveBookIdByEntitlementId(user.id, bookId);
     if (id === null) return this.proxyService.forward(req, reply, device.deviceToken);
-    const baseUrl = buildBaseUrl(req);
+    const baseUrl = buildBaseUrl(req, this.app.appUrl);
     const metadata = await this.syncService.getBookMetadata(user.id, id, device.deviceToken, baseUrl);
     reply.send(metadata);
   }
