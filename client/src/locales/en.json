@@ -5714,6 +5714,12 @@
       "errors": {
         "noToken": "No token provided"
       }
+    },
+    "reconnect": {
+      "heading": "Waiting for the server",
+      "description": "BookOrbit can't reach its server right now. This page continues on its own as soon as the server answers.",
+      "retry": "Try again now",
+      "retrying": "Trying again..."
     }
   },
   "author": {
