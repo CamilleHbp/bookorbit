@@ -133,10 +133,30 @@ function ProgressSync:remoteProgressIsNewer(body, local_percentage)
     if body.timestamp ~= nil then
         if local_timestamp > 0 then
             return body.timestamp > local_timestamp
+                or self:furtherBeforeCompared(body.percentage, local_percentage)
         end
         return body.percentage > local_percentage
     end
     return body.percentage > local_percentage
+end
+
+-- A page turn dates this device's place, but until that place has been weighed
+-- against BookOrbit's since the book opened it can be a fresh download's cover
+-- or a copy left days behind. One turn from there must not make another
+-- device's further place look older and get overwritten (#1806).
+function ProgressSync:furtherBeforeCompared(remote_percentage, local_percentage)
+    return remote_percentage > local_percentage and not self:progressComparedSinceOpen()
+end
+
+-- Whether the open book's place has been weighed against BookOrbit's since it
+-- opened: a pull or push went through, or the reader answered Jump or Stay.
+function ProgressSync:progressComparedSinceOpen()
+    local compared = self.progress_compared_digest
+    return compared ~= nil and compared == self:getDocumentDigest()
+end
+
+function ProgressSync:noteProgressCompared(digest)
+    self.progress_compared_digest = digest or self:getDocumentDigest()
 end
 
 function ProgressSync:applyRemoteProgress(body, on_done)
@@ -171,12 +191,14 @@ function ProgressSync:reconcileProgressBeforeBookSync(digest, on_done)
     end
 
     if not body.percentage then
+        self:noteProgressCompared(digest)
         on_done(false)
         return true
     end
 
     if body.device == Device.model and body.device_id == self.device_id
             and (self.last_page_turn_timestamp or 0) > 0 then
+        self:noteProgressCompared(digest)
         on_done(false)
         return true
     end
@@ -186,21 +208,27 @@ function ProgressSync:reconcileProgressBeforeBookSync(digest, on_done)
     local local_percentage = self:getLastPercent()
 
     if local_percentage == body.percentage or body.progress == local_progress then
+        self:noteProgressCompared(digest)
         on_done(false)
         return true
     end
 
     local remote_newer = self:remoteProgressIsNewer(body, local_percentage)
     local strategy = remote_newer and self.settings.sync_forward or self.settings.sync_backward
-    if strategy == SYNC_STRATEGY.SILENT then
-        self:applyRemoteProgress(body, on_done)
-        return true
-    elseif strategy == SYNC_STRATEGY.PROMPT then
+    if strategy == SYNC_STRATEGY.PROMPT then
+        -- Weighed once answered: a Stay, then reading on, makes this place the newer one.
         openPrompt(self, body, remote_newer, true, function()
+            self:noteProgressCompared(digest)
             self:applyRemoteProgress(body, on_done)
         end, function()
+            self:noteProgressCompared(digest)
             on_done(remote_newer)
         end)
+        return true
+    end
+    self:noteProgressCompared(digest)
+    if strategy == SYNC_STRATEGY.SILENT then
+        self:applyRemoteProgress(body, on_done)
         return true
     elseif remote_newer then
         Toast.show(_("Kept your place. BookOrbit is further ahead."), { icon = "info", timeout = 4 })
@@ -231,7 +259,9 @@ function ProgressSync:pushProgressAfterBookSync(digest)
     if not self.ui or not self.ui.document or self:getDocumentDigest() ~= digest then return end
     local body, err = self:newClient():updateProgress(digest, self:getLastPercent(), self:getLastProgress(), os.time())
     self.push_timestamp = UIManager:getElapsedTimeSinceBoot()
-    if not body then
+    if body then
+        self:noteProgressCompared(digest)
+    else
         logger.dbg("BookOrbit: progress push after book sync failed:", err)
     end
 end
@@ -306,6 +336,7 @@ function ProgressSync:updateProgress(ensure_networking, interactive, on_suspend)
         NetworkMgr:disableWifi()
     end
 
+    if body then self:noteProgressCompared(digest) end
     if body and self.book_sheet then self:fetchRemoteProgress(digest, nil, true) end
 
     self.push_timestamp = now
@@ -367,6 +398,7 @@ function ProgressSync:getProgress(ensure_networking, interactive)
     end
 
     if not body.percentage then
+        self:noteProgressCompared(digest)
         if interactive then
             Toast.show(_("BookOrbit has no position for this book yet"), { icon = "info" })
         end
@@ -377,6 +409,7 @@ function ProgressSync:getProgress(ensure_networking, interactive)
     -- Explicit pulls and opens before any page turn must still recover that position.
     if not interactive and body.device == Device.model and body.device_id == self.device_id
             and (self.last_page_turn_timestamp or 0) > 0 then
+        self:noteProgressCompared(digest)
         return
     end
 
@@ -385,6 +418,7 @@ function ProgressSync:getProgress(ensure_networking, interactive)
     local percentage = self:getLastPercent()
 
     if percentage == body.percentage or body.progress == progress then
+        self:noteProgressCompared(digest)
         if interactive then
             Toast.show(_("Already in sync"))
         end
@@ -392,6 +426,7 @@ function ProgressSync:getProgress(ensure_networking, interactive)
     end
 
     if interactive then
+        self:noteProgressCompared(digest)
         self:syncToProgress(body.progress, body.percentage)
         if self.recordSyncSuccess then
             self:recordSyncSuccess("progress_pull", _("Progress pulled"))
@@ -403,25 +438,32 @@ function ProgressSync:getProgress(ensure_networking, interactive)
     local self_older
     if body.timestamp ~= nil then
         self_older = (body.timestamp > self.last_page_turn_timestamp)
+            or self:furtherBeforeCompared(body.percentage, percentage)
     else
         self_older = (body.percentage > percentage)
     end
 
     local strategy = self_older and self.settings.sync_forward or self.settings.sync_backward
+    if strategy == SYNC_STRATEGY.PROMPT then
+        openPrompt(self, body, self_older, false, function()
+            self:noteProgressCompared(digest)
+            self:syncToProgress(body.progress, body.percentage)
+            if self.recordSyncSuccess then
+                self:recordSyncSuccess("progress_pull", _("Progress pulled"))
+            end
+            showMoved(body)
+        end, function()
+            self:noteProgressCompared(digest)
+        end)
+        return
+    end
+    self:noteProgressCompared(digest)
     if strategy == SYNC_STRATEGY.SILENT then
         self:syncToProgress(body.progress, body.percentage)
         if self.recordSyncSuccess then
             self:recordSyncSuccess("progress_pull", _("Progress pulled"))
         end
         showMoved(body)
-    elseif strategy == SYNC_STRATEGY.PROMPT then
-        openPrompt(self, body, self_older, false, function()
-            self:syncToProgress(body.progress, body.percentage)
-            if self.recordSyncSuccess then
-                self:recordSyncSuccess("progress_pull", _("Progress pulled"))
-            end
-            showMoved(body)
-        end)
     end
 end
 

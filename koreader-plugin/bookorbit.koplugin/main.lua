@@ -85,6 +85,8 @@ local BookOrbit = WidgetContainer:extend{
     pull_timestamp = nil,
     last_page = nil,
     last_page_turn_timestamp = nil,
+    -- Digest of the open book once its place was weighed against BookOrbit's.
+    progress_compared_digest = nil,
 
     settings = nil,
 }

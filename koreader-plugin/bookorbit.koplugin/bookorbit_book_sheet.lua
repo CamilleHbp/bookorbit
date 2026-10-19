@@ -337,10 +337,12 @@ local function onAction(page, action)
     elseif kind == "jump" then
         local remote = page.book_data.remote
         page:close()
+        plugin:noteProgressCompared(page.book_data.digest)
         plugin:syncToProgress(remote.progress, remote.percentage)
         plugin:recordSyncSuccess("progress_pull", _("Progress pulled"))
     elseif kind == "stay" then
         page:close()
+        plugin:noteProgressCompared(page.book_data.digest)
     end
     return true
 end
