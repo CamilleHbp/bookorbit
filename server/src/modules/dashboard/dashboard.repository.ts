@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, isNull, lt, max, min, notExists, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, max, min, notExists, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { BOOK_FORMATS, isAudioFormat, type ContentFilterRules, type ReadStatus } from '@bookorbit/types';
 
@@ -129,30 +129,22 @@ export class DashboardRepository {
     if (accessibleLibraryIds.length === 0) return [];
 
     const cfClauses = contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    const activity = this.listeningActivity(userId);
     const rows = await this.db
       .select({ id: books.id })
       .from(books)
-      .innerJoin(audiobookProgress, and(eq(audiobookProgress.bookId, books.id), eq(audiobookProgress.userId, userId)))
-      .innerJoin(
-        bookFiles,
-        and(
-          eq(bookFiles.id, audiobookProgress.currentFileId),
-          eq(bookFiles.bookId, books.id),
-          eq(bookFiles.role, 'content'),
-          inArray(bookFiles.format, AUDIO_FORMATS),
-        ),
-      )
+      .innerJoin(activity, eq(activity.bookId, books.id))
       .leftJoin(userBookStatus, and(eq(userBookStatus.bookId, books.id), eq(userBookStatus.userId, userId)))
       .where(
         and(
           inArray(books.libraryId, accessibleLibraryIds),
           eq(books.status, 'present'),
-          sql`${audiobookProgress.percentage} > 0 and ${audiobookProgress.percentage} < 100`,
           or(isNull(userBookStatus.bookId), notInArray(userBookStatus.status, [...CONTINUE_SCROLLER_EXCLUDED_READ_STATUSES])),
           ...cfClauses,
         ),
       )
-      .orderBy(desc(audiobookProgress.updatedAt), desc(books.id))
+      .groupBy(books.id)
+      .orderBy(desc(max(activity.listenedAt)), desc(books.id))
       .limit(limit);
 
     return rows.map((row) => row.id);
@@ -161,29 +153,60 @@ export class DashboardRepository {
   async countContinueListeningBooks(accessibleLibraryIds: number[], userId: number, contentFilters?: ContentFilterRules): Promise<number> {
     if (accessibleLibraryIds.length === 0) return 0;
     const cfClauses = contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    const activity = this.listeningActivity(userId);
     const rows = await this.db
-      .select({ value: sql<number>`count(*)::int` })
+      .select({ value: sql<number>`count(distinct ${books.id})::int` })
       .from(books)
-      .innerJoin(audiobookProgress, and(eq(audiobookProgress.bookId, books.id), eq(audiobookProgress.userId, userId)))
+      .innerJoin(activity, eq(activity.bookId, books.id))
+      .where(and(inArray(books.libraryId, accessibleLibraryIds), eq(books.status, 'present'), ...cfClauses));
+
+    return rows[0]?.value ?? 0;
+  }
+
+  /**
+   * One row per thing the user is part way through listening to, with when they last listened: an
+   * audiobook, or a read-along EPUB's narration. A book with both can appear twice; callers group.
+   *
+   * Narration counts only when playing it wrote the marker, which is when `position_seconds` is
+   * set. Reading on any device carries the marker along to the page and clears the seconds
+   * (`AudiobookEbookProgressSyncService.advanceNarrationToText`), and a book only read that way
+   * belongs to Continue Reading.
+   */
+  private listeningActivity(userId: number) {
+    const audiobooks = this.db
+      .select({ bookId: audiobookProgress.bookId, listenedAt: sql<Date>`${audiobookProgress.updatedAt}`.as('listened_at') })
+      .from(audiobookProgress)
       .innerJoin(
         bookFiles,
         and(
           eq(bookFiles.id, audiobookProgress.currentFileId),
-          eq(bookFiles.bookId, books.id),
+          eq(bookFiles.bookId, audiobookProgress.bookId),
           eq(bookFiles.role, 'content'),
           inArray(bookFiles.format, AUDIO_FORMATS),
         ),
       )
+      .where(and(eq(audiobookProgress.userId, userId), sql`${audiobookProgress.percentage} > 0 and ${audiobookProgress.percentage} < 100`));
+    const narrations = this.db
+      .select({ bookId: bookFiles.bookId, listenedAt: sql<Date>`${readingProgress.narrationUpdatedAt}`.as('listened_at') })
+      .from(readingProgress)
+      .innerJoin(
+        bookFiles,
+        and(
+          eq(bookFiles.id, readingProgress.bookFileId),
+          eq(bookFiles.role, 'content'),
+          eq(bookFiles.mediaOverlayAvailable, true),
+          sql`lower(${bookFiles.format}) = 'epub'`,
+        ),
+      )
       .where(
         and(
-          inArray(books.libraryId, accessibleLibraryIds),
-          eq(books.status, 'present'),
-          sql`${audiobookProgress.percentage} > 0 and ${audiobookProgress.percentage} < 100`,
-          ...cfClauses,
+          eq(readingProgress.userId, userId),
+          isNotNull(readingProgress.positionSeconds),
+          isNotNull(readingProgress.narrationUpdatedAt),
+          sql`${readingProgress.narrationPercentage} > 0 and ${readingProgress.narrationPercentage} < 100`,
         ),
       );
-
-    return rows[0]?.value ?? 0;
+    return audiobooks.unionAll(narrations).as('listening_activity');
   }
 
   async countWantToReadBooks(accessibleLibraryIds: number[], userId: number, contentFilters?: ContentFilterRules): Promise<number> {
