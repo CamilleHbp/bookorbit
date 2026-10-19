@@ -848,6 +848,13 @@
       "when": 1792209194389,
       "tag": "0120_record_kobo_snapshot_cover_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1792444043652,
+      "tag": "0121_add_device_annotation_sync",
+      "breakpoints": true
     }
   ]
 }

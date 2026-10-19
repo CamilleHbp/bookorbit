@@ -18,6 +18,8 @@ export const SERVER_FEATURES = [
   "read-aloud-delivery",
   "koreader-delivery-settings",
   "server-connection-identity",
+  /** `GET /books/:id/annotations` and `/bookmarks` accept `readerFileId` and return positions for that file. */
+  "reader-file-positions",
 ] as const;
 
 export type ServerFeature = (typeof SERVER_FEATURES)[number];

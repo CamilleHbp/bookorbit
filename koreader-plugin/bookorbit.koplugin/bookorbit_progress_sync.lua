@@ -7,7 +7,6 @@ runs before a manual book sync. Installed onto the plugin controller as
 regular methods.
 ]]
 
-local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
@@ -21,6 +20,9 @@ local T = require("ffi/util").template
 local _ = require("gettext")
 
 local BookOrbitStateManager = require("bookorbit_state_manager")
+local DeviceNames = require("bookorbit_device_names")
+-- Loaded on first use: specs load this module without KOReader's widgets.
+local Toast = setmetatable({}, { __index = function(_t, key) return require("bookorbit_toast")[key] end })
 
 local API_CALL_DEBOUNCE_DELAY = time.s(25)
 
@@ -30,9 +32,32 @@ local SYNC_STRATEGY
 local ProgressSync = {}
 
 local function showSyncError()
-    UIManager:show(InfoMessage:new{
-        text = _("Something went wrong when syncing to BookOrbit, please check your network connection and try again later."),
-        timeout = 3,
+    Toast.error(_("Could not sync progress with BookOrbit"))
+end
+
+-- "54%" for a 0..1 fraction.
+local function pctLabel(fraction)
+    return tostring(Math.round((fraction or 0) * 100)) .. "%"
+end
+
+-- Where the reader now is, after following BookOrbit's position.
+local function showMoved(body)
+    local device = DeviceNames.label(body.device)
+    if device then
+        Toast.show(T(_("Now at %1, from %2"), pctLabel(body.percentage), device))
+    else
+        Toast.show(T(_("Now at %1"), pctLabel(body.percentage)))
+    end
+end
+
+-- The This book sheet, opened as the prompt.
+local function openPrompt(self, body, newer, before_upload, on_jump, on_stay)
+    require("bookorbit_book_sheet").openPrompt(self, {
+        remote = { percentage = body.percentage, device = body.device, timestamp = body.timestamp },
+        newer = newer,
+        before_upload = before_upload,
+        on_jump = on_jump,
+        on_stay = on_stay,
     })
 end
 
@@ -92,6 +117,7 @@ function ProgressSync:syncToProgress(progress, percentage_fallback)
         -- No exact position (push came from web/audio sync); jump by percentage.
         -- kosync percentage is 0-1; GotoPercent expects 0-100.
         self.ui:handleEvent(Event:new("GotoPercent", percentage_fallback * 100))
+        if self.book_sheet then self.book_sheet:refreshProgress() end
         return
     end
     if self.ui.document.info.has_pages then
@@ -99,6 +125,7 @@ function ProgressSync:syncToProgress(progress, percentage_fallback)
     else
         self.ui:handleEvent(Event:new("GotoXPointer", progress))
     end
+    if self.book_sheet then self.book_sheet:refreshProgress() end
 end
 
 function ProgressSync:remoteProgressIsNewer(body, local_percentage)
@@ -134,10 +161,11 @@ function ProgressSync:reconcileProgressBeforeBookSync(digest, on_done)
     local client = self:newClient()
     local body, err = client:getProgress(digest)
     self.pull_timestamp = UIManager:getElapsedTimeSinceBoot()
+    self:rememberRemoteProgress(digest, body)
 
     if not body then
         logger.dbg("BookOrbit: progress check before book sync failed:", err)
-        UIManager:show(InfoMessage:new{ text = _("Could not check latest progress. Syncing book data without changing progress."), timeout = 4 })
+        Toast.show(_("Could not check BookOrbit's position"), { icon = "triangle-alert", timeout = 4 })
         on_done(true)
         return true
     end
@@ -168,28 +196,43 @@ function ProgressSync:reconcileProgressBeforeBookSync(digest, on_done)
         self:applyRemoteProgress(body, on_done)
         return true
     elseif strategy == SYNC_STRATEGY.PROMPT then
-        local template = remote_newer and _("Sync to latest location %1% from device '%2' before uploading this book?")
-            or _("Sync to previous location %1% from device '%2' before uploading this book?")
-        UIManager:show(ConfirmBox:new{
-            text = T(template, Math.round(body.percentage * 100), body.device),
-            ok_callback = function()
-                self:applyRemoteProgress(body, on_done)
-            end,
-            cancel_callback = function()
-                on_done(remote_newer)
-            end,
-        })
+        openPrompt(self, body, remote_newer, true, function()
+            self:applyRemoteProgress(body, on_done)
+        end, function()
+            on_done(remote_newer)
+        end)
         return true
     elseif remote_newer then
-        UIManager:show(InfoMessage:new{
-            text = _("BookOrbit has newer progress. Syncing book data without changing progress."),
-            timeout = 4,
-        })
+        Toast.show(_("Kept your place. BookOrbit is further ahead."), { icon = "info", timeout = 4 })
         on_done(true)
         return true
     else
         on_done(false)
         return true
+    end
+end
+
+-- "Sync now" in a book. Highlights, bookmarks, stats and state do not depend on
+-- where the reader is, so they go first with the position held back; the
+-- progress question comes after, and only the position waits for its answer.
+-- `run_book_sync(skip_progress, after_sync)` calls `after_sync` once the book
+-- sync finished without an error.
+function ProgressSync:syncBookThenProgress(digest, run_book_sync)
+    run_book_sync(true, function()
+        UIManager:nextTick(function()
+            self:reconcileProgressBeforeBookSync(digest, function(skip_progress)
+                if not skip_progress then self:pushProgressAfterBookSync(digest) end
+            end)
+        end)
+    end)
+end
+
+function ProgressSync:pushProgressAfterBookSync(digest)
+    if not self.ui or not self.ui.document or self:getDocumentDigest() ~= digest then return end
+    local body, err = self:newClient():updateProgress(digest, self:getLastPercent(), self:getLastProgress(), os.time())
+    self.push_timestamp = UIManager:getElapsedTimeSinceBoot()
+    if not body then
+        logger.dbg("BookOrbit: progress push after book sync failed:", err)
     end
 end
 
@@ -229,7 +272,7 @@ function ProgressSync:updateProgress(ensure_networking, interactive, on_suspend)
             if self.recordSyncSuccess then
                 self:recordSyncSuccess("progress_push", _("Progress pushed"))
             end
-            UIManager:show(InfoMessage:new{ text = _("Progress has been pushed to BookOrbit."), timeout = 3 })
+            Toast.show(_("Progress sent to BookOrbit"))
             if not on_suspend then
                 if self.requestUpdateCheck then
                     self:requestUpdateCheck(false, "progress_push")
@@ -263,6 +306,8 @@ function ProgressSync:updateProgress(ensure_networking, interactive, on_suspend)
         NetworkMgr:disableWifi()
     end
 
+    if body and self.book_sheet then self:fetchRemoteProgress(digest, nil, true) end
+
     self.push_timestamp = now
 end
 
@@ -295,9 +340,17 @@ function ProgressSync:getProgress(ensure_networking, interactive)
     local digest = self:getDocumentDigest()
     if not digest then return end
 
+    local document = self.ui.document
+    local requested_progress = self:getLastProgress()
     local client = self:newClient()
     local body, err = client:getProgress(digest)
+    -- Network requests yield; a later navigation must win over this response.
+    if not self.ui or self.ui.document ~= document
+            or self:getLastProgress() ~= requested_progress then
+        return
+    end
     self.pull_timestamp = now
+    self:rememberRemoteProgress(digest, body)
 
     if not body then
         if interactive then showSyncError() end
@@ -315,7 +368,7 @@ function ProgressSync:getProgress(ensure_networking, interactive)
 
     if not body.percentage then
         if interactive then
-            UIManager:show(InfoMessage:new{ text = _("No progress found for this document."), timeout = 3 })
+            Toast.show(_("BookOrbit has no position for this book yet"), { icon = "info" })
         end
         return
     end
@@ -333,7 +386,7 @@ function ProgressSync:getProgress(ensure_networking, interactive)
 
     if percentage == body.percentage or body.progress == progress then
         if interactive then
-            UIManager:show(InfoMessage:new{ text = _("The progress has already been synchronized."), timeout = 3 })
+            Toast.show(_("Already in sync"))
         end
         return
     end
@@ -343,7 +396,7 @@ function ProgressSync:getProgress(ensure_networking, interactive)
         if self.recordSyncSuccess then
             self:recordSyncSuccess("progress_pull", _("Progress pulled"))
         end
-        UIManager:show(InfoMessage:new{ text = _("Progress has been synchronized."), timeout = 3 })
+        showMoved(body)
         return
     end
 
@@ -360,20 +413,57 @@ function ProgressSync:getProgress(ensure_networking, interactive)
         if self.recordSyncSuccess then
             self:recordSyncSuccess("progress_pull", _("Progress pulled"))
         end
-        UIManager:show(InfoMessage:new{ text = _("Progress has been synchronized."), timeout = 3 })
+        showMoved(body)
     elseif strategy == SYNC_STRATEGY.PROMPT then
-        local template = self_older and _("Sync to latest location %1% from device '%2'?")
-            or _("Sync to previous location %1% from device '%2'?")
-        UIManager:show(ConfirmBox:new{
-            text = T(template, Math.round(body.percentage * 100), body.device),
-            ok_callback = function()
-                self:syncToProgress(body.progress, body.percentage)
-                if self.recordSyncSuccess then
-                    self:recordSyncSuccess("progress_pull", _("Progress pulled"))
-                end
-            end,
-        })
+        openPrompt(self, body, self_older, false, function()
+            self:syncToProgress(body.progress, body.percentage)
+            if self.recordSyncSuccess then
+                self:recordSyncSuccess("progress_pull", _("Progress pulled"))
+            end
+            showMoved(body)
+        end)
     end
+end
+
+-- BookOrbit's position for the open book, as last pulled, for the This book
+-- sheet. Kept in memory: it only means anything while the book is open.
+function ProgressSync:rememberRemoteProgress(digest, body)
+    if not digest or type(body) ~= "table" then return end
+    if not body.percentage then
+        if self.last_remote_progress and self.last_remote_progress.digest == digest then
+            self.last_remote_progress = nil
+            if self.book_sheet then self.book_sheet:refreshProgress() end
+        end
+        return
+    end
+    self.last_remote_progress = {
+        digest = digest,
+        percentage = Math.roundPercent(body.percentage),
+        progress = body.progress,
+        device = body.device,
+        timestamp = body.timestamp,
+        checked_at = os.time(),
+    }
+    if self.book_sheet then self.book_sheet:refreshProgress() end
+end
+
+-- Refreshes that position in the background when already online, without
+-- moving the reader or prompting. on_done(ok) runs on the UI thread.
+function ProgressSync:fetchRemoteProgress(digest, on_done, force)
+    if not digest or not self:isLoggedIn() or not NetworkMgr:isConnected() then
+        if on_done then on_done(false) end
+        return
+    end
+    local recent = self.last_remote_progress
+    if not force and recent and recent.digest == digest and os.time() - (recent.checked_at or 0) < 60 then
+        if on_done then on_done(true) end
+        return
+    end
+    self:runInSyncCoroutine(function()
+        local body = self:newClient():getProgress(digest)
+        self:rememberRemoteProgress(digest, body)
+        if on_done then UIManager:nextTick(function() on_done(body ~= nil) end) end
+    end)
 end
 
 function ProgressSync:schedulePeriodicPush()

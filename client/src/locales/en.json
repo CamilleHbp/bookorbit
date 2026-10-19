@@ -5071,7 +5071,8 @@
         "bulkRestored": "{count, plural, =0 {Restored no annotations} one {Restored # annotation} other {Restored # annotations}}",
         "bulkRecolored": "{count, plural, =0 {Recolored no annotations} one {Recolored # annotation} other {Recolored # annotations}}",
         "bulkRestyled": "{count, plural, =0 {Restyled no annotations} one {Restyled # annotation} other {Restyled # annotations}}",
-        "noteSaved": "Note saved"
+        "noteSaved": "Note saved",
+        "purgePendingDeviceSync": "A synced device still has to remove this annotation. Sync that device, then delete it forever."
       },
       "railTitle": "{marks} marks · {books} books",
       "lastTwelveMonths": "Last 12 months",
@@ -5116,10 +5117,16 @@
       },
       "activitySummary": "{count, plural, one {# highlight between {from} and {to}} other {# highlights between {from} and {to}}}",
       "book": "Book",
-      "needsReview": "Needs review"
+      "needsReview": "Needs review",
+      "trashToggle": "{count, plural, one {Trash, # annotation} other {Trash, # annotations}}",
+      "purgeDialog": {
+        "title": "Delete forever?",
+        "description": "This annotation and its note are removed for good. It cannot be restored from the trash."
+      }
     },
     "sources": {
       "web": "Web",
+      "bookorbit": "BookOrbit",
       "koreader": "KOReader",
       "kobo": "Kobo"
     },
@@ -11523,7 +11530,21 @@
     },
     "toast": {
       "linkedHighlightError": "Could not open the linked highlight position",
-      "resumed": "Resumed at {pct}% - {label}"
+      "resumed": "Resumed at {pct}% - {label}",
+      "newerPositionError": "Could not open your newer place",
+      "highlightSaveFailed": "Could not save the highlight",
+      "noteSaveFailed": "Could not save the note",
+      "highlightDeleteFailed": "Could not delete the highlight",
+      "bookmarkSaveFailed": "Could not add the bookmark",
+      "bookmarkDeleteFailed": "Could not remove the bookmark",
+      "bookmarkUpdateFailed": "Could not save the bookmark",
+      "marksLoadFailed": "Could not load your highlights and bookmarks"
+    },
+    "newerPositionDialog": {
+      "title": "Continue from another device?",
+      "description": "This book was read to {remote} on another device while it was open here at {local}.",
+      "follow": "Go to {pct}",
+      "stay": "Stay at {pct}"
     },
     "header": {
       "goBack": "Go back",
@@ -11665,6 +11686,7 @@
       "allChapters": "All chapters",
       "notesOnly": "Notes only",
       "deleteBookmark": "Delete bookmark",
+      "editBookmark": "Edit bookmark",
       "deleteHighlight": "Delete highlight",
       "approximatePosition": "Synced from device; exact position unavailable, jumps to the chapter",
       "sort": {
@@ -11680,6 +11702,7 @@
       "translate": "Translate",
       "define": "Define",
       "deleteAnnotation": "Delete annotation",
+      "readFromHere": "Read from here",
       "apply": "Apply",
       "color": "Highlight color: {color}",
       "style": "Highlight style: {style}",
@@ -11830,6 +11853,12 @@
       "hideControls": "Hide controls",
       "stop": "Stop narration",
       "error": "Narration playback error"
+    },
+    "bookmarkEdit": {
+      "title": "Edit bookmark",
+      "titleLabel": "Title",
+      "noteLabel": "Note",
+      "notePlaceholder": "Optional note"
     }
   },
   "scanner": {

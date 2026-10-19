@@ -1,6 +1,6 @@
 import { recordBookFileHashHistory, deleteBookFilesWithHashInvalidation, deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
 import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
-import { SQL, and, asc, count, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { SQL, and, asc, count, eq, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { SUPPORTED_BOOK_FORMATS } from '../upload/upload-validator.service';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
@@ -1593,6 +1593,7 @@ export class BookRepository {
         sizeBytes: bookFiles.sizeBytes,
         durationSeconds: bookFiles.durationSeconds,
         mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,
+        mediaOverlayDurationSeconds: bookFiles.mediaOverlayDurationSeconds,
       })
       .from(bookFiles)
       .innerJoin(books, eq(books.id, bookFiles.bookId))
@@ -1694,6 +1695,7 @@ export class BookRepository {
         koboContentSourceProgressPercent: readingProgress.koboContentSourceProgressPercent,
         koreaderProgress: readingProgress.koreaderProgress,
         updatedAt: readingProgress.updatedAt,
+        lastReadAt: readingProgress.lastReadAt,
       })
       .from(bookFiles)
       .leftJoin(readingProgress, and(eq(readingProgress.bookFileId, bookFiles.id), eq(readingProgress.userId, userId)))
@@ -1710,6 +1712,7 @@ export class BookRepository {
         percentage: readingProgress.percentage,
         koreaderProgress: readingProgress.koreaderProgress,
         updatedAt: readingProgress.updatedAt,
+        lastReadAt: readingProgress.lastReadAt,
       })
       .from(bookFiles)
       .innerJoin(readingProgress, and(eq(readingProgress.bookFileId, bookFiles.id), eq(readingProgress.userId, userId)))
@@ -2554,6 +2557,72 @@ export class BookRepository {
       .delete(koreaderProgressResets)
       .where(and(eq(koreaderProgressResets.userId, params.userId), eq(koreaderProgressResets.bookFileId, params.fileId)));
     return true;
+  }
+
+  /**
+   * Moves the narration marker to a sentence a text position reached, unless narration was saved
+   * at or after `sourceUpdatedAt`. Seconds are cleared so every client resumes from the sentence.
+   * The row's own stamps stay, as for a Kobo location: the marker followed the reader, it did not
+   * read anything itself.
+   */
+  async advanceNarrationMarker(params: {
+    userId: number;
+    fileId: number;
+    mediaOverlayFragment: string;
+    mediaOverlaySectionIndex: number;
+    percentage: number;
+    sourceUpdatedAt: Date;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(readingProgress)
+      .set({
+        positionSeconds: null,
+        mediaOverlayFragment: params.mediaOverlayFragment,
+        mediaOverlaySectionIndex: params.mediaOverlaySectionIndex,
+        narrationPercentage: this.clampProgressPercentage(params.percentage),
+        narrationUpdatedAt: params.sourceUpdatedAt,
+        updatedAt: sql`"reading_progress"."updated_at"`,
+        lastReadAt: sql`"reading_progress"."last_read_at"`,
+      })
+      .where(
+        and(
+          eq(readingProgress.userId, params.userId),
+          eq(readingProgress.bookFileId, params.fileId),
+          or(isNull(readingProgress.narrationUpdatedAt), lt(readingProgress.narrationUpdatedAt, params.sourceUpdatedAt)),
+        ),
+      )
+      .returning({ fileId: readingProgress.bookFileId });
+    return rows.length > 0;
+  }
+
+  /**
+   * The row a reset leaves on a read-along: the text at the start and the narration marker on the
+   * first narrated sentence, both stamped with the reset. A write that landed since the reset wins.
+   */
+  async startNarrationAfterReset(params: {
+    userId: number;
+    fileId: number;
+    mediaOverlayFragment: string;
+    mediaOverlaySectionIndex: number;
+    resetAt: Date;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .insert(readingProgress)
+      .values({
+        userId: params.userId,
+        bookFileId: params.fileId,
+        percentage: 0,
+        mediaOverlayFragment: params.mediaOverlayFragment,
+        mediaOverlaySectionIndex: params.mediaOverlaySectionIndex,
+        narrationPercentage: 0,
+        narrationUpdatedAt: params.resetAt,
+        textUpdatedAt: params.resetAt,
+        updatedAt: params.resetAt,
+        lastReadAt: params.resetAt,
+      })
+      .onConflictDoNothing()
+      .returning({ fileId: readingProgress.bookFileId });
+    return rows.length > 0;
   }
 
   async syncKoboReadingStateFromProgress(
