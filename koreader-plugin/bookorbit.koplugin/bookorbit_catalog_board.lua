@@ -231,8 +231,8 @@ function CatalogBoard:boardItemAction(item, d)
         return { kind = "books", params = { sort = "title" }, title = _("All books") }
     elseif t == "also" or t == "goalpace" then
         return { kind = "books", params = { sort = "recently_read", readStatus = "reading" }, title = _("In progress") }
-    elseif t == "highlight" and d.highlight and d.highlight.bookId then
-        return { kind = "detail", book_id = d.highlight.bookId }
+    elseif t == "highlight" and d.highlight then
+        return { kind = "highlight", highlight = d.highlight }
     elseif t == "shelf" then
         local source = item.props and item.props.source
         if source == "want-to-read" and not (item.props and item.props.params) then return nil end
@@ -800,6 +800,8 @@ function CatalogBoard:boardRun(action, tile)
         self:onMenuSelect({ kind = "dashboard-book", book_id = action.book.id, book = action.book, resume = action.resume, list = action.list })
     elseif kind == "detail" then
         self:loadBookDetail(action.book_id, { list = action.list })
+    elseif kind == "highlight" then
+        require("bookorbit_highlight_sheet").open(self, action.highlight)
     elseif kind == "books" then
         self:loadBooks(action.params or {}, action.title)
     elseif kind == "shelf" then
