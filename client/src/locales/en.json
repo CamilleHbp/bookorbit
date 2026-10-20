@@ -6476,6 +6476,13 @@
             "unavailable": "Unavailable",
             "epubCopiesOnly": "EPUB copies only"
           },
+          "chip": {
+            "enabled": "Synced",
+            "partial": "Partly synced",
+            "disabled": "Sync off",
+            "unavailable": "Sync issue"
+          },
+          "chipAria": "Read-aloud progress sync: {status}",
           "enabledDescription": "Audiobook, web reader, Kobo, and KOReader positions stay in sync.",
           "disabledDescription": "Each format keeps its own reading position.",
           "epubCopiesDescription": "Web reader, Kobo, and KOReader positions stay in sync across the EPUB copies. Add matching audiobook files to sync the audiobook too.",
