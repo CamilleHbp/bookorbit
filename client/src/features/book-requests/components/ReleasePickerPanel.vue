@@ -48,6 +48,7 @@ import RequestDrawerToolbar from './RequestDrawerToolbar.vue'
 import RequestEmptyState from './RequestEmptyState.vue'
 import EntityNotFound from '@/components/EntityNotFound.vue'
 import { formatKey, formatKeys, languageKey } from '../releaseFacets'
+import { requestBookCoverSources } from '../requestBookCover'
 import { requestFailureText } from '../requestOutcome'
 import { protocolChipClass, sourceChipClass } from '../sourceColors'
 import { useBookRequestActions } from '../composables/useBookRequests'
@@ -199,6 +200,7 @@ const busy = computed(() => grabbing.value || actions.isPending(request.value?.i
 const isRetry = computed(() => request.value?.status === 'failed')
 const failureText = computed(() => (request.value ? requestFailureText(request.value, (key, named) => t(key, named)) : null))
 const authorLine = computed(() => request.value?.authors.join(', ') ?? '')
+const bookCoverSources = computed(() => (request.value ? requestBookCoverSources(request.value) : []))
 const localOnlyCriteriaFacts = computed(() => (criteria.value ? localOnlyFacts(criteria.value) : []))
 /**
  * Adding a source or switching one back on happens under Settings > System > Requests, which is
@@ -789,7 +791,13 @@ function showEverySource(): void {
       <template v-else-if="request">
         <!-- The stage is named in the toolbar, so what is left here is the book being grabbed for. -->
         <header class="flex items-center gap-3.5">
-          <RequestCover :src="request.coverUrl" :media-kind="request.mediaKind" class="h-[72px] w-12 shadow-sm" :icon-size="20" />
+          <RequestCover
+            :src="request.coverUrl"
+            :fallback-sources="bookCoverSources"
+            :media-kind="request.mediaKind"
+            class="h-[72px] w-12 shadow-sm"
+            :icon-size="20"
+          />
 
           <div class="min-w-0 flex-1">
             <h2 class="truncate text-base font-semibold tracking-tight text-foreground">{{ request.title }}</h2>

@@ -46,6 +46,7 @@ import { prefetchRequestAttempts } from '../composables/useRequestAttempts'
 import { prefetchSeedStatus } from '../composables/useRequestSeedStatus'
 import { REQUEST_DRAWER } from '../requestDrawerContext'
 import { canCancelRequest, canDeleteRequest, canDismissRequest, canLeaveRequest, cancelStopsATransfer } from '../requestActions'
+import { requestBookCoverSources } from '../requestBookCover'
 import { requestMediaIcon } from '../requestMedia'
 import { requestFailureText } from '../requestOutcome'
 import { localizedRequestActionFailure } from '../requestActionFailure'
@@ -117,6 +118,7 @@ const canFulfilThis = computed(
 const busy = computed(() => actions.isPending(request.value?.id))
 const mediaIcon = computed(() => requestMediaIcon(request.value?.mediaKind ?? 'ebook'))
 const authorLine = computed(() => request.value?.authors.join(', ') ?? '')
+const bookCoverSources = computed(() => (request.value ? requestBookCoverSources(request.value) : []))
 /** Non-empty only while an attempt is held because its release turned out to hold several books. */
 const releaseUnits = computed(() => request.value?.download?.releaseUnits ?? [])
 const isHeld = computed(() => request.value?.status === 'needs_review')
@@ -679,7 +681,13 @@ function dockFileMeta(file: BookDockFile): string {
         <RequestPairSwitch v-if="companion" :request="request" :companion="companion" :progress-by-request="progressByRequest" />
 
         <header class="flex items-start gap-4">
-          <RequestCover :src="request.coverUrl" :media-kind="request.mediaKind" class="h-[105px] w-[70px] shadow-sm" :icon-size="24" />
+          <RequestCover
+            :src="request.coverUrl"
+            :fallback-sources="bookCoverSources"
+            :media-kind="request.mediaKind"
+            class="h-[105px] w-[70px] shadow-sm"
+            :icon-size="24"
+          />
 
           <div class="min-w-0 flex-1 space-y-1.5">
             <h2 class="text-lg leading-snug font-semibold tracking-tight text-foreground">{{ request.title }}</h2>
