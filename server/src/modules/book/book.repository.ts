@@ -1620,7 +1620,7 @@ export class BookRepository {
       absolutePath?: string;
       relPath?: string | null;
       sizeBytes?: number;
-      mediaOverlayAvailable?: boolean | null;
+      mediaOverlayAvailable?: boolean;
       mediaOverlayDurationSeconds?: number | null;
       mediaOverlayCheckedAt?: Date | null;
     },
@@ -2158,7 +2158,7 @@ export class BookRepository {
       absolutePath: string;
       format: string | null;
       sizeBytes: number | null;
-      sortOrder: number;
+      sortOrder: number | null;
       mediaOverlayAvailable: boolean;
     }[]
   > {

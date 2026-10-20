@@ -869,6 +869,13 @@
       "when": 1792512356419,
       "tag": "0123_add_koreader_hide_audio_only_books",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1792516862510,
+      "tag": "0124_add_author_metadata_provider_pinned",
+      "breakpoints": true
     }
   ]
 }

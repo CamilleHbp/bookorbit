@@ -1,10 +1,10 @@
 {
-  "totalRoutes": 665,
+  "totalRoutes": 667,
   "byPermission": {
     "(none)": 287,
     "Permission.ManageMetadataConfig": 41,
     "Permission.EmailSend": 34,
-    "Permission.LibraryEditMetadata": 35,
+    "Permission.LibraryEditMetadata": 37,
     "Permission.BookDockAccess": 17,
     "Permission.ManageAppSettings": 62,
     "Permission.ManageLibraries": 24,

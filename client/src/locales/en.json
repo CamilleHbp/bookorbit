@@ -5773,7 +5773,10 @@
       "died": "Died",
       "website": "Website",
       "genres": "Genres",
-      "influences": "Influences"
+      "influences": "Influences",
+      "findMatch": "Find the Right Author",
+      "source": "Source",
+      "pinned": "Pinned"
     },
     "list": {
       "title": "Authors",
@@ -5845,7 +5848,17 @@
         "removing": "Removing...",
         "removeImage": "Remove image",
         "imageHint": "PNG/JPEG/WEBP/GIF/BMP up to {size} MB",
-        "saving": "Saving..."
+        "saving": "Saving...",
+        "website": "Website",
+        "websitePlaceholder": "https://example.com",
+        "websiteInvalid": "Enter a web address such as example.com.",
+        "born": "Born",
+        "died": "Died",
+        "lifeDatePlaceholder": "1965 or 1965-03-14",
+        "lifeDateHint": "Born and died take a year, or a full date as year-month-day.",
+        "lifeDateInvalid": "Enter a year or a real date as year-month-day.",
+        "genres": "Genres",
+        "influences": "Influences"
       },
       "merge": {
         "searchPlaceholder": "Search authors to merge into this author",
@@ -5910,6 +5923,56 @@
       "actionsFor": "Actions for {name}",
       "refreshing": "Refreshing metadata for {name}",
       "deleting": "Deleting {name}"
+    },
+    "match": {
+      "title": "Find the right author",
+      "description": "Pick the person behind {name}, from a name search or a pasted Goodreads or Audible link.",
+      "search": {
+        "label": "Name",
+        "submit": "Search"
+      },
+      "reference": {
+        "label": "Goodreads or Audible link or ID",
+        "placeholder": "goodreads.com/author/show/12345",
+        "submit": "Look up",
+        "unrecognised": "Paste a Goodreads or Audible author link, a Goodreads ID or an Audible ASIN.",
+        "notFound": "No author has that ID.",
+        "failed": "The lookup failed. Try again in a moment."
+      },
+      "results": {
+        "label": "Matches",
+        "count": "{count, plural, =0 {No matches} one {# match} other {# matches}}",
+        "searching": "Searching...",
+        "empty": "No authors found. Try another spelling or paste a link.",
+        "failed": "The search failed. Try again in a moment.",
+        "current": "Current",
+        "born": "Born {year}",
+        "lifeSpan": "{born}–{died}"
+      },
+      "detail": {
+        "empty": "Pick a match to see who it is.",
+        "loading": "Loading details...",
+        "noBio": "No biography.",
+        "viewOn": "View on {provider}",
+        "back": "Back to matches",
+        "use": "Use this author",
+        "unpin": "Unpin",
+        "pinnedHint": "Pinned: refreshes look this author up by ID instead of searching by name.",
+        "currentHint": "The author is matched to this person now. Use it to pin the match."
+      },
+      "confirm": {
+        "title": "Use this {provider} author?",
+        "description": "The bio, photo, dates, website, genres and influences are replaced with this author's, and later refreshes keep to this person.",
+        "confirm": "Use this author"
+      },
+      "toast": {
+        "pinned": "Now matched to {name} on {provider}",
+        "unpinned": "Unpinned. Refreshes search by name again.",
+        "notFound": "{provider} has no author with that ID any more.",
+        "providerDown": "{provider} could not be reached. Try again in a moment.",
+        "failed": "Could not use this author.",
+        "unpinFailed": "Could not unpin the match."
+      }
     }
   },
   "book": {

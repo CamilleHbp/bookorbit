@@ -26,6 +26,12 @@ export const SERVER_FEATURES = [
    */
   "book-request-review-hold",
   /**
+   * `PATCH /authors/:id` accepts `website`, `birthDate`, `birthYear`, `deathDate`, `deathYear`,
+   * `genres` and `influences`, and `PUT`/`DELETE /authors/:id/metadata-match` pin or unpin the
+   * provider match.
+   */
+  "author-metadata-match",
+  /**
    * `GET /metadata-fetch/stream` accepts `resultsPerProvider` (up to
    * `METADATA_SEARCH_MAX_RESULTS_PER_PROVIDER`), and Open Library and Hardcover answer a search that
    * names an author but no title.
