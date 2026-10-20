@@ -504,4 +504,53 @@ describe('KOReader progress position routing (e2e)', { timeout: 180_000 }, () =>
       expect(pull.json()).toEqual(expect.objectContaining({ percentage: 0.7, progress: null }));
     }
   });
+
+  // Regression: a sweep pushes the device's whole shelf at once, and every book in it was ranked
+  // as read the moment it arrived, so sorting by last read came out in processing order.
+  it('ranks swept books by when the device read them, and never below a newer read elsewhere', async () => {
+    const [olderPath, newerPath] = await Promise.all([
+      createEpubFixture(library.folderPath, 'last-read/Older.epub', { title: `Last Read Older ${randomUUID()}`, uid: `urn:uuid:${randomUUID()}` }),
+      createEpubFixture(library.folderPath, 'last-read/Newer.epub', { title: `Last Read Newer ${randomUUID()}`, uid: `urn:uuid:${randomUUID()}` }),
+    ]);
+    await triggerAndWaitForLibraryScan(ctx, library.libraryId);
+    const older = await locateBookByAbsolutePath(ctx, olderPath);
+    const newer = await locateBookByAbsolutePath(ctx, newerPath);
+    const lastReadAt = async (bookFileId: number) => {
+      const [row] = await ctx.db
+        .select({ lastReadAt: schema.readingProgress.lastReadAt })
+        .from(schema.readingProgress)
+        .where(eq(schema.readingProgress.bookFileId, bookFileId));
+      return row?.lastReadAt.getTime();
+    };
+    const now = Math.floor(Date.now() / 1000);
+    const olderReadAt = now - 30 * 86400;
+    const newerReadAt = now - 2 * 86400;
+
+    const sweep = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/koreader/plugin/progress',
+      headers: deviceHeaders(),
+      payload: {
+        deviceId: DEVICE_ID,
+        deviceModel: 'Regression device',
+        pluginVersion: '1.7.0',
+        items: [
+          { hash: await fileHashFor(older.bookFileId), percentage: 0.4, timestamp: olderReadAt },
+          { hash: await fileHashFor(newer.bookFileId), percentage: 0.3, timestamp: newerReadAt },
+        ],
+      },
+    });
+    expect(sweep.statusCode).toBe(201);
+    expect(await lastReadAt(older.bookFileId)).toBe(olderReadAt * 1000);
+    expect(await lastReadAt(newer.bookFileId)).toBe(newerReadAt * 1000);
+
+    await saveFromWebReader(older.bookFileId, { percentage: 45 });
+    const webReadAt = await lastReadAt(older.bookFileId);
+    expect(webReadAt).toBeGreaterThanOrEqual(now * 1000);
+
+    // Read further offline an hour ago and pushed late: the page is taken, the newer web read stays the last one.
+    await syncFromDevice(await fileHashFor(older.bookFileId), 0.7, undefined, now - 3600);
+    expect((await storedProgress(older.bookFileId))?.percentage).toBeCloseTo(70, 5);
+    expect(await lastReadAt(older.bookFileId)).toBe(webReadAt);
+  });
 });

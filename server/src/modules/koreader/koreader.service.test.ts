@@ -421,9 +421,11 @@ describe('KoreaderService', () => {
       });
 
       expect(mockRepo.upsertDeviceProgress).toHaveBeenCalled();
-      const written = mockRepo.upsertReadingProgress.mock.calls[0]![0] as { percentage: number; readAt: Date };
+      const written = mockRepo.upsertReadingProgress.mock.calls[0]![0] as { percentage: number; readAt: Date; lastReadAt: Date };
       expect(written.percentage).toBe(70);
       expect(written.readAt.getTime()).toBeGreaterThanOrEqual(before);
+      // Still ranked by when it was read, so reconnecting does not lift it above books read since.
+      expect(written.lastReadAt).toEqual(new Date('2026-10-10T17:00:00Z'));
       expect(mockBookService.syncAudioProgressForExternalEbookProgress).toHaveBeenCalledWith(
         12,
         55,
@@ -524,6 +526,7 @@ describe('KoreaderService', () => {
         xpointer: '/body/DocFragment[7]',
         pageNumber: null,
         readAt: new Date(1700000000 * 1000),
+        lastReadAt: new Date(1700000000 * 1000),
       });
       expect(mockRepo.restoreDevice).toHaveBeenCalledWith(12, 'device-12');
       expect(mockBookService.syncKoboReadingStateForExternalProgress).toHaveBeenCalledWith(12, 44, 50);
@@ -736,6 +739,33 @@ describe('KoreaderService', () => {
       expect(written.get(10)).toEqual(expect.objectContaining({ pageNumber: 84, cfi: null }));
       expect(written.get(11)).toEqual(expect.objectContaining({ pageNumber: null, cfi: 'epubcfi(/6/14!/4/2/6)' }));
       expect(written.get(12)).toEqual(expect.objectContaining({ pageNumber: 31, cfi: null }));
+    });
+
+    // Regression: a first sweep pushes every book on the device, and each one was ranked as read
+    // the moment the sweep arrived, so sorting by last read came out in processing order.
+    it("stamps each swept book's last read with when the device last opened it", async () => {
+      const appliedAt = Math.floor(Date.now() / 1000);
+
+      await service.applyBulkProgress(
+        7,
+        [
+          { bookFile: bookFile(10, 100), percentage: 0.5, timestamp: 1700000000 },
+          { bookFile: bookFile(11, 110), percentage: 0.2, timestamp: 1750000000 },
+          { bookFile: bookFile(12, 120), percentage: 0.9 },
+        ],
+        device,
+      );
+
+      const written = new Map(
+        mockRepo.upsertReadingProgress.mock.calls.map((call) => {
+          const entry = call[0] as { bookFileId: number; lastReadAt: Date };
+          return [entry.bookFileId, entry.lastReadAt];
+        }),
+      );
+
+      expect(written.get(10)).toEqual(new Date(1700000000 * 1000));
+      expect(written.get(11)).toEqual(new Date(1750000000 * 1000));
+      expect(written.get(12)!.getTime()).toBeGreaterThanOrEqual(appliedAt * 1000);
     });
 
     it('issues no query for an empty entry list', async () => {

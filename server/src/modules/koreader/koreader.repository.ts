@@ -82,6 +82,8 @@ export interface ReadingProgressUpsert {
   pageNumber?: number | null;
   /** When the device read to this position; the write's own time when it does not say. */
   readAt?: Date;
+  /** When the reading happened, for last_read_at; defaults to readAt. Never moves the stored value back. */
+  lastReadAt?: Date;
 }
 
 export interface DeviceProgressUpsert {
@@ -720,11 +722,11 @@ export class KoreaderRepository {
   }
 
   async upsertReadingProgress(entry: ReadingProgressUpsert) {
-    const { bookFileId, userId, percentage, cfi = null, xpointer = null, pageNumber = null, readAt = new Date() } = entry;
+    const { bookFileId, userId, percentage, cfi = null, xpointer = null, pageNumber = null, readAt = new Date(), lastReadAt = readAt } = entry;
 
     await this.db
       .insert(schema.readingProgress)
-      .values({ bookFileId, userId, percentage, cfi, pageNumber, koreaderProgress: xpointer, textUpdatedAt: readAt })
+      .values({ bookFileId, userId, percentage, cfi, pageNumber, koreaderProgress: xpointer, textUpdatedAt: readAt, lastReadAt })
       .onConflictDoUpdate({
         target: [schema.readingProgress.bookFileId, schema.readingProgress.userId],
         // Deliberately do NOT update updatedAt here. reading_progress.updatedAt must only
@@ -747,6 +749,10 @@ export class KoreaderRepository {
           koboContentSourceProgressPercent: null,
           textUpdatedAt: readAt,
           updatedAt: sql`"reading_progress"."updated_at"`,
+          // The device's reading time, not the write's: a sweep pushes a whole shelf at once and
+          // an offline book arrives on reconnection, so the write's own time ranked them all as
+          // just read. Held to the stored value so an older push never sinks a newer read elsewhere.
+          lastReadAt: sql`greatest("reading_progress"."last_read_at", ${lastReadAt.toISOString()}::timestamptz)`,
         },
       });
   }

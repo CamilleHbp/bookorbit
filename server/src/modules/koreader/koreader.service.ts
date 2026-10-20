@@ -501,8 +501,10 @@ export class KoreaderService {
       xpointer: data.progress ?? null,
       pageNumber,
       // A late push moves the page now, which is what other clients need to see; the narration
-      // below still judges it by when it was read, so newer listening keeps its marker.
+      // below and last-read ordering still judge it by when it was read, so newer listening
+      // keeps its marker.
       readAt: late ? new Date() : readAt,
+      lastReadAt: readAt,
     });
     await this.bookService.syncKoboReadingStateForExternalProgress(userId, bookFile.id, bookorbitPercentage).catch(() => undefined);
     await this.bookService
