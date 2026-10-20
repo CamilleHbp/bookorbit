@@ -278,6 +278,8 @@ export class DashboardRepository {
     );
     const filterSql = cfClauses.length > 0 ? sql`and ${sql.join(cfClauses, sql` and `)}` : sql``;
 
+    // The read-status gate applies to candidates only. An abandoned volume stays in the window so
+    // the series stops there instead of skipping ahead to the volume after it.
     const rows = await this.db.execute<UpNextInSeriesRow>(sql`
       with scoped_series_books as (
         select
@@ -287,6 +289,7 @@ export class DashboardRepository {
           ${bookMetadata.seriesIndex} as series_index,
           ${books.addedAt} as added_at,
           ${mergedProgress} as current_progress,
+          ${userBookStatus.status} as read_status,
           case
             when ${completionPredicate} then true
             else false
@@ -319,6 +322,7 @@ export class DashboardRepository {
           ssb.series_index,
           ssb.added_at,
           ssb.current_progress,
+          ssb.read_status,
           ssb.is_completed,
           ssb.completion_updated_at,
           lag(ssb.is_completed) over (
@@ -341,6 +345,7 @@ export class DashboardRepository {
         where os.previous_is_completed = true
           and os.is_completed = false
           and os.current_progress = 0
+          and (os.read_status is null or os.read_status in ('unread', 'want_to_read'))
 	        order by os.library_id, os.series_id, ${seriesIndexSortKey(sql.raw('os.series_index'))} asc,
             os.series_index collate "C" asc, os.added_at asc, os.id asc
       )

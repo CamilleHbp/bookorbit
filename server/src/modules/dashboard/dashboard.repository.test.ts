@@ -305,6 +305,23 @@ describe('DashboardRepository', () => {
     expect(db.execute).toHaveBeenCalledTimes(1);
   });
 
+  it('offers only up-next volumes with no read status, unread or want to read, gated after the series window', async () => {
+    const db = {
+      select: vi.fn(),
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
+    };
+    const repo = new DashboardRepository(db as never);
+
+    await repo.findUpNextInSeriesBookIds([9], 55, 10);
+    const query = compileSql(db.execute.mock.calls[0]?.[0]);
+    const gate = "and (os.read_status is null or os.read_status in ('unread', 'want_to_read'))";
+
+    expect(query).toContain('"user_book_status"."status" as read_status');
+    expect(query).toContain('ssb.read_status');
+    expect(query.indexOf(gate)).toBeGreaterThan(query.indexOf('from ordered_series os'));
+    expect(query.split(gate)).toHaveLength(2);
+  });
+
   it('returns empty up-next-in-series ids and does not query when limit is zero', async () => {
     const db = {
       select: vi.fn(),
