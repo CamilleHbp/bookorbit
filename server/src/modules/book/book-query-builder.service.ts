@@ -1135,7 +1135,12 @@ export class BookQueryBuilder {
       }
       switch (field) {
         case 'title':
+          parts.push(`sort_title ${D} NULLS LAST`);
+          break;
+        // sort_series is NULL for standalone books, so series stacks lead in both directions
+        // and the standalones that follow are ordered by title.
         case 'series':
+          parts.push(`sort_series ${D} NULLS LAST`);
           parts.push(`sort_title ${D} NULLS LAST`);
           break;
         case 'addedAt':

@@ -98,6 +98,7 @@ type CollapsedRawRow = {
   publisher: string | null;
   page_count: number | null;
   sort_title: string | null;
+  sort_series: string | null;
   sort_added_at: string | null;
   book_count: string | null;
   read_count: string | null;
@@ -239,8 +240,10 @@ function collapsedDiscreteSourceParts(field: SortField, userId: number): Collaps
 
   switch (field) {
     case 'title':
-    case 'series':
       return direct(sql.raw('r.sort_title'));
+    // Standalone books have no series letter, matching the flat rail.
+    case 'series':
+      return direct(sql.raw('r.sort_series'));
     case 'author':
       return direct(sql.raw('r.author_sort_name'));
     case 'publisher':
@@ -1079,6 +1082,7 @@ export class BookRepository {
           base.metadata_score,
           base.primary_author_sort_name AS author_sort_name,
           COALESCE(base.norm_series, lower(base.title)) AS sort_title,
+          base.norm_series AS sort_series,
           COALESCE(sa.latest_added_at, base.added_at) AS sort_added_at,
           COALESCE(sa.first_collection_position, base.collection_position) AS sort_collection_position,
           sa.book_count,
@@ -1311,6 +1315,7 @@ export class BookRepository {
           ubr.rating,
           base.primary_author_sort_name AS author_sort_name,
           COALESCE(base.norm_series, lower(base.title)) AS sort_title,
+          base.norm_series AS sort_series,
           COALESCE(sl.latest_added_at, base.added_at) AS sort_added_at
           ${source.representativeExtraSelect}
         FROM base_rows base

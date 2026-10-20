@@ -1901,8 +1901,13 @@ describe('BookQueryBuilder.buildCollapseOrderBy', () => {
     expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'title', dir: 'desc' }], 1)).toBe('sort_title DESC NULLS LAST, r.id ASC');
   });
 
-  it('generates sort_title for series field', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'series', dir: 'asc' }], 1)).toBe('sort_title ASC NULLS LAST, r.id ASC');
+  it('orders series stacks before standalone books, then by title, in both directions', () => {
+    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'series', dir: 'asc' }], 1)).toBe(
+      'sort_series ASC NULLS LAST, sort_title ASC NULLS LAST, r.id ASC',
+    );
+    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'series', dir: 'desc' }], 1)).toBe(
+      'sort_series DESC NULLS LAST, sort_title DESC NULLS LAST, r.id ASC',
+    );
   });
 
   it('generates sort_added_at for addedAt field', () => {
@@ -1934,7 +1939,7 @@ describe('BookQueryBuilder.buildCollapseOrderBy', () => {
       1,
     );
     expect(result).toContain("split_part(series_index::text, '.', 1)::numeric");
-    expect(result).toContain('series_index COLLATE "C" ASC NULLS LAST, sort_title ASC NULLS LAST, r.id ASC');
+    expect(result).toContain('series_index COLLATE "C" ASC NULLS LAST, sort_series ASC NULLS LAST, sort_title ASC NULLS LAST, r.id ASC');
   });
 
   it('generates user-scoped subquery for readProgress', () => {
