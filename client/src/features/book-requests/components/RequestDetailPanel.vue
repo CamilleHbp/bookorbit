@@ -84,7 +84,7 @@ const { load: loadDefaultDestination, defaultFor: instanceDefaultFor, resolveDes
 const { progressByRequest, onRequestsChanged, pruneSettledProgress } = useBookRequestProgress()
 const actions = useBookRequestActions(canManageFn)
 const picker = useFulfilmentPicker()
-const { review, fetchReview, reset: resetReview } = useRequestReview(canManageFn)
+const { review, coverUrl: reviewCoverUrl, fetchReview, reset: resetReview } = useRequestReview(canManageFn)
 
 const decisionNote = ref('')
 /**
@@ -128,7 +128,9 @@ const isHeld = computed(() => request.value?.status === 'needs_review')
  * stays. It also stays for every ordinary failure, which has no panel at all.
  */
 const failureText = computed(() => (request.value ? requestFailureText(request.value, (key, named) => t(key, named)) : null))
-const showFailureReason = computed(() => failureText.value != null && !(isHeld.value && review.value?.verification != null))
+const showFailureReason = computed(
+  () => failureText.value != null && !(isHeld.value && (review.value?.verification != null || review.value?.heldOnRequest === true)),
+)
 /** Only a request that stopped badly earns the destructive treatment; a hand-back is information. */
 const failureIsAlarming = computed(() => request.value?.status === 'failed' || request.value?.status === 'needs_review')
 /** Whoever is going to say it, the transfer line is not the one that should say it twice. */
@@ -777,6 +779,7 @@ function dockFileMeta(file: BookDockFile): string {
           <RequestReviewPanel
             v-if="isHeld && review"
             :review="review"
+            :cover-url="reviewCoverUrl"
             :can-manage="canFulfilThis"
             :busy="busy"
             @file="handleFileAnyway"

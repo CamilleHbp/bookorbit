@@ -308,6 +308,7 @@ function sanitizeCandidate(raw: PluginReleaseCandidate, indexerId: number): Rele
     guid,
     title,
     ...optional('bookTitle', text(raw.bookTitle, MAX_PLUGIN_TEXT_LENGTH)),
+    ...optional('infoUrl', text(raw.infoUrl, MAX_PLUGIN_URL_LENGTH)),
     ...optional('downloadUrl', text(raw.downloadUrl, MAX_PLUGIN_URL_LENGTH)),
     ...optional('magnet', text(raw.magnet, MAX_PLUGIN_URL_LENGTH)),
     ...optional('infoHash', text(raw.infoHash, MAX_PLUGIN_TEXT_LENGTH)),

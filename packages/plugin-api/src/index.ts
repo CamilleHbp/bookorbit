@@ -99,6 +99,12 @@ export interface PluginReleaseCandidate {
   downloadUrl?: string;
   magnet?: string;
   infoHash?: string;
+  /**
+   * The release's page on the source, for an approver to read before sending it. An http(s) URL
+   * that needs no credential: the host drops one carrying the indexer's credential or a key-like
+   * query parameter rather than showing it. Ignored by hosts older than the field.
+   */
+  infoUrl?: string;
   sizeBytes: number | null;
   /**
    * Null means the source reported no swarm counts, which must not be read as zero: the

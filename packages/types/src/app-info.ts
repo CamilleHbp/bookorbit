@@ -20,6 +20,11 @@ export const SERVER_FEATURES = [
   "server-connection-identity",
   /** `GET /books/:id/annotations` and `/bookmarks` accept `readerFileId` and return positions for that file. */
   "reader-file-positions",
+  /**
+   * `POST .../grab` accepts `holdForReview`, release candidates carry `infoUrl`, and a held
+   * review reports `heldOnRequest`, `releaseInfoUrl`, `edition` and `hasCover` with a cover route.
+   */
+  "book-request-review-hold",
 ] as const;
 
 export type ServerFeature = (typeof SERVER_FEATURES)[number];

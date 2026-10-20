@@ -125,6 +125,15 @@ describe('PluginIndexerAdapter', () => {
       expect(releases.map((r) => r.guid)).toEqual(['g5']);
     });
 
+    it('carries the page a plugin names for a release, and nothing that is not text', async () => {
+      const releases = await searched([
+        { guid: 'g1', title: 'Dune', infoUrl: ' https://source.example.org/book/1 ' },
+        { guid: 'g2', title: 'Dune', infoUrl: { href: 'https://source.example.org/book/2' } },
+      ]);
+
+      expect(releases.map((release) => release.infoUrl)).toEqual(['https://source.example.org/book/1', undefined]);
+    });
+
     /** "1984" and "2001" are books, and a source that states one as a number still means the title. */
     it('keeps a title or a guid a source stated as a number', async () => {
       const [release] = await searched([{ guid: 4471, title: 1984 }]);
