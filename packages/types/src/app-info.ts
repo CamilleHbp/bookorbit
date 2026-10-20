@@ -25,6 +25,12 @@ export const SERVER_FEATURES = [
    * review reports `heldOnRequest`, `releaseInfoUrl`, `edition` and `hasCover` with a cover route.
    */
   "book-request-review-hold",
+  /**
+   * `GET /metadata-fetch/stream` accepts `resultsPerProvider` (up to
+   * `METADATA_SEARCH_MAX_RESULTS_PER_PROVIDER`), and Open Library and Hardcover answer a search that
+   * names an author but no title.
+   */
+  "metadata-search-results-per-provider",
 ] as const;
 
 export type ServerFeature = (typeof SERVER_FEATURES)[number];

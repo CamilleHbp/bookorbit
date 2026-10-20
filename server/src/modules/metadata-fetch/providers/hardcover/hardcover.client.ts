@@ -85,6 +85,17 @@ const SEARCH_BOOKS_QUERY = `
   }
 `;
 
+// The default book search also matches titles, which ranks books about an author (quiz books,
+// companions, diaries) above the ones they wrote. Each field searched needs its own weight and typo
+// allowance, or the search answers with an error instead of hits.
+const SEARCH_BOOKS_BY_AUTHOR_QUERY = `
+  query BookSearchByAuthor($q: String!, $limit: Int!) {
+    search(query: $q, query_type: "Book", per_page: $limit, page: 1, fields: "author_names", weights: "1", typos: "1") {
+      results
+    }
+  }
+`;
+
 const LOOKUP_BY_SLUG_QUERY = `
   query BookBySlug($slug: String!, $releasedBy: date!) {
     books(where: { slug: { _eq: $slug } }) {
@@ -135,19 +146,23 @@ export class HardcoverClient {
     return body?.data?.books ?? [];
   }
 
-  async searchBooks(query: string, apiKey: string, signal?: AbortSignal): Promise<HardcoverSearchDocument[]> {
-    const body = await this.post<HardcoverSearchResponse>(
-      'search',
-      SEARCH_BOOKS_QUERY,
-      { q: query, limit: PROVIDER_LIMITS.DEFAULT_SEARCH_RESULTS },
-      apiKey,
-      signal,
-    );
-    const hits = body?.data?.search?.results?.hits;
-    if (body && !Array.isArray(hits)) markProviderFailed('hardcover.search: response without hits');
-    const documents = hits?.map((h) => h.document).filter((d): d is HardcoverSearchDocument => d != null) ?? [];
-    if (hits && documents.length < hits.length) markProviderDegraded('hardcover.search: hit without document');
-    return documents;
+  async searchBooks(
+    query: string,
+    apiKey: string,
+    signal?: AbortSignal,
+    limit: number = PROVIDER_LIMITS.DEFAULT_SEARCH_RESULTS,
+  ): Promise<HardcoverSearchDocument[]> {
+    return this.search('search', SEARCH_BOOKS_QUERY, query, apiKey, signal, limit);
+  }
+
+  /** The books an author wrote, most read first. */
+  async searchBooksByAuthor(
+    author: string,
+    apiKey: string,
+    signal?: AbortSignal,
+    limit: number = PROVIDER_LIMITS.DEFAULT_SEARCH_RESULTS,
+  ): Promise<HardcoverSearchDocument[]> {
+    return this.search('search-by-author', SEARCH_BOOKS_BY_AUTHOR_QUERY, author, apiKey, signal, limit);
   }
 
   async lookupBySlug(slug: string, apiKey: string, signal?: AbortSignal): Promise<HardcoverBookWithEditions | null> {
@@ -156,8 +171,24 @@ export class HardcoverClient {
     return body?.data?.books?.[0] ?? null;
   }
 
+  private async search(
+    op: 'search' | 'search-by-author',
+    graphql: string,
+    query: string,
+    apiKey: string,
+    signal: AbortSignal | undefined,
+    limit: number,
+  ): Promise<HardcoverSearchDocument[]> {
+    const body = await this.post<HardcoverSearchResponse>(op, graphql, { q: query, limit }, apiKey, signal);
+    const hits = body?.data?.search?.results?.hits;
+    if (body && !Array.isArray(hits)) markProviderFailed(`hardcover.${op}: response without hits`);
+    const documents = hits?.map((h) => h.document).filter((d): d is HardcoverSearchDocument => d != null) ?? [];
+    if (hits && documents.length < hits.length) markProviderDegraded(`hardcover.${op}: hit without document`);
+    return documents;
+  }
+
   private async post<T>(
-    op: 'search-by-isbn' | 'search' | 'lookup',
+    op: 'search-by-isbn' | 'search' | 'search-by-author' | 'lookup',
     query: string,
     variables: Record<string, unknown>,
     apiKey: string,

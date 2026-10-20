@@ -135,6 +135,26 @@ describe('HardcoverClient', () => {
     expect(result).toEqual([]);
   });
 
+  it('searches author names alone, each field with its own weight and typo allowance', async () => {
+    const mockFetch = vi.mocked(fetchWithThrottleModule.fetchWithThrottle);
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: { search: { results: { hits: [{ document: { id: 1, title: 'Mort' } }] } } } }),
+    } as Response);
+
+    const documents = await client.searchBooksByAuthor('Terry Pratchett', apiKey, undefined, 20);
+
+    const requestBody = mockFetch.mock.calls[0][1]?.body;
+    expect(typeof requestBody).toBe('string');
+    if (typeof requestBody !== 'string') {
+      throw new TypeError('Expected the request body to be a string');
+    }
+    const body = JSON.parse(requestBody) as { query: string; variables: Record<string, unknown> };
+    expect(body.query).toContain('fields: "author_names", weights: "1", typos: "1"');
+    expect(body.variables).toEqual({ q: 'Terry Pratchett', limit: 20 });
+    expect(documents).toEqual([{ id: 1, title: 'Mort' }]);
+  });
+
   it('returns empty array when fetch fails', async () => {
     const mockFetch = vi.mocked(fetchWithThrottleModule.fetchWithThrottle);
     mockFetch.mockRejectedValue(new Error('Network error'));
