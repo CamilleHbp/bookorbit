@@ -18,6 +18,7 @@ vi.mock('dns/promises', async (importOriginal) => ({
 }));
 
 import { lookup } from 'dns/promises';
+import { Logger } from '@nestjs/common';
 
 import type { IndexerCredentialStore } from '../indexer-credential-store';
 import { IndexerSearchException, type ReleaseQuery, type ResolvedIndexerConfig } from '../indexer-adapter';
@@ -615,5 +616,43 @@ describe('PluginIndexerAdapter', () => {
 
     expect(credentials.rotate).toHaveBeenNthCalledWith(1, 4, 'session-2', 'session-1');
     expect(credentials.rotate).toHaveBeenNthCalledWith(2, 4, 'session-3', 'session-2');
+  });
+
+  describe('forget', () => {
+    /** A plugin holding a live session would otherwise keep using it until the process restarts. */
+    it('tells the plugin to drop what it holds for the indexer', () => {
+      const forget = vi.fn();
+      const { adapter } = makeAdapter({ forget });
+
+      adapter.forget(12);
+
+      expect(forget).toHaveBeenCalledWith(12);
+    });
+
+    it('does nothing for a plugin written before the hook', () => {
+      expect(() => makeAdapter().adapter.forget(12)).not.toThrow();
+      expect(() => makeAdapter({ forget: true as never }).adapter.forget(12)).not.toThrow();
+    });
+
+    /** The operator's change is already saved by then, so a broken plugin cannot be allowed to fail it. */
+    it('logs a plugin that throws or rejects instead of failing the save', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        expect(() =>
+          makeAdapter({
+            forget: () => {
+              throw new Error('no session map');
+            },
+          }).adapter.forget(12),
+        ).not.toThrow();
+        makeAdapter({ forget: () => Promise.reject(new Error('cache closed')) }).adapter.forget(13);
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(warn).toHaveBeenCalledWith(expect.stringMatching(/indexerId=12 .*no session map/));
+        expect(warn).toHaveBeenCalledWith(expect.stringMatching(/indexerId=13 .*cache closed/));
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 });

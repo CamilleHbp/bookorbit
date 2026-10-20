@@ -153,6 +153,26 @@ export class PluginIndexerAdapter implements IndexerAdapter {
   }
 
   /**
+   * Runs after the operator's change has already been saved, so nothing a plugin does here may fail
+   * that save: a throw or a rejection is logged and dropped.
+   */
+  forget(indexerId: number): void {
+    if (typeof this.plugin.forget !== 'function') return;
+    try {
+      void Promise.resolve(this.plugin.forget(indexerId)).catch((error: unknown) => this.warnForgetFailed(indexerId, error));
+    } catch (error) {
+      this.warnForgetFailed(indexerId, error);
+    }
+  }
+
+  private warnForgetFailed(indexerId: number, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.logger.warn(
+      `[request_indexer.plugin] [fail] indexerId=${indexerId} type=${this.type} error="${sanitizeLogValue(message)}" - the plugin threw while forgetting its session`,
+    );
+  }
+
+  /**
    * `deadline` is the caller's, where the caller has one. It is applied here rather than handed to
    * the plugin because a plugin can only check a signal between requests, and the request that
    * overruns is the one already in flight.
