@@ -1965,11 +1965,13 @@ export class BookService {
       }
 
       if (dto.seriesMemberships !== undefined) {
+        const previous = (await this.seriesMemberships?.findByBookId(id, tx)) ?? [];
+        const totalOptions = { previousSeriesIds: new Set(previous.map((membership) => membership.seriesId)) };
         await this.seriesMemberships?.replaceForBook(id, dto.seriesMemberships, tx);
         // After replaceForBook, because it is what creates any series row the editor named.
         for (const membership of dto.seriesMemberships ?? []) {
           if (membership.expectedBookCount === undefined) continue;
-          await this.seriesExpectedCount?.setManual(membership.seriesName, membership.expectedBookCount ?? null, tx);
+          await this.seriesExpectedCount?.setManual(membership.seriesName, membership.expectedBookCount ?? null, tx, totalOptions);
         }
       }
       this.throwIfMetadataUpdateFailpoint('afterSeriesMembershipsReplace');

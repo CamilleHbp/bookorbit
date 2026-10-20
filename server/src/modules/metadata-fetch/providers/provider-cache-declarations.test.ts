@@ -326,7 +326,11 @@ describe('provider cache declarations', () => {
 
   describe.each(CASES)('$key', (testCase) => {
     it('declares the current mapping version', () => {
-      expect(specOf(testCase.key).version).toBe(testCase.key === MetadataProviderKey.COMICVINE ? 2 : 1);
+      const bumped: Partial<Record<MetadataProviderKey, number>> = {
+        [MetadataProviderKey.COMICVINE]: 2,
+        [MetadataProviderKey.HARDCOVER]: 2,
+      };
+      expect(specOf(testCase.key).version).toBe(bumped[testCase.key] ?? 1);
     });
 
     it('keys a search on the fields it reads', () => {

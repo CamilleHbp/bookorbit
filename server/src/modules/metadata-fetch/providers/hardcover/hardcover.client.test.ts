@@ -93,6 +93,37 @@ describe('HardcoverClient', () => {
     expect(body.query).toMatch(/\bcached_tags\b/);
   });
 
+  it.each([
+    ['ISBN search', () => client.searchByIsbn('9780756404079', apiKey)],
+    ['stored ID lookup', () => client.lookupBySlug('the-name-of-the-wind', apiKey)],
+  ])('asks for the last released main book instead of every series entry for %s', async (_label, request) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-19T23:30:00Z'));
+    try {
+      const mockFetch = vi.mocked(fetchWithThrottleModule.fetchWithThrottle);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: { books: [] } }),
+      } as Response);
+
+      await request();
+
+      const options = mockFetch.mock.calls[0][1];
+      if (typeof options?.body !== 'string') throw new TypeError('Expected a JSON request body');
+      const body = JSON.parse(options.body) as { query: string; variables: Record<string, unknown> };
+      expect(body.query).not.toMatch(/\bbooks_count\b/);
+      expect(body.query).toMatch(/\bprimary_books_count\b/);
+      expect(body.query).toMatch(/release_date:\s*\{\s*_lte:\s*\$releasedBy\s*\}/);
+      expect(body.query).toMatch(/canonical_id:\s*\{\s*_is_null:\s*true\s*\}/);
+      expect(body.query).toMatch(/compilation:\s*\{\s*_eq:\s*false\s*\}/);
+      expect(body.query).toMatch(/\$releasedBy:\s*date!/);
+      expect(body.variables.releasedBy).toBe('2026-10-19');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('returns empty array when API returns non-ok status', async () => {
     const mockFetch = vi.mocked(fetchWithThrottleModule.fetchWithThrottle);
     mockFetch.mockResolvedValue({

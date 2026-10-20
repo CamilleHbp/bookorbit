@@ -121,7 +121,14 @@ function makeMetadataFetchDiagnostics(overrides: Partial<MetadataFetchDiagnostic
 }
 
 function makeService(
-  overrides: { bookMetadataLockService?: unknown; appDataPath?: string; audiobookEbookProgressSync?: unknown; positionConverter?: unknown } = {},
+  overrides: {
+    bookMetadataLockService?: unknown;
+    appDataPath?: string;
+    audiobookEbookProgressSync?: unknown;
+    positionConverter?: unknown;
+    seriesMemberships?: unknown;
+    seriesExpectedCount?: unknown;
+  } = {},
 ) {
   const bookRepo = {
     findCards: vi.fn(),
@@ -328,8 +335,8 @@ function makeService(
     fileWriteService as never,
     fileRenameService as never,
     achievementEvents as never,
-    undefined,
-    undefined,
+    overrides.seriesMemberships as never,
+    overrides.seriesExpectedCount as never,
     overrides.audiobookEbookProgressSync as never,
     undefined,
     undefined,
@@ -1883,6 +1890,41 @@ describe('BookService', () => {
         }),
         expect.anything(),
       );
+    });
+
+    it('updateMetadata tells the total writer which series the book was already in before replacing them', async () => {
+      const calls: string[] = [];
+      const seriesMemberships = {
+        findByBookId: vi.fn(() => {
+          calls.push('find');
+          return Promise.resolve([{ seriesId: 31, seriesName: 'Harry Potter', seriesIndex: '1', displayOrder: 0, expectedBookCount: 7 }]);
+        }),
+        replaceForBook: vi.fn(() => {
+          calls.push('replace');
+          return Promise.resolve([]);
+        }),
+      };
+      const seriesExpectedCount = { setManual: vi.fn().mockResolvedValue(true) };
+      const { service } = makeService({ seriesMemberships, seriesExpectedCount });
+      const user = makeUser();
+      vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
+      vi.spyOn(service, 'getDetail').mockResolvedValue({ id: 5 } as never);
+
+      await service.updateMetadata(
+        5,
+        {
+          seriesMemberships: [
+            { seriesName: 'Harry Potter', seriesIndex: '1', expectedBookCount: 7 },
+            { seriesName: 'Hogwarts Library', seriesIndex: null, expectedBookCount: null },
+          ],
+        },
+        user,
+      );
+
+      expect(calls).toEqual(['find', 'replace']);
+      const options = { previousSeriesIds: new Set([31]) };
+      expect(seriesExpectedCount.setManual).toHaveBeenNthCalledWith(1, 'Harry Potter', 7, expect.anything(), options);
+      expect(seriesExpectedCount.setManual).toHaveBeenNthCalledWith(2, 'Hogwarts Library', null, expect.anything(), options);
     });
 
     it('updateMetadata with empty communityRatings clears all existing ratings', async () => {
