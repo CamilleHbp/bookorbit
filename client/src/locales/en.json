@@ -9068,6 +9068,19 @@
         "cancelled": "Reorder cancelled. {name} returned to position {position} of {total}.",
         "filteredHint": "Clear the filter to reorder"
       },
+      "customize": {
+        "open": "Customize sidebar",
+        "title": "Customize sidebar",
+        "hint": "Drag to reorder. Hidden pages stay in Search.",
+        "reset": "Reset to default",
+        "done": "Done",
+        "resetDone": "Sidebar reset to default",
+        "showInSidebar": "Show {name} in the sidebar",
+        "show": "Show",
+        "hide": "Hide",
+        "alwaysShown": "{name} is always shown",
+        "returnsWithWork": "Shows when work is waiting"
+      },
       "podcastImportProgress": "{processed} / {total} files",
       "podcastImportCounting": "Counting files…",
       "playlists": "Smart Playlists",
