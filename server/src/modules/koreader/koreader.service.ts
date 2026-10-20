@@ -123,7 +123,13 @@ export class KoreaderService {
 
   async updateCredentials(
     userId: number,
-    data: { username?: string; password?: string; syncEnabled?: boolean; readAloudDelivery?: ReadAloudDeliveryPreference },
+    data: {
+      username?: string;
+      password?: string;
+      syncEnabled?: boolean;
+      hideAudioOnlyBooks?: boolean;
+      readAloudDelivery?: ReadAloudDeliveryPreference;
+    },
   ) {
     this.logger.log(`[${CREDENTIALS_EVENT}] [start] userId=${userId} - updating credentials`);
 
@@ -149,6 +155,8 @@ export class KoreaderService {
       updatePayload.syncEnabled = data.syncEnabled;
     }
 
+    if (data.hideAudioOnlyBooks !== undefined) updatePayload.hideAudioOnlyBooks = data.hideAudioOnlyBooks;
+
     if (Object.keys(updatePayload).length > 0) {
       await this.repo.updateKoreaderUser(userId, updatePayload as Parameters<typeof this.repo.updateKoreaderUser>[1]);
     }
@@ -169,9 +177,15 @@ export class KoreaderService {
     return {
       username: row.username,
       syncEnabled: row.syncEnabled,
+      hideAudioOnlyBooks: row.hideAudioOnlyBooks,
       createdAt: row.createdAt.toISOString(),
       readAloudDelivery: row.readAloudDelivery ?? null,
     };
+  }
+
+  /** Whether the plugin catalog leaves out audiobook-only books for this reader. Defaults to hiding them. */
+  async hidesAudioOnlyBooks(userId: number): Promise<boolean> {
+    return (await this.repo.findKoreaderCatalogPreferences(userId))?.hideAudioOnlyBooks ?? true;
   }
 
   async testConnection(userId: number, username: string, password: string): Promise<boolean> {

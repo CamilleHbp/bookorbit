@@ -97,6 +97,33 @@ assertEqual(other[1].audio, true, "the M4B is audio")
 assertEqual(other[2].opens, false, "the AZW3 cannot be opened")
 assertEqual(DetailData.fileSubs(usable[1])[1], "Text only here; narration plays in BookOrbit", "the read-along explains itself")
 
+-- The main file is the first this reader can open, so a primary it cannot use
+-- never leaves the ebook it can labelled as a spare.
+local function titles(entries)
+    local out = {}
+    for _, entry in ipairs(entries) do table.insert(out, entry.title) end
+    return table.concat(out, ", ")
+end
+local audio_primary, audio_rest = DetailData.files({ files = {
+    { format = "epub", role = "content" },
+    { format = "m4b", role = "primary", durationSeconds = 3600 },
+} }, { opens = opens })
+assertEqual(titles(audio_primary), "Main file", "the only ebook beside an audiobook primary is the main file")
+assertEqual(titles(audio_rest), "Audiobook", "the audiobook primary is listed apart")
+assertEqual(titles((DetailData.files({ files = {
+    { format = "mp3", role = "primary" },
+    { format = "epub", role = "content" },
+    { format = "epub", role = "content" },
+} }, { opens = opens }))), "Main edition, Another edition", "two editions behind an audiobook primary still lead with one")
+assertEqual(titles((DetailData.files({ files = {
+    { format = "azw3", role = "primary" },
+    { format = "epub", role = "content" },
+} }, { opens = opens }))), "Main file", "a primary this reader cannot open hands the main file on")
+assertEqual(titles((DetailData.files({ files = {
+    { format = "mobi", role = "content" },
+    { format = "epub", role = "primary" },
+} }, { opens = opens }))), "Main file, Also available", "a primary this reader opens stays the main file")
+
 -- --------------------------------------------------------------- action
 
 local download = DetailData.primary({}, usable, other)

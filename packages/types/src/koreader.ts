@@ -7,6 +7,8 @@ export interface KoreaderCredentials {
   readAloudDelivery?: ReadAloudDeliveryPreference;
   username: string;
   syncEnabled: boolean;
+  /** When true the plugin catalog leaves out books whose only content files are audio. */
+  hideAudioOnlyBooks: boolean;
   createdAt: string;
 }
 
@@ -159,6 +161,7 @@ export interface UpdateKoreaderCredentialsPayload {
   username?: string;
   password?: string;
   syncEnabled?: boolean;
+  hideAudioOnlyBooks?: boolean;
 }
 
 export interface TestKoreaderConnectionResult {

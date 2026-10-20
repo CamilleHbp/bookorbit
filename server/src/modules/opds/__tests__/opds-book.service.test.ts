@@ -284,7 +284,7 @@ describe('OpdsBookService', () => {
     const listSpy = vi.spyOn(collectionRepository, 'findVisibleForUser').mockResolvedValue([{ id: 4, name: 'Favorites', bookCount: 1 }]);
     const countSpy = vi.spyOn(collectionRepository, 'countVisibleForUser').mockResolvedValue(3);
     await expect(service.getUserCollections(8, false, filters)).resolves.toEqual([{ id: 4, name: 'Favorites', bookCount: 1 }]);
-    expect(listSpy).toHaveBeenCalledWith(8, false, filters);
+    expect(listSpy).toHaveBeenCalledWith(8, false, filters, []);
     await expect(service.countUserCollections(8)).resolves.toBe(3);
     expect(countSpy).toHaveBeenCalledWith(8);
   });

@@ -71,7 +71,14 @@ import { AchievementService } from '../achievement/achievement.service';
 import { AuthorImageStorageService } from '../authors/author-image-storage.service';
 import { fileMimeType } from '../opds/opds-xml.helpers';
 import { OpdsBookEntry, OpdsBookService } from '../opds/opds-book.service';
-import type { CatalogBucketSortOrder, OpdsBookSummary, OpdsManifestBookRow, OpdsPreviewBookRow, OpdsVisibleAuthor } from '../opds/opds-book.service';
+import type {
+  CatalogBucketSortOrder,
+  CatalogVisibilityOptions,
+  OpdsBookSummary,
+  OpdsManifestBookRow,
+  OpdsPreviewBookRow,
+  OpdsVisibleAuthor,
+} from '../opds/opds-book.service';
 import { RecommendationService } from '../recommendation/recommendation.service';
 import { UserBookStatusService } from '../user-book-status/user-book-status.service';
 import { KoreaderCatalogBooksQueryDto, KoreaderCatalogManifestQueryDto } from './dto/koreader-catalog-query.dto';
@@ -88,6 +95,10 @@ type CatalogBookFilters = ReturnType<KoreaderCatalogService['buildBookFilters']>
 // The progress a book shows, plus when it was last opened: reading_progress.last_read_at
 // moves on every open, updated_at only when the position does.
 type CatalogProgress = KoreaderCatalogProgress & { lastReadAt: string };
+// What this reader asked the plugin to leave out, resolved once per request.
+type CatalogVisibility = { excludeAudioOnly: boolean };
+// For lists that record what the reader did rather than offer what to read next.
+const EVERY_BOOK: CatalogVisibility = { excludeAudioOnly: false };
 
 function latestDate(a: Date | null, b: Date | null): Date | null {
   if (!a) return b;
@@ -225,6 +236,7 @@ export class KoreaderCatalogService {
   }
 
   async getDashboard(user: RequestUser, section?: KoreaderDashboardSectionConfig): Promise<KoreaderCatalogDashboardResponse> {
+    const visibility = await this.resolveVisibility(user);
     const continueReadingQuery = Object.assign(new KoreaderCatalogBooksQueryDto(), {
       page: 1,
       size: DASHBOARD_CONTINUE_READING_LIMIT,
@@ -246,15 +258,17 @@ export class KoreaderCatalogService {
       finishedThisYear,
       achievements,
     ] = await Promise.all([
-      this.getBooksPage(user, continueReadingQuery),
-      section ? Promise.resolve<KoreaderCatalogBookListItem[]>([]) : this.buildDiscover(user),
-      section ? this.buildDashboardSection(user, section) : Promise.resolve(undefined),
+      this.loadBooksPage(user, continueReadingQuery, visibility),
+      section ? Promise.resolve<KoreaderCatalogBookListItem[]>([]) : this.buildDiscover(user, visibility),
+      section ? this.buildDashboardSection(user, section, visibility) : Promise.resolve(undefined),
       this.dashboardWidgetService.getReadingGoal(user),
       this.dashboardWidgetService.getReadingStreak(user),
       this.dashboardWidgetService.getHighlightOfTheDay(user),
-      this.countBooks(user, {}),
-      this.buildBrowseCounts(user),
+      this.countBooks(user, {}, visibility),
+      this.buildBrowseCounts(user, visibility),
       this.dashboardWidgetService.getReadingDays(user, DASHBOARD_READING_YEAR_DAYS),
+      // The year-ago card and the finished shelf are the reader's history, which the reading goal
+      // beside them counts in full, so they keep audiobook-only books.
       this.buildYearAgo(user),
       this.buildFinishedThisYear(user),
       this.buildAchievementSummary(user),
@@ -320,6 +334,7 @@ export class KoreaderCatalogService {
     const items = await this.loadBookListItemsByIds(
       user,
       finished.map((entry) => entry.bookId),
+      EVERY_BOOK,
     );
     return items.map((item) => ({ ...item, finishedOn: finishedOn.get(item.id) ?? null }));
   }
@@ -331,6 +346,7 @@ export class KoreaderCatalogService {
     const items = await this.loadBookListItemsByIds(
       user,
       candidates.map((candidate) => candidate.bookId),
+      EVERY_BOOK,
     );
     const byId = new Map(items.map((item) => [item.id, item]));
     for (const candidate of candidates) {
@@ -349,46 +365,62 @@ export class KoreaderCatalogService {
   }
 
   async getDiscover(user: RequestUser): Promise<KoreaderCatalogDiscoverResponse> {
-    return { discover: await this.buildDiscover(user) };
+    return { discover: await this.buildDiscover(user, await this.resolveVisibility(user)) };
   }
 
   async getDashboardSection(user: RequestUser, section: KoreaderDashboardSectionConfig): Promise<KoreaderCatalogDashboardSectionResponse> {
-    return { section: await this.buildDashboardSection(user, section) };
+    return { section: await this.buildDashboardSection(user, section, await this.resolveVisibility(user)) };
   }
 
-  private async buildDashboardSection(user: RequestUser, section: KoreaderDashboardSectionConfig): Promise<KoreaderCatalogDashboardSection> {
+  private async buildDashboardSection(
+    user: RequestUser,
+    section: KoreaderDashboardSectionConfig,
+    visibility: CatalogVisibility,
+  ): Promise<KoreaderCatalogDashboardSection> {
     return {
       type: section.type,
       smartScopeId: section.smartScopeId ?? null,
-      books: await this.buildSectionBooks(user, section),
+      books: await this.buildSectionBooks(user, section, visibility),
     };
   }
 
-  private async buildSectionBooks(user: RequestUser, section: KoreaderDashboardSectionConfig): Promise<KoreaderCatalogBookListItem[]> {
+  private async buildSectionBooks(
+    user: RequestUser,
+    section: KoreaderDashboardSectionConfig,
+    visibility: CatalogVisibility,
+  ): Promise<KoreaderCatalogBookListItem[]> {
     // Random keeps its original implementation so the row and its reroll stay
     // byte-for-byte what the Discover row already returned.
-    if (section.type === 'random') return this.buildDiscover(user);
+    if (section.type === 'random') return this.buildDiscover(user, visibility);
 
+    // Narrowed in the selection itself, so a row of audiobooks cannot crowd out the books behind it.
+    const narrowing = this.narrowing(visibility);
     const bookIds =
       section.type === 'smart-scope'
-        ? await this.dashboardService.getSmartScopeBookIds(section.smartScopeId, user, DASHBOARD_SECTION_LIMIT)
-        : await this.dashboardService.getScrollerBookIds(section.type, user, DASHBOARD_SECTION_LIMIT);
+        ? await this.dashboardService.getSmartScopeBookIds(section.smartScopeId, user, DASHBOARD_SECTION_LIMIT, narrowing)
+        : await this.dashboardService.getScrollerBookIds(section.type, user, DASHBOARD_SECTION_LIMIT, narrowing);
 
-    return this.loadBookListItemsByIds(user, bookIds);
+    return this.loadBookListItemsByIds(user, bookIds, visibility);
   }
 
   // Selection order carries the section's meaning (series position, recency), so
   // it is restored after the books query re-sorts by its own criteria.
-  private async loadBookListItemsByIds(user: RequestUser, bookIds: number[]): Promise<KoreaderCatalogBookListItem[]> {
+  private async loadBookListItemsByIds(user: RequestUser, bookIds: number[], visibility: CatalogVisibility): Promise<KoreaderCatalogBookListItem[]> {
     if (bookIds.length === 0) return [];
     const query = Object.assign(new KoreaderCatalogBooksQueryDto(), { page: 1, size: bookIds.length, ids: bookIds });
-    const { items } = await this.getBooksPage(user, query);
+    const { items } = await this.loadBooksPage(user, query, visibility);
     const byId = new Map(items.map((item) => [item.id, item]));
     return bookIds.map((id) => byId.get(id)).filter((item): item is KoreaderCatalogBookListItem => item !== undefined);
   }
 
-  private async buildDiscover(user: RequestUser): Promise<KoreaderCatalogBookListItem[]> {
-    const entries = await this.opdsBookService.getRandomBooks(user.id, DASHBOARD_DISCOVER_LIMIT, user.isSuperuser, user.contentFilters);
+  private async buildDiscover(user: RequestUser, visibility: CatalogVisibility): Promise<KoreaderCatalogBookListItem[]> {
+    const entries = await this.opdsBookService.getRandomBooks(
+      user.id,
+      DASHBOARD_DISCOVER_LIMIT,
+      user.isSuperuser,
+      user.contentFilters,
+      this.narrowing(visibility),
+    );
     if (entries.length === 0) return [];
 
     const bookIds = entries.map((entry) => entry.id);
@@ -402,27 +434,35 @@ export class KoreaderCatalogService {
   async getSectionEntries(user: RequestUser, section: string, query: KoreaderCatalogSectionQuery = {}): Promise<KoreaderCatalogSectionResponse> {
     switch (section) {
       case 'libraries':
-        return { section, items: await this.getLibraryEntries(user) };
+        return { section, items: await this.getLibraryEntries(user, await this.resolveVisibility(user)) };
       case 'collections':
-        return { section, items: await this.getCollectionEntries(user) };
+        return { section, items: await this.getCollectionEntries(user, await this.resolveVisibility(user)) };
       case 'smart-scopes':
-        return { section, items: await this.getSmartScopeEntries(user) };
+        return { section, items: await this.getSmartScopeEntries(user, await this.resolveVisibility(user)) };
       case 'authors':
-        return this.getAuthorsSection(user, query);
+        return this.getAuthorsSection(user, query, await this.resolveVisibility(user));
       case 'series':
-        return this.getSeriesSection(user, query);
+        return this.getSeriesSection(user, query, await this.resolveVisibility(user));
       default:
         throw new BadRequestException('Unknown catalog section');
     }
   }
 
   async getBooksPage(user: RequestUser, query: KoreaderCatalogBooksQueryDto): Promise<KoreaderCatalogPage<KoreaderCatalogBookListItem>> {
+    return this.loadBooksPage(user, query, await this.resolveVisibility(user));
+  }
+
+  private async loadBooksPage(
+    user: RequestUser,
+    query: KoreaderCatalogBooksQueryDto,
+    visibility: CatalogVisibility,
+  ): Promise<KoreaderCatalogPage<KoreaderCatalogBookListItem>> {
     const size = query.size ?? 20;
     const offset = query.offset ?? ((query.page ?? 1) - 1) * size;
     const page = Math.floor(offset / size) + 1;
     this.assertPaginationWindow(offset);
 
-    const filters = this.buildBookFilters(query);
+    const filters = this.buildBookFilters(query, visibility);
     const sort = this.mapSort(query.sort ?? 'recently_added', query.order);
     const bucketSort = query.buckets === true ? this.bucketSortOrder(sort) : null;
     const [{ entries, total }, buckets, author] = await Promise.all([
@@ -491,7 +531,7 @@ export class KoreaderCatalogService {
   // per-file match request.
   async getBulkManifest(user: RequestUser, query: KoreaderCatalogManifestQueryDto): Promise<KoreaderCatalogManifestPage> {
     const size = query.size ?? MANIFEST_DEFAULT_PAGE_SIZE;
-    const filters = this.buildBookFilters(query);
+    const filters = this.buildBookFilters(query, await this.resolveVisibility(user));
     const filterKey = this.manifestFilterKey(query, filters);
     const manifestVersion = await this.pluginService.getLibraryVersion(user.id);
 
@@ -621,7 +661,9 @@ export class KoreaderCatalogService {
   }
 
   // Identifies the normalized filter a cursor was minted against, so a cursor
-  // can never be replayed against a different selection.
+  // can never be replayed against a different selection. The audio-only setting
+  // stays out of it, as content filters do: it is account state, so a run that
+  // sees it change carries on under the new value instead of failing.
   private manifestFilterKey(query: KoreaderCatalogManifestQueryDto, filters: ReturnType<KoreaderCatalogService['buildBookFilters']>): string {
     const parts = [
       `ids=${filters.ids ? [...filters.ids].sort((a, b) => a - b).join('.') : ''}`,
@@ -679,7 +721,7 @@ export class KoreaderCatalogService {
   async getBookDetail(user: RequestUser, bookId: number, deviceId?: string, variant?: ReadAloudDeliveryVariant): Promise<KoreaderCatalogBookDetail> {
     const [detail, related, userDefaultPattern, sanitizeForCrossPlatform] = await Promise.all([
       this.bookService.getDetail(bookId, user),
-      this.buildRelatedSections(user, bookId),
+      this.resolveVisibility(user).then((visibility) => this.buildRelatedSections(user, bookId, visibility)),
       this.koreaderService.getKoreaderUserDefaultPattern(user.id),
       this.appSettingsService.isCrossPlatformPathSanitizationEnabled(),
     ]);
@@ -798,11 +840,17 @@ export class KoreaderCatalogService {
     }
   }
 
-  private async getLibraryEntries(user: RequestUser): Promise<KoreaderCatalogEntry[]> {
-    const rows = await this.opdsBookService.getAccessibleLibraries(user.id, user.isSuperuser);
+  private async getLibraryEntries(user: RequestUser, visibility: CatalogVisibility): Promise<KoreaderCatalogEntry[]> {
+    const accessible = await this.opdsBookService.getAccessibleLibraries(user.id, user.isSuperuser);
+    // A library of nothing but audiobooks would only ever open empty, so it goes too.
+    const audioOnly = visibility.excludeAudioOnly
+      ? new Set(await this.opdsBookService.findAudioOnlyLibraryIds(accessible.map((row) => row.id)))
+      : new Set<number>();
+    const rows = accessible.filter((row) => !audioOnly.has(row.id));
     const extras = await this.loadShelfExtras(
       user,
       rows.map((row) => ({ libraryId: row.id })),
+      visibility,
     );
     return Promise.all(
       rows.map(async (row, index) => {
@@ -811,7 +859,7 @@ export class KoreaderCatalogService {
           id: String(row.id),
           title: row.name,
           section: 'libraries' as const,
-          count: shelf ? shelf.total : await this.countBooks(user, { libraryId: row.id }),
+          count: shelf ? shelf.total : await this.countBooks(user, { libraryId: row.id }, visibility),
           booksHref: this.booksHref({ libraryId: row.id, sort: 'title' }),
           ...(shelf ? { readingCount: shelf.readingCount, previewBooks: shelf.previewBooks } : {}),
         };
@@ -819,11 +867,12 @@ export class KoreaderCatalogService {
     );
   }
 
-  private async getCollectionEntries(user: RequestUser): Promise<KoreaderCatalogEntry[]> {
-    const rows = await this.opdsBookService.getUserCollections(user.id, user.isSuperuser, user.contentFilters);
+  private async getCollectionEntries(user: RequestUser, visibility: CatalogVisibility): Promise<KoreaderCatalogEntry[]> {
+    const rows = await this.opdsBookService.getUserCollections(user.id, user.isSuperuser, user.contentFilters, this.narrowing(visibility));
     const extras = await this.loadShelfExtras(
       user,
       rows.map((row) => ({ collectionId: row.id })),
+      visibility,
     );
     return rows.map((row, index) => {
       const shelf = extras[index];
@@ -838,11 +887,12 @@ export class KoreaderCatalogService {
     });
   }
 
-  private async getSmartScopeEntries(user: RequestUser): Promise<KoreaderCatalogEntry[]> {
+  private async getSmartScopeEntries(user: RequestUser, visibility: CatalogVisibility): Promise<KoreaderCatalogEntry[]> {
     const rows = await this.opdsBookService.getUserSmartScopes(user.id);
     const extras = await this.loadShelfExtras(
       user,
       rows.map((row) => ({ smartScopeId: row.id })),
+      visibility,
     );
     return rows.map((row, index) => {
       const shelf = extras[index];
@@ -859,10 +909,10 @@ export class KoreaderCatalogService {
 
   // Cover strip and counts per shelf. Shelves past the cap, and any shelf whose
   // scope refuses this reader, come back as null and render as a plain row.
-  private async loadShelfExtras(user: RequestUser, scopes: CatalogBookFilters[]): Promise<(ShelfExtras | null)[]> {
+  private async loadShelfExtras(user: RequestUser, scopes: CatalogBookFilters[], visibility: CatalogVisibility): Promise<(ShelfExtras | null)[]> {
     const summaries = await mapWithConcurrency(scopes.slice(0, SHELF_EXTRAS_LIMIT), SHELF_EXTRAS_CONCURRENCY, (filters) =>
       this.opdsBookService
-        .summarizeBooks(user.id, filters, PREVIEW_BOOK_LIMIT, user.isSuperuser, user.contentFilters)
+        .summarizeBooks(user.id, { ...filters, ...this.narrowing(visibility) }, PREVIEW_BOOK_LIMIT, user.isSuperuser, user.contentFilters)
         .catch((error: unknown): OpdsBookSummary | null => {
           if (error instanceof ForbiddenException) return null;
           throw error;
@@ -906,14 +956,18 @@ export class KoreaderCatalogService {
     };
   }
 
-  private async getAuthorsSection(user: RequestUser, query: KoreaderCatalogSectionQuery): Promise<KoreaderCatalogSectionResponse> {
+  private async getAuthorsSection(
+    user: RequestUser,
+    query: KoreaderCatalogSectionQuery,
+    visibility: CatalogVisibility,
+  ): Promise<KoreaderCatalogSectionResponse> {
     const size = query.size ?? AUTHOR_SERIES_PAGE_SIZE;
     const sort = query.sort ?? 'name';
     const offset = query.offset ?? ((query.page ?? 1) - 1) * size;
     const page = Math.floor(offset / size) + 1;
     const { items, hasNext, total, buckets } = await this.opdsBookService.getDistinctAuthorsPage(
       user.id,
-      { q: query.q, limit: size, offset, sort, filter: query.filter },
+      { q: query.q, limit: size, offset, sort, filter: query.filter, ...this.narrowing(visibility) },
       user.isSuperuser,
       user.contentFilters,
     );
@@ -939,14 +993,18 @@ export class KoreaderCatalogService {
     return this.buildListSectionPage('authors', entries, page, hasNext, query, { total, size, sort, buckets });
   }
 
-  private async getSeriesSection(user: RequestUser, query: KoreaderCatalogSectionQuery): Promise<KoreaderCatalogSectionResponse> {
+  private async getSeriesSection(
+    user: RequestUser,
+    query: KoreaderCatalogSectionQuery,
+    visibility: CatalogVisibility,
+  ): Promise<KoreaderCatalogSectionResponse> {
     const size = query.size ?? AUTHOR_SERIES_PAGE_SIZE;
     const sort = query.sort ?? 'name';
     const offset = query.offset ?? ((query.page ?? 1) - 1) * size;
     const page = Math.floor(offset / size) + 1;
     const { items, hasNext, total, buckets } = await this.opdsBookService.getDistinctSeriesPage(
       user.id,
-      { q: query.q, limit: size, offset, sort, filter: query.filter },
+      { q: query.q, limit: size, offset, sort, filter: query.filter, ...this.narrowing(visibility) },
       user.isSuperuser,
       user.contentFilters,
     );
@@ -1049,23 +1107,41 @@ export class KoreaderCatalogService {
   // authors and series reuse the cached ones the web sidebar already asks for,
   // and the rest deliberately avoid the list methods behind the section
   // endpoints, which aggregate per-entity book counts a badge never reads.
-  private async buildBrowseCounts(user: RequestUser): Promise<KoreaderCatalogBrowseCounts> {
-    const [inProgress, sidebarCounts, libraryIds, collections, smartScopes] = await Promise.all([
-      this.countBooks(user, { readStatus: 'reading' }),
-      this.browseCountsService.getCounts(user),
-      this.opdsBookService.getAccessibleLibraryIds(user.id, user.isSuperuser),
+  // A reader hiding audiobook-only books gets authors and series counted over
+  // the books the lists show, since the sidebar's totals include the rest.
+  private async buildBrowseCounts(user: RequestUser, visibility: CatalogVisibility): Promise<KoreaderCatalogBrowseCounts> {
+    const [inProgress, authorSeriesCounts, libraries, collections, smartScopes] = await Promise.all([
+      this.countBooks(user, { readStatus: 'reading' }, visibility),
+      visibility.excludeAudioOnly ? this.countVisibleAuthorsAndSeries(user, visibility) : this.browseCountsService.getCounts(user),
+      this.countVisibleLibraries(user, visibility),
       this.opdsBookService.countUserCollections(user.id),
       this.opdsBookService.countUserSmartScopes(user.id),
     ]);
 
     return {
       inProgress,
-      libraries: libraryIds.length,
-      authors: sidebarCounts.authors,
-      series: sidebarCounts.series,
+      libraries,
+      authors: authorSeriesCounts.authors,
+      series: authorSeriesCounts.series,
       collections,
       smartScopes,
     };
+  }
+
+  private async countVisibleAuthorsAndSeries(user: RequestUser, visibility: CatalogVisibility): Promise<{ authors: number; series: number }> {
+    const narrowing = this.narrowing(visibility);
+    const [authors, series] = await Promise.all([
+      this.opdsBookService.countVisibleAuthors(user.id, user.isSuperuser, user.contentFilters, narrowing),
+      this.opdsBookService.countVisibleSeries(user.id, user.isSuperuser, user.contentFilters, narrowing),
+    ]);
+    return { authors, series };
+  }
+
+  // Matches the libraries section, which drops a library holding only audiobook-only books.
+  private async countVisibleLibraries(user: RequestUser, visibility: CatalogVisibility): Promise<number> {
+    const libraryIds = await this.opdsBookService.getAccessibleLibraryIds(user.id, user.isSuperuser);
+    if (!visibility.excludeAudioOnly) return libraryIds.length;
+    return libraryIds.length - (await this.opdsBookService.findAudioOnlyLibraryIds(libraryIds)).length;
   }
 
   private async countBooks(
@@ -1077,8 +1153,9 @@ export class KoreaderCatalogService {
       seriesId?: number;
       readStatus?: 'unread' | 'reading' | 'finished';
     },
+    visibility: CatalogVisibility,
   ): Promise<number> {
-    return this.opdsBookService.countBooks(user.id, filters, user.isSuperuser, user.contentFilters);
+    return this.opdsBookService.countBooks(user.id, { ...filters, ...this.narrowing(visibility) }, user.isSuperuser, user.contentFilters);
   }
 
   // `total` keeps counting the page's own filters, read status included, while
@@ -1255,12 +1332,21 @@ export class KoreaderCatalogService {
   private async buildRelatedSections(
     user: RequestUser,
     bookId: number,
+    visibility: CatalogVisibility,
   ): Promise<{ sections: KoreaderCatalogRelatedSection[]; seriesMembers: KoreaderCatalogSeriesMember[] }> {
-    const [seriesBooks, authorBooks, similarBooks] = await Promise.all([
+    const [seriesLookup, authorLookup, similarLookup] = await Promise.all([
       this.safeRelatedLookup(() => this.recommendationService.getSeriesBooks(bookId, user)),
       this.safeRelatedLookup(() => this.recommendationService.getAuthorBooks(bookId, user)),
       this.safeRelatedLookup(() => this.recommendationService.getRecommendations(bookId, user)),
     ]);
+    const audioOnly = visibility.excludeAudioOnly
+      ? await this.opdsBookService.findAudioOnlyBookIds([...seriesLookup, ...authorLookup, ...similarLookup].map((book) => book.id))
+      : new Set<number>();
+    // The book on screen keeps its own place in its series strip even when it is audiobook-only.
+    const shown = (book: { id: number }) => book.id === bookId || !audioOnly.has(book.id);
+    const seriesBooks = seriesLookup.filter(shown);
+    const authorBooks = authorLookup.filter(shown);
+    const similarBooks = similarLookup.filter(shown);
 
     const sections: KoreaderCatalogRelatedSection[] = [];
     const seriesMembers: KoreaderCatalogSeriesMember[] = seriesBooks.map((book) => ({
@@ -1392,7 +1478,20 @@ export class KoreaderCatalogService {
     };
   }
 
-  private buildBookFilters(query: KoreaderCatalogBooksQueryDto | KoreaderCatalogManifestQueryDto): {
+  private async resolveVisibility(user: RequestUser): Promise<CatalogVisibility> {
+    return { excludeAudioOnly: await this.koreaderService.hidesAudioOnlyBooks(user.id) };
+  }
+
+  // Spread into a query's filters: names the narrowing only when there is one, so an unnarrowed
+  // query reads exactly as it did before the setting existed.
+  private narrowing(visibility: CatalogVisibility): CatalogVisibilityOptions {
+    return visibility.excludeAudioOnly ? { excludeAudioOnly: true } : {};
+  }
+
+  private buildBookFilters(
+    query: KoreaderCatalogBooksQueryDto | KoreaderCatalogManifestQueryDto,
+    visibility: CatalogVisibility,
+  ): {
     libraryId?: number;
     collectionId?: number;
     smartScopeId?: number;
@@ -1403,8 +1502,10 @@ export class KoreaderCatalogService {
     readStatus?: 'unread' | 'reading' | 'finished';
     format?: string;
     ids?: number[];
+    excludeAudioOnly?: boolean;
   } {
     return {
+      ...this.narrowing(visibility),
       ...(query.libraryId !== undefined ? { libraryId: query.libraryId } : {}),
       ...(query.collectionId !== undefined ? { collectionId: query.collectionId } : {}),
       ...(query.smartScopeId !== undefined ? { smartScopeId: query.smartScopeId } : {}),

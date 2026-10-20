@@ -171,6 +171,7 @@ function makeService(
     standaloneFileNamingPattern: string;
   } | null = null,
   achievementService?: { getCatalogue: MockedFunction<(...args: unknown[]) => Promise<unknown>> },
+  hidesAudioOnlyBooks = false,
 ) {
   const opdsBookService = {
     getAccessibleLibraries: vi.fn().mockResolvedValue([{ id: 1, name: 'Main', bookCount: 99 }]),
@@ -198,6 +199,10 @@ function makeService(
     getAccessibleLibraryIds: vi.fn().mockResolvedValue([1]),
     getBookManifestPage: vi.fn().mockResolvedValue({ rows: [], hasNext: false }),
     getRandomBooks: vi.fn().mockResolvedValue([]),
+    countVisibleAuthors: vi.fn().mockResolvedValue(0),
+    countVisibleSeries: vi.fn().mockResolvedValue(0),
+    findAudioOnlyLibraryIds: vi.fn().mockResolvedValue([]),
+    findAudioOnlyBookIds: vi.fn().mockResolvedValue(new Set<number>()),
   };
   const bookService = {
     getDetail: vi.fn().mockResolvedValue(makeDetail()),
@@ -317,6 +322,12 @@ function makeService(
     getLibraryVersion: vi.fn().mockResolvedValue('lib-v1'),
   };
 
+  const koreaderService = {
+    getKoreaderUserDefaultPattern: vi.fn().mockResolvedValue(DEFAULT_KOREADER_DEVICE_PATTERN),
+    getDeviceFileNamingPattern: vi.fn().mockResolvedValue(deviceOrganization),
+    hidesAudioOnlyBooks: vi.fn().mockResolvedValue(hidesAudioOnlyBooks),
+  };
+
   const browseCountsService = {
     getCounts: vi.fn().mockResolvedValue({ authors: 812, series: 96, annotations: 40 }),
   };
@@ -335,10 +346,7 @@ function makeService(
     browseCountsService as never,
     recommendationService as never,
     { isCrossPlatformPathSanitizationEnabled: vi.fn().mockResolvedValue(true) } as never,
-    {
-      getKoreaderUserDefaultPattern: vi.fn().mockResolvedValue(DEFAULT_KOREADER_DEVICE_PATTERN),
-      getDeviceFileNamingPattern: vi.fn().mockResolvedValue(deviceOrganization),
-    } as never,
+    koreaderService as never,
     pluginService as never,
     authorImageStorage as never,
     undefined,
@@ -357,6 +365,7 @@ function makeService(
     browseCountsService,
     recommendationService,
     pluginService,
+    koreaderService,
   };
 }
 
@@ -445,7 +454,7 @@ describe('KoreaderCatalogService', () => {
 
     expect(opdsBookService.getBooksPage).toHaveBeenCalledWith(7, 'last_read', 1, 5, { readStatus: 'reading' }, false, user.contentFilters);
     expect(opdsBookService.countBooks).toHaveBeenCalledWith(7, {}, false, user.contentFilters);
-    expect(opdsBookService.getRandomBooks).toHaveBeenCalledWith(7, 12, false, user.contentFilters);
+    expect(opdsBookService.getRandomBooks).toHaveBeenCalledWith(7, 12, false, user.contentFilters, {});
     expect(dashboard.sections.map((section) => section.id)).toContain('all-books');
     expect(dashboard.username).toBe('testuser');
     expect(dashboard.displayName).toBe('Test User');
@@ -541,7 +550,7 @@ describe('KoreaderCatalogService', () => {
 
     const dashboard = await service.getDashboard(user, { type: 'want-to-read' });
 
-    expect(dashboardService.getScrollerBookIds).toHaveBeenCalledWith('want-to-read', user, 12);
+    expect(dashboardService.getScrollerBookIds).toHaveBeenCalledWith('want-to-read', user, 12, {});
     expect(opdsBookService.getRandomBooks).not.toHaveBeenCalled();
     expect(dashboard.discover).toEqual([]);
     expect(dashboard.section).toEqual({ type: 'want-to-read', smartScopeId: null, books: [] });
@@ -747,7 +756,7 @@ describe('KoreaderCatalogService', () => {
 
     const { section } = await service.getDashboardSection(user, { type: 'smart-scope', smartScopeId: 3 });
 
-    expect(dashboardService.getSmartScopeBookIds).toHaveBeenCalledWith(3, user, 12);
+    expect(dashboardService.getSmartScopeBookIds).toHaveBeenCalledWith(3, user, 12, {});
     expect(dashboardService.getScrollerBookIds).not.toHaveBeenCalled();
     expect(section.smartScopeId).toBe(3);
   });
@@ -759,7 +768,7 @@ describe('KoreaderCatalogService', () => {
 
     const { section } = await service.getDashboardSection(user, { type: 'random' });
 
-    expect(opdsBookService.getRandomBooks).toHaveBeenCalledWith(7, 12, false, user.contentFilters);
+    expect(opdsBookService.getRandomBooks).toHaveBeenCalledWith(7, 12, false, user.contentFilters, {});
     expect(dashboardService.getScrollerBookIds).not.toHaveBeenCalled();
     expect(section.books.map((book) => book.id)).toEqual([22]);
   });
@@ -799,7 +808,7 @@ describe('KoreaderCatalogService', () => {
 
     const result = await service.getDiscover(user);
 
-    expect(opdsBookService.getRandomBooks).toHaveBeenCalledWith(7, 12, false, user.contentFilters);
+    expect(opdsBookService.getRandomBooks).toHaveBeenCalledWith(7, 12, false, user.contentFilters, {});
     expect(result.discover).toHaveLength(1);
     expect(result.discover[0]).toEqual(expect.objectContaining({ id: 33, title: 'Frankenstein' }));
   });
@@ -986,7 +995,7 @@ describe('KoreaderCatalogService', () => {
 
     const section = await service.getSectionEntries(user, 'collections');
 
-    expect(opdsBookService.getUserCollections).toHaveBeenCalledWith(7, false, user.contentFilters);
+    expect(opdsBookService.getUserCollections).toHaveBeenCalledWith(7, false, user.contentFilters, {});
     expect(opdsBookService.countBooks).not.toHaveBeenCalled();
     expect(section.items).toEqual([
       {
@@ -2149,5 +2158,200 @@ describe('KoreaderCatalogService', () => {
 
       await expect(service.streamFile(makeUser({ id: 7 }), 100, makeReply() as never)).rejects.toBeInstanceOf(NotFoundException);
     });
+  });
+});
+
+describe('KoreaderCatalogService for a reader hiding audiobook-only books', () => {
+  const NARROWED = { excludeAudioOnly: true };
+
+  function hiding() {
+    return makeService(null, undefined, true);
+  }
+
+  function booksQuery(overrides: Record<string, unknown> = {}) {
+    return Object.assign(new KoreaderCatalogBooksQueryDto(), overrides);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStat.mockResolvedValue({ size: 1234, mtimeMs: 5000 } as never);
+  });
+
+  it('reads the setting for the requesting reader and leaves a reader who sees them unnarrowed', async () => {
+    const { service, opdsBookService, koreaderService } = makeService();
+    const user = makeUser({ id: 7 });
+
+    await service.getBooksPage(user, booksQuery({ q: 'dune' }));
+
+    expect(koreaderService.hidesAudioOnlyBooks).toHaveBeenCalledWith(7);
+    expect(opdsBookService.getBooksPage.mock.calls[0]![4]).toEqual({ q: 'dune' });
+  });
+
+  it('narrows book lists, search, jump buckets and the series summary', async () => {
+    const { service, opdsBookService } = hiding();
+    const user = makeUser({ id: 7 });
+
+    await service.getBooksPage(user, booksQuery({ q: 'dune', seriesId: 42, sort: 'title', buckets: true }));
+
+    const filters = { ...NARROWED, q: 'dune', seriesId: 42 };
+    expect(opdsBookService.getBooksPage.mock.calls[0]![4]).toEqual(filters);
+    expect(opdsBookService.getBookJumpBuckets).toHaveBeenCalledWith(7, 'title_asc', filters, false, user.contentFilters);
+    expect(opdsBookService.summarizeBooks).toHaveBeenCalledWith(7, filters, 0, false, user.contentFilters);
+  });
+
+  it('narrows an explicit id list too, so a shelf of selected books never lists a hidden one', async () => {
+    const { service, opdsBookService } = hiding();
+
+    await service.getBooksPage(makeUser({ id: 7 }), booksQuery({ ids: [10, 11] }));
+
+    expect(opdsBookService.getBooksPage.mock.calls[0]![4]).toEqual({ ...NARROWED, ids: [10, 11] });
+  });
+
+  it('narrows the bulk manifest without binding its cursor to the setting', async () => {
+    const seeing = makeService();
+    const narrowed = hiding();
+    const user = makeUser({ id: 7 });
+    seeing.opdsBookService.getBookManifestPage.mockResolvedValueOnce({ rows: [makeManifestRow({ id: 42 })], hasNext: true });
+
+    const first = await seeing.service.getBulkManifest(user, makeQuery());
+    narrowed.opdsBookService.getBookManifestPage.mockResolvedValueOnce({ rows: [], hasNext: false });
+    const next = await narrowed.service.getBulkManifest(user, makeQuery({ cursor: first.nextCursor! }));
+
+    expect(next.restartRequired).toBe(false);
+    expect(narrowed.opdsBookService.getBookManifestPage).toHaveBeenLastCalledWith(
+      7,
+      { filters: NARROWED, afterId: 42, limit: 100 },
+      false,
+      user.contentFilters,
+    );
+  });
+
+  it('narrows every dashboard book row but the reading history', async () => {
+    const { service, opdsBookService, dashboardWidgetService } = hiding();
+    const user = makeUser({ id: 7 });
+    dashboardWidgetService.getFinishedThisYear.mockResolvedValue([{ bookId: 30, finishedOn: '2026-03-01' }]);
+    dashboardWidgetService.getYearAgoCandidates.mockResolvedValue([
+      { bookId: 31, seconds: 600, days: 2, endProgress: 40, firstDay: '2025-10-10', lastDay: '2025-10-12' },
+    ]);
+
+    await service.getDashboard(user);
+
+    expect(opdsBookService.getBooksPage).toHaveBeenCalledWith(
+      7,
+      'last_read',
+      1,
+      5,
+      { ...NARROWED, readStatus: 'reading' },
+      false,
+      user.contentFilters,
+    );
+    expect(opdsBookService.countBooks).toHaveBeenCalledWith(7, NARROWED, false, user.contentFilters);
+    expect(opdsBookService.getRandomBooks).toHaveBeenCalledWith(7, 12, false, user.contentFilters, NARROWED);
+    // The finished shelf and the year-ago card sit beside a reading goal that counts every book.
+    expect(opdsBookService.getBooksPage).toHaveBeenCalledWith(7, expect.any(String), 1, 1, { ids: [30] }, false, user.contentFilters);
+    expect(opdsBookService.getBooksPage).toHaveBeenCalledWith(7, expect.any(String), 1, 1, { ids: [31] }, false, user.contentFilters);
+  });
+
+  it('counts the browse badges over the books the lists show', async () => {
+    const { service, opdsBookService, browseCountsService } = hiding();
+    const user = makeUser({ id: 7 });
+    opdsBookService.getAccessibleLibraryIds.mockResolvedValue([1, 2, 3]);
+    opdsBookService.findAudioOnlyLibraryIds.mockResolvedValue([2]);
+    opdsBookService.countVisibleAuthors.mockResolvedValue(40);
+    opdsBookService.countVisibleSeries.mockResolvedValue(9);
+
+    const dashboard = await service.getDashboard(user);
+
+    expect(dashboard.browseCounts).toEqual(expect.objectContaining({ libraries: 2, authors: 40, series: 9 }));
+    expect(browseCountsService.getCounts).not.toHaveBeenCalled();
+    expect(opdsBookService.findAudioOnlyLibraryIds).toHaveBeenCalledWith([1, 2, 3]);
+    expect(opdsBookService.countVisibleAuthors).toHaveBeenCalledWith(7, false, user.contentFilters, NARROWED);
+    expect(opdsBookService.countVisibleSeries).toHaveBeenCalledWith(7, false, user.contentFilters, NARROWED);
+    expect(opdsBookService.countBooks).toHaveBeenCalledWith(7, { ...NARROWED, readStatus: 'reading' }, false, user.contentFilters);
+  });
+
+  it('keeps the sidebar totals and every library for a reader who sees them', async () => {
+    const { service, opdsBookService, browseCountsService } = makeService();
+    const user = makeUser({ id: 7 });
+
+    await service.getDashboard(user);
+    await service.getSectionEntries(user, 'libraries');
+
+    expect(browseCountsService.getCounts).toHaveBeenCalledWith(user);
+    expect(opdsBookService.findAudioOnlyLibraryIds).not.toHaveBeenCalled();
+    expect(opdsBookService.countVisibleAuthors).not.toHaveBeenCalled();
+  });
+
+  it('selects dashboard sections with the narrowing, so hidden books cannot crowd a row', async () => {
+    const { service, opdsBookService, dashboardService } = hiding();
+    const user = makeUser({ id: 7 });
+
+    await service.getDashboardSection(user, { type: 'recently-added' });
+    await service.getDashboardSection(user, { type: 'smart-scope', smartScopeId: 3 });
+    await service.getDashboardSection(user, { type: 'random' });
+    await service.getDiscover(user);
+
+    expect(dashboardService.getScrollerBookIds).toHaveBeenCalledWith('recently-added', user, 12, NARROWED);
+    expect(dashboardService.getSmartScopeBookIds).toHaveBeenCalledWith(3, user, 12, NARROWED);
+    expect(opdsBookService.getRandomBooks).toHaveBeenCalledTimes(2);
+    expect(opdsBookService.getRandomBooks).toHaveBeenNthCalledWith(2, 7, 12, false, user.contentFilters, NARROWED);
+  });
+
+  it('drops a library holding only audiobook-only books and narrows every shelf count', async () => {
+    const { service, opdsBookService } = hiding();
+    const user = makeUser({ id: 7 });
+    opdsBookService.getAccessibleLibraries.mockResolvedValue([
+      { id: 1, name: 'Main', bookCount: 99 },
+      { id: 2, name: 'Audiobooks', bookCount: 4 },
+    ]);
+    opdsBookService.findAudioOnlyLibraryIds.mockResolvedValue([2]);
+
+    const libraries = await service.getSectionEntries(user, 'libraries');
+    await service.getSectionEntries(user, 'collections');
+    await service.getSectionEntries(user, 'smart-scopes');
+
+    expect(libraries.items.map((item) => item.title)).toEqual(['Main']);
+    expect(opdsBookService.findAudioOnlyLibraryIds).toHaveBeenCalledWith([1, 2]);
+    expect(opdsBookService.summarizeBooks).toHaveBeenCalledWith(7, { libraryId: 1, ...NARROWED }, 3, false, user.contentFilters);
+    expect(opdsBookService.summarizeBooks).not.toHaveBeenCalledWith(7, expect.objectContaining({ libraryId: 2 }), 3, false, user.contentFilters);
+    expect(opdsBookService.getUserCollections).toHaveBeenCalledWith(7, false, user.contentFilters, NARROWED);
+    expect(opdsBookService.summarizeBooks).toHaveBeenCalledWith(7, { collectionId: 2, ...NARROWED }, 3, false, user.contentFilters);
+    expect(opdsBookService.summarizeBooks).toHaveBeenCalledWith(7, { smartScopeId: 3, ...NARROWED }, 3, false, user.contentFilters);
+  });
+
+  it('narrows the author and series lists', async () => {
+    const { service, opdsBookService } = hiding();
+    const user = makeUser({ id: 7 });
+
+    await service.getSectionEntries(user, 'authors', { q: 'her' });
+    await service.getSectionEntries(user, 'series');
+
+    expect(opdsBookService.getDistinctAuthorsPage).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ q: 'her', ...NARROWED }),
+      false,
+      user.contentFilters,
+    );
+    expect(opdsBookService.getDistinctSeriesPage).toHaveBeenCalledWith(7, expect.objectContaining(NARROWED), false, user.contentFilters);
+  });
+
+  it('leaves audiobook-only books out of related rows but keeps the open book in its series strip', async () => {
+    const { service, opdsBookService } = hiding();
+    opdsBookService.findAudioOnlyBookIds.mockResolvedValue(new Set([10, 11, 13]));
+
+    const detail = await service.getBookDetail(makeUser({ id: 7 }), 10);
+
+    expect(opdsBookService.findAudioOnlyBookIds).toHaveBeenCalledWith([10, 11, 10, 12, 11, 13]);
+    expect(detail.seriesMembers.map((member) => member.id)).toEqual([10]);
+    expect(detail.relatedSections).toEqual([expect.objectContaining({ id: 'author', books: [expect.objectContaining({ id: 12 })] })]);
+  });
+
+  it('looks up no related books for a reader who sees them', async () => {
+    const { service, opdsBookService } = makeService();
+
+    const detail = await service.getBookDetail(makeUser({ id: 7 }), 10);
+
+    expect(opdsBookService.findAudioOnlyBookIds).not.toHaveBeenCalled();
+    expect(detail.seriesMembers.map((member) => member.id)).toEqual([10, 11]);
   });
 });

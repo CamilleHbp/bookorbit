@@ -7,10 +7,15 @@ import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import { audiobookProgress, bookFiles, bookMetadata, books, readingProgress, userBookStatus } from '../../db/schema';
 import { buildContentFilterClauses } from '../../common/utils/content-filter-sql.utils';
+import { excludeAudioOnlyBooks } from '../../common/utils/audio-only-book-sql.utils';
 import { seriesIndexSortKey } from '../../common/utils/series-index-sql.utils';
 
 type Db = NodePgDatabase<typeof schema>;
 type UpNextInSeriesRow = { id: number };
+/** Narrows a shelf's selection for a reader whose device cannot play audio. Absent keeps every book. */
+export interface ScrollerSelectionOptions {
+  excludeAudioOnly?: boolean;
+}
 type RandomCandidateRow = { sampleIndex: number; id: number };
 const AUDIO_FORMATS = BOOK_FORMATS.filter(isAudioFormat);
 const CONTINUE_SCROLLER_EXCLUDED_READ_STATUSES = ['unread', 'read', 'skimmed', 'abandoned'] as const satisfies readonly ReadStatus[];
@@ -20,19 +25,28 @@ const DISCOVERY_EXCLUDED_READ_STATUSES = ['reading', 'rereading', 'on_hold', 're
 const RANDOM_PIVOT_MULTIPLIER = 3;
 const RANDOM_MAX_PIVOTS = 60;
 
+function selectionClauses(options: ScrollerSelectionOptions): SQL[] {
+  return options.excludeAudioOnly ? [excludeAudioOnlyBooks()] : [];
+}
+
 @Injectable()
 export class DashboardRepository {
   private readonly randomIdBounds = new Map<string, { minId: number; maxId: number; expiresAt: number }>();
 
   constructor(@Inject(DB) private readonly db: Db) {}
 
-  async findRecentlyAddedBookIds(accessibleLibraryIds: number[], limit: number, contentFilters?: ContentFilterRules): Promise<number[]> {
+  async findRecentlyAddedBookIds(
+    accessibleLibraryIds: number[],
+    limit: number,
+    contentFilters?: ContentFilterRules,
+    options: ScrollerSelectionOptions = {},
+  ): Promise<number[]> {
     if (accessibleLibraryIds.length === 0) return [];
     const cfClauses = contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
     const rows = await this.db
       .select({ id: books.id })
       .from(books)
-      .where(and(inArray(books.libraryId, accessibleLibraryIds), ...cfClauses))
+      .where(and(inArray(books.libraryId, accessibleLibraryIds), ...cfClauses, ...selectionClauses(options)))
       .orderBy(desc(books.addedAt), desc(books.id))
       .limit(limit);
 
@@ -71,10 +85,11 @@ export class DashboardRepository {
     userId: number,
     limit: number,
     contentFilters?: ContentFilterRules,
+    options: ScrollerSelectionOptions = {},
   ): Promise<number[]> {
     if (accessibleLibraryIds.length === 0) return [];
 
-    const cfClauses = contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    const cfClauses = [...(contentFilters ? buildContentFilterClauses(contentFilters, this.db) : []), ...selectionClauses(options)];
     const rows = await this.db
       .select({ id: books.id })
       .from(books)
@@ -125,10 +140,11 @@ export class DashboardRepository {
     userId: number,
     limit: number,
     contentFilters?: ContentFilterRules,
+    options: ScrollerSelectionOptions = {},
   ): Promise<number[]> {
     if (accessibleLibraryIds.length === 0) return [];
 
-    const cfClauses = contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    const cfClauses = [...(contentFilters ? buildContentFilterClauses(contentFilters, this.db) : []), ...selectionClauses(options)];
     const activity = this.listeningActivity(userId);
     const rows = await this.db
       .select({ id: books.id })
@@ -223,10 +239,16 @@ export class DashboardRepository {
     return rows[0]?.value ?? 0;
   }
 
-  async findWantToReadBookIds(accessibleLibraryIds: number[], userId: number, limit: number, contentFilters?: ContentFilterRules): Promise<number[]> {
+  async findWantToReadBookIds(
+    accessibleLibraryIds: number[],
+    userId: number,
+    limit: number,
+    contentFilters?: ContentFilterRules,
+    options: ScrollerSelectionOptions = {},
+  ): Promise<number[]> {
     if (accessibleLibraryIds.length === 0) return [];
 
-    const cfClauses = contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    const cfClauses = [...(contentFilters ? buildContentFilterClauses(contentFilters, this.db) : []), ...selectionClauses(options)];
     const rows = await this.db
       .select({ id: books.id })
       .from(books)
@@ -245,6 +267,7 @@ export class DashboardRepository {
     userId: number,
     limit: number,
     contentFilters?: ContentFilterRules,
+    options: ScrollerSelectionOptions = {},
   ): Promise<number[]> {
     if (accessibleLibraryIds.length === 0) return [];
     if (limit <= 0) return [];
@@ -277,6 +300,9 @@ export class DashboardRepository {
       sql`, `,
     );
     const filterSql = cfClauses.length > 0 ? sql`and ${sql.join(cfClauses, sql` and `)}` : sql``;
+    // Like the read-status gate, this narrows candidates only: an audiobook-only volume still holds
+    // its place, so the series waits on it rather than offering the volume after it.
+    const candidateSql = options.excludeAudioOnly ? sql`and ${excludeAudioOnlyBooks(sql.raw('os.id'))}` : sql``;
 
     // The read-status gate applies to candidates only. An abandoned volume stays in the window so
     // the series stops there instead of skipping ahead to the volume after it.
@@ -346,6 +372,7 @@ export class DashboardRepository {
           and os.is_completed = false
           and os.current_progress = 0
           and (os.read_status is null or os.read_status in ('unread', 'want_to_read'))
+          ${candidateSql}
 	        order by os.library_id, os.series_id, ${seriesIndexSortKey(sql.raw('os.series_index'))} asc,
             os.series_index collate "C" asc, os.added_at asc, os.id asc
       )
@@ -358,7 +385,13 @@ export class DashboardRepository {
     return rows.rows.map((row) => row.id);
   }
 
-  async findRandomBookIds(accessibleLibraryIds: number[], userId: number, limit: number, contentFilters?: ContentFilterRules): Promise<number[]> {
+  async findRandomBookIds(
+    accessibleLibraryIds: number[],
+    userId: number,
+    limit: number,
+    contentFilters?: ContentFilterRules,
+    options: ScrollerSelectionOptions = {},
+  ): Promise<number[]> {
     if (accessibleLibraryIds.length === 0) return [];
     if (limit <= 0) return [];
 
@@ -393,6 +426,7 @@ export class DashboardRepository {
       hasNoProgress,
       hasNoExcludedReadStatus,
       ...cfClauses,
+      ...selectionClauses(options),
     )!;
 
     // Independent indexed pivots distribute membership across the id range without

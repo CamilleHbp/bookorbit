@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
-import { SQL, type SQLWrapper, type Subquery, and, count, eq, gt, inArray, or, sql } from 'drizzle-orm';
+import { SQL, type SQLWrapper, type Subquery, and, count, eq, exists, gt, inArray, not, notExists, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { DB } from '../../db';
@@ -24,6 +24,7 @@ import { BookQueryBuilder } from '../book/book-query-builder.service';
 import { isAudioFormat, type ContentFilterRules, type GroupRule } from '@bookorbit/types';
 import { rankFileRowsByBook, rankFilesByFormatPriority } from '../../common/utils/primary-file-selection.utils';
 import { buildContentFilterClauses } from '../../common/utils/content-filter-sql.utils';
+import { excludeAudioOnlyBooks } from '../../common/utils/audio-only-book-sql.utils';
 import { seriesIndexOrderBy } from '../../common/utils/series-index-sql.utils';
 import { OpdsCollectionRepository } from './opds-collection.repository';
 
@@ -40,7 +41,13 @@ type OpdsBookFilters = {
   readStatus?: 'unread' | 'reading' | 'finished';
   format?: string;
   ids?: number[];
+  excludeAudioOnly?: boolean;
 };
+
+/** Narrows a catalog query to what one reader's device can use. Absent keeps every book. */
+export interface CatalogVisibilityOptions {
+  excludeAudioOnly?: boolean;
+}
 
 type SeriesFilter = { seriesId: number } | { normalizedName: string };
 
@@ -360,7 +367,8 @@ export class OpdsBookService {
 
     if (filters?.smartScopeId) {
       const where = await this.buildSmartScopeWhere(userId, filters.smartScopeId, accessibleIds, contentFilters, filters.q);
-      return where ? { where } : null;
+      if (!where) return null;
+      return { where: filters.excludeAudioOnly ? and(where, excludeAudioOnlyBooks())! : where };
     }
 
     const clauses: SQL[] = [inArray(books.libraryId, accessibleIds), eq(books.status, 'present')];
@@ -406,7 +414,18 @@ export class OpdsBookService {
       clauses.push(...buildContentFilterClauses(contentFilters, this.db));
     }
 
+    if (filters?.excludeAudioOnly) clauses.push(excludeAudioOnlyBooks());
+
     return { where: and(...clauses)!, contextSeries: seriesFilter };
+  }
+
+  // Content filters bind every reader but a superuser; the audio-only exclusion is the reader's own
+  // choice, so it applies to superusers too.
+  private bookVisibilityClauses(isSuperuser: boolean, contentFilters: ContentFilterRules | undefined, options: CatalogVisibilityOptions): SQL[] {
+    return [
+      ...(!isSuperuser && contentFilters ? buildContentFilterClauses(contentFilters, this.db) : []),
+      ...(options.excludeAudioOnly ? [excludeAudioOnlyBooks()] : []),
+    ];
   }
 
   // Cursor page for the KOReader bulk download manifest. Ordering by the
@@ -588,16 +607,22 @@ export class OpdsBookService {
     return this.paginatedBookQuery(where!, 'recent', page, size);
   }
 
-  async getRandomBooks(userId: number, count: number, isSuperuser = false, contentFilters?: ContentFilterRules): Promise<OpdsBookEntry[]> {
+  async getRandomBooks(
+    userId: number,
+    count: number,
+    isSuperuser = false,
+    contentFilters?: ContentFilterRules,
+    options: CatalogVisibilityOptions = {},
+  ): Promise<OpdsBookEntry[]> {
     if (count <= 0) return [];
     const accessibleIds = await this.getAccessibleLibraryIds(userId, isSuperuser);
     if (accessibleIds.length === 0) return [];
 
-    const baseClauses: SQL[] = [inArray(books.libraryId, accessibleIds), eq(books.status, 'present')];
-    if (!isSuperuser && contentFilters) {
-      baseClauses.push(...buildContentFilterClauses(contentFilters, this.db));
-    }
-    const baseFilter = and(...baseClauses)!;
+    const baseFilter = and(
+      inArray(books.libraryId, accessibleIds),
+      eq(books.status, 'present'),
+      ...this.bookVisibilityClauses(isSuperuser, contentFilters, options),
+    )!;
     const idRows = await this.db
       .select({ id: books.id })
       .from(books)
@@ -655,14 +680,14 @@ export class OpdsBookService {
 
   async getDistinctAuthorsPage(
     userId: number,
-    opts: { q?: string; limit: number; offset: number; sort?: CatalogListSort; filter?: CatalogListFilter },
+    opts: { q?: string; limit: number; offset: number; sort?: CatalogListSort; filter?: CatalogListFilter } & CatalogVisibilityOptions,
     isSuperuser = false,
     contentFilters?: ContentFilterRules,
   ): Promise<OpdsCatalogListPage<OpdsAuthorPageRow>> {
     const accessibleIds = await this.getAccessibleLibraryIds(userId, isSuperuser);
     if (accessibleIds.length === 0) return { items: [], hasNext: false, total: 0, buckets: [] };
 
-    const filterClauses = !isSuperuser && contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    const filterClauses = this.bookVisibilityClauses(isSuperuser, contentFilters, opts);
     const sort = opts.sort ?? 'name';
     const order = authorListOrder(sort);
     const letter = latinJumpBucketExpr(AUTHOR_SORT_KEY);
@@ -736,14 +761,14 @@ export class OpdsBookService {
 
   async getDistinctSeriesPage(
     userId: number,
-    opts: { q?: string; limit: number; offset: number; sort?: CatalogListSort; filter?: CatalogListFilter },
+    opts: { q?: string; limit: number; offset: number; sort?: CatalogListSort; filter?: CatalogListFilter } & CatalogVisibilityOptions,
     isSuperuser = false,
     contentFilters?: ContentFilterRules,
   ): Promise<OpdsCatalogListPage<OpdsSeriesPageRow>> {
     const accessibleIds = await this.getAccessibleLibraryIds(userId, isSuperuser);
     if (accessibleIds.length === 0) return { items: [], hasNext: false, total: 0, buckets: [] };
 
-    const filterClauses = !isSuperuser && contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    const filterClauses = this.bookVisibilityClauses(isSuperuser, contentFilters, opts);
     const sort = opts.sort ?? 'name';
     const order = seriesListOrder(sort);
     const letter = latinJumpBucketExpr(bookSeries.name);
@@ -1109,8 +1134,13 @@ export class OpdsBookService {
     return row ?? null;
   }
 
-  async getUserCollections(userId: number, isSuperuser = false, contentFilters?: ContentFilterRules) {
-    return this.collectionRepository.findVisibleForUser(userId, isSuperuser, contentFilters);
+  async getUserCollections(userId: number, isSuperuser = false, contentFilters?: ContentFilterRules, options: CatalogVisibilityOptions = {}) {
+    return this.collectionRepository.findVisibleForUser(
+      userId,
+      isSuperuser,
+      contentFilters,
+      options.excludeAudioOnly ? [excludeAudioOnlyBooks()] : [],
+    );
   }
 
   // Badge counts only need the totals, so these skip the per-entity book counts
@@ -1126,6 +1156,79 @@ export class OpdsBookService {
       .from(smartScopes)
       .where(and(eq(smartScopes.mediaType, 'books'), or(eq(smartScopes.userId, userId), eq(smartScopes.isPublic, true))));
     return Number(row?.total ?? 0);
+  }
+
+  // Badge totals for a narrowed catalog. They join books exactly as the author and series pages do,
+  // so a badge always agrees with the list it opens.
+  async countVisibleAuthors(
+    userId: number,
+    isSuperuser = false,
+    contentFilters?: ContentFilterRules,
+    options: CatalogVisibilityOptions = {},
+  ): Promise<number> {
+    const accessibleIds = await this.getAccessibleLibraryIds(userId, isSuperuser);
+    if (accessibleIds.length === 0) return 0;
+    const [row] = await this.db
+      .select({ total: sql<number>`count(DISTINCT ${bookAuthors.authorId})::int` })
+      .from(bookAuthors)
+      .innerJoin(
+        books,
+        and(eq(books.id, bookAuthors.bookId), eq(books.status, 'present'), ...this.bookVisibilityClauses(isSuperuser, contentFilters, options)),
+      )
+      .where(inArray(books.libraryId, accessibleIds));
+    return Number(row?.total ?? 0);
+  }
+
+  async countVisibleSeries(
+    userId: number,
+    isSuperuser = false,
+    contentFilters?: ContentFilterRules,
+    options: CatalogVisibilityOptions = {},
+  ): Promise<number> {
+    const accessibleIds = await this.getAccessibleLibraryIds(userId, isSuperuser);
+    if (accessibleIds.length === 0) return 0;
+    const [row] = await this.db
+      .select({ total: sql<number>`count(DISTINCT ${bookSeriesMemberships.seriesId})::int` })
+      .from(bookSeriesMemberships)
+      .innerJoin(
+        books,
+        and(
+          eq(books.id, bookSeriesMemberships.bookId),
+          eq(books.status, 'present'),
+          ...this.bookVisibilityClauses(isSuperuser, contentFilters, options),
+        ),
+      )
+      .where(inArray(books.libraryId, accessibleIds));
+    return Number(row?.total ?? 0);
+  }
+
+  /**
+   * The libraries among `libraryIds` that hold present books but none outside audio: what a reader
+   * hiding audiobook-only books would only ever see empty. A library with no books is not one.
+   */
+  async findAudioOnlyLibraryIds(libraryIds: number[]): Promise<number[]> {
+    if (libraryIds.length === 0) return [];
+    const presentBook = (extra?: SQL) =>
+      this.db
+        .select({ one: sql`1` })
+        .from(books)
+        .where(and(eq(books.libraryId, libraries.id), eq(books.status, 'present'), extra));
+    const rows = await this.db
+      .select({ id: libraries.id })
+      .from(libraries)
+      .where(and(inArray(libraries.id, libraryIds), exists(presentBook()), notExists(presentBook(excludeAudioOnlyBooks()))));
+    return rows.map((row) => row.id);
+  }
+
+  /** The books among `bookIds` whose content files are all audio. */
+  async findAudioOnlyBookIds(bookIds: number[]): Promise<Set<number>> {
+    const ids = [...new Set(bookIds)];
+    if (ids.length === 0) return new Set();
+    const rows = await this.db
+      .select({ id: books.id })
+      .from(books)
+      .where(and(inArray(books.id, ids), not(excludeAudioOnlyBooks())));
+    return new Set(rows.map((row) => row.id));
   }
 
   // The scope is shared with getBooksPage so a count can never disagree with the

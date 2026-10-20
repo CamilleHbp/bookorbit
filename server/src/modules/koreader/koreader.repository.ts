@@ -109,6 +109,15 @@ export class KoreaderRepository {
     });
   }
 
+  async findKoreaderCatalogPreferences(userId: number): Promise<{ hideAudioOnlyBooks: boolean } | undefined> {
+    const [row] = await this.db
+      .select({ hideAudioOnlyBooks: schema.koreaderUsers.hideAudioOnlyBooks })
+      .from(schema.koreaderUsers)
+      .where(eq(schema.koreaderUsers.userId, userId))
+      .limit(1);
+    return row;
+  }
+
   async findKoreaderUserByUsername(username: string) {
     return this.db.query.koreaderUsers.findFirst({
       where: eq(schema.koreaderUsers.username, username),

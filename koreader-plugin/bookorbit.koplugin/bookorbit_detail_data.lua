@@ -124,16 +124,21 @@ function DetailData.files(detail, opts)
         if pa ~= pb then return pa < pb end
         return false
     end)
-    local by_format = {}
-    for _i, file in ipairs(list) do
+    local by_format, opens_at = {}, {}
+    -- The main file is the first one this reader can open: the primary when it
+    -- can, so a book whose primary is an audiobook leads with its ebook.
+    local main
+    for i, file in ipairs(list) do
         local fmt = string.lower(file.format or "")
         by_format[fmt] = (by_format[fmt] or 0) + 1
+        opens_at[i] = AUDIO_FORMATS[fmt] ~= true and (opts.opens == nil or opts.opens(fmt) == true)
+        if main == nil and opens_at[i] then main = file end
     end
     local usable, other = {}, {}
-    for _i, file in ipairs(list) do
+    for i, file in ipairs(list) do
         local fmt = string.lower(file.format or "")
         local audio = AUDIO_FORMATS[fmt] == true
-        local opens = not audio and (opts.opens == nil or opts.opens(fmt) == true)
+        local opens = opens_at[i]
         local read_along = fmt == "epub" and file.sourceMediaOverlayAvailable == true
         local text_only = read_along and file.downloadVariant == "audioless_epub"
         local on_device = opts.on_device ~= nil and opts.on_device(file) == true
@@ -147,8 +152,8 @@ function DetailData.files(detail, opts)
         if audio then title = _("Audiobook")
         elseif read_along then title = _("Read-along edition")
         elseif not opens then title = T(_("%1 file"), fmt:upper())
-        elseif by_format[fmt] > 1 then title = file.role == "primary" and _("Main edition") or _("Another edition")
-        elseif file.role == "primary" then title = _("Main file")
+        elseif by_format[fmt] > 1 then title = file == main and _("Main edition") or _("Another edition")
+        elseif file == main then title = _("Main file")
         else title = _("Also available") end
         local entry = {
             file = file,

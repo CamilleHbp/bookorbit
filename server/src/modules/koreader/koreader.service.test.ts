@@ -43,6 +43,7 @@ function makeKoreaderUserRow(overrides?: Record<string, unknown>) {
     passwordHash: 'stored-bcrypt-hash',
     passwordMd5: md5Hex('secret'),
     syncEnabled: true,
+    hideAudioOnlyBooks: true,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     ...overrides,
   };
@@ -52,6 +53,7 @@ describe('KoreaderService', () => {
   let service: KoreaderService;
   let mockRepo: {
     findKoreaderUser: ReturnType<typeof vi.fn>;
+    findKoreaderCatalogPreferences: ReturnType<typeof vi.fn>;
     findKoreaderUserByUsername: ReturnType<typeof vi.fn>;
     createKoreaderUser: ReturnType<typeof vi.fn>;
     updateKoreaderUser: ReturnType<typeof vi.fn>;
@@ -134,6 +136,7 @@ describe('KoreaderService', () => {
 
     mockRepo = {
       findKoreaderUser: vi.fn(),
+      findKoreaderCatalogPreferences: vi.fn(),
       findKoreaderUserByUsername: vi.fn(),
       createKoreaderUser: vi.fn(),
       updateKoreaderUser: vi.fn(),
@@ -297,6 +300,16 @@ describe('KoreaderService', () => {
       });
     });
 
+    it('stores the audiobook-only catalog setting either way', async () => {
+      mockRepo.findKoreaderUser.mockResolvedValue(makeKoreaderUserRow());
+
+      await service.updateCredentials(7, { hideAudioOnlyBooks: false });
+      await service.updateCredentials(7, { hideAudioOnlyBooks: true });
+
+      expect(mockRepo.updateKoreaderUser).toHaveBeenNthCalledWith(1, 7, { hideAudioOnlyBooks: false });
+      expect(mockRepo.updateKoreaderUser).toHaveBeenNthCalledWith(2, 7, { hideAudioOnlyBooks: true });
+    });
+
     it('throws when credentials do not exist', async () => {
       mockRepo.findKoreaderUser.mockResolvedValue(null);
 
@@ -340,15 +353,39 @@ describe('KoreaderService', () => {
       await expect(service.getCredentials(7)).resolves.toEqual({
         username: 'reader',
         syncEnabled: true,
+        hideAudioOnlyBooks: true,
         createdAt: '2026-01-01T00:00:00.000Z',
         readAloudDelivery: null,
       });
+    });
+
+    it('reports a reader who chose to see audiobook-only books', async () => {
+      mockRepo.findKoreaderUser.mockResolvedValue(makeKoreaderUserRow({ hideAudioOnlyBooks: false }));
+
+      await expect(service.getCredentials(7)).resolves.toMatchObject({ hideAudioOnlyBooks: false });
     });
 
     it('returns null when credentials do not exist', async () => {
       mockRepo.findKoreaderUser.mockResolvedValue(null);
 
       await expect(service.getCredentials(7)).resolves.toBeNull();
+    });
+  });
+
+  describe('hidesAudioOnlyBooks', () => {
+    it('follows the stored setting', async () => {
+      mockRepo.findKoreaderCatalogPreferences.mockResolvedValueOnce({ hideAudioOnlyBooks: false });
+      mockRepo.findKoreaderCatalogPreferences.mockResolvedValueOnce({ hideAudioOnlyBooks: true });
+
+      await expect(service.hidesAudioOnlyBooks(7)).resolves.toBe(false);
+      await expect(service.hidesAudioOnlyBooks(7)).resolves.toBe(true);
+      expect(mockRepo.findKoreaderCatalogPreferences).toHaveBeenCalledWith(7);
+    });
+
+    it('hides them when the reader has no stored setting', async () => {
+      mockRepo.findKoreaderCatalogPreferences.mockResolvedValue(undefined);
+
+      await expect(service.hidesAudioOnlyBooks(7)).resolves.toBe(true);
     });
   });
 
