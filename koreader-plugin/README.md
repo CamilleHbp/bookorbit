@@ -40,7 +40,7 @@ Interface size defaults to 1.05x when no preference is saved. Existing scale cho
 
 To add a companion, choose Customize > Add widget > Decor: Reading dog, Reading rabbit, Reading owl, Reading penguin, Reading robot, Reading vampire, Reading dragon or Reading ghost. The original Reading buddy is the cat. Each companion reacts to reading, idle time, streak milestones, finishing a book and late-night sessions, with six distinct pixel-art poses. All support small, medium and large tiles; each widget keeps its selected character when the dashboard is saved.
 
-The plugin manages `settings/reader_menu_order.lua` and `settings/filemanager_menu_order.lua` to keep its menu entry pinned below Calibre and its icon in the menu bar across updates; delete those files to reset your menu order.
+The plugin extends KOReader's live menu order to keep its Tools entry below Calibre and its icon just before the main menu without replacing tabs or tools added by other plugins. Older BookOrbit-generated menu-order files are removed automatically; hand-maintained menu-order files keep their other entries.
 
 Settings > About & updates checks for plugin updates; an available update also shows in the BookOrbit menu. Sync status shows whether sync is working, recent sync activity, and Technical details for bug reports.
 

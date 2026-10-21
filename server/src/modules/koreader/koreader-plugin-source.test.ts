@@ -37,7 +37,10 @@ describe('KOReader plugin update source wiring', () => {
 
     expect(pin).toContain('local TAB_ID = "bookorbit_tab"');
     expect(pin).toContain('local function normalizeButtons(buttons, with_tab)');
-    expect(pin).toContain('if BookOrbitMenuPin.tab then order[TAB_ID] = {} end');
+    expect(pin).toContain('local function normalizeRuntimeOrder(order)');
+    expect(pin).toContain('local function migrateOverride(prefix)');
+    expect(pin).toContain('normalizeRuntimeOrder(order)');
+    expect(pin).not.toContain('order[BUTTONS] = copyList');
 
     expect(updater).toContain('function UpdateCheck:updateCheckMenuText()');
     expect(updater).toContain('return T(_("Plugin update available: v%1 -> v%2"), PLUGIN_VERSION, self.settings.update_latest_version)');
