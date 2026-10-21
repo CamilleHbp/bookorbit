@@ -271,7 +271,13 @@ end
 function CatalogBoard:boardRegion(build, action)
     local widget, hits = BoardUI.collectHits(build)
     local size = widget:getSize()
-    return BoardTile:new{ dimen = Geom:new{ w = size.w, h = size.h }, item = { action = action }, menu = self, hits = hits, widget }
+    return BoardTile:new{
+        dimen = Geom:new{ w = size.w, h = size.h },
+        item = { action = action },
+        menu = self,
+        hits = hits,
+        CatalogWidgets.focusable(widget),
+    }
 end
 
 -- ---------------------------------------------------------- edit overlays
@@ -517,7 +523,8 @@ function CatalogBoard:boardBuildStarter(ctx, g, screen_w, screen_h)
             { widget = inner },
             { widget = BoardUI.box({ w = card_w, h = size.h, radius = px(12), border = sel and px(2.5) or math.max(1, px(1)), border_col = sel and INK.black or INK.gb }) },
         })
-        table.insert(cards, BoardUI.hit(card_box, { kind = "starter-pick", preset = info.id }))
+        table.insert(cards, self:boardRegion(function() return card_box end,
+            { kind = "starter-pick", preset = info.id }))
     end
     local cards_row = hstack({ gap = gap, valign = "top" }, cards)
     local strip_label_h = lh1(13) + px(8)
@@ -548,9 +555,11 @@ function CatalogBoard:boardBuildStarter(ctx, g, screen_w, screen_h)
     end
     local btn_label = text(T(_("Start with %1"), selected_name), { s = 16, b = true, col = INK.white })
     local btn_w = btn_label:getSize().w + 2 * px(28)
-    local button = BoardUI.hit(BoardUI.box({ w = btn_w, h = btn_h, radius = math.floor(btn_h / 2), bg = INK.black },
-        hstack({ w = btn_w, h = btn_h }, { flex(0), btn_label, flex(0) })), { kind = "starter-start", preset = choice })
-    return vstack({ w = screen_w, h = screen_h, pad = { top, mx, top, mx } }, {
+    local button = self:boardRegion(function()
+        return BoardUI.box({ w = btn_w, h = btn_h, radius = math.floor(btn_h / 2), bg = INK.black },
+            hstack({ w = btn_w, h = btn_h }, { flex(0), btn_label, flex(0) }))
+    end, { kind = "starter-start", preset = choice })
+    local screen = vstack({ w = screen_w, h = screen_h, pad = { top, mx, top, mx } }, {
         head,
         space(nil, px(24)),
         cards_row,
@@ -559,6 +568,7 @@ function CatalogBoard:boardBuildStarter(ctx, g, screen_w, screen_h)
         strip and flex(px(16)) or false,
         hstack({ w = w }, { flex(0), button, flex(0) }),
     })
+    return screen, { cards, { button } }
 end
 
 -- ------------------------------------------------------------ the board
@@ -671,9 +681,8 @@ function CatalogBoard:updateDashboardItems(select_number, no_recalculate_dimen)
 
     local screen, rows, packed
     if self:boardShowStarter(state, context) then
-        screen = self:boardRegion(function() return self:boardBuildStarter(ctx, g, screen_w, screen_h) end)
+        screen, rows = self:boardBuildStarter(ctx, g, screen_w, screen_h)
         self._board_tiles, self._board_header = {}, nil
-        rows = { { screen } }
     else
         BoardUI.clearSnapshots("starter:")
         screen, rows, packed = self:boardBuildScreen(ctx, g, page, screen_w, screen_h)
