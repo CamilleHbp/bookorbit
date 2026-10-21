@@ -8,11 +8,16 @@ import type { CoverAspectRatio } from "./library";
 import { DEFAULT_FORMAT_PRIORITY } from "./library";
 import type { SeriesIndex } from "./series-index";
 import type { EpubMediaOverlayCapability } from "./epub";
+import { READ_ALONG_FORMAT_PRIORITY } from "./format-priority";
 
 // Derived rather than duplicated: these two lists describe the same set of formats,
 // and maintaining them separately let BOOK_FORMATS fall behind on azw and kepub.
 export const BOOK_FORMATS = DEFAULT_FORMAT_PRIORITY;
 export type BookFormat = (typeof BOOK_FORMATS)[number];
+
+/** Values accepted by the format filter. Read-along is an edition key, not a physical file format. */
+export const BOOK_FILTER_FORMATS = [...BOOK_FORMATS, READ_ALONG_FORMAT_PRIORITY] as const;
+export type BookFilterFormat = (typeof BOOK_FILTER_FORMATS)[number];
 
 /** Exported as an ordered list too, so a form offering these cannot drift from what matches them. */
 export const AUDIO_FORMAT_LIST = ["m4b", "mp3", "m4a", "opus", "ogg", "flac"] as const;
@@ -440,7 +445,7 @@ export type BooksPage = {
 };
 
 export type BookFormatFacet = {
-  format: BookFormat;
+  format: BookFilterFormat;
   count: number;
 };
 

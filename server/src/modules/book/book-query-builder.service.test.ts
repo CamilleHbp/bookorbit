@@ -41,6 +41,7 @@ import {
   CUSTOM_FIELD_TYPE_OPERATORS,
   EMPTY_CONTENT_FILTER_RULES,
   FIELD_OPERATORS,
+  READ_ALONG_FORMAT_PRIORITY,
   SORT_FIELDS,
   customRuleField,
   type CustomMetadataFieldType,
@@ -1265,6 +1266,72 @@ describe('formatRuleToSql', () => {
     const { builder } = makeBuilder();
     const where = builder.buildWhere(wrapRule({ type: 'rule', field: 'format', operator: 'excludesAll', value: [] }) as never, USER_CTX) as any;
     expect(getRuleSql(where)).toMatchObject({ type: 'sql', text: '1 = 1' });
+  });
+
+  it('matches the read-along edition key only on EPUBs with media overlays', () => {
+    const { builder } = makeBuilder();
+    const where = builder.buildWhere(
+      wrapRule({ type: 'rule', field: 'format', operator: 'includesAny', value: [READ_ALONG_FORMAT_PRIORITY] }) as never,
+      USER_CTX,
+    ) as any;
+
+    expect(getRuleSql(where)).toMatchObject({
+      type: 'sql',
+      values: [
+        {
+          whereClause: {
+            clauses: [
+              expect.anything(),
+              {
+                type: 'or',
+                clauses: [
+                  {
+                    type: 'and',
+                    clauses: [
+                      { type: 'eq', right: 'epub' },
+                      { type: 'eq', right: true },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    });
+  });
+
+  it('ORs physical formats with the read-along edition key', () => {
+    const { builder } = makeBuilder();
+    const where = builder.buildWhere(
+      wrapRule({ type: 'rule', field: 'format', operator: 'includesAny', value: ['pdf', READ_ALONG_FORMAT_PRIORITY] }) as never,
+      USER_CTX,
+    ) as any;
+    const predicate = (getRuleSql(where) as any).values[0].whereClause.clauses[1];
+
+    expect(predicate).toMatchObject({
+      type: 'or',
+      clauses: [
+        { type: 'inArray', right: ['pdf'] },
+        {
+          type: 'and',
+          clauses: [
+            { type: 'eq', right: 'epub' },
+            { type: 'eq', right: true },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('excludes books holding any read-along EPUB', () => {
+    const { builder } = makeBuilder();
+    const where = builder.buildWhere(
+      wrapRule({ type: 'rule', field: 'format', operator: 'excludesAll', value: [READ_ALONG_FORMAT_PRIORITY] }) as never,
+      USER_CTX,
+    ) as any;
+
+    expect(getRuleSql(where)).toMatchObject({ type: 'not', value: { type: 'sql' } });
   });
 });
 

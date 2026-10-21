@@ -15,7 +15,7 @@ import type {
   TemporalJumpBucketUnit,
 } from '@bookorbit/types';
 import type { UnscopedBookRecommendation } from '@bookorbit/types';
-import { isAudioFormat, isComicFormat, normalizeCoverAspectRatio } from '@bookorbit/types';
+import { READ_ALONG_FORMAT_PRIORITY, isAudioFormat, isComicFormat, normalizeCoverAspectRatio } from '@bookorbit/types';
 import { buildContentFilterClauses } from '../../common/utils/content-filter-sql.utils';
 import { rankFileRowsByBook } from '../../common/utils/primary-file-selection.utils';
 import { accentInsensitiveIlike } from '../../common/utils/accent-insensitive-search.utils';
@@ -1944,16 +1944,22 @@ export class BookRepository {
   async countFormatFacets<F extends string>(where: SQL | undefined, formats: readonly F[]): Promise<Array<{ format: F; count: number }>> {
     if (formats.length === 0) return [];
     const result = await this.db.execute<{ format: F; count: string | number }>(sql`
-      SELECT facet_file.format AS format, count(DISTINCT ${books.id}) AS count
+      SELECT facet_key.format AS format, count(DISTINCT ${books.id}) AS count
       FROM ${books}
       LEFT JOIN ${bookMetadata} ON ${bookMetadata.bookId} = ${books.id}
       INNER JOIN ${bookFiles} AS facet_file ON facet_file.book_id = ${books.id}
+      CROSS JOIN LATERAL (
+        SELECT facet_file.format AS format
+        UNION ALL
+        SELECT ${READ_ALONG_FORMAT_PRIORITY}
+        WHERE facet_file.format = 'epub' AND facet_file.media_overlay_available = true
+      ) AS facet_key
       WHERE ${this.visibleWhere(where)}
-        AND facet_file.format IN (${sql.join(
+        AND facet_key.format IN (${sql.join(
           formats.map((format) => sql`${format}`),
           sql`, `,
         )})
-      GROUP BY facet_file.format
+      GROUP BY facet_key.format
     `);
     return result.rows.map((row) => ({ format: row.format, count: Number(row.count) }));
   }

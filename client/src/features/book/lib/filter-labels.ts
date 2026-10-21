@@ -1,9 +1,10 @@
 import type { Rule, RuleField, RuleOperator, SortField } from '@bookorbit/types'
-import { parseCustomRuleFieldId, parseCustomSortFieldId } from '@bookorbit/types'
+import { isReadAlongFormatKey, parseCustomRuleFieldId, parseCustomSortFieldId } from '@bookorbit/types'
 import { i18n } from '@/i18n'
 import { activeCustomFieldLabel } from '@/features/book/composables/useActiveCustomFields'
 import { PROVIDER_SHORT_LABELS } from '@/lib/provider-colors'
 import { formatBytes } from '@/lib/formatting'
+import { formatKeyName } from './book-formats'
 
 // Resolved through the global composer rather than useI18n() because these helpers also run
 // outside a component setup (useViewSort, plain computeds). Composer.t tracks the active locale,
@@ -74,8 +75,12 @@ function tokenValueLabel(field: Rule['field'], value: string): string {
     const label = t(key)
     return label === key ? value : label
   }
-  if (field === 'format') return value.toUpperCase()
+  if (field === 'format') return formatFilterValueLabel(value)
   return value
+}
+
+export function formatFilterValueLabel(value: string): string {
+  return isReadAlongFormatKey(value) ? formatKeyName(value) : value.toUpperCase()
 }
 
 /**

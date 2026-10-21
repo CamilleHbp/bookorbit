@@ -10,7 +10,7 @@ import { SelfWriteRegistry } from '../../common/services/self-write-registry.ser
 import { FileWatcherService, WATCHER_DEBOUNCE_MS } from '../scanner/file-watcher.service';
 import {
   AUDIO_BOOK_FILE_WRITE_FIELDS,
-  BOOK_FORMATS,
+  BOOK_FILTER_FORMATS,
   MetadataProviderKey,
   Permission,
   type BookQuery,
@@ -5704,7 +5704,7 @@ describe('BookService', () => {
       expect(queryBuilder.buildWhere).toHaveBeenCalledTimes(2);
       expect(bookRepo.countWhere).toHaveBeenCalledWith({ filter, q: 'dune' });
       expect(bookRepo.countWhere).toHaveBeenCalledWith({ filter: undefined, q: undefined });
-      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter, q: 'dune' }, BOOK_FORMATS);
+      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter, q: 'dune' }, BOOK_FILTER_FORMATS);
       expect(result).toEqual({ total: 12, libraryTotal: 40, formats: [] });
     });
 
@@ -5733,7 +5733,7 @@ describe('BookService', () => {
       expect(queryBuilder.buildWhere).toHaveBeenCalledWith(filter, expect.objectContaining({ q: 'dune' }));
       expect(queryBuilder.buildWhere).toHaveBeenCalledWith(stripped, expect.objectContaining({ q: 'dune' }));
       expect(bookRepo.countWhere).toHaveBeenCalledWith({ filter, q: 'dune' });
-      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter: stripped, q: 'dune' }, BOOK_FORMATS);
+      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter: stripped, q: 'dune' }, BOOK_FILTER_FORMATS);
       expect(filter.rules).toHaveLength(4);
     });
 
@@ -5745,7 +5745,7 @@ describe('BookService', () => {
 
       expect(queryBuilder.buildWhere).toHaveBeenCalledTimes(2);
       expect(bookRepo.countWhere).toHaveBeenCalledWith({ filter, q: undefined });
-      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter, q: undefined }, BOOK_FORMATS);
+      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter, q: undefined }, BOOK_FILTER_FORMATS);
     });
 
     it('keeps a root format exclusion, which the chips do not own', async () => {
@@ -5757,7 +5757,7 @@ describe('BookService', () => {
 
       expect(bookRepo.countFormatFacets).toHaveBeenCalledWith(
         { filter: { type: 'group', join: 'AND', rules: [excludePdf] }, q: undefined },
-        BOOK_FORMATS,
+        BOOK_FILTER_FORMATS,
       );
     });
 
@@ -5771,7 +5771,7 @@ describe('BookService', () => {
 
       await service.facetsForLibrary(makeUser(), 7, facetQuery(filter));
 
-      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter, q: undefined }, BOOK_FORMATS);
+      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter, q: undefined }, BOOK_FILTER_FORMATS);
     });
 
     it('drops the filter entirely when the only root rule is a format rule, still applying q', async () => {
@@ -5782,12 +5782,13 @@ describe('BookService', () => {
 
       expect(queryBuilder.buildWhere).toHaveBeenCalledWith(undefined, expect.objectContaining({ q: 'dune' }));
       expect(bookRepo.countWhere).toHaveBeenCalledWith({ filter, q: 'dune' });
-      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter: undefined, q: 'dune' }, BOOK_FORMATS);
+      expect(bookRepo.countFormatFacets).toHaveBeenCalledWith({ filter: undefined, q: 'dune' }, BOOK_FILTER_FORMATS);
     });
 
     it('sorts formats by count then name and omits empty ones', async () => {
       const { service, bookRepo } = makeFacetService();
       bookRepo.countFormatFacets.mockResolvedValue([
+        { format: 'epub:readalong', count: 4 },
         { format: 'pdf', count: 3 },
         { format: 'epub', count: 7 },
         { format: 'cbz', count: 0 },
@@ -5799,6 +5800,7 @@ describe('BookService', () => {
 
       expect(result.formats).toEqual([
         { format: 'epub', count: 7 },
+        { format: 'epub:readalong', count: 4 },
         { format: 'mobi', count: 3 },
         { format: 'pdf', count: 3 },
         { format: 'azw3', count: 1 },

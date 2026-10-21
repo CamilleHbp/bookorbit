@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AnyColumn, SQL, and, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, not, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
-import { parseCustomRuleFieldId, parseCustomSortFieldId, parseSeriesIndex } from '@bookorbit/types';
+import { READ_ALONG_FORMAT_PRIORITY, parseCustomRuleFieldId, parseCustomSortFieldId, parseSeriesIndex } from '@bookorbit/types';
 import type {
   CommunityRatingProvider,
   ContentFilterRules,
@@ -661,13 +661,23 @@ export class BookQueryBuilder {
       return sql`exists (${sq})`;
     };
 
+    const matchesFormats = (): SQL | undefined => {
+      if (!values?.length) return undefined;
+      const physicalFormats = values.filter((value) => value !== READ_ALONG_FORMAT_PRIORITY);
+      const clauses: SQL[] = [];
+      if (physicalFormats.length > 0) clauses.push(inArray(bookFiles.format, physicalFormats));
+      if (values.includes(READ_ALONG_FORMAT_PRIORITY)) {
+        clauses.push(and(eq(bookFiles.format, 'epub'), eq(bookFiles.mediaOverlayAvailable, true))!);
+      }
+      return or(...clauses);
+    };
+    const match = matchesFormats();
+
     switch (operator) {
       case 'includesAny':
-        if (!values?.length) return sql`1 = 0`;
-        return existsFormat(inArray(bookFiles.format, values));
+        return match ? existsFormat(match) : sql`1 = 0`;
       case 'excludesAll':
-        if (!values?.length) return sql`1 = 1`;
-        return not(existsFormat(inArray(bookFiles.format, values)));
+        return match ? not(existsFormat(match)) : sql`1 = 1`;
       default:
         throw new BadRequestException(`Invalid operator '${operator}' for format field`);
     }

@@ -39,6 +39,8 @@ export const SERVER_FEATURES = [
   "metadata-search-results-per-provider",
   /** Book and custom date filters accept the `moreThanAgo` rolling-boundary operator. */
   "relative-date-ranges",
+  /** The `format` book filter accepts `epub:readalong` for EPUBs with media overlays. */
+  "read-along-filter",
 ] as const;
 
 export type ServerFeature = (typeof SERVER_FEATURES)[number];

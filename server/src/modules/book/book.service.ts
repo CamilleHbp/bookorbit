@@ -37,7 +37,7 @@ import { basename, dirname, extname, join, relative } from 'path';
 import { tmpdir } from 'os';
 
 import {
-  BOOK_FORMATS,
+  BOOK_FILTER_FORMATS,
   BOOK_METADATA_LOCK_FIELDS,
   DEFAULT_DOWNLOAD_PATTERN,
   COVER_MEDIA,
@@ -1160,7 +1160,7 @@ export class BookService {
     const [total, libraryTotal, formatCounts] = await Promise.all([
       this.bookRepo.countWhere(where),
       narrowed ? this.bookRepo.countWhere(this.queryBuilder.buildWhere(undefined, scope)) : null,
-      this.bookRepo.countFormatFacets(formatWhere, BOOK_FORMATS),
+      this.bookRepo.countFormatFacets(formatWhere, BOOK_FILTER_FORMATS),
     ]);
     const formats = formatCounts.filter((facet) => facet.count > 0).sort((a, b) => b.count - a.count || a.format.localeCompare(b.format));
 
