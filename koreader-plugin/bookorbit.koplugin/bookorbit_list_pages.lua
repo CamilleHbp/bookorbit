@@ -231,7 +231,7 @@ function Pages.seriesBody(m, f)
     else
         hero = hstack({ w = f.w, h = hero_h, gap = px(20) }, { deck, vstack({ w = tw, h = hero_h }, { flex(0), summary_col, flex(0) }) })
     end
-    local head = ListView.sectionHead(list_w, { icon = "layers-2", label = _("Reading order"), count = #all_books, right = ListView.viewToggle(m.view, "series-head") })
+    local head = ListView.sectionHead(list_w, { icon = "layers-2", label = m.order_label or _("Reading order"), count = #all_books, right = ListView.viewToggle(m.view, "series-head") })
     local list_h = page == 1 and layout.list_h1 or layout.list_hn
     local content
     if m.view == "grid" then
