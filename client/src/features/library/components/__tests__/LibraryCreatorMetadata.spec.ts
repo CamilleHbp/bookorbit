@@ -31,7 +31,7 @@ describe('LibraryCreatorMetadata', () => {
 
     expect(rowCodes(wrapper)).toEqual(['EPUB', 'M4B', 'EPUB'])
     expect(rows[0]!.find('svg.lucide-headphones-icon, svg[class*="headphones"]').exists()).toBe(true)
-    expect(rows[0]!.text()).toContain('Read-along EPUB')
+    expect(rows[0]!.text()).toContain('Read-aloud EPUB')
     expect(rows[2]!.text()).toContain('EPUB e-book')
   })
 
@@ -68,7 +68,7 @@ describe('LibraryCreatorMetadata', () => {
   it('moves the read-along entry like any other format', async () => {
     const wrapper = mountMetadata({ formatPriority: [READ_ALONG_FORMAT_PRIORITY, 'm4b', 'epub'] })
 
-    await wrapper.find('button[aria-label="Move Read-along EPUB down"]').trigger('click')
+    await wrapper.find('button[aria-label="Move Read-aloud EPUB down"]').trigger('click')
 
     expect(wrapper.emitted('update:formatPriority')).toEqual([[['m4b', READ_ALONG_FORMAT_PRIORITY, 'epub']]])
   })

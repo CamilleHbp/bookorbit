@@ -141,7 +141,15 @@ export class FileWriteRepository {
     bookId: number,
     bookFileId: number,
     previousFileHash: string | null,
-    fields: { fileHash?: string; mtime?: Date; sizeBytes?: number; ino?: bigint },
+    fields: {
+      fileHash?: string;
+      mtime?: Date;
+      sizeBytes?: number;
+      ino?: bigint;
+      mediaOverlayAvailable?: boolean;
+      mediaOverlayDurationSeconds?: number | null;
+      mediaOverlayCheckedAt?: Date | null;
+    },
   ): Promise<void> {
     const updateFile = (db: Pick<Db, 'update'>) =>
       db

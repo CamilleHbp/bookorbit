@@ -33,7 +33,7 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 vi.mock('@/features/auth/composables/usePermissions', () => ({
-  usePermissions: () => ({ hasPermission: () => false }),
+  usePermissions: () => ({ hasPermission: () => false, isDemoRestrictedAccount: { value: false } }),
 }))
 vi.mock('@/lib/api', () => ({
   api: vi.fn<(...args: unknown[]) => Promise<{ ok: boolean; json: () => Promise<Record<string, never>> }>>(async () => ({
@@ -175,10 +175,10 @@ describe('DetailsTab - present state', () => {
   it('hands the shared cover lightbox the book, opening on the face', async () => {
     const book = makeBook({
       coverSource: 'extracted',
-      coverMedia: ['ebook', 'audio'],
+      coverMedia: ['ebook'],
       covers: {
         ebook: { source: 'extracted', updatedAt: '2026-09-01T00:00:00.000Z', width: 600, height: 900 },
-        audio: { source: 'custom', updatedAt: '2026-09-02T00:00:00.000Z', width: 800, height: 800 },
+        audio: null,
       },
     })
     const wrapper = mount(DetailsTab, { props: { book }, global: globalStubs })
@@ -597,7 +597,7 @@ describe('DetailsTab - present state', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Read-along EPUB')
+    expect(wrapper.text()).toContain('Read-aloud EPUB')
     expect(wrapper.text()).toContain('25%')
   })
 

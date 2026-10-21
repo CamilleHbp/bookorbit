@@ -67,6 +67,17 @@ export const audiolessEpubConfig = registerAs('audiolessEpub', () => ({
   maxOutputBytes: parsePositiveInteger(process.env.AUDIOLESS_EPUB_MAX_OUTPUT_BYTES, 2 * 1024 * 1024 * 1024),
 }));
 
+export const readAloudConfig = registerAs('readAloud', () => {
+  const appDataPath = resolve(process.env.APP_DATA_PATH ?? '/data');
+  return {
+    workerUrl: process.env.READ_ALOUD_WORKER_URL?.trim().replace(/\/$/, '') || undefined,
+    workerToken: process.env.READ_ALOUD_WORKER_TOKEN?.trim() || undefined,
+    workRoot: join(appDataPath, 'read-aloud', 'jobs'),
+    maxOutputBytes: parsePositiveInteger(process.env.READ_ALOUD_MAX_OUTPUT_BYTES, 20 * 1024 * 1024 * 1024),
+    requestTimeoutMs: parsePositiveInteger(process.env.READ_ALOUD_WORKER_REQUEST_TIMEOUT_MS, 30_000),
+  };
+});
+
 export const emailConfig = registerAs('email', () => ({
   encryptionKey: process.env.EMAIL_ENCRYPTION_KEY ?? '',
 }));

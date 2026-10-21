@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { Permission } from '@bookorbit/types'
 import UserFormDrawer from '../UserFormDrawer.vue'
+import { grantingPermissions } from '../lib/permission-presets'
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(input: string, init?: RequestInit) => Promise<unknown>>(),
@@ -146,7 +147,7 @@ describe('UserFormDrawer permissions', () => {
 
     const deleteBooks = wrapper.findAll('label').find((label) => label.text().includes('Delete books'))
     expect(deleteBooks?.text()).toContain('Manage')
-    expect(wrapper.text()).toContain('What this account is allowed to do. 2 of 26 granted.')
+    expect(wrapper.text()).toContain(`What this account is allowed to do. 2 of ${grantingPermissions().length} granted.`)
   })
 
   it('reports the preset the selection matches', async () => {

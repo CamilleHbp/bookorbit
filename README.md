@@ -172,6 +172,7 @@ Full documentation is at **[bookorbit.app](https://bookorbit.app/what-is-bookorb
 For setting up book requests, see the [book requests guide](docs/BOOK_REQUESTS.md): indexers,
 download clients, path mappings, automation, and the encryption key they all need.
 For local development, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). To contribute, see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the full workflow: branch naming, test expectations, PR checklist, and commit format.
+For optional STAlign read-aloud generation and QuartzNet hardware acceleration, see [docs/READ_ALOUD.md](docs/READ_ALOUD.md).
 
 ## Unsupported Storage Configurations
 

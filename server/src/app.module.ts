@@ -18,6 +18,7 @@ import {
   migrationConfig,
   oidcRuntimeConfig,
   podcastConfig,
+  readAloudConfig,
   storageConfig,
 } from './config/config';
 import { validateEnv } from './config/env.validation';
@@ -96,6 +97,7 @@ import { TtsModule } from './modules/tts/tts.module';
 import { SearchModule } from './modules/search/search.module';
 import { WatchDownloadModule } from './modules/watch-download/watch-download.module';
 import { PodcastModule } from './modules/podcast/podcast.module';
+import { ReadAloudModule } from './modules/read-aloud/read-aloud.module';
 
 @Module({
   imports: [
@@ -117,6 +119,7 @@ import { PodcastModule } from './modules/podcast/podcast.module';
         podcastConfig,
         audiolessEpubConfig,
         djvuConfig,
+        readAloudConfig,
       ],
     }),
     ScheduleModule.forRoot(),
@@ -202,6 +205,7 @@ import { PodcastModule } from './modules/podcast/podcast.module';
     SearchModule,
     WatchDownloadModule,
     PodcastModule,
+    ReadAloudModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: AuditInterceptor }, ...GLOBAL_GUARDS.map((useClass) => ({ provide: APP_GUARD, useClass }))],
 })

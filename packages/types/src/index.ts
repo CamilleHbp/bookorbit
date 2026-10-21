@@ -80,6 +80,7 @@ export * from "./book-journal";
 export * from "./notebook";
 export * from "./hardcover";
 export * from "./readwise";
+export * from "./read-aloud";
 export * from "./storygraph";
 export * from "./path";
 export * from "./sidebar";

@@ -1,5 +1,5 @@
 {
-  "totalRoutes": 667,
+  "totalRoutes": 677,
   "byPermission": {
     "(none)": 287,
     "Permission.ManageMetadataConfig": 41,
@@ -12,7 +12,7 @@
     "Permission.ManageEmail": 8,
     "Permission.KoboSync": 13,
     "Permission.NotificationAccess": 6,
-    "Permission.DemoRestricted": 6,
+    "Permission.DemoRestricted": 16,
     "Permission.KoreaderSync": 9,
     "Permission.OpdsAccess": 4,
     "Permission.ViewAuditLog": 4,
@@ -32,7 +32,8 @@
     "Permission.PodcastManageRetention": 1,
     "Permission.PodcastEditMetadata": 5,
     "Permission.PodcastPurge": 5,
-    "Permission.PodcastDownload": 4
+    "Permission.PodcastDownload": 4,
+    "Permission.LibraryGenerateReadAloud": 10
   },
   "byLibraryAccess": {
     "'viewer'": 10,

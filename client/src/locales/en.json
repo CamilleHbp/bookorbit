@@ -2048,7 +2048,7 @@
             "overwriteBody": "Replace whenever a provider has data."
           },
           "summary": "Providers are tried top to bottom and the first one that returns a value wins. The merge strategy decides whether that value may replace what the book already has; genres can also append new unique values. Set defaults here, then override individual fields per library.",
-          "summaryByMedium": "Providers are tried top to bottom, and the first one with a value wins; genres in merge mode and community ratings combine every provider instead. The merge strategy decides whether a value may replace what the book already has. Audible, AudNexus and Libro.fm only answer for books with audio, read-along EPUBs included, so putting them first prefers audiobook metadata without touching ebook-only books. Cover art of the wrong shape fills a slot only when nothing else can. A library override replaces that field's whole rule."
+          "summaryByMedium": "Providers are tried top to bottom, and the first one with a value wins; genres in merge mode and community ratings combine every provider instead. The merge strategy decides whether a value may replace what the book already has. Audible, AudNexus and Libro.fm only answer for books with audio, read-aloud EPUBs included, so putting them first prefers audiobook metadata without touching ebook-only books. Cover art of the wrong shape fills a slot only when nothing else can. A library override replaces that field's whole rule."
         },
         "libraryOverrides": {
           "title": "Library Overrides",
@@ -6021,7 +6021,7 @@
       "opus": "Opus audio",
       "ogg": "OGG audio",
       "flac": "FLAC audio",
-      "readAlong": "Read-along EPUB",
+      "readAlong": "Read-aloud EPUB",
       "primary": "Primary format"
     },
     "actions": {
@@ -6045,7 +6045,7 @@
       "sendViaEmail": "Send via Email",
       "rate": "Rate {star}",
       "openAs": "Open as {format}",
-      "openReadAlong": "Open read-along EPUB"
+      "openReadAlong": "Open read-aloud EPUB"
     },
     "refreshMetadata": {
       "success": "Metadata refreshed",
@@ -6530,6 +6530,20 @@
         },
         "editCover": "Edit cover",
         "viewCover": "View larger cover",
+        "coverStack": {
+          "show": {
+            "ebook": "Show the book cover",
+            "audio": "Show the audiobook cover"
+          },
+          "front": {
+            "ebook": "Showing the book cover",
+            "audio": "Showing the audiobook cover"
+          }
+        },
+        "readAloudInvite": {
+          "chip": "Read-aloud",
+          "title": "Create a read-aloud from this book's EPUB and audiobook"
+        },
         "finished": "Finished",
         "resetFileProgress": "Reset file progress",
         "resetEditionProgress": "Reset progress for {format}",
@@ -6554,14 +6568,15 @@
             "unavailable": "Sync issue"
           },
           "chipAria": "Read-aloud progress sync: {status}",
+          "noneYet": "No read-aloud EPUB yet. Create one to sync positions between the audiobook and the text.",
           "enabledDescription": "Audiobook, web reader, Kobo, and KOReader positions stay in sync.",
           "disabledDescription": "Each format keeps its own reading position.",
           "epubCopiesDescription": "Web reader, Kobo, and KOReader positions stay in sync across the EPUB copies. Add matching audiobook files to sync the audiobook too.",
           "reason": {
-            "no_media_overlay_epub": "A read-along EPUB with media overlays is required.",
+            "no_media_overlay_epub": "A read-aloud EPUB with media overlays is required.",
             "no_audio_files": "Matching standalone audiobook files are required.",
             "missing_duration": "Audio duration metadata is incomplete.",
-            "durationMismatch": "Durations do not match closely enough: audiobook {audio}, read-along EPUB {overlay}."
+            "durationMismatch": "Durations do not match closely enough: audiobook {audio}, read-aloud EPUB {overlay}."
           },
           "enable": "Enable",
           "disable": "Disable",
@@ -7074,6 +7089,287 @@
       },
       "files": {
         "title": "Book files",
+        "readAloud": {
+          "action": "Create read-aloud",
+          "loadFailed": "Read-aloud availability couldn't be checked.",
+          "loadFailedAgain": "{count, plural, one {Read-aloud availability still couldn't be checked after # retry.} other {Read-aloud availability still couldn't be checked after # retries.}}",
+          "checkAgain": "Check again",
+          "checking": "Checking…",
+          "reasons": {
+            "worker_unavailable": "The read-aloud worker is offline right now.",
+            "worker_incompatible": "The read-aloud worker needs an update to work with this server.",
+            "book_missing": "Restore this book's missing files to create a read-aloud.",
+            "no_epub": "Add a plain EPUB to this book to create a read-aloud.",
+            "no_epub_existing": "This book already has a read-aloud and no plain EPUB to rebuild it from.",
+            "too_many_audio_files": "This audiobook is split into more files than a read-aloud can be made from.",
+            "epub_not_allowed": "This library doesn't accept EPUB files, so a read-aloud can't be added.",
+            "library_not_mounted": "The read-aloud worker can't reach this library's folder.",
+            "job_active": "A read-aloud is already being created for this book.",
+            "unknown": "A read-aloud can't be created for this book right now."
+          },
+          "dialog": {
+            "title": "Create a read-aloud",
+            "description": "Matches the narration to the ebook text and adds an EPUB that highlights along with the audio.",
+            "ebook": "Ebook",
+            "ebookHint": "Pick the plain EPUB that matches the narration.",
+            "existing": {
+              "title": "{count, plural, one {This book already has a read-aloud} other {This book already has # read-alouds}}",
+              "replace": "Replace {filename}",
+              "keep": "{count, plural, one {Keep both} other {Keep all of them}}",
+              "keepHint": "The new read-aloud is added as another file.",
+              "replaceHint": "The old file is replaced only after the new one passes its checks, and reading positions carry over.",
+              "replaceNotPermitted": "Replacing a read-aloud needs permission to delete books, so the new one is added as another file.",
+              "generated": "Made by BookOrbit",
+              "imported": "Imported"
+            },
+            "audio": "Audiobook",
+            "audioSummary": "{count, plural, one {# track} other {# tracks}}, {order, select, book {in book order} other {in your order}}",
+            "audioSummaryWithDuration": "{count, plural, one {# track} other {# tracks}}, {duration}, {order, select, book {in book order} other {in your order}}",
+            "audioSkipped": "{count, plural, one {# track skipped} other {# tracks skipped}}",
+            "changeOrder": "Change order",
+            "restoreOrder": "Restore book order",
+            "trackList": "Tracks in listening order",
+            "trackLabel": "Track {position} of {total}: {name}",
+            "moveUp": "Move {name} up",
+            "moveDown": "Move {name} down",
+            "moved": "{name} moved to position {position} of {total}",
+            "skipped": "Skipped",
+            "noTracks": "Select at least one track.",
+            "language": "Narration language",
+            "chooseLanguage": "Choose a language",
+            "languageUnsupported": "{language} isn't supported by the speech model.",
+            "advanced": "Advanced",
+            "granularity": "Highlighting",
+            "sentence": "Sentence",
+            "sentenceHint": "Highlights one sentence at a time. Recommended.",
+            "word": "Word",
+            "wordHint": "Highlights each word. Takes longer and makes a larger file.",
+            "experimental": "Experimental",
+            "model": "Speech model: {model}",
+            "estimatedSize": "Estimated size: {size}",
+            "lowDiskLabel": "Low disk space.",
+            "lowDisk": "This needs about {needed} of working space on the worker, which has {free} free.",
+            "processingNote": "Runs in the background. Long audiobooks can take hours, and the first run for a language downloads its model.",
+            "start": "Start",
+            "starting": "Starting…"
+          },
+          "devices": {
+            "cpu": "Runs on the CPU",
+            "mlx": "Runs on Apple Silicon (MLX)",
+            "cuda": "Runs on an NVIDIA GPU (CUDA)",
+            "webgpu": "Runs on the GPU (WebGPU)",
+            "other": "Runs on {device}"
+          },
+          "job": {
+            "heading": "Read-aloud",
+            "startedBy": "Started by {name}",
+            "startedByUnknown": "Started by another user",
+            "dismiss": "Dismiss",
+            "details": "Details",
+            "queuedTitle": "Waiting to start",
+            "queueAhead": "{count, plural, =0 {Next in line} one {# job ahead} other {# jobs ahead}}",
+            "elapsed": "Running for {duration}",
+            "justStarted": "Just started",
+            "firstRunForLanguage": "First run for this language",
+            "stoppingTitle": "Stopping…",
+            "stoppingDescription": "Finishing the current step, then it stops. Nothing will be added to this book.",
+            "reviewTitle": "Ready for review",
+            "reviewDescription": "{percent} of the text matched the narration. Check the chapters before adding it.",
+            "reviewDescriptionPlain": "Check the chapters before adding it to this book.",
+            "reviewExpires": "Discarded automatically {when} unless you review it.",
+            "completeTitle": "Read-aloud ready",
+            "completeWarningsTitle": "Read-aloud ready, with warnings",
+            "completeAdded": "Added to this book as a new EPUB.",
+            "completeReplaced": "Replaced the previous read-aloud. Reading positions carry over.",
+            "matchedSentences": "{matched} of {total} {count, plural, one {sentence} other {sentences}} matched the narration",
+            "audioUsed": "{percent} of the audio used",
+            "outsideNarration": "Not in the narration, so left without audio: {chapters}.",
+            "outsideMore": "{count, plural, one {# more chapter} other {# more chapters}}",
+            "chaptersHeading": "Chapters",
+            "activityHeading": "Activity",
+            "failedTitle": "Read-aloud failed",
+            "retryUntil": "Retry continues from the last finished step until {date}.",
+            "cancelledTitle": "Generation cancelled",
+            "discardedTitle": "Output discarded",
+            "nothingAdded": "Nothing was added to this book.",
+            "expiredDescription": "It wasn't reviewed within 14 days, so nothing was added to this book.",
+            "progress": "Read-aloud progress",
+            "steps": "Steps",
+            "stepDone": "{step}, done",
+            "stepCurrent": "{step}, in progress",
+            "stepUpcoming": "{step}, not started",
+            "openReadAlong": "Open read-aloud",
+            "showFile": "Show file",
+            "retry": "Retry",
+            "startOver": "Start over",
+            "cancel": "Cancel generation",
+            "cancelPrompt": "Cancel generation?",
+            "keepRunning": "Keep running",
+            "warnings": "Warnings",
+            "live": "Read-aloud: {status}"
+          },
+          "stageDetail": {
+            "file": "File {current} of {total}",
+            "track": "Track {current} of {total}",
+            "chapter": "Chapter {current} of {total}",
+            "step": "Step {current} of {total}"
+          },
+          "stages": {
+            "queued": "Waiting to start",
+            "preparing_audio": "Preparing the audio",
+            "downloading_model": "Downloading the speech model",
+            "generating_emissions": "Listening to the narration",
+            "marking_up_ebook": "Marking up the ebook text",
+            "aligning": "Matching the text to the narration",
+            "validating": "Checking the result",
+            "awaiting_review": "Waiting for review",
+            "publishing": "Adding the read-aloud to this book",
+            "completed": "Done",
+            "working": "Working"
+          },
+          "steps": {
+            "audio": "Audio",
+            "speech": "Speech",
+            "text": "Text",
+            "align": "Align",
+            "check": "Check",
+            "publish": "Publish"
+          },
+          "review": {
+            "heading": "Chapters",
+            "summary": "{count, plural, one {# chapter} other {# chapters}}, {attention, plural, =0 {none need a look} one {# needs a look} other {# need a look}}",
+            "chapter": "Chapter",
+            "part": "Part",
+            "statusLabel": "Status",
+            "status": {
+              "aligned": "Aligned",
+              "notFound": "Not found in the audio",
+              "tooShort": "Too short to match",
+              "excluded": "Excluded",
+              "audioOnly": "Audio only",
+              "outside": "Not in the narration",
+              "unknown": "Unknown"
+            },
+            "matched": "Matched",
+            "matchedValue": "{percent} matched",
+            "zones": {
+              "front": "Front matter",
+              "body": "Body",
+              "back": "Back matter"
+            },
+            "include": "Include {title}",
+            "showText": "Show text from {title}",
+            "hideText": "Hide text from {title}",
+            "preview": "Preview",
+            "firstMatch": "First match",
+            "lastMatch": "Last match",
+            "noText": "No text to show for this chapter.",
+            "noReport": "No chapter report was kept for this job. Run it again to see one.",
+            "loading": "Loading chapters…",
+            "loadFailed": "The chapter report couldn't be loaded.",
+            "tryAgain": "Try again",
+            "pending": "{count, plural, one {# change is not applied yet.} other {# changes are not applied yet.}} Re-sync reruns only the matching step.",
+            "resync": "Re-sync",
+            "publishAnyway": "Publish anyway",
+            "discard": "Discard",
+            "discardPrompt": "Discard this output?",
+            "keep": "Keep it"
+          },
+          "log": {
+            "heading": "Activity",
+            "empty": "No activity yet.",
+            "loading": "Loading activity…",
+            "loadFailed": "The activity log couldn't be loaded.",
+            "tryAgain": "Try again",
+            "warn": "Warning",
+            "error": "Error",
+            "other": "Worker activity",
+            "events": {
+              "job_created": "Job created",
+              "claimed": "Sent to the worker",
+              "job_accepted": "The worker accepted the job",
+              "disk_checked": "Enough free space on the worker",
+              "disk_check_failed": "Not enough free space on the worker",
+              "stage_started": "Started",
+              "stage_finished": "Finished in {duration}",
+              "stage_finished_plain": "Finished",
+              "stage_skipped": "Reused earlier work",
+              "stage_failed": "This step failed",
+              "model_download_started": "Downloading the speech model for this language",
+              "model_download_finished": "Speech model downloaded",
+              "emissions_cached": "Reused speech analysis from an earlier run",
+              "audio_reencoded_cbr": "Converted variable-bitrate MP3 for accurate timing",
+              "stalign_warning": "The aligner reported a warning",
+              "waiting_for_worker": "Waiting for the worker to respond",
+              "worker_reachable_again": "The worker is responding again",
+              "worker_lost_job": "The worker restarted; resuming from earlier work",
+              "requeued": "Will try again shortly",
+              "recovered": "Resuming after a server restart",
+              "output_validated": "Checked the result",
+              "needs_review": "Needs review: part of the text didn't match the audio",
+              "publish_requested": "Adding to the book",
+              "published": "Added to the book",
+              "file_added": "Saved as a new file",
+              "file_replaced": "Replaced the existing read-aloud",
+              "file_already_attached": "The book already had this file",
+              "replace_target_missing": "The read-aloud to replace was gone, so a new file was added",
+              "replace_not_permitted": "Replacing the read-aloud was no longer permitted, so a new file was added",
+              "job_completed": "The worker finished",
+              "cancel_requested": "Cancellation requested",
+              "runner_killed": "Stopped the worker process",
+              "job_cancelled": "The worker stopped",
+              "cancelled": "Cancelled",
+              "discarded": "Discarded at review",
+              "job_failed": "The worker reported a failure",
+              "retry_requested": "Retry requested",
+              "resync_requested": "Re-sync requested",
+              "review_reminder_sent": "Reminder sent: the review expires soon",
+              "review_expired": "Discarded after 14 days without review"
+            }
+          },
+          "warnings": {
+            "unaligned_tracks": "One or more audio tracks could not be aligned.",
+            "unmatched_text": "A noticeable amount of ebook text was not matched to narration.",
+            "interpolated_text": "Some text timing was estimated between confident matches.",
+            "dropped_text": "Some ebook text was omitted from the synchronized sequence."
+          },
+          "errors": {
+            "create": "The read-aloud couldn't be started. Try again.",
+            "createInvalid": "Some selected files are no longer on this book. Check the selection and try again.",
+            "createConflict": "Another read-aloud is already being created for this book.",
+            "createUnavailable": "The read-aloud worker is offline. Try again later.",
+            "forbidden": "You don't have permission to do that.",
+            "gone": "This job no longer exists.",
+            "conflict": "This job had already moved on. It now shows where it is.",
+            "cancel": "The job couldn't be cancelled. Try again.",
+            "publish": "The read-aloud couldn't be added to this book. Try again.",
+            "retry": "The job couldn't be retried. Try again.",
+            "resync": "The re-sync couldn't be started. Try again.",
+            "dismiss": "The card couldn't be dismissed. Try again.",
+            "job": {
+              "worker_unavailable": "The read-aloud worker couldn't be reached.",
+              "worker_incompatible": "The read-aloud worker needs an update to work with this server.",
+              "worker_crashed": "The read-aloud worker stopped unexpectedly.",
+              "library_not_mounted": "The read-aloud worker can't reach this library's folder.",
+              "source_missing": "A selected file is no longer available.",
+              "source_changed": "A selected file changed after the job started.",
+              "invalid_source": "The selected EPUB or audiobook couldn't be read.",
+              "unsupported_language": "The speech model doesn't support the selected language.",
+              "insufficient_storage": "There isn't enough free disk space to finish.",
+              "audio_processing_failed": "The audiobook couldn't be prepared.",
+              "model_download_failed": "The speech model couldn't be downloaded.",
+              "inference_failed": "Speech recognition failed while listening to the narration.",
+              "markup_failed": "The ebook text couldn't be prepared for matching.",
+              "alignment_failed": "The text couldn't be matched to the narration.",
+              "invalid_output": "The generated EPUB failed its checks.",
+              "publication_failed": "The generated EPUB couldn't be added to this book.",
+              "review_expired": "It wasn't reviewed within 14 days.",
+              "discarded": "The read-aloud was discarded at review.",
+              "cancelled": "The job was cancelled.",
+              "unknown": "Something went wrong while creating the read-aloud."
+            }
+          }
+        },
         "stats": {
           "files": "Files",
           "total": "Total",
@@ -9987,7 +10283,7 @@
       "unconfirmed": "unconfirmed",
       "sending": "sending",
       "narration": "Narration",
-      "narrationTitle": "Read-along books keep their narration"
+      "narrationTitle": "Read-aloud books keep their narration"
     },
     "device": {
       "kindle": "Kindle",
@@ -10012,7 +10308,7 @@
       "total": "{size} in total",
       "send": "{count, plural, one {Send} other {Send # emails}}",
       "noFormat": "No {format}, gets {got}",
-      "readAlong": "Read-along, {size}",
+      "readAlong": "Read-aloud, {size}",
       "overKindle": "{size}, over Kindle's 50 MB limit",
       "overGmail": "{size}, over Gmail's 25 MB limit",
       "kindleRejects": "Kindle rejects {format}",
@@ -10049,7 +10345,7 @@
         "formatHint": "A book without this format gets its primary edition.",
         "kindleFormatHint": "Amazon stopped accepting MOBI and AZW3 by email in 2023, so they are not offered for a Kindle. A book without this format gets its primary edition.",
         "kindleLegacyFormat": "Kindle no longer accepts {format} by email. Pick EPUB or PDF.",
-        "readAlong": "Read-along books",
+        "readAlong": "Read-aloud books",
         "readAlongAutomatic": "Automatic",
         "readAlongAutomaticHint": "Text-only when a safe copy can be made, otherwise the original.",
         "readAlongTextOnly": "Text-only EPUB",
@@ -10756,9 +11052,9 @@
           "toggleAria": "Write EPUB metadata"
         },
         "readAlong": {
-          "title": "Read-along EPUB",
-          "hint": "EPUBs with synced narration, such as Storyteller read-alongs. They carry their audio, so they are large and need more memory to rewrite.",
-          "toggleAria": "Write read-along EPUB metadata"
+          "title": "Read-aloud EPUB",
+          "hint": "EPUBs with synced narration, such as Storyteller read-alouds. They carry their audio, so they are large and need more memory to rewrite.",
+          "toggleAria": "Write read-aloud EPUB metadata"
         },
         "fb2": {
           "title": "FictionBook (FB2)",
@@ -11467,6 +11763,15 @@
     "dismiss": "Dismiss notification",
     "occurrences": "Happened {count} times",
     "occurrencesShort": "x{count}",
+    "readAloud": {
+      "readyTitle": "Read-aloud ready: {title}",
+      "needsReviewTitle": "Read-aloud needs review: {title}",
+      "needsReviewMessage": "Part of the text could not be matched to the audio. Review it before adding it to the book.",
+      "failedTitle": "Read-aloud failed: {title}",
+      "reviewExpiringTitle": "Read-aloud review expires soon: {title}",
+      "reviewExpiringMessage": "The generated read-aloud will be discarded in a few days unless you review it.",
+      "untitledBook": "Untitled book"
+    },
     "preferences": {
       "title": "Notifications",
       "subtitle": "Choose which notification categories you want to receive.",
@@ -11523,6 +11828,10 @@
         "bulkRename": {
           "label": "Bulk rename",
           "description": "When a bulk rename or a move of books between libraries completes or fails."
+        },
+        "readAloud": {
+          "label": "Read-aloud generation",
+          "description": "When a read-aloud you started is ready, needs your review, or fails."
         },
         "migration": {
           "label": "Data migration",

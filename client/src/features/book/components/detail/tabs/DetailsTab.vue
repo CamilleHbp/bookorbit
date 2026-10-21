@@ -33,7 +33,15 @@ import { getProviderColor, PROVIDER_SHORT_LABELS } from '@/lib/provider-colors'
 import { useCoverVersions } from '@/features/book/composables/useCoverVersions'
 import { useBookCoverAspectRatio } from '@/features/book/composables/useBookCoverAspectRatio'
 import { FORMAT_TO_GROUP, getPrimaryBookFile, READER_OPENABLE_FORMATS, isComicFormat } from '@bookorbit/types'
-import type { BookDetail, BookKoboState, CustomMetadataBookValue, ReadAloudProgressSync, ReadStatus, UserBookStatus } from '@bookorbit/types'
+import type {
+  BookDetail,
+  BookKoboState,
+  CoverMedium,
+  CustomMetadataBookValue,
+  ReadAloudProgressSync,
+  ReadStatus,
+  UserBookStatus,
+} from '@bookorbit/types'
 import { STATUS_OPTIONS, STATUS_ICONS, STATUS_COLORS, useBookStatus } from '@/features/book/composables/useBookStatus'
 import BookDownloadButton from '@/features/book/components/BookDownloadButton.vue'
 import DiscoverRow from '@/features/book/components/detail/DiscoverRow.vue'
@@ -74,6 +82,11 @@ import BookMissingFormatRequest from '@/features/book-requests/components/BookMi
 import { useBookReadingLog } from '@/features/book/composables/useBookReadingLog'
 import { useProviderLinkSettings } from '@/features/book/composables/useProviderLinkSettings'
 import { hasReadAlong } from '@/features/book/lib/file-capabilities'
+import { COVER_STACK_ASPECT_RATIO, hasCoverPair } from '@/features/book/lib/cover-stack'
+import BookCoverStack from '@/features/book/components/detail/details/BookCoverStack.vue'
+import ReadAloudInviteChip from '@/features/read-aloud/components/ReadAloudInviteChip.vue'
+import ReadAloudSparkles from '@/features/read-aloud/components/ReadAloudSparkles.vue'
+import { useReadAloudInvite } from '@/features/read-aloud/composables/useReadAloudInvite'
 
 type FileProgress = {
   percentage: number
@@ -284,6 +297,9 @@ const coverSeed = computed(() => props.book.title ?? props.book.folderPath.split
 const coverPlaceholderTitle = computed(() => props.book.title ?? props.book.folderPath.split('/').pop() ?? null)
 const coverAuthors = computed(() => props.book.authors.map((a) => a.name))
 const hasCover = computed(() => props.book.coverSource !== null)
+// Both slots hold art, so the cover slot shows them as a stack instead of the face alone, at every width.
+const showCoverStack = computed(() => hasCoverPair(props.book))
+const coverLightboxMedium = ref<CoverMedium | undefined>(undefined)
 const { coverUrl } = useCoverVersions()
 const coverSrc = computed(() => coverUrl(props.book.id, 'cover', props.book.coverVersion))
 
@@ -308,7 +324,7 @@ const COVER_GROUP_GAP_PX = 16
 const coverMaxWidth = computed(() => {
   const availableHeight = coverColumnHeight.value - coverActionsHeight.value - COVER_GROUP_GAP_PX
   if (availableHeight <= 0) return undefined
-  const parts = detailCoverAspectRatio.value.split('/').map((part) => Number(part.trim()))
+  const parts = (showCoverStack.value ? COVER_STACK_ASPECT_RATIO : detailCoverAspectRatio.value).split('/').map((part) => Number(part.trim()))
   const width = parts[0]
   const height = parts[1]
   if (width === undefined || height === undefined) return undefined
@@ -379,9 +395,20 @@ const hasMultipleFiles = computed(() => openableFiles.value.length > 1)
 const readAloudSync = ref<ReadAloudProgressSync>(props.book.readAloudSync)
 const readAloudSyncSaving = ref(false)
 const readAloudSyncError = ref<string | null>(null)
+const readAloudInviteBook = computed(() => props.book)
+const { invite: readAloudInvite } = useReadAloudInvite(readAloudInviteBook)
+const offersReadAloudInSync = computed(
+  () => readAloudInvite.value && readAloudSync.value.state === 'unavailable' && readAloudSync.value.unavailableReason === 'no_media_overlay_epub',
+)
 const hasOtherEpubCopy = computed(() => props.book.files.filter((file) => file.format?.toLowerCase() === 'epub').length > 1)
 // Sync bridges a read-along EPUB to an audiobook or to other EPUB copies; a book with only one side has nothing to sync.
-const showReadAloudSync = computed(() => readAlongFile.value != null && (hasAudioFile.value || hasOtherEpubCopy.value))
+const showReadAloudSync = computed(
+  () => (readAlongFile.value != null && (hasAudioFile.value || hasOtherEpubCopy.value)) || offersReadAloudInSync.value,
+)
+
+function handleCreateReadAloud() {
+  void router.push({ name: 'book-detail', params: { bookId: props.book.id }, query: { tab: 'files', readAloud: 'create' } })
+}
 // Another EPUB beside the read-along file keeps its position in sync through the read-along's
 // narration even when no audiobook can be matched, so only the audiobook half is unavailable.
 const syncsEpubCopiesOnly = computed(
@@ -1041,7 +1068,14 @@ function handleCoverError() {
 const canOpenCoverLightbox = computed(() => hasCover.value && coverLoaded.value && !coverFailed.value)
 
 function handleCoverClick() {
-  if (canOpenCoverLightbox.value) coverLightboxOpen.value = true
+  if (!canOpenCoverLightbox.value) return
+  coverLightboxMedium.value = undefined
+  coverLightboxOpen.value = true
+}
+
+function handleCoverStackOpen(medium: CoverMedium) {
+  coverLightboxMedium.value = medium
+  coverLightboxOpen.value = true
 }
 
 function handleCoverLightboxOpenChange(open: boolean) {
@@ -1246,13 +1280,22 @@ watch(
       <div class="flex items-start gap-4 sm:gap-5 @min-[46rem]/book-detail:block @min-[46rem]/book-detail:min-h-0">
         <div
           class="w-28 shrink-0 sm:w-36 @min-[46rem]/book-detail:flex @min-[46rem]/book-detail:w-full @min-[46rem]/book-detail:items-start @min-[46rem]/book-detail:justify-end"
-          :class="hasCover && coverLoaded && !coverFailed ? 'cursor-zoom-in' : ''"
+          :class="!showCoverStack && hasCover && coverLoaded && !coverFailed ? 'cursor-zoom-in' : ''"
         >
           <div
             class="w-full @min-[46rem]/book-detail:max-h-full @min-[46rem]/book-detail:max-w-[var(--detail-cover-max-width)]"
             :style="{ '--detail-cover-max-width': coverMaxWidth }"
           >
+            <BookCoverStack
+              v-if="showCoverStack"
+              :book="book"
+              :face="isFaceAudio ? 'audio' : 'ebook'"
+              :editable="canEditMetadata"
+              @open="handleCoverStackOpen"
+              @edit="openEditCover"
+            />
             <BookCoverSurface
+              v-else
               class="book-cover-surface--spine-fitted group relative w-full overflow-hidden rounded-lg shadow-lg shadow-black/40"
               :disable-spine="isFaceAudio"
               :is-comic="isPrimaryComic"
@@ -1642,6 +1685,7 @@ watch(
           :primary="entry.primary"
           class="rounded-xs px-2 py-0.5 text-[10px] tracking-wider"
         />
+        <ReadAloudInviteChip v-if="readAloudInvite" @create="handleCreateReadAloud" />
         <Popover v-if="showReadAloudSync">
           <PopoverTrigger as-child>
             <button
@@ -1667,7 +1711,9 @@ watch(
                 <p class="text-xs font-semibold text-foreground">{{ t('book.detail.details.readAloudSync.title') }}</p>
                 <span class="text-[11px] text-muted-foreground">{{ readAloudSyncStatus }}</span>
               </div>
-              <p class="mt-1 text-xs text-muted-foreground">{{ readAloudSyncDescription }}</p>
+              <p class="mt-1 text-xs text-muted-foreground">
+                {{ offersReadAloudInSync ? t('book.detail.details.readAloudSync.noneYet') : readAloudSyncDescription }}
+              </p>
               <p v-if="readAloudSyncAudiobookNote" data-test="read-aloud-sync-audiobook-note" class="mt-1 text-xs text-muted-foreground">
                 {{ readAloudSyncAudiobookNote }}
               </p>
@@ -1676,6 +1722,17 @@ watch(
               </p>
               <div class="mt-3 flex justify-end">
                 <button
+                  v-if="offersReadAloudInSync"
+                  type="button"
+                  data-test="read-aloud-sync-create"
+                  class="inline-flex items-center gap-1.5 rounded-md border border-primary/60 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  @click="handleCreateReadAloud"
+                >
+                  <ReadAloudSparkles class="size-3.5 text-primary" />
+                  {{ t('book.detail.files.readAloud.action') }}
+                </button>
+                <button
+                  v-else
                   type="button"
                   data-test="read-aloud-sync-toggle"
                   class="rounded-md border border-input px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
@@ -2244,7 +2301,7 @@ watch(
     @confirm="handleResetReadingState"
   />
 
-  <BookCoverLightbox :open="coverLightboxOpen" :book="book" @update:open="handleCoverLightboxOpenChange" />
+  <BookCoverLightbox :open="coverLightboxOpen" :book="book" :medium="coverLightboxMedium" @update:open="handleCoverLightboxOpenChange" />
 </template>
 
 <style scoped>

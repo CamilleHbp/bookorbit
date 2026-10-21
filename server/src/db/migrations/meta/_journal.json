@@ -876,6 +876,20 @@
       "when": 1792516862510,
       "tag": "0124_add_author_metadata_provider_pinned",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1792562365254,
+      "tag": "0125_add_read_aloud_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1792562395825,
+      "tag": "0126_add_read_aloud_job_reports",
+      "breakpoints": true
     }
   ]
 }
