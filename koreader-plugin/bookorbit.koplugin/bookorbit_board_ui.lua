@@ -16,6 +16,7 @@ data (titles, authors, quotes) may be shortened; pass data = true for those.
 
 local BD = require("ui/bidi")
 local CenterContainer = require("ui/widget/container/centercontainer")
+local Screen = require("device").screen
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
@@ -637,6 +638,7 @@ function BoardCover:paintTo(bb, x, y)
         local px_, py_ = x + math.floor((w - img.w) / 2), y + math.floor((h - img.h) / 2)
         bb:blitFrom(img.bb, px_, py_, 0, 0, img.w, img.h)
         if self.dim then bb:lightenRect(x, y, w, h, 0.55) end
+        if Screen.night_mode then bb:invertRect(px_, py_, img.w, img.h) end
         if self.border > 0 then bb:paintBorder(px_, py_, img.w, img.h, self.border, self.border_col or INK.gb) end
         return
     end
@@ -657,6 +659,9 @@ function BoardCover:paintTo(bb, x, y)
         bb:lightenRect(dx, dy, dw, dh, 0.55)
     elseif self.lighten then
         bb:lightenRect(dx, dy, dw, dh, self.lighten)
+    end
+    if Screen.night_mode then
+        bb:invertRect(dx, dy, dw, dh)
     end
     if self.border > 0 then
         bb:paintBorder(dx, dy, dw, dh, self.border, self.border_col or INK.gb)

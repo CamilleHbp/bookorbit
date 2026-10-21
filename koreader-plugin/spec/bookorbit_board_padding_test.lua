@@ -14,6 +14,7 @@ for _, name in ipairs({
 end
 package.loaded["ui/bidi"] = {}
 package.loaded["ui/renderimage"] = {}
+package.loaded["device"] = { screen = {} }
 package.loaded["bookorbit_board_icons"] = {}
 package.loaded["bookorbit_board_metrics"] = { INK = {}, px = function(n) return n end }
 
