@@ -37,6 +37,8 @@ export const SERVER_FEATURES = [
    * names an author but no title.
    */
   "metadata-search-results-per-provider",
+  /** Book and custom date filters accept the `moreThanAgo` rolling-boundary operator. */
+  "relative-date-ranges",
 ] as const;
 
 export type ServerFeature = (typeof SERVER_FEATURES)[number];

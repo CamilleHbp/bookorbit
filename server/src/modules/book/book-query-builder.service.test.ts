@@ -187,6 +187,7 @@ function buildValueFor(operator: RuleOperator, field: RuleField): { value?: unkn
     case 'after':
       return { value: '2023-01-01' };
     case 'withinLast':
+    case 'moreThanAgo':
       return { value: 7 };
     case 'includesAny':
     case 'includesAll':
@@ -206,7 +207,7 @@ function buildValueForCustomType(operator: RuleOperator, type: CustomMetadataFie
       return operator === 'between' ? { value: 10, valueTo: 20 } : { value: 10 };
     case 'date':
       if (operator === 'between') return { value: '2024-01-01', valueTo: '2024-12-31' };
-      return operator === 'withinLast' ? { value: 7 } : { value: '2024-01-01' };
+      return operator === 'withinLast' || operator === 'moreThanAgo' ? { value: 7 } : { value: '2024-01-01' };
     case 'boolean':
       return {};
     case 'text':
@@ -366,6 +367,17 @@ describe('BookQueryBuilder', () => {
         userId: 10,
       }),
     ).toThrow("Operator 'withinLast' requires a non-negative value");
+  });
+
+  it('rejects negative moreThanAgo values', () => {
+    const { builder } = makeBuilder();
+
+    expect(() =>
+      builder.buildWhere(wrapRule({ type: 'rule', field: 'addedAt', operator: 'moreThanAgo', value: -3 }) as never, {
+        accessibleLibraryIds: [1],
+        userId: 10,
+      }),
+    ).toThrow("Operator 'moreThanAgo' requires a non-negative value");
   });
 
   it('requires authenticated user for readProgress filters', () => {
@@ -1289,6 +1301,16 @@ describe('dateRuleToSql (addedAt)', () => {
     expect(getRuleSql(where)).toMatchObject({ type: 'sql' });
   });
 
+  it('moreThanAgo produces the inverse added-date interval expression', () => {
+    const { builder } = makeBuilder();
+    const where = builder.buildWhere(wrapRule({ type: 'rule', field: 'addedAt', operator: 'moreThanAgo', value: 30 }) as never, BASE_CTX) as any;
+    const rule = getRuleSql(where);
+
+    expect(rule).toMatchObject({ type: 'sql' });
+    expect(rule.text).toContain('< NOW() - (');
+    expect(rule.values).toContain(30);
+  });
+
   it('withinLast with zero days is valid (produces sql expression)', () => {
     const { builder } = makeBuilder();
     expect(() => builder.buildWhere(wrapRule({ type: 'rule', field: 'addedAt', operator: 'withinLast', value: 0 }) as never, BASE_CTX)).not.toThrow();
@@ -1372,6 +1394,7 @@ describe('customFieldRuleToSql', () => {
     ['before', '2024-01-01', 'value_date'],
     ['after', '2024-01-01', 'value_date'],
     ['withinLast', 30, 'value_date'],
+    ['moreThanAgo', 30, 'value_date'],
   ] as const)('reads %s with a %s value from %s', (operator, value, column) => {
     const clause = buildCustomRule({ operator, value });
 
@@ -1444,6 +1467,13 @@ describe('customFieldRuleToSql', () => {
 
   it('keeps date arithmetic Postgres-safe for withinLast', () => {
     const clause = buildCustomRule({ operator: 'withinLast', value: 30 });
+
+    expectPostgresSafeDateArithmetic(clause);
+    expect(collectSqlText(clause).join(' ')).toContain('timezone(');
+  });
+
+  it('keeps date arithmetic Postgres-safe for moreThanAgo', () => {
+    const clause = buildCustomRule({ operator: 'moreThanAgo', value: 30 });
 
     expectPostgresSafeDateArithmetic(clause);
     expect(collectSqlText(clause).join(' ')).toContain('timezone(');
@@ -1556,6 +1586,22 @@ describe('read status date filters (startedAt / finishedAt)', () => {
 
     const rule = getRuleSql(where);
     expect(rule).toMatchObject({ type: 'sql' });
+    expect(rule.text.toLowerCase()).toContain('::date - ::int');
+    expect(rule.values[1]).toBe('America/Chicago');
+    expect(rule.values[2]).toBe(29);
+    expectPostgresSafeDateArithmetic(rule);
+  });
+
+  it.each(['startedAt', 'finishedAt'] as const)('uses the complementary calendar-day boundary for moreThanAgo on %s', (field) => {
+    const { builder } = makeBuilder();
+    const where = builder.buildWhere(wrapRule({ type: 'rule', field, operator: 'moreThanAgo', value: 30 }) as never, {
+      ...USER_CTX,
+      timeZone: 'America/Chicago',
+    }) as any;
+
+    const rule = getRuleSql(where);
+    expect(rule).toMatchObject({ type: 'sql' });
+    expect(rule.text.toLowerCase()).toContain('< (timezone(');
     expect(rule.text.toLowerCase()).toContain('::date - ::int');
     expect(rule.values[1]).toBe('America/Chicago');
     expect(rule.values[2]).toBe(29);

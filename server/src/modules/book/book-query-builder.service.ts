@@ -391,6 +391,7 @@ export class BookQueryBuilder {
       case 'before':
       case 'after':
       case 'withinLast':
+      case 'moreThanAgo':
         return this.dateExprRuleToSql(sql`${bookCustomMetadataValues.valueDate}`, operator, value as string, valueTo, timeZone, 'custom metadata');
       case 'isTrue':
         return eq(bookCustomMetadataValues.valueBoolean, true);
@@ -686,6 +687,12 @@ export class BookQueryBuilder {
         if (days! < 0) throw new BadRequestException(`Operator '${operator}' requires a non-negative value`);
         return sql`${books.addedAt} >= NOW() - (${days} * INTERVAL '1 day')`;
       }
+      case 'moreThanAgo': {
+        const days = typeof value === 'string' ? Number(value) : value;
+        this.assertNumber(days, operator, 'value');
+        if (days! < 0) throw new BadRequestException(`Operator '${operator}' requires a non-negative value`);
+        return sql`${books.addedAt} < NOW() - (${days} * INTERVAL '1 day')`;
+      }
       default:
         throw new BadRequestException(`Invalid operator '${operator}' for date field`);
     }
@@ -720,6 +727,14 @@ export class BookQueryBuilder {
         const wholeDays = Math.floor(days!);
         const shiftDays = wholeDays > 0 ? wholeDays - 1 : 0;
         return sql`${dateExpr} >= (timezone(${timeZone}, now())::date - ${shiftDays}::int)`;
+      }
+      case 'moreThanAgo': {
+        const days = typeof value === 'string' ? Number(value) : value;
+        this.assertNumber(days, operator, 'value');
+        if (days! < 0) throw new BadRequestException(`Operator '${operator}' requires a non-negative value`);
+        const wholeDays = Math.floor(days!);
+        const shiftDays = wholeDays > 0 ? wholeDays - 1 : 0;
+        return sql`${dateExpr} < (timezone(${timeZone}, now())::date - ${shiftDays}::int)`;
       }
       case 'isEmpty':
         return sql`${dateExpr} is null`;
@@ -765,6 +780,14 @@ export class BookQueryBuilder {
         const wholeDays = Math.floor(days!);
         const shiftDays = wholeDays > 0 ? wholeDays - 1 : 0;
         return sql`${dateExpr} >= (timezone(${timeZone}, now())::date - ${shiftDays}::int)`;
+      }
+      case 'moreThanAgo': {
+        const days = typeof value === 'string' ? Number(value) : value;
+        this.assertNumber(days, operator, 'value');
+        if (days! < 0) throw new BadRequestException(`Operator '${operator}' requires a non-negative value`);
+        const wholeDays = Math.floor(days!);
+        const shiftDays = wholeDays > 0 ? wholeDays - 1 : 0;
+        return sql`${dateExpr} < (timezone(${timeZone}, now())::date - ${shiftDays}::int)`;
       }
       default:
         throw new BadRequestException(`Invalid operator '${operator}' for ${fieldLabel} field`);

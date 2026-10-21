@@ -6180,6 +6180,7 @@
         "before": "before",
         "after": "after",
         "withinLast": "within last",
+        "moreThanAgo": "more than",
         "isMissing": "is missing",
         "isPresent": "is present",
         "isUnread": "is unread",
@@ -6202,6 +6203,7 @@
       "withinLastPlaceholder": "e.g. 7",
       "unit": {
         "days": "days",
+        "daysAgo": "days ago",
         "weeks": "weeks",
         "months": "months",
         "megabytes": "MB"

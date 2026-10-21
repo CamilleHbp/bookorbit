@@ -58,6 +58,7 @@ export function ruleToParts(rule: Rule): { field: string; operator: string; valu
   const operator = operatorLabel(rule.operator)
   if (NO_VALUE_OPS.includes(rule.operator)) return { field, operator, value: null }
   if (rule.operator === 'withinLast') return { field, operator, value: `${rule.value} ${t('book.filter.unit.days')}` }
+  if (rule.operator === 'moreThanAgo') return { field, operator, value: `${rule.value} ${t('book.filter.unit.daysAgo')}` }
   if (rule.field === 'fileSize') {
     const value = typeof rule.value === 'number' ? formatBytes(rule.value) : ''
     const valueTo = typeof rule.valueTo === 'number' ? formatBytes(rule.valueTo) : null
