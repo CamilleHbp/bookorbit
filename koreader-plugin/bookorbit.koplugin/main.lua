@@ -474,9 +474,20 @@ function BookOrbit:requestLifecycleOutboxDrain(source, interactive)
                         if finished then return end
                         finished = true
                         local latest = outbox:readLatest(started.id)
-                        local complete = outbox:isComplete(latest)
+                        local unmatched = err == "unmatched"
+                        local complete = unmatched or outbox:isComplete(latest)
                         if complete then
                             outbox:removeEntry(started.id)
+                            if unmatched then
+                                local last_error = self.settings.last_error
+                                if last_error and last_error.event == "lifecycle_outbox"
+                                        and last_error.code == "outbox_blocked" then
+                                    self.settings.last_error = nil
+                                end
+                                BookOrbitActivity.recordSuccess(
+                                    self.settings, "lifecycle_unmatched", snap.title)
+                                G_reader_settings:flush()
+                            end
                         else
                             outbox:markFinished(started.id)
                             self:scheduleLifecycleOutboxRetry()
@@ -494,7 +505,7 @@ function BookOrbit:requestLifecycleOutboxDrain(source, interactive)
                             end
                         end
                         done()
-                        if complete and not err then
+                        if complete and (not err or unmatched) then
                             self:requestLifecycleOutboxDrain("recovery")
                         end
                     end
