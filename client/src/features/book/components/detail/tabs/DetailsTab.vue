@@ -26,10 +26,11 @@ import {
 import BookFormatChip from '@/features/book/components/BookFormatChip.vue'
 import { bookFormatEntries, fileFormatKey, formatKeyName } from '@/features/book/lib/book-formats'
 import { providerIconPathSafe } from '@/features/book/lib/provider-icons'
-import { createBookProviderLinks } from '@/features/book/lib/provider-links'
+import { createBookProviderLinks, createExternalProviderLinks } from '@/features/book/lib/provider-links'
+import { useMetadataProviderLabels } from '@/features/book/composables/useMetadataProviderLabels'
 import { faceMedium } from '@/features/book/lib/cover-slots'
 import { readingDateToDateKey } from '@/features/book/lib/reading-date'
-import { getProviderColor, PROVIDER_SHORT_LABELS } from '@/lib/provider-colors'
+import { getProviderColor, providerShortLabel } from '@/lib/provider-colors'
 import { useCoverVersions } from '@/features/book/composables/useCoverVersions'
 import { useBookCoverAspectRatio } from '@/features/book/composables/useBookCoverAspectRatio'
 import { FORMAT_TO_GROUP, getPrimaryBookFile, READER_OPENABLE_FORMATS, isComicFormat } from '@bookorbit/types'
@@ -498,12 +499,13 @@ function formatDuration(seconds: number | null | undefined): string {
 const localRating = ref<number | null>(null)
 const hoverRating = ref<number | null>(null)
 const displayRating = computed(() => hoverRating.value ?? localRating.value)
+const { labels: providerLabels } = useMetadataProviderLabels()
 const communityRatingByProvider = computed(() => {
   const map: Record<string, { score: string; tooltip: string }> = {}
   for (const rating of props.book.communityRatings) {
     if (rating.rating == null || !Number.isFinite(rating.rating)) continue
     const score = Number.isInteger(rating.rating) ? rating.rating.toFixed(0) : rating.rating.toFixed(1)
-    const label = PROVIDER_SHORT_LABELS[rating.provider] ?? rating.provider
+    const label = providerShortLabel(rating.provider, providerLabels.value[rating.provider])
     const value = formatCommunityRatingValue(rating.rating, rating.ratingCount)
     map[rating.provider] = { score, tooltip: `${label} ${value}` }
   }
@@ -825,7 +827,10 @@ const supplementalLoading = ref(false)
 const resettingFileIds = ref<number[]>([])
 const providerIconErrors = ref<Record<string, boolean>>({})
 
-const providerLinks = computed(() => createBookProviderLinks(props.book.providerIds, providerLinkSettings.value))
+const providerLinks = computed(() => [
+  ...createBookProviderLinks(props.book.providerIds, providerLinkSettings.value),
+  ...createExternalProviderLinks(props.book.providerIds, props.book.providerLinks, providerLabels.value),
+])
 
 const communityRatingBadges = computed(() => {
   const linkByKey = new Map(providerLinks.value.map((link) => [link.key, link]))
@@ -834,7 +839,7 @@ const communityRatingBadges = computed(() => {
     .map((rating) => {
       const link = linkByKey.get(rating.provider)
       const meta = communityRatingByProvider.value[rating.provider]
-      const label = PROVIDER_SHORT_LABELS[rating.provider] ?? rating.provider
+      const label = providerShortLabel(rating.provider, providerLabels.value[rating.provider])
       return {
         key: rating.provider,
         label,
@@ -845,7 +850,6 @@ const communityRatingBadges = computed(() => {
         tooltip: meta?.tooltip ?? '',
       }
     })
-    .filter((badge) => badge.iconUrl)
 })
 
 const unlinkedCommunityBadges = computed(() => communityRatingBadges.value.filter((badge) => !badge.url))
@@ -1002,8 +1006,8 @@ function formatDate(iso: string): string {
 function providerLinkStyle(provider: string) {
   const color = getProviderColor(provider)
   return {
-    borderColor: `${color}66`,
-    backgroundColor: `${color}12`,
+    borderColor: `color-mix(in srgb, ${color} 40%, transparent)`,
+    backgroundColor: `color-mix(in srgb, ${color} 7%, transparent)`,
   }
 }
 

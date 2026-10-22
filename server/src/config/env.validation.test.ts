@@ -222,6 +222,15 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...PRODUCTION_ENV, PODCAST_ENCRYPTION_KEY: '1234567890abcdef' })).not.toThrow();
   });
 
+  it('accepts the provider directory URL only as https or off', () => {
+    for (const value of ['', 'off', 'OFF', 'https://example.com/directory.json']) {
+      expect(() => validateEnv({ ...BASE_ENV, METADATA_PROVIDER_DIRECTORY_URL: value })).not.toThrow();
+    }
+    expect(() => validateEnv({ ...BASE_ENV, METADATA_PROVIDER_DIRECTORY_URL: 'http://example.com/directory.json' })).toThrow(
+      'METADATA_PROVIDER_DIRECTORY_URL',
+    );
+  });
+
   describe('read-aloud worker settings', () => {
     const TOKEN = '1234567890abcdef';
 

@@ -388,7 +388,6 @@ describe('MetadataFetchPipeline', () => {
         google: { enabled: false, apiKey: '' },
         openLibrary: { enabled: false },
         kobo: { enabled: true, country: 'us', language: 'en' },
-        lubimyczytac: { enabled: false },
       }),
     );
     preferencesService.getGlobal.mockResolvedValue(global);
@@ -2321,7 +2320,5 @@ function makeProviderConfig(overrides: Partial<ProviderConfigurations> = {}): Pr
     comicvine: { enabled: true, apiKey: 'comicvine-key', ...overrides.comicvine },
     ranobedb: { enabled: true, ...overrides.ranobedb },
     kobo: { enabled: true, country: 'us', language: 'en', ...overrides.kobo },
-    lubimyczytac: { enabled: false, ...overrides.lubimyczytac },
-    aladin: { enabled: false, ttbKey: '', ...overrides.aladin },
   };
 }

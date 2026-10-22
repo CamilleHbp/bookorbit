@@ -34,6 +34,7 @@ import {
   formatKeyRank,
   isAudioFormat,
   MetadataProviderKey,
+  isMetadataProviderKeySyntax,
   normalizeFormatPriority,
   NotificationType,
   parseSeriesIndex,
@@ -42,6 +43,7 @@ import {
 } from '@bookorbit/types';
 import type { BookRequestImportFormats, CoverMedium } from '@bookorbit/types';
 import type { FileRole } from '../scanner/lib/classify';
+import { ProviderIdStore } from '../metadata-fetch/provider-ids/provider-id.store';
 import { BookReadService } from '../book/book-read.service';
 import { NotificationService } from '../notification/notification.service';
 import { SeriesIdentityService } from '../../common/services/series-identity.service';
@@ -103,7 +105,6 @@ const PUBLISHED_YEAR_RANGE_CONSTRAINT = 'book_metadata_published_year_range_chk'
 const INVALID_PUBLISHED_YEAR_MESSAGE = `Invalid metadata: published year must be between ${MIN_PUBLISHED_YEAR} and ${MAX_PUBLISHED_YEAR}.`;
 const INVALID_METADATA_MESSAGE = 'Invalid metadata values for this file. Review metadata fields and try again.';
 const INTERNAL_FAILURE_MESSAGE = 'Filing this book failed inside BookOrbit. Check the server log for the cause.';
-const METADATA_PROVIDER_KEYS = new Set<MetadataProviderKey>(Object.values(MetadataProviderKey));
 
 type NormalizedFinalizeMetadata = {
   title: string | null;
@@ -137,6 +138,7 @@ type NormalizedFinalizeMetadata = {
   aladinId: string | null;
   seriesMemberships: MetadataSeriesMembership[] | undefined;
   communityRatings: Array<{ provider: MetadataProviderKey; rating: number; ratingCount: number | null }> | undefined;
+  externalProviderIds: Partial<Record<string, string>> | undefined;
   comicMetadata: ComicMetadataFields | undefined;
 };
 
@@ -256,6 +258,7 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
     private readonly fileWriteService: FileWriteService,
     @Optional() private readonly seriesIdentity?: SeriesIdentityService,
     @Optional() private readonly seriesMemberships?: SeriesMembershipService,
+    @Optional() private readonly providerIdStore?: ProviderIdStore,
   ) {
     this.autoFinalizeQueue = new BookDockWorkQueue(
       AUTO_FINALIZE_QUEUE_CONCURRENCY,
@@ -1410,6 +1413,7 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
       await this.seriesMemberships?.syncPrimaryFromMetadata(bookId);
     }
 
+    if (meta.externalProviderIds) await this.providerIdStore?.write(bookId, meta.externalProviderIds);
     if (meta.communityRatings !== undefined) {
       await this.bookReadService.replaceCommunityRatings(bookId, meta.communityRatings);
     }
@@ -1637,6 +1641,7 @@ function normalizeFinalizeMetadata(meta: BookDockMetadata | null | undefined): N
     aladinId: normalizeText(normalizedMeta?.aladinId, 20),
     seriesMemberships: normalizeSeriesMemberships(normalizedMeta?.seriesMemberships),
     communityRatings: normalizeCommunityRatings(normalizedMeta?.communityRatings),
+    externalProviderIds: normalizedMeta?.externalProviderIds ?? undefined,
     comicMetadata: normalizeComicMetadata(normalizedMeta?.comicMetadata),
   };
 }
@@ -1666,7 +1671,7 @@ function normalizeCommunityRatings(
 
   const ratings = new Map<MetadataProviderKey, { provider: MetadataProviderKey; rating: number; ratingCount: number | null }>();
   for (const item of value) {
-    if (!item || !METADATA_PROVIDER_KEYS.has(item.provider)) continue;
+    if (!item || !isMetadataProviderKeySyntax(item.provider)) continue;
     if (!Number.isFinite(item.rating) || item.rating < 0 || item.rating > 5) continue;
     const ratingCount = Number.isInteger(item.ratingCount) && item.ratingCount! >= 0 ? item.ratingCount! : null;
     ratings.set(item.provider, { provider: item.provider, rating: item.rating, ratingCount });

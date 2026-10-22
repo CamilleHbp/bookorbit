@@ -16,7 +16,7 @@ import { inArray, type SQL } from 'drizzle-orm';
 
 import { MAX_BOOK_QUERY_OFFSET_ROWS, isBookQueryOffsetWithinLimit } from '../../common/constants/pagination.constants';
 import { chapterProvenance, normalizeAudiobookChapters, resolveStoredAudiobookChapters } from '../../common/utils/audiobook-chapters.utils';
-import { coverFetchInputs, resolveIsAudiobook } from '../../common/utils/book-media.utils';
+import { coverFetchInputs, resolveIsAudiobook, resolveSearchMediaKind } from '../../common/utils/book-media.utils';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { mapWithConcurrency } from '../../common/utils/batch.utils';
 import { SelfWriteRegistry } from '../../common/services/self-write-registry.service';
@@ -48,6 +48,7 @@ import {
   customSortFieldIds,
   hasCollectionScopedSort,
   isAudioFormat,
+  isMetadataProviderKeySyntax,
   isSortField,
   jumpRailStrategyForSort,
   resolveUploadPath,
@@ -97,6 +98,8 @@ import { MetadataFetchPipeline, ResolvedMetadataFields, type ExistingMetadataFie
 import type { CacheDirective } from '../../common/provider-cache/provider-cache-spec';
 import { splitMetadataIsbn } from '../../common/text-match/isbn-normalize';
 import type { MetadataSearchParams } from '../metadata-fetch/providers/metadata-search-params';
+import { isExternalProviderIdKey, ProviderIdStore } from '../metadata-fetch/provider-ids/provider-id.store';
+import { ProviderRegistry } from '../metadata-fetch/provider-registry';
 import { FileRenameService, RENAME_RELEVANT_FIELDS } from '../file-write/file-rename.service';
 import { FileWriteService } from '../file-write/file-write.service';
 import { NarratorService } from '../narrator/narrator.service';
@@ -159,7 +162,6 @@ const METADATA_UPDATE_FAILPOINTS = [
   'beforeTransactionCommit',
 ] as const;
 
-const METADATA_PROVIDER_KEY_SET = new Set<string>(Object.values(MetadataProviderKey));
 /** An explicit single-book refresh goes live; a provider that fails may still answer from the cache. */
 const EXPLICIT_REFRESH_DIRECTIVE: CacheDirective = { policy: 'refresh', allowFallback: true };
 
@@ -342,6 +344,8 @@ export class BookService {
     @Optional() private readonly metadataExtraction?: MetadataExtractionService,
     @Optional() private readonly positionConverter?: PositionConverterService,
     @Optional() private readonly audiobookChapters?: AudiobookChaptersService,
+    @Optional() private readonly providerIdStore?: ProviderIdStore,
+    @Optional() private readonly providerRegistry?: ProviderRegistry,
   ) {
     this.appDataPath = this.config.get<string>('storage.appDataPath')!;
   }
@@ -441,9 +445,12 @@ export class BookService {
       | 'ranobedbId'
       | 'lubimyczytacId'
       | 'aladinId'
+      | 'externalProviderIds'
     >,
     providerIds: Partial<Record<MetadataProviderKey, string>>,
   ): void {
+    const external = Object.entries(providerIds).filter(([key, value]) => value && isExternalProviderIdKey(key));
+    if (external.length > 0) dto.externalProviderIds = { ...dto.externalProviderIds, ...Object.fromEntries(external) };
     if (providerIds[MetadataProviderKey.GOOGLE]) dto.googleBooksId = providerIds[MetadataProviderKey.GOOGLE];
     if (providerIds[MetadataProviderKey.GOODREADS]) dto.goodreadsId = providerIds[MetadataProviderKey.GOODREADS];
     if (providerIds[MetadataProviderKey.AMAZON]) dto.amazonId = providerIds[MetadataProviderKey.AMAZON];
@@ -526,6 +533,34 @@ export class BookService {
     };
   }
 
+  /** The page an external id was applied from, else the provider's own URL template. */
+  private externalProviderLinks(
+    stored: { ids: Partial<Record<string, string>>; links: Partial<Record<string, string>> } | undefined,
+  ): Partial<Record<string, string>> {
+    const links: Partial<Record<string, string>> = {};
+    for (const [key, externalId] of Object.entries(stored?.ids ?? {})) {
+      const link = stored?.links[key] ?? (externalId ? this.providerRegistry?.find(key)?.bookUrl?.(externalId) : undefined);
+      if (link) links[key] = link;
+    }
+    return links;
+  }
+
+  /**
+   * External ids are accepted only for providers registered now. Clearing one is always allowed, so
+   * an id left by a provider removed since the editor loaded can still be deleted.
+   */
+  private externalIdsToWrite(
+    dto: UpdateBookMetadataDto,
+  ): { ids: Partial<Record<string, string | null>>; links: Partial<Record<string, string | null>> } | null {
+    if (!dto.externalProviderIds) return null;
+    for (const [key, value] of Object.entries(dto.externalProviderIds)) {
+      if (value !== null && !this.providerRegistry?.isExternal(key)) {
+        throw new BadRequestException({ message: `Unknown metadata provider: ${key}`, errorCode: 'METADATA_PROVIDER_UNKNOWN' });
+      }
+    }
+    return { ids: dto.externalProviderIds, links: dto.externalProviderLinks ?? {} };
+  }
+
   private normalizeCommunityRatingInputs(
     ratings: UpdateBookMetadataDto['communityRatings'],
   ): Array<{ provider: MetadataProviderKey; rating: number; ratingCount: number | null }> | undefined {
@@ -534,7 +569,7 @@ export class BookService {
 
     const byProvider = new Map<MetadataProviderKey, { provider: MetadataProviderKey; rating: number; ratingCount: number | null }>();
     for (const item of ratings) {
-      if (!METADATA_PROVIDER_KEY_SET.has(item.provider)) continue;
+      if (!isMetadataProviderKeySyntax(item.provider)) continue;
       if (!Number.isFinite(item.rating) || item.rating < 0 || item.rating > 5) continue;
 
       const ratingCount =
@@ -550,7 +585,7 @@ export class BookService {
   ): BookCommunityRating[] {
     return rows
       .filter((row): row is { provider: MetadataProviderKey; rating: number; ratingCount: number | null; updatedAt: Date | null } =>
-        METADATA_PROVIDER_KEY_SET.has(row.provider),
+        isMetadataProviderKeySyntax(row.provider),
       )
       .map((row) => ({
         provider: row.provider,
@@ -1902,6 +1937,7 @@ export class BookService {
     write: WriteResult | null;
     libraryAutoWriteEnabled: boolean;
   }> {
+    const externalIds = this.externalIdsToWrite(dto);
     const scalarFields: Parameters<BookRepository['updateMetadataFields']>[1] = {};
     if (dto.title !== undefined) scalarFields.title = dto.title ?? null;
     if (dto.subtitle !== undefined) scalarFields.subtitle = dto.subtitle ?? null;
@@ -2027,6 +2063,8 @@ export class BookService {
 
       this.throwIfMetadataUpdateFailpoint('beforeTransactionCommit');
     });
+
+    if (externalIds) await this.providerIdStore?.write(id, externalIds.ids, externalIds.links);
 
     if (dto.authors !== undefined) {
       this.metadataService.emitAuthorsReplaced(id, replacedAuthorIds);
@@ -3082,8 +3120,9 @@ export class BookService {
       await this.libraryService.verifyUserAccessLevel(user.id, book.books.libraryId, this.isSuperuser(user), 'editor');
       const meta = book.book_metadata;
 
-      const providerIds = this.collectExistingProviderIds(meta ?? {});
+      const providerIds = { ...this.collectExistingProviderIds(meta ?? {}), ...(await this.providerIdStore?.read(id)) };
 
+      const isAudiobook = resolveIsAudiobook(fileRows, meta, book.books.primaryFileId);
       const searchParams: MetadataSearchParams = {
         title: meta?.title ?? undefined,
         author: authorRows[0]?.name ?? undefined,
@@ -3092,7 +3131,8 @@ export class BookService {
         seriesIndex: meta?.seriesIndex ?? undefined,
         existingProviderIds: providerIds,
         hardcoverEditionId: meta?.hardcoverEditionId ?? undefined,
-        isAudiobook: resolveIsAudiobook(fileRows, meta, book.books.primaryFileId),
+        isAudiobook,
+        mediaKind: resolveSearchMediaKind(fileRows, isAudiobook, book.books.primaryFileId),
         maxCandidatesPerProvider: 1,
       };
 
@@ -3505,6 +3545,7 @@ export class BookService {
     const { book, authorRows, genreRows, tagRows, fileRows, narratorRows, seriesMembershipRows, communityRatingRows } = result;
     const meta = book.book_metadata;
     const customMetadata = await this.customMetadataService.getBookValues(id, book.books.libraryId);
+    const externalProviderIds = (await this.providerIdStore?.readMany([id]))?.get(id);
     const hasAudioFiles = fileRows.some((f) => f.format && isAudioFormat(f.format));
     const orderedFileRows = hasAudioFiles ? [...fileRows].sort((a, b) => compareBookFilePaths(a.absolutePath, b.absolutePath)) : fileRows;
     const storedChapters = meta?.chapters as AudiobookChapter[] | null | undefined;
@@ -3574,7 +3615,9 @@ export class BookService {
         [MetadataProviderKey.RANOBEDB]: meta?.ranobedbId ?? null,
         [MetadataProviderKey.LUBIMYCZYTAC]: meta?.lubimyczytacId ?? null,
         [MetadataProviderKey.ALADIN]: meta?.aladinId ?? null,
+        ...externalProviderIds?.ids,
       },
+      providerLinks: this.externalProviderLinks(externalProviderIds),
       authors: authorRows,
       genres: genreRows.map((g) => g.name),
       tags: tagRows.map((t) => t.name),

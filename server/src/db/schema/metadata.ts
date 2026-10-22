@@ -187,6 +187,29 @@ export const bookCommunityRatings = pgTable(
   ],
 );
 
+/**
+ * Ids from external metadata providers, one row per book and provider. Built-in providers keep
+ * their own columns on `book_metadata`; any provider registered at runtime lands here, so a new one
+ * needs no column. Rows outlive their provider's registration, so re-adding it restores them.
+ */
+export const bookProviderIds = pgTable(
+  'book_provider_ids',
+  {
+    bookId: integer('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    externalId: varchar('external_id', { length: 512 }).notNull(),
+    /** The record page the id was applied from, for a link on the book page. */
+    sourceUrl: varchar('source_url', { length: 2048 }),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull()
+      .$onUpdateFn(() => new Date()),
+  },
+  (t) => [primaryKey({ columns: [t.bookId, t.provider] }), index('book_provider_ids_provider_external_id_idx').on(t.provider, t.externalId)],
+);
+
 export const authors = pgTable(
   'authors',
   {

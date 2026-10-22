@@ -1058,6 +1058,7 @@ describe('BookService', () => {
             [MetadataProviderKey.OPEN_LIBRARY]: 'ol-id',
           },
           isAudiobook: false,
+          mediaKind: 'ebook',
           maxCandidatesPerProvider: 1,
         },
         {

@@ -1246,5 +1246,89 @@
     "isPublic": false,
     "allowDefault": false,
     "useGuards": []
+  },
+  {
+    "file": "server/src/modules/metadata-http-provider/metadata-http-provider.controller.ts",
+    "className": "MetadataHttpProviderController",
+    "methodName": "list",
+    "httpMethod": "GET",
+    "path": "/metadata-http-providers",
+    "permissions": ["Permission.ManageMetadataConfig"],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/metadata-http-provider/metadata-http-provider.controller.ts",
+    "className": "MetadataHttpProviderController",
+    "methodName": "create",
+    "httpMethod": "POST",
+    "path": "/metadata-http-providers",
+    "permissions": ["Permission.ManageMetadataConfig"],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/metadata-http-provider/metadata-http-provider.controller.ts",
+    "className": "MetadataHttpProviderController",
+    "methodName": "update",
+    "httpMethod": "PATCH",
+    "path": "/metadata-http-providers/:id",
+    "permissions": ["Permission.ManageMetadataConfig"],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/metadata-http-provider/metadata-http-provider.controller.ts",
+    "className": "MetadataHttpProviderController",
+    "methodName": "remove",
+    "httpMethod": "DELETE",
+    "path": "/metadata-http-providers/:id",
+    "permissions": ["Permission.ManageMetadataConfig"],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/metadata-http-provider/metadata-http-provider.controller.ts",
+    "className": "MetadataHttpProviderController",
+    "methodName": "test",
+    "httpMethod": "POST",
+    "path": "/metadata-http-providers/:id/test",
+    "permissions": ["Permission.ManageMetadataConfig"],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/metadata-http-provider/metadata-http-provider.controller.ts",
+    "className": "MetadataHttpProviderController",
+    "methodName": "directoryList",
+    "httpMethod": "GET",
+    "path": "/metadata-http-providers/directory",
+    "permissions": ["Permission.ManageMetadataConfig"],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/metadata-http-provider/metadata-provider-icon.controller.ts",
+    "className": "MetadataProviderIconController",
+    "methodName": "icon",
+    "httpMethod": "GET",
+    "path": "/metadata-providers/:key/icon",
+    "permissions": [],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
   }
 ]

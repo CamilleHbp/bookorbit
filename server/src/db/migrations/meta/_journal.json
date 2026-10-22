@@ -904,6 +904,20 @@
       "when": 1792649881231,
       "tag": "0128_add_reading_history",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1792693992005,
+      "tag": "0129_add_external_metadata_providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1792705454131,
+      "tag": "0130_add_metadata_provider_icons",
+      "breakpoints": true
     }
   ]
 }

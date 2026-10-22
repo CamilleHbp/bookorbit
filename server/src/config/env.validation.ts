@@ -174,6 +174,14 @@ const envSchema = z.object({
     .string()
     .transform((val) => val.trim())
     .optional(),
+  METADATA_PROVIDER_DIRECTORY_URL: z
+    .string()
+    .trim()
+    .refine(
+      (value) => value === '' || value.toLowerCase() === 'off' || /^https:\/\//i.test(value),
+      'METADATA_PROVIDER_DIRECTORY_URL must be an https URL or off',
+    )
+    .optional(),
   KOREADER_PLUGIN_PATH: z
     .string()
     .transform((val) => val.trim())

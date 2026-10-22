@@ -74,6 +74,8 @@ export class BookDetailDto {
   coverVersion: string;
   hardcoverEditionId: string | null;
   providerIds: ProviderIds;
+  /** Record links for external providers' ids. See `BookDetail.providerLinks`. */
+  providerLinks?: Partial<Record<string, string>>;
   authors: { id: number; name: string; sortName: string | null }[];
   genres: string[];
   tags: string[];

@@ -506,6 +506,8 @@ export class MetadataFetchPipeline {
       hardcoverEditionId: undefined,
       existingProviderIds,
       isAudiobook: medium === 'audio',
+      // The other cover slot's medium: the audiobook, or the reading side of an audiobook.
+      mediaKind: medium === 'audio' ? 'audiobook' : pass1.params.mediaKind === 'audiobook' ? 'ebook' : pass1.params.mediaKind,
       includeAudiobookProviders: false,
     };
     const pass2 = await this.searchCandidates(pass2Params, pass2Providers, pass1.searchOptions);

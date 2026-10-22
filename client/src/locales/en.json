@@ -1955,6 +1955,11 @@
         }
       },
       "providers": {
+        "tabs": {
+          "builtIn": "Built-in",
+          "external": "External",
+          "attention": "Needs attention"
+        },
         "availableSources": "Available Sources",
         "saveChanges": "Save Changes",
         "discard": "Discard",
@@ -2024,6 +2029,115 @@
           "hardcoverTest": "Hardcover token must pass Test before it can be enabled",
           "comicvine": "ComicVine requires an API key before it can be enabled",
           "aladin": "Aladin requires a TTB Key before it can be enabled"
+        }
+      },
+      "providerDirectory": {
+        "title": "Available to install",
+        "hint": "Each one runs as a small container beside BookOrbit. Copy its Compose service into the file that runs BookOrbit, start it with docker compose up -d, then choose Add.",
+        "updated": "Updated {time}",
+        "bundled": "List included with this version",
+        "loadFailed": "The list of ready-made providers could not be loaded. You can still add any provider by its address.",
+        "copy": "Copy Compose",
+        "copyLabel": "Copy the Compose service for {name}",
+        "copied": "{name} copied. Paste it under services: in your Compose file, then run docker compose up -d.",
+        "copyFailed": "Could not copy to the clipboard. The provider's docs have the same snippet.",
+        "add": "Add",
+        "addLabel": "Add {name}",
+        "alreadyAdded": "Already added: {names}",
+        "allAdded": "You have added every provider in this list.",
+        "wasBuiltIn": "Was built in",
+        "docs": "Docs",
+        "docsLabel": "{name} documentation, opens in a new tab",
+        "media": {
+          "book": "Books",
+          "audiobook": "Audiobooks",
+          "comic": "Comics"
+        }
+      },
+      "buildYourOwn": {
+        "title": "Build your own",
+        "body": "Missing a source? A provider is a small web service that answers three JSON requests, so any language will do. Start from the Rust or Go starter, check it with the conformance checker, then add it here like any other.",
+        "links": {
+          "guide": "Building guide",
+          "starters": "Starters",
+          "checker": "Conformance checker",
+          "suggest": "Suggest a source"
+        }
+      },
+      "movedProviders": {
+        "title": "Some sources are no longer built in",
+        "description": "Field rules that list these sources skip them for now. The ids and links already on your books are kept.",
+        "run": "{name} now runs as its own provider: run {image}, then add it under External providers.",
+        "closed": "{name} closed the service BookOrbit used, so it cannot be added back. Remove it from your field rules."
+      },
+      "externalProviders": {
+        "title": "External providers",
+        "description": "Metadata services that run outside BookOrbit, such as a container beside it or a hosted service. Add one by its address; once enabled it appears in search, Book Dock and field rules like any other source.",
+        "yourProviders": "Your providers",
+        "emptyWithDirectory": "Nothing added yet. Pick a ready-made provider below, or add one by its address.",
+        "add": "Add provider",
+        "empty": "No external providers yet. Any service that speaks the book-metadata-provider spec can be added here.",
+        "edit": "Edit {name}",
+        "toggle": "Enable {name}",
+        "row": "{host} · version {version}",
+        "useInFieldRules": "Use in field rules",
+        "fieldRulesAdded": "{name} added to {count, plural, =0 {no new field rules; it is already in every rule it can fill} one {# field rule} other {# field rules}}.",
+        "added": "{name} added. It stays off until you enable it.",
+        "saved": "{name} saved.",
+        "removed": "{name} removed. Its stored ids and ratings were kept.",
+        "purged": "{name} removed with its stored ids and ratings.",
+        "status": {
+          "active": "Active",
+          "ready": "Ready",
+          "stale": "Last check failed",
+          "unreachable": "Unreachable",
+          "key_changed": "Key changed",
+          "incompatible": "Incompatible",
+          "authorizationUnreadable": "Header unreadable"
+        },
+        "authorizationUnreadableHint": "The saved authorization header could not be decrypted, so this provider is not searched. Enter the header again.",
+        "sheet": {
+          "createTitle": "Add external provider",
+          "description": "An HTTP service that speaks the book-metadata-provider spec. BookOrbit asks it for metadata; it never runs the provider's code.",
+          "identity": "Key {key} · version {version}",
+          "test": "Test",
+          "testing": "Testing...",
+          "remove": "Remove provider",
+          "removeConfirm": "Remove {name}?",
+          "removeConsequence": "Its stored ids, ratings and field-rule entries stay, so adding it again restores them.",
+          "purge": "Remove and delete its data",
+          "purgeConfirm": "Remove {name} and delete its data?",
+          "purgeConsequence": "Deletes every id and rating stored from it. This cannot be undone."
+        },
+        "fields": {
+          "baseUrl": "Address",
+          "baseUrlHint": "The provider's base URL, such as http://provider:8080 for a container on the same Docker network.",
+          "authorization": "Authorization header",
+          "authorizationHint": "Optional. Sent exactly as entered, such as \"Bearer abc123\". Stored encrypted and never shown again.",
+          "authorizationSaved": "A header is saved. Enter a new one to replace it.",
+          "clearAuthorization": "Remove the saved header",
+          "allowPrivate": "Allow private address",
+          "allowPrivateHint": "Needed for a provider on your own network or in a container beside BookOrbit. Leave it off for a provider on the internet.",
+          "timeout": "Timeout (seconds)",
+          "timeoutHint": "Between {min} and {max} seconds.",
+          "privacy": "The provider receives the titles, authors and ISBNs of the books it is asked about."
+        },
+        "test": {
+          "ok": "{name} answered in {latency} ms with {count, plural, one {# result} other {# results}}.",
+          "sample": "First result: {title}",
+          "failed": "Test failed: {error}"
+        },
+        "errors": {
+          "privateAddress": "That address is on a private network. Turn on Allow private address to reach a provider there.",
+          "unreachable": "BookOrbit could not reach a provider at that address.",
+          "unauthorized": "The provider refused the authorization header.",
+          "invalidInfo": "That address answered, but not with usable provider info.",
+          "invalidUrl": "Enter the provider address as a full http or https URL, without credentials in it.",
+          "keyTaken": "A provider with the same key is already registered.",
+          "keyChanged": "That address serves a different provider. Add it as a new provider instead.",
+          "notReady": "Run a successful test before enabling this provider.",
+          "authorizationUnreadable": "The saved authorization header could not be decrypted. Enter it again before enabling this provider.",
+          "generic": "The request to the provider failed."
         }
       },
       "fieldRules": {
@@ -5273,6 +5387,7 @@
       "BookRequest": "Book request",
       "DownloadClient": "Download client",
       "RequestIndexer": "Indexer",
+      "MetadataHttpProvider": "Metadata provider",
       "Author": "Author",
       "AppSettings": "Application settings",
       "Genre": "Genre",
@@ -5385,6 +5500,9 @@
       "RequestIndexerPluginInspect": "Indexer plugin inspected",
       "RequestIndexerPluginInstall": "Indexer plugin installed",
       "RequestIndexerPluginRemove": "Indexer plugin deleted",
+      "MetadataHttpProviderCreate": "Metadata provider added",
+      "MetadataHttpProviderUpdate": "Metadata provider updated",
+      "MetadataHttpProviderDelete": "Metadata provider removed",
       "AuthorUpdate": "Update author",
       "AuthorDelete": "Delete author",
       "AuthorMerge": "Merge authors",
@@ -6732,6 +6850,8 @@
         "durationLabel": "Duration (s)",
         "abridgedLabel": "Abridged",
         "providerIds": "Provider IDs",
+        "externalProviderUnavailable": "{provider} is no longer registered, so this id is kept but not used",
+        "clearExternalProviderId": "Clear the {provider} id",
         "comicDetails": "Comic Details",
         "comicIssueNumberLabel": "Issue Number",
         "comicVolumeLabel": "Volume",

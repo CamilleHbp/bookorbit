@@ -3,7 +3,7 @@ import type { BookMetadataFetchReason } from '@bookorbit/types';
 import { MetadataProviderKey, NotificationType, Permission, parseSeriesIndex } from '@bookorbit/types';
 import { NotificationService } from '../notification/notification.service';
 import { chapterProvenance, normalizeAudiobookChapters } from '../../common/utils/audiobook-chapters.utils';
-import { coverFetchInputs, resolveIsAudiobook, type CoverFetchState } from '../../common/utils/book-media.utils';
+import { coverFetchInputs, resolveIsAudiobook, resolveSearchMediaKind, type CoverFetchState } from '../../common/utils/book-media.utils';
 import { AudiobookChaptersService } from '../audiobook-chapters/audiobook-chapters.service';
 import { BookCoverStore } from '../book-cover-store/book-cover-store.service';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
@@ -14,6 +14,7 @@ import { MetadataScoreService } from '../metadata-score/metadata-score.service';
 import { ComicMetadataRepository } from '../metadata/comic-metadata.repository';
 import { MetadataService } from '../metadata/metadata.service';
 import { ExistingMetadataFields, MetadataFetchPipeline, ResolvedMetadataFields } from '../metadata-fetch/metadata-fetch-pipeline';
+import { isExternalProviderIdKey, ProviderIdStore } from '../metadata-fetch/provider-ids/provider-id.store';
 import { ProviderThrottleTracker } from '../metadata-fetch/provider-throttle.tracker';
 import type { MetadataSearchParams } from '../metadata-fetch/providers/metadata-search-params';
 import { BookMetadataLockService } from '../book-metadata-lock/book-metadata-lock.service';
@@ -69,6 +70,7 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
     private readonly coverStore: BookCoverStore,
     @Optional() private readonly gateway?: BookMetadataFetchGateway,
     @Optional() private readonly audiobookChapters?: AudiobookChaptersService,
+    @Optional() private readonly providerIdStore?: ProviderIdStore,
   ) {}
 
   async onApplicationBootstrap() {
@@ -276,15 +278,17 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
         }
       }
 
+      const isAudiobook = resolveIsAudiobook(fileRows, meta, book.books.primaryFileId);
       const searchParams: MetadataSearchParams = {
         title: meta?.title ?? undefined,
         author: authorRows[0]?.name ?? undefined,
         isbn: meta?.isbn13?.trim() || meta?.isbn10?.trim() || undefined,
         seriesName: meta?.seriesName ?? undefined,
         seriesIndex: meta?.seriesIndex ?? undefined,
-        existingProviderIds: this.collectProviderIds(meta ?? {}),
+        existingProviderIds: { ...this.collectProviderIds(meta ?? {}), ...(await this.providerIdStore?.read(bookId)) },
         hardcoverEditionId: meta?.hardcoverEditionId ?? undefined,
-        isAudiobook: resolveIsAudiobook(fileRows, meta, book.books.primaryFileId),
+        isAudiobook,
+        mediaKind: resolveSearchMediaKind(fileRows, isAudiobook, book.books.primaryFileId),
         maxCandidatesPerProvider: 1,
       };
 
@@ -420,6 +424,9 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
     if (filteredProviderIds[MetadataProviderKey.RANOBEDB]) scalarFields.ranobedbId = filteredProviderIds[MetadataProviderKey.RANOBEDB];
     if (filteredProviderIds[MetadataProviderKey.LUBIMYCZYTAC]) scalarFields.lubimyczytacId = filteredProviderIds[MetadataProviderKey.LUBIMYCZYTAC];
     if (filteredProviderIds[MetadataProviderKey.ALADIN]) scalarFields.aladinId = filteredProviderIds[MetadataProviderKey.ALADIN];
+    // Ids from external providers have no column; they land in their own table, set-only like the columns above.
+    const externalIds = Object.fromEntries(Object.entries(filteredProviderIds).filter(([key, value]) => value && isExternalProviderIdKey(key)));
+    if (Object.keys(externalIds).length > 0) await this.providerIdStore?.write(bookId, externalIds);
 
     const duration = this.asNullableNumber(filteredResolved.duration);
     if (duration !== undefined) scalarFields.durationSeconds = duration;

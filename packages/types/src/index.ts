@@ -29,6 +29,7 @@ export * from "./format-priority";
 export * from "./maintenance";
 export * from "./metadata-fetch";
 export * from "./metadata-cache";
+export * from "./metadata-http-provider";
 export * from "./pattern-resolver";
 export * from "./query";
 export * from "./jump-buckets";

@@ -50,6 +50,7 @@ import { OpdsModule } from './modules/opds/opds.module';
 import { PathModule } from './modules/path/path.module';
 import { MetadataFetchModule } from './modules/metadata-fetch/metadata-fetch.module';
 import { MetadataPreferencesModule } from './modules/metadata-preferences/metadata-preferences.module';
+import { MetadataHttpProviderModule } from './modules/metadata-http-provider/metadata-http-provider.module';
 import { MetadataModule } from './modules/metadata/metadata.module';
 import { NarratorModule } from './modules/narrator/narrator.module';
 import { ReaderPreferencesModule } from './modules/reader-preferences/reader-preferences.module';
@@ -163,6 +164,7 @@ import { ReadAloudModule } from './modules/read-aloud/read-aloud.module';
     UploadModule,
     MetadataFetchModule,
     MetadataPreferencesModule,
+    MetadataHttpProviderModule,
     CustomMetadataModule,
     CustomIconModule,
     RecommendationModule,
