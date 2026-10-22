@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useResizeObserver } from '@vueuse/core'
 import { ArrowDown, ArrowUp, ArrowUpDown, AudioLines, CircleCheck, FilePlus, Loader2, TriangleAlert } from '@lucide/vue'
 import type { BookDetail } from '@bookorbit/types'
 import { formatBytes } from '@/lib/formatting'
@@ -35,9 +36,54 @@ const props = defineProps<{
 
 const emit = defineEmits<{ sort: [key: SortKey]; addFile: []; generateReadAloud: []; retryReadAloud: [] }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { coverUrl } = useCoverVersions()
 const readAloudNoteId = useId()
+
+/** The narrowest the title and folder may get before the strip stacks; any less reads as damage. */
+const ID_MIN_REM = 12
+/** Slack before stacking undoes itself, so a scrollbar coming and going cannot flip it back and forth. */
+const UNSTACK_SLACK_PX = 12
+
+const heroRef = ref<HTMLElement | null>(null)
+const statsRef = ref<HTMLElement | null>(null)
+const actionsRef = ref<HTMLElement | null>(null)
+const stacked = ref(false)
+
+function childrenWidth(element: HTMLElement): number {
+  const children = [...element.children]
+  const gap = parseFloat(getComputedStyle(element).columnGap) || 0
+  return children.reduce((total, child) => total + child.getBoundingClientRect().width, 0) + Math.max(0, children.length - 1) * gap
+}
+
+/**
+ * Stack once one row would leave the title less than its minimum. A container breakpoint guessed
+ * this and guessed wrong: the stat values, the read-aloud entry and every translation change how
+ * much room the row needs, and a squeezed title painted its folder over the stats. The children's
+ * own widths do not depend on the arrangement, so one sum decides in both directions.
+ */
+function measureStacking(): void {
+  const hero = heroRef.value
+  const stats = statsRef.value
+  const actions = actionsRef.value
+  if (!hero || !stats || !actions) return
+  const style = getComputedStyle(hero)
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  const available = hero.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0)
+  const cover = hero.querySelector('.hero-cover')?.getBoundingClientRect().width ?? 0
+  // The hairline and inset that divide the actions from the stats in a single row.
+  const divider = 1 + rem
+  const needed = cover + childrenWidth(stats) + divider + childrenWidth(actions) + ID_MIN_REM * rem + 3 * (parseFloat(style.columnGap) || 0)
+  stacked.value = stacked.value ? needed > available - UNSTACK_SLACK_PX : needed > available
+}
+
+useResizeObserver([heroRef, statsRef, actionsRef], measureStacking)
+
+// A stacked stat row spans the strip, so its box does not resize when a value or label changes.
+watch(
+  () => [props.fileCount, props.totalBytes, props.runtimeLabel, props.formatShares.length, props.showReadAloud, props.canUpload, locale.value],
+  () => nextTick(measureStacking),
+)
 
 const hasCover = computed(() => props.book.coverSource !== null)
 const coverSrc = computed(() => coverUrl(props.book.id, 'thumbnail', props.book.coverVersion))
@@ -75,7 +121,7 @@ function handleRetryReadAloud() {
 
 <template>
   <section class="flex shrink-0 flex-col rounded-xl border border-border bg-card">
-    <div class="files-hero flex items-center gap-3.5 px-3.5 py-3" :data-wide-actions="showReadAloud ? '1' : undefined">
+    <div ref="heroRef" class="files-hero flex items-center gap-3.5 px-3.5 py-3" :data-stacked="stacked ? '1' : undefined">
       <img
         v-if="hasCover"
         :src="coverSrc"
@@ -100,7 +146,7 @@ function handleRetryReadAloud() {
         </nav>
       </div>
 
-      <dl class="hero-stats flex shrink-0 items-center">
+      <dl ref="statsRef" class="hero-stats flex shrink-0 items-center">
         <div class="hero-stat px-4 text-right">
           <dt class="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">{{ t('book.detail.files.stats.files') }}</dt>
           <dd class="mt-1.5 text-base font-semibold leading-none tracking-tight tabular-nums">{{ fileCount }}</dd>
@@ -129,7 +175,7 @@ function handleRetryReadAloud() {
         </div>
       </dl>
 
-      <div class="hero-actions flex shrink-0 items-center gap-2 border-l border-border pl-4">
+      <div ref="actionsRef" class="hero-actions flex shrink-0 items-center gap-2 border-l border-border pl-4">
         <span
           class="inline-flex h-[18px] items-center gap-1 rounded-xs px-1.5 text-[9.5px] font-bold uppercase tracking-wider"
           :class="isMissing ? 'bg-destructive/15 text-destructive' : 'bg-success/15 text-success'"
@@ -208,102 +254,60 @@ function handleRetryReadAloud() {
 </template>
 
 <style scoped>
-/* The crumb spends its truncation budget on the ancestors; the folder itself always reads whole. */
+/*
+ * The crumb spends its truncation budget on the ancestors. They shrink a million times faster, so
+ * the folder's share rounds to nothing and it reads whole until they reach their minimum; only then
+ * does it truncate, rather than painting over the stats as it did when it could not shrink at all.
+ */
 .hero-crumb > .crumb-part {
-  flex: 0 1 auto;
+  flex: 0 1000000 auto;
 }
 
 .hero-crumb > .crumb-part:last-child {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   color: color-mix(in oklch, var(--foreground) 78%, var(--muted-foreground));
 }
 
 /*
- * The strip reflows on the tab's own width, not the window's: a collapsed sidebar makes a 1440
- * window as roomy as a 1700 one, and the `md` sidebar makes an 834 tablet as tight as a phone.
+ * Stacked: the actions stay beside the title and the stats take a row of their own. `:where()`
+ * keeps these at the plain selectors' specificity so the phone rules below still win.
  */
-@container filestab (max-width: 45rem) {
-  .files-hero {
-    flex-wrap: wrap;
-    row-gap: 0.75rem;
-  }
-
-  .hero-id {
-    flex: 1 1 12rem;
-  }
-
-  /* Three truncated crumb segments read as damage; the folder the files live in survives whole. */
-  .hero-crumb .crumb-part:not(:last-child),
-  .hero-crumb span[aria-hidden='true'] {
-    display: none;
-  }
-
-  .hero-crumb::before {
-    content: '…/';
-    flex: none;
-    opacity: 0.5;
-  }
-
-  .hero-stats {
-    order: 3;
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .hero-stats .hero-stat:first-child {
-    padding-inline-start: 0;
-  }
-
-  .hero-actions {
-    order: 2;
-    margin-inline-start: auto;
-    border-inline-start: 0;
-    padding-inline-start: 0;
-  }
+:where(.files-hero[data-stacked='1']) {
+  flex-wrap: wrap;
+  row-gap: 0.75rem;
 }
 
-/*
- * The read-along entry adds a labelled button to the actions, so a hero that shows it stacks
- * sooner. The same rules as above, scoped to that hero; `:where()` keeps their specificity at the
- * plain selectors' so the phone rules below still win.
- */
-@container filestab (max-width: 58rem) {
-  :where(.files-hero[data-wide-actions='1']) {
-    flex-wrap: wrap;
-    row-gap: 0.75rem;
-  }
+:where(.files-hero[data-stacked='1']) .hero-id {
+  flex: 1 1 12rem;
+}
 
-  :where(.files-hero[data-wide-actions='1']) .hero-id {
-    flex: 1 1 12rem;
-  }
+/* Three truncated crumb segments read as damage; the folder the files live in survives whole. */
+:where(.files-hero[data-stacked='1']) .hero-crumb .crumb-part:not(:last-child),
+:where(.files-hero[data-stacked='1']) .hero-crumb span[aria-hidden='true'] {
+  display: none;
+}
 
-  :where(.files-hero[data-wide-actions='1']) .hero-crumb .crumb-part:not(:last-child),
-  :where(.files-hero[data-wide-actions='1']) .hero-crumb span[aria-hidden='true'] {
-    display: none;
-  }
+:where(.files-hero[data-stacked='1']) .hero-crumb::before {
+  content: '…/';
+  flex: none;
+  opacity: 0.5;
+}
 
-  :where(.files-hero[data-wide-actions='1']) .hero-crumb::before {
-    content: '…/';
-    flex: none;
-    opacity: 0.5;
-  }
+:where(.files-hero[data-stacked='1']) .hero-stats {
+  order: 3;
+  width: 100%;
+  justify-content: space-between;
+}
 
-  :where(.files-hero[data-wide-actions='1']) .hero-stats {
-    order: 3;
-    width: 100%;
-    justify-content: space-between;
-  }
+:where(.files-hero[data-stacked='1']) .hero-stats .hero-stat:first-child {
+  padding-inline-start: 0;
+}
 
-  :where(.files-hero[data-wide-actions='1']) .hero-stats .hero-stat:first-child {
-    padding-inline-start: 0;
-  }
-
-  :where(.files-hero[data-wide-actions='1']) .hero-actions {
-    order: 2;
-    margin-inline-start: auto;
-    border-inline-start: 0;
-    padding-inline-start: 0;
-  }
+:where(.files-hero[data-stacked='1']) .hero-actions {
+  order: 2;
+  margin-inline-start: auto;
+  border-inline-start: 0;
+  padding-inline-start: 0;
 }
 
 @container filestab (max-width: 35rem) {
