@@ -77,6 +77,8 @@ export type ReadingAttempt = {
   origin: ReadingAttemptOrigin;
   externalProvider: string | null;
   externalId: string | null;
+  /** This read's own stars; null when unrated. */
+  rating: number | null;
   totalSessions: number;
   totalSeconds: number;
   createdAt: string;

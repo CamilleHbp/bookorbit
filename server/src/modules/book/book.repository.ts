@@ -2216,7 +2216,7 @@ export class BookRepository {
   }
 
   async deleteByIds(bookIds: number[]): Promise<void> {
-    await deleteBooksWithHashInvalidation(this.db, inArray(books.id, bookIds));
+    await deleteBooksWithHashInvalidation(this.db, inArray(books.id, bookIds), { keepFinishedReads: true });
   }
 
   async deleteByIdsAndInvalidateScanState(bookIds: number[]): Promise<void> {
@@ -2276,20 +2276,36 @@ export class BookRepository {
           books.id,
           rows.map((row) => row.id),
         ),
+        { keepFinishedReads: true },
       );
     });
   }
 
+  /** A book's rating is its latest completed read's, so that read takes the same stars. */
   async bulkSetRating(bookIds: number[], rating: number | null, userId: number): Promise<void> {
     if (bookIds.length === 0) return;
 
-    await this.db
-      .insert(userBookRatings)
-      .values(bookIds.map((bookId) => ({ userId, bookId, rating })))
-      .onConflictDoUpdate({
-        target: [userBookRatings.userId, userBookRatings.bookId],
-        set: { rating, updatedAt: new Date() },
-      });
+    await this.db.transaction(async (tx) => {
+      await tx
+        .insert(userBookRatings)
+        .values(bookIds.map((bookId) => ({ userId, bookId, rating })))
+        .onConflictDoUpdate({
+          target: [userBookRatings.userId, userBookRatings.bookId],
+          set: { rating, updatedAt: new Date() },
+        });
+      await tx.execute(sql`
+        update ${schema.readingAttempts} set rating = ${rating}
+        where ${schema.readingAttempts.id} in (
+          select distinct on (ra.book_id) ra.id from ${schema.readingAttempts} ra
+          where ra.user_id = ${userId} and ra.book_id in (${sql.join(
+            bookIds.map((bookId) => sql`${bookId}`),
+            sql`, `,
+          )})
+            and ra.outcome = 'completed' and ra.deleted_at is null
+          order by ra.book_id, ra.ended_on desc nulls last, ra.id desc
+        )
+      `);
+    });
   }
 
   async findTagsByBookIds(bookIds: number[], executor: MetadataReadExecutor = this.db): Promise<Map<number, string[]>> {

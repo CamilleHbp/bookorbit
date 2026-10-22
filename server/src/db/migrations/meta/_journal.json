@@ -897,6 +897,13 @@
       "when": 1792639172417,
       "tag": "0127_add_audiobook_chapter_editor",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1792649881231,
+      "tag": "0128_add_reading_history",
+      "breakpoints": true
     }
   ]
 }

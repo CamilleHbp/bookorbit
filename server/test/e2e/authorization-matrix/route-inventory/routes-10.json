@@ -444,6 +444,54 @@
     "useGuards": []
   },
   {
+    "file": "server/src/modules/reading-history/reading-history.controller.ts",
+    "className": "ReadingHistoryController",
+    "methodName": "list",
+    "httpMethod": "GET",
+    "path": "/reading-history",
+    "permissions": [],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/reading-history/reading-history.controller.ts",
+    "className": "ReadingHistoryController",
+    "methodName": "summary",
+    "httpMethod": "GET",
+    "path": "/reading-history/summary",
+    "permissions": [],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/reading-history/reading-history.controller.ts",
+    "className": "ReadingHistoryController",
+    "methodName": "marks",
+    "httpMethod": "GET",
+    "path": "/reading-history/:attemptId/marks",
+    "permissions": [],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/reading-history/reading-history.controller.ts",
+    "className": "ReadingHistoryController",
+    "methodName": "setRating",
+    "httpMethod": "PATCH",
+    "path": "/reading-history/:attemptId/rating",
+    "permissions": [],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
     "file": "server/src/modules/watch-download/watch-download.controller.ts",
     "className": "WatchDownloadController",
     "methodName": "downloadCover",

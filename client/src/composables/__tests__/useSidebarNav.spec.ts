@@ -73,7 +73,7 @@ describe('sidebar nav registry', () => {
   })
 
   it('shows only ungated destinations to a user with no permissions', () => {
-    expect(allowedIds(makeContext())).toEqual(['dashboard', 'statistics', 'achievements', 'authors', 'series', 'annotations'])
+    expect(allowedIds(makeContext())).toEqual(['dashboard', 'statistics', 'reading-history', 'achievements', 'authors', 'series', 'annotations'])
   })
 
   it('places Dashboard, Book Dock, Requests, Tools and the podcast Queue in the primary zone, above the entity sections', () => {
@@ -82,10 +82,10 @@ describe('sidebar nav registry', () => {
     expect(primary).toEqual(['dashboard', 'book-dock', 'book-requests', 'tools', 'podcast-queue'])
   })
 
-  it('groups Statistics, Achievements and Annotations in the Reading zone', () => {
+  it('groups Statistics, History, Achievements and Annotations in the Reading zone', () => {
     const reading = SIDEBAR_NAV_REGISTRY.filter((candidate) => candidate.zone === 'reading').map((candidate) => candidate.id)
 
-    expect(reading).toEqual(['statistics', 'achievements', 'annotations'])
+    expect(reading).toEqual(['statistics', 'reading-history', 'achievements', 'annotations'])
   })
 
   it('hides Achievements when the user has turned achievements off', () => {
@@ -266,6 +266,7 @@ describe('sidebar nav registry', () => {
     expect(booksModeIds).toEqual([
       'dashboard',
       'statistics',
+      'reading-history',
       'achievements',
       'book-dock',
       'book-requests',

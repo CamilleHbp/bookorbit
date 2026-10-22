@@ -631,6 +631,12 @@ export const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/history',
+        name: 'reading-history',
+        component: () => import('@/features/reading-history/views/ReadingHistoryView.vue'),
+        meta: { titleRow: true, title: () => t('titles.readingHistory') },
+      },
+      {
         path: '/achievements',
         name: 'achievements',
         component: () => import('@/views/AchievementsView.vue'),

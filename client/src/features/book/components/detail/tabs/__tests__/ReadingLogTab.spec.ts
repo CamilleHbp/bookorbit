@@ -191,6 +191,7 @@ function makeAttempt(overrides: Partial<ReadingAttempt> = {}): ReadingAttempt {
     origin: 'koreader',
     externalProvider: null,
     externalId: null,
+    rating: null,
     totalSessions: 0,
     totalSeconds: 0,
     createdAt: '2026-09-07T00:00:00.000Z',

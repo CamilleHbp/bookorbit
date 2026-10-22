@@ -6228,7 +6228,8 @@
     },
     "deleteDialog": {
       "title": "Delete book?",
-      "description": "This will permanently delete the book and all its metadata, files, reading progress, and bookmarks. This cannot be undone."
+      "description": "This will permanently delete the book and all its metadata, files, reading progress, and bookmarks. This cannot be undone.",
+      "keepsHistory": "Finished reads stay in each reader's history, under the book's title and author."
     },
     "bulkEdit": {
       "title": "{count, plural, =0 {Edit metadata - # book} one {Edit metadata - # book} other {Edit metadata - # books}}",
@@ -9747,7 +9748,8 @@
       },
       "surfaceOpacity": "Surface opacity",
       "surfaceOpacityValue": "{value}%",
-      "surfaceBrightnessValue": "{value}%"
+      "surfaceBrightnessValue": "{value}%",
+      "readingHistory": "History"
     },
     "sidebar": {
       "dashboard": "Dashboard",
@@ -12673,6 +12675,246 @@
       "notePlaceholder": "Optional note"
     }
   },
+  "readingHistory": {
+    "title": "History",
+    "listLabel": "Finished reads, {period}",
+    "error": "Your reading history could not load.",
+    "retry": "Try again",
+    "actions": {
+      "share": "Share image",
+      "export": "Export"
+    },
+    "period": {
+      "year": "Year",
+      "allTime": "All time",
+      "quarterGroup": "Quarter",
+      "quarter": "Q{quarter}",
+      "quarterYear": "Q{quarter} {year}"
+    },
+    "toolbar": {
+      "search": "Search books",
+      "searchLabel": "Search titles and authors",
+      "clearSearch": "Clear search",
+      "outcomes": "Outcome",
+      "outcome": {
+        "completed": "Finished",
+        "skimmed": "Skimmed",
+        "abandoned": "Abandoned"
+      },
+      "order": "Order",
+      "newest": "Newest first",
+      "oldest": "Oldest first",
+      "view": "View",
+      "list": "List",
+      "covers": "Covers",
+      "listView": "List view",
+      "coversView": "Covers view",
+      "oneBook": "One book",
+      "clearBook": "Show every book, not only {title}"
+    },
+    "month": {
+      "undated": "No finish date",
+      "reads": "{count, plural, one {# read} other {# reads}}",
+      "rereads": "{count, plural, one {# reread} other {# rereads}}",
+      "hours": "{hours}h"
+    },
+    "duration": {
+      "underMinute": "<1m",
+      "minutes": "{minutes}m",
+      "hoursMinutes": "{hours}h {minutes}m"
+    },
+    "row": {
+      "untitled": "Untitled",
+      "noDate": "No date",
+      "readNumber": "{n, selectordinal, one {#st read} two {#nd read} few {#rd read} other {#th read}}",
+      "readNumberTitle": "{count, plural, one {Finished once in all} other {Finished # times in all}}",
+      "abandoned": "Abandoned",
+      "abandonedAt": "Abandoned at {percent}",
+      "skimmed": "Skimmed",
+      "removed": "Removed from library",
+      "removedShort": "Removed",
+      "removedTitle": "Deleted from the library on {date}. This read stays in your history.",
+      "sameDay": "Same day",
+      "startedSpan": "Started {date} · {count, plural, one {# day} other {# days}}",
+      "finishOnly": "Finish date only",
+      "noDates": "No dates recorded",
+      "sessions": "{count, plural, one {# session} other {# sessions}}",
+      "sessionsTime": "{sessions} · {time}",
+      "sourcesMore": "{names} +{count}",
+      "highlights": "{count, plural, one {# highlight} other {# highlights}}",
+      "journal": "{count, plural, one {# journal entry} other {# journal entries}}",
+      "notesAndRating": "Notes and rating"
+    },
+    "tile": {
+      "label": "{title}, finished {date}",
+      "readNumber": "{n, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}"
+    },
+    "notes": {
+      "loading": "Loading notes from this read",
+      "failed": "The notes from this read could not load.",
+      "note": "Note",
+      "journal": "Journal",
+      "thisRead": "This read",
+      "allHighlights": "{count, plural, one {The highlight from this read} other {All # highlights from this read}}",
+      "readingLog": "Reading log"
+    },
+    "rating": {
+      "group": "Rate this read",
+      "rate": "{count, plural, one {Rate # star} other {Rate # stars}}",
+      "clear": "Clear this read's rating",
+      "ofFive": "{rating} of 5 stars",
+      "notRated": "Not rated",
+      "failed": "The rating could not be saved."
+    },
+    "panel": {
+      "label": "Read of {title}",
+      "close": "Close",
+      "firstRead": "First read",
+      "readOf": "{n, selectordinal, one {#st} two {#nd} few {#rd} other {#th}} read of {count}",
+      "finished": "Finished",
+      "started": "Started",
+      "took": "Took",
+      "timeRead": "Time read",
+      "timeReadValue": "{time} over {count, plural, one {# session} other {# sessions}}",
+      "where": "Where",
+      "notRecorded": "Not recorded"
+    },
+    "rail": {
+      "label": "{period} in numbers",
+      "inNumbers": "{period} in numbers",
+      "totals": "Totals",
+      "reads": "Reads",
+      "books": "Books",
+      "rereads": "Rereads",
+      "pagesLabel": "Pages",
+      "pages": "{count, plural, one {# page} other {# pages}}",
+      "hours": "{hours}h",
+      "daysRead": "{count, plural, one {# day read} other {# days read}}",
+      "rated": "{count, plural, one {# rated} other {# rated}}",
+      "averageRating": "{rating}★",
+      "notCounted": "Plus {count} skimmed or abandoned, not counted.",
+      "byMonth": "By month",
+      "best": "Best: {month} · {count}",
+      "monthBar": "{month}: {count, plural, one {# read} other {# reads}}",
+      "firstReads": "First reads",
+      "quarters": "Quarters",
+      "goal": "Reading goal {year}",
+      "goalProgress": "{reached} of {target} books.",
+      "goalMet": "Met on {date}.",
+      "goalRereads": "Rereads count toward it.",
+      "records": "Records",
+      "fastest": "Fastest",
+      "pagesPerDay": "{count, plural, one {# page a day} other {# pages a day}}",
+      "longestBook": "Longest book",
+      "mostReread": "Most reread",
+      "times": "{count, plural, one {# time} other {# times}}",
+      "longestRead": "Longest read",
+      "days": "{count, plural, one {# day} other {# days}}",
+      "formats": "Formats",
+      "whereYouRead": "Where you read",
+      "undated": "{count, plural, one {# finished read has no date} other {# finished reads have no date}}",
+      "showUndated": "Show them in All time"
+    },
+    "empty": {
+      "title": "No finished reads yet",
+      "body": "Books land here as you finish them, in any reader or app. Mark a book read and it shows up too.",
+      "filteredTitle": "No reads match",
+      "filteredBody": "Try another period, turn on another outcome, or clear the search."
+    },
+    "export": {
+      "title": "Export {period}",
+      "description": "{count, plural, one {# read} other {# reads}}, as the list shows them now.",
+      "close": "Close",
+      "format": "Format",
+      "formats": {
+        "md": {
+          "name": "Markdown",
+          "hint": "For notes apps like Obsidian. One line per read, grouped by month."
+        },
+        "csv": {
+          "name": "CSV",
+          "hint": "For spreadsheets. One row per read with dates, pages, time and rating."
+        },
+        "json": {
+          "name": "JSON",
+          "hint": "Every field, for scripts and backups."
+        }
+      },
+      "includes": "Includes",
+      "includesOthers": "Finished reads, plus the skimmed and abandoned ones the list shows.",
+      "finishedOnly": "Finished reads only. Turn on Skimmed or Abandoned in the list to add them.",
+      "preview": "Preview of {file}",
+      "previewFailed": "The preview could not load. The download still works.",
+      "moreLines": "{count, plural, one {# more line} other {# more lines}}",
+      "download": "Download",
+      "preparing": "Preparing {done} of {total}",
+      "saved": "{count, plural, one {Exported # read} other {Exported # reads}}",
+      "failed": "The export could not be prepared.",
+      "fileHeading": "Reading history, {period}"
+    },
+    "share": {
+      "title": "Share image",
+      "description": "A picture of your reading to post or send. Nothing leaves BookOrbit until you save or copy it.",
+      "close": "Close",
+      "loading": "Gathering your covers",
+      "loadFailed": "The image could not be made. Close this and try again.",
+      "period": "Period",
+      "periods": {
+        "quarter": "Quarter",
+        "month": "Month"
+      },
+      "periodSummary": "{period} · {count, plural, one {# read} other {# reads}}",
+      "monthYear": "{month} {year}",
+      "shape": "Shape",
+      "shapes": {
+        "square": {
+          "name": "Square",
+          "hint": "1080 × 1080, for posts"
+        },
+        "story": {
+          "name": "Story",
+          "hint": "1080 × 1920, for stories"
+        },
+        "wide": {
+          "name": "Wide",
+          "hint": "1600 × 900, for chats and blogs"
+        }
+      },
+      "look": "Look",
+      "looks": {
+        "dark": "Dark",
+        "light": "Light"
+      },
+      "show": "Show",
+      "titles": "Titles on covers",
+      "rereads": "Reread counts",
+      "rereadsHint": "A book read three times shows once, marked ×3.",
+      "ratings": "Your ratings",
+      "fileHint": "{shape} · PNG · {width} × {height}",
+      "copy": "Copy image",
+      "save": "Save PNG",
+      "copied": "Image copied",
+      "copyFailed": "The image could not be copied. Save it instead.",
+      "saved": "Image saved",
+      "saveFailed": "The image could not be saved.",
+      "previewLabel": "Share image of {period}: {count, plural, one {# read} other {# reads}}",
+      "poster": {
+        "eyebrowYear": "{name}'s year in reading",
+        "eyebrowPeriod": "{name}'s {period} in reading",
+        "reads": "{count, plural, one {read} other {reads}}",
+        "books": "{count, plural, one {book} other {books}}",
+        "hours": "{count, plural, one {hour} other {hours}}",
+        "pages": "{count, plural, one {page} other {pages}}",
+        "busiestMonth": "Busiest month",
+        "more": "+{count}"
+      }
+    },
+    "links": {
+      "goalReads": "See {count, plural, one {the # read} other {all # reads}}",
+      "bookReads": "See every read in History",
+      "chartHint": "Select a month to see its reads in History"
+    }
+  },
   "scanner": {
     "filesProgress": "{processed}/{total} files",
     "booksFound": "{count, plural, =0 {no books found} one {# book found} other {# books found}}"
@@ -14797,7 +15039,8 @@
     "bookRequestDetail": "Request",
     "bookRequestReleases": "Pick a release",
     "tts": "Text-to-Speech",
-    "chapterHealth": "Chapter Health"
+    "chapterHealth": "Chapter Health",
+    "readingHistory": "Reading History"
   },
   "tts": {
     "readerControls": {

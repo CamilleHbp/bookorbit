@@ -69,6 +69,7 @@ import { BookMetadataFetchModule } from './modules/book-metadata-fetch/book-meta
 import { MetadataScoreModule } from './modules/metadata-score/metadata-score.module';
 import { StatisticsModule } from './modules/statistics/statistics.module';
 import { UserStatisticsModule } from './modules/user-statistics/user-statistics.module';
+import { ReadingHistoryModule } from './modules/reading-history/reading-history.module';
 import { ReadingSessionModule } from './modules/reading-session/reading-session.module';
 import { ReadingStateModule } from './modules/reading-state/reading-state.module';
 import { UserBookStatusModule } from './modules/user-book-status/user-book-status.module';
@@ -184,6 +185,7 @@ import { ReadAloudModule } from './modules/read-aloud/read-aloud.module';
     MetadataScoreModule,
     StatisticsModule,
     UserStatisticsModule,
+    ReadingHistoryModule,
     ReadingSessionModule,
     ReadingStateModule,
     UserBookStatusModule,
