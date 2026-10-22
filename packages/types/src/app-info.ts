@@ -41,6 +41,11 @@ export const SERVER_FEATURES = [
   "relative-date-ranges",
   /** The `format` book filter accepts `epub:readalong` for EPUBs with media overlays. */
   "read-along-filter",
+  /**
+   * `GET /reading-history` (offset pages, the first carrying every month's size), `/summary`,
+   * `/:attemptId/marks` and `PATCH /:attemptId/rating`.
+   */
+  "reading-history",
 ] as const;
 
 export type ServerFeature = (typeof SERVER_FEATURES)[number];
