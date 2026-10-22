@@ -344,16 +344,6 @@ export function formatReadAloudDuration(seconds: number, t: (key: string, values
   return t('book.detail.files.duration.minutes', { minutes: Math.max(minutes, 1) })
 }
 
-/** The primary language subtag of a BCP 47 tag, so "en-GB" picks the English model. */
-export function baseLanguage(value: string | null | undefined): string {
-  if (!value) return ''
-  try {
-    return new Intl.Locale(value).language
-  } catch {
-    return ''
-  }
-}
-
 export const READ_ALOUD_I18N_KEYS = {
   reasons: [...Object.values(REASON_KEYS), NO_EPUB_WITH_EXISTING_KEY, UNKNOWN_REASON_KEY],
   errors: Object.values(ERROR_KEYS),

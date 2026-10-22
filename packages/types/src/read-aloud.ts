@@ -264,6 +264,17 @@ export type ReadAloudCapability = {
   latestJob: ReadAloudJob | null;
 };
 
+/** What a user's read-alouds start with, under `/user-preferences/read-aloud`. */
+export interface ReadAloudPreferences {
+  /**
+   * The narration language preselected when a book states none the speech model supports, as a
+   * language subtag. The book's own language still wins when it is supported.
+   */
+  defaultLanguage: string | null;
+}
+
+export const DEFAULT_READ_ALOUD_PREFERENCES: ReadAloudPreferences = { defaultLanguage: null };
+
 export type CreateReadAloudJobRequest = {
   epubFileId?: number;
   audioFileIds?: number[];

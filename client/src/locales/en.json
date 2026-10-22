@@ -7110,6 +7110,7 @@
           "dialog": {
             "title": "Create a read-aloud",
             "description": "Matches the narration to the ebook text and adds an EPUB that highlights along with the audio.",
+            "sources": "Sources",
             "ebook": "Ebook",
             "ebookHint": "Pick the plain EPUB that matches the narration.",
             "existing": {
@@ -7138,7 +7139,11 @@
             "language": "Narration language",
             "chooseLanguage": "Choose a language",
             "languageUnsupported": "{language} isn't supported by the speech model.",
-            "advanced": "Advanced",
+            "languageFromBook": "From this book's details.",
+            "languageIsDefault": "Your default language.",
+            "languageSavedAsDefault": "Saved as your default language.",
+            "setDefaultLanguage": "Set as default",
+            "defaultLanguageFailed": "Couldn't save your default language. Try again.",
             "granularity": "Highlighting",
             "sentence": "Sentence",
             "sentenceHint": "Highlights one sentence at a time. Recommended.",

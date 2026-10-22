@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { Permission, type CreateReadAloudJobRequest, type ReadAloudCapability, type ReadAloudJobInput } from '@bookorbit/types'
 import { activateI18nLocale, i18n } from '@/i18n'
@@ -7,11 +7,18 @@ import { formatLanguageName } from '@/i18n/formatters'
 import ReadAloudDialog from '../components/ReadAloudDialog.vue'
 import { makeCapability } from './fixtures'
 
-const mocks = vi.hoisted(() => ({ permissions: new Set<string>() }))
+const mocks = vi.hoisted(() => ({
+  permissions: new Set<string>(),
+  savedLanguage: null as string | null,
+  saveOk: true,
+  api: vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(),
+}))
 
 vi.mock('@/features/auth/composables/usePermissions', () => ({
   usePermissions: () => ({ hasPermission: (name: string) => mocks.permissions.has(name) }),
 }))
+
+vi.mock('@/lib/api', () => ({ api: mocks.api }))
 
 const t = i18n.global.t
 
@@ -34,6 +41,13 @@ beforeAll(() => {
 
 beforeEach(() => {
   mocks.permissions = new Set([Permission.LibraryDeleteBooks])
+  mocks.savedLanguage = null
+  mocks.saveOk = true
+  mocks.api.mockReset()
+  mocks.api.mockImplementation(async (_url, init) => {
+    if (init?.method === 'PUT') return new Response(null, { status: mocks.saveOk ? 204 : 500 })
+    return new Response(JSON.stringify({ settings: { defaultLanguage: mocks.savedLanguage } }), { status: 200 })
+  })
 })
 
 afterEach(() => {
@@ -67,6 +81,10 @@ function buttonByText(target: VueWrapper, text: string) {
   const button = target.findAll('button').find((candidate) => candidate.text().trim() === text)
   if (!button) throw new Error(`No button with text "${text}"`)
   return button
+}
+
+function buttonOrNull(target: VueWrapper, text: string) {
+  return target.findAll('button').find((candidate) => candidate.text().trim() === text) ?? null
 }
 
 function trackOrder(target: VueWrapper): number[] {
@@ -275,13 +293,13 @@ describe('ReadAloudDialog', () => {
     expect(unknown.text()).toContain(t('book.detail.files.readAloud.dialog.model', { model: 'wav2vec2-base' }))
   })
 
-  it('submits word highlighting only when chosen under Advanced', async () => {
+  it('offers word highlighting without a disclosure, and submits it only when chosen', async () => {
     const dialog = mountDialog()
-    const advanced = buttonByText(dialog, t('book.detail.files.readAloud.dialog.advanced'))
-    expect(advanced.attributes('aria-expanded')).toBe('false')
+    const word = dialog.find<HTMLInputElement>('input[type="radio"][value="word"]')
+    expect(word.isVisible()).toBe(true)
+    expect(word.element.checked).toBe(false)
 
-    await advanced.trigger('click')
-    await dialog.find('input[type="radio"][value="word"]').setValue(true)
+    await word.setValue(true)
 
     expect((await submit(dialog)).granularity).toBe('word')
   })
@@ -295,6 +313,23 @@ describe('ReadAloudDialog', () => {
     expect(await submit(dialog)).toEqual({ epubFileId: 101, audioFileIds: [104, 102], language: 'de', granularity: 'word' })
   })
 
+  it.each(['English', 'english', 'eng'])('picks English for a book whose language is stored as "%s"', async (stored) => {
+    const dialog = mountDialog({ defaultLanguage: stored })
+
+    expect(dialog.find('select').element.value).toBe('en')
+    expect(dialog.text()).not.toContain(t('book.detail.files.readAloud.dialog.languageUnsupported', { language: stored }))
+    expect((await submit(dialog)).language).toBe('en')
+  })
+
+  it('prefills "Start over" from a job that stored a full language tag', async () => {
+    const dialog = mountDialog({
+      defaultLanguage: null,
+      initial: { epubFileId: 101, audioFileIds: [102, 103, 104], language: 'en-US', granularity: 'sentence', sourceBytes: 0, replaceFileId: null },
+    })
+
+    expect((await submit(dialog)).language).toBe('en')
+  })
+
   it('leaves the language unset and says why when the book language has no model', async () => {
     const dialog = mountDialog({ defaultLanguage: 'nl' })
 
@@ -302,6 +337,72 @@ describe('ReadAloudDialog', () => {
     expect(dialog.text()).toContain(t('book.detail.files.readAloud.dialog.languageUnsupported', { language: formatLanguageName('nl') }))
     const start = buttonByText(dialog, t('book.detail.files.readAloud.dialog.start'))
     expect(start.attributes('disabled')).toBeDefined()
+  })
+
+  it('fills in the saved default when the book states no language', async () => {
+    mocks.savedLanguage = 'de'
+    const dialog = mountDialog({ defaultLanguage: null })
+    await flushPromises()
+
+    expect(dialog.find('select').element.value).toBe('de')
+    expect(dialog.text()).toContain(t('book.detail.files.readAloud.dialog.languageIsDefault'))
+    expect(buttonOrNull(dialog, t('book.detail.files.readAloud.dialog.setDefaultLanguage'))).toBeNull()
+  })
+
+  it("keeps the book's own language over the saved default", async () => {
+    mocks.savedLanguage = 'de'
+    const dialog = mountDialog({ defaultLanguage: 'English' })
+    await flushPromises()
+
+    expect(dialog.find('select').element.value).toBe('en')
+    expect(dialog.text()).toContain(t('book.detail.files.readAloud.dialog.languageFromBook'))
+  })
+
+  it('uses the saved default for an unsupported book language and still says why', async () => {
+    mocks.savedLanguage = 'en'
+    const dialog = mountDialog({ defaultLanguage: 'nl' })
+    await flushPromises()
+
+    expect(dialog.find('select').element.value).toBe('en')
+    expect(dialog.text()).toContain(t('book.detail.files.readAloud.dialog.languageUnsupported', { language: formatLanguageName('nl') }))
+  })
+
+  it('never overrides a language picked before the saved default arrives', async () => {
+    mocks.savedLanguage = 'de'
+    const dialog = mountDialog({ defaultLanguage: null })
+    await dialog.find('select').setValue('fr')
+    await flushPromises()
+
+    expect(dialog.find('select').element.value).toBe('fr')
+  })
+
+  it('saves the chosen language as the default and confirms it', async () => {
+    const dialog = mountDialog()
+    await flushPromises()
+    await dialog.find('select').setValue('fr')
+
+    await buttonByText(dialog, t('book.detail.files.readAloud.dialog.setDefaultLanguage')).trigger('click')
+    await flushPromises()
+
+    expect(mocks.api).toHaveBeenCalledWith('/api/v1/user-preferences/read-aloud', expect.objectContaining({ method: 'PUT' }))
+    const [, init] = mocks.api.mock.calls.find(([, options]) => options?.method === 'PUT')!
+    expect(JSON.parse(init!.body as string)).toEqual({ settings: { defaultLanguage: 'fr' } })
+    expect(dialog.text()).toContain(t('book.detail.files.readAloud.dialog.languageSavedAsDefault'))
+    expect(buttonOrNull(dialog, t('book.detail.files.readAloud.dialog.setDefaultLanguage'))).toBeNull()
+    expect(document.activeElement).toBe(dialog.find('select').element)
+  })
+
+  it('says so when the default could not be saved', async () => {
+    mocks.saveOk = false
+    const dialog = mountDialog()
+    await flushPromises()
+
+    await buttonByText(dialog, t('book.detail.files.readAloud.dialog.setDefaultLanguage')).trigger('click')
+    await flushPromises()
+
+    const alert = dialog.findAll('[role="alert"]').find((node) => node.text() === t('book.detail.files.readAloud.dialog.defaultLanguageFailed'))
+    expect(alert).toBeDefined()
+    expect(buttonOrNull(dialog, t('book.detail.files.readAloud.dialog.setDefaultLanguage'))).not.toBeNull()
   })
 
   it('shows its own error once', () => {

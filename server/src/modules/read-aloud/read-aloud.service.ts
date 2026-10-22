@@ -21,6 +21,7 @@ import type {
 import {
   isAudioFormat,
   isContentBookFile,
+  languageSubtagOf,
   Permission,
   READ_ALOUD_ACTIVE_JOB_STATUSES,
   READ_ALOUD_MAX_AUDIO_FILES,
@@ -169,7 +170,7 @@ export class ReadAloudService {
       replaceFileId = dto.replaceFileId;
     }
 
-    const locale = this.parseLocale(dto.language ?? book.language ?? 'en');
+    const locale = this.parseLocale(dto.language ?? languageSubtagOf(book.language, READ_ALOUD_QUARTZNET_LANGUAGES) ?? 'en');
     if (!QUARTZNET_LANGUAGES.has(locale.language)) {
       throw new BadRequestException(`QuartzNet15x5 does not support language "${locale.language}"`);
     }

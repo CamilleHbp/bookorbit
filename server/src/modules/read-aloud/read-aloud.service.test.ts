@@ -227,6 +227,13 @@ describe('ReadAloudService.create', () => {
     expect(jobs.create).not.toHaveBeenCalled();
   });
 
+  it('reads a book language stated as a name when the request names none', async () => {
+    const { service, jobs } = makeService({ book: bookDetail({ language: 'English' }) });
+    await service.create(12, Object.assign(new CreateReadAloudJobDto(), { epubFileId: 101, audioFileIds: [102] }), OWNER);
+
+    expect(jobs.create).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({ language: 'en' }) }));
+  });
+
   it('refuses unsupported languages, unmounted libraries, and an unavailable worker', async () => {
     await expect(makeService({ book: bookDetail({ language: 'nl-NL' }) }).service.create(12, new CreateReadAloudJobDto(), OWNER)).rejects.toThrow(
       BadRequestException,

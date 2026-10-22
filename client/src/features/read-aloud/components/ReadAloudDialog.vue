@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AudioLines, ChevronDown, Cpu, Loader2, TriangleAlert, X } from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import {
   estimateReadAloudWorkBytes,
+  languageSubtagOf,
   Permission,
   type CreateReadAloudJobRequest,
   type ReadAloudCapability,
@@ -15,7 +16,8 @@ import { formatBytes } from '@/lib/formatting'
 import { formatLanguageName } from '@/i18n/formatters'
 import { Select } from '@/components/ui/select'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
-import { baseLanguage, deviceLabel, formatReadAloudDuration } from '../lib/read-aloud'
+import { useReadAloudPreferences } from '../composables/useReadAloudPreferences'
+import { deviceLabel, formatReadAloudDuration } from '../lib/read-aloud'
 import ReadAloudTrackList from './ReadAloudTrackList.vue'
 
 /** Display names for the model ids the server reports; an id this build does not know shows as sent. */
@@ -36,15 +38,20 @@ const emit = defineEmits<{ close: []; create: [input: CreateReadAloudJobRequest]
 
 const { t, locale } = useI18n()
 const { hasPermission } = usePermissions()
+const preferences = useReadAloudPreferences()
+const savingDefault = preferences.saving
 const ids = useId()
 const trackListId = `${ids}-tracks`
+const languageHintId = `${ids}-language-hint`
 
 const epubFileId = ref<number | null>(null)
 const trackOrder = ref<number[]>([])
 const skippedTracks = ref<number[]>([])
 const orderOpen = ref(false)
-const advancedOpen = ref(false)
 const language = ref('')
+/** Whether the selection was just saved as the default, so the hint can confirm it. */
+const defaultSaved = ref(false)
+const defaultSaveFailed = ref(false)
 const granularity = ref<ReadAloudGranularity>('sentence')
 /** The read-along to overwrite, or "keep" to add the new one beside it. */
 const existingChoice = ref<number | 'keep'>('keep')
@@ -88,13 +95,28 @@ const languageOptions = computed(() =>
     .sort((a, b) => a.name.localeCompare(b.name, locale.value)),
 )
 
-/** Say why the book's own language was not picked, rather than leaving an unexplained empty select. */
-const unsupportedLanguageHint = computed(() => {
-  if (language.value) return null
-  const base = baseLanguage(props.defaultLanguage)
-  if (!base || isSupportedLanguage(base)) return null
-  return t('book.detail.files.readAloud.dialog.languageUnsupported', { language: formatLanguageName(base) })
+/** The book's language as a code; metadata often states it as a name such as "English". */
+const bookLanguage = computed(() => languageSubtagOf(props.defaultLanguage, props.capability.supportedLanguages))
+
+/**
+ * Where the selection came from. A book language the model cannot use is said even once a default
+ * fills in, because aligning narration in one language against a model for another fails.
+ */
+const languageHint = computed(() => {
+  const isDefault = language.value !== '' && language.value === preferences.defaultLanguage.value
+  if (isDefault && defaultSaved.value) return t('book.detail.files.readAloud.dialog.languageSavedAsDefault')
+  const base = bookLanguage.value
+  if (base && !isSupportedLanguage(base)) {
+    return t('book.detail.files.readAloud.dialog.languageUnsupported', { language: formatLanguageName(base) })
+  }
+  if (isDefault) return t('book.detail.files.readAloud.dialog.languageIsDefault')
+  if (language.value && language.value === base) return t('book.detail.files.readAloud.dialog.languageFromBook')
+  return null
 })
+
+const canSetDefaultLanguage = computed(
+  () => preferences.loaded.value && language.value.length > 0 && language.value !== preferences.defaultLanguage.value,
+)
 
 const deviceLine = computed(() => deviceLabel(props.capability.workerDevice, t))
 const estimatedSize = computed(() =>
@@ -124,6 +146,13 @@ function isSupportedLanguage(code: string): boolean {
   return (props.capability.supportedLanguages as readonly string[]).includes(code)
 }
 
+/** A previous job's language, then the book's, then the user's saved default: the first the model supports. */
+function preferredLanguage(): string {
+  const candidates = props.initial ? [languageSubtagOf(props.initial.language)] : [bookLanguage.value]
+  candidates.push(preferences.defaultLanguage.value)
+  return candidates.find((code): code is string => !!code && isSupportedLanguage(code)) ?? ''
+}
+
 /** BookOrbit's own output is safe to overwrite; an imported one may be the only copy of someone's work. */
 function defaultExistingChoice(): number | 'keep' {
   if (!canReplace.value) return 'keep'
@@ -151,10 +180,10 @@ function initialise(): void {
   }
   orderOpen.value = false
 
-  const preferred = initial?.language ?? baseLanguage(props.defaultLanguage)
-  language.value = preferred && isSupportedLanguage(preferred) ? preferred : ''
+  language.value = preferredLanguage()
+  defaultSaved.value = false
+  defaultSaveFailed.value = false
   granularity.value = initial?.granularity ?? 'sentence'
-  advancedOpen.value = granularity.value !== 'sentence'
 
   const existingIds = capability.existingReadAlongs.map((file) => file.fileId)
   existingChoice.value =
@@ -194,9 +223,21 @@ watch(
     if (!open) return
     returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
     initialise()
+    void loadPreferences()
   },
   { immediate: true },
 )
+
+/** The saved default arrives after the dialog opens; it only fills a selection nobody has made yet. */
+async function loadPreferences(): Promise<void> {
+  await preferences.load()
+  if (props.open && !language.value) language.value = preferredLanguage()
+}
+
+watch(language, () => {
+  defaultSaved.value = false
+  defaultSaveFailed.value = false
+})
 
 function handleCloseAutoFocus(event: Event): void {
   const target = returnFocusTo
@@ -230,8 +271,18 @@ function handleRestoreOrder(): void {
   skippedTracks.value = []
 }
 
-function handleToggleAdvanced(): void {
-  advancedOpen.value = !advancedOpen.value
+async function handleSetDefaultLanguage(): Promise<void> {
+  const code = language.value
+  if (!code || preferences.saving.value) return
+  defaultSaveFailed.value = false
+  const saved = await preferences.saveDefaultLanguage(code)
+  if (language.value !== code) return
+  defaultSaved.value = saved
+  defaultSaveFailed.value = !saved
+  if (!saved) return
+  // The button goes once the selection is the default; the select reads out the new hint instead.
+  await nextTick()
+  document.getElementById(`${ids}-language`)?.focus()
 }
 
 function existingOrigin(generatedByJobId: string | null): string {
@@ -280,37 +331,88 @@ function handleSubmit(): void {
           </button>
         </header>
 
-        <div class="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
-          <!-- Ebook -->
-          <fieldset v-if="showEpubChoice">
-            <legend class="text-sm font-semibold text-foreground">{{ t('book.detail.files.readAloud.dialog.ebook') }}</legend>
-            <p class="mt-1 text-xs text-muted-foreground">{{ t('book.detail.files.readAloud.dialog.ebookHint') }}</p>
-            <div class="mt-2.5 grid gap-1.5">
-              <label
-                v-for="file in capability.epubFiles"
-                :key="file.id"
-                class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors"
-                :class="epubFileId === file.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'"
-              >
-                <input
-                  v-model="epubFileId"
-                  type="radio"
-                  :name="`${ids}-epub`"
-                  :value="file.id"
-                  class="size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-                <span class="min-w-0 flex-1 truncate text-sm text-foreground" :title="file.filename">{{ file.filename }}</span>
-                <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{{ formatBytes(file.sizeBytes) }}</span>
-              </label>
+        <div class="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+          <!-- Sources -->
+          <section class="rounded-lg border border-border" :aria-labelledby="`${ids}-sources`">
+            <h3 :id="`${ids}-sources`" class="px-3.5 pt-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {{ t('book.detail.files.readAloud.dialog.sources') }}
+            </h3>
+            <div class="divide-y divide-border">
+              <div v-if="showEpubChoice || singleEpub" class="grid gap-x-4 gap-y-1 px-3.5 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)]">
+                <span :id="`${ids}-ebook`" class="text-sm text-muted-foreground">{{ t('book.detail.files.readAloud.dialog.ebook') }}</span>
+                <div
+                  v-if="showEpubChoice"
+                  role="radiogroup"
+                  class="min-w-0"
+                  :aria-labelledby="`${ids}-ebook`"
+                  :aria-describedby="`${ids}-ebook-hint`"
+                >
+                  <p :id="`${ids}-ebook-hint`" class="text-xs text-muted-foreground">{{ t('book.detail.files.readAloud.dialog.ebookHint') }}</p>
+                  <div class="mt-2 grid gap-1.5">
+                    <label
+                      v-for="file in capability.epubFiles"
+                      :key="file.id"
+                      class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 transition-colors"
+                      :class="epubFileId === file.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'"
+                    >
+                      <input
+                        v-model="epubFileId"
+                        type="radio"
+                        :name="`${ids}-epub`"
+                        :value="file.id"
+                        class="size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                      <span class="min-w-0 flex-1 truncate text-sm text-foreground" :title="file.filename">{{ file.filename }}</span>
+                      <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{{ formatBytes(file.sizeBytes) }}</span>
+                    </label>
+                  </div>
+                </div>
+                <p v-else-if="singleEpub" class="flex min-w-0 items-baseline gap-2 text-sm text-foreground">
+                  <span class="min-w-0 truncate" :title="singleEpub.filename">{{ singleEpub.filename }}</span>
+                  <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{{ formatBytes(singleEpub.sizeBytes) }}</span>
+                </p>
+              </div>
+
+              <div role="group" class="grid gap-x-4 gap-y-1 px-3.5 py-2.5 sm:grid-cols-[7rem_minmax(0,1fr)]" :aria-labelledby="`${ids}-audio`">
+                <span :id="`${ids}-audio`" class="text-sm text-muted-foreground">{{ t('book.detail.files.readAloud.dialog.audio') }}</span>
+                <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                  <p class="text-sm text-foreground">{{ audioSummary }}</p>
+                  <p v-if="skippedTracks.length > 0" class="text-xs text-muted-foreground">
+                    {{ t('book.detail.files.readAloud.dialog.audioSkipped', { count: skippedTracks.length }) }}
+                  </p>
+                  <button
+                    v-if="capability.audioFiles.length > 1"
+                    type="button"
+                    class="-mx-1 inline-flex min-h-7 items-center gap-1 rounded px-1 text-[13px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    :aria-expanded="orderOpen"
+                    :aria-controls="trackListId"
+                    @click="handleToggleOrder"
+                  >
+                    {{ t('book.detail.files.readAloud.dialog.changeOrder') }}
+                    <ChevronDown
+                      class="size-3.5 transition-transform motion-reduce:transition-none"
+                      :class="orderOpen ? 'rotate-180' : ''"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </div>
+                <div v-show="orderOpen" :id="trackListId" class="mt-1.5 sm:col-span-2">
+                  <ReadAloudTrackList v-model:order="trackOrder" v-model:skipped="skippedTracks" :tracks="capability.audioFiles" />
+                  <button
+                    v-if="orderChanged"
+                    type="button"
+                    class="-mx-1 mt-1.5 inline-flex min-h-7 items-center rounded px-1 text-[13px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    @click="handleRestoreOrder"
+                  >
+                    {{ t('book.detail.files.readAloud.dialog.restoreOrder') }}
+                  </button>
+                </div>
+                <p v-if="includedTrackIds.length === 0" role="alert" class="text-xs text-destructive sm:col-start-2">
+                  {{ t('book.detail.files.readAloud.dialog.noTracks') }}
+                </p>
+              </div>
             </div>
-          </fieldset>
-          <div v-else-if="singleEpub">
-            <h3 class="text-sm font-semibold text-foreground">{{ t('book.detail.files.readAloud.dialog.ebook') }}</h3>
-            <p class="mt-1 flex items-center gap-2 text-sm text-foreground">
-              <span class="min-w-0 truncate" :title="singleEpub.filename">{{ singleEpub.filename }}</span>
-              <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{{ formatBytes(singleEpub.sizeBytes) }}</span>
-            </p>
-          </div>
+          </section>
 
           <!-- Existing read-alongs -->
           <fieldset v-if="existingReadAlongs.length > 0 && canReplace" class="rounded-lg border border-border bg-muted/40 p-3.5">
@@ -386,131 +488,94 @@ function handleSubmit(): void {
             <p class="mt-2 text-xs text-muted-foreground">{{ t('book.detail.files.readAloud.dialog.existing.replaceNotPermitted') }}</p>
           </section>
 
-          <!-- Audiobook -->
-          <section :aria-labelledby="`${ids}-audio`">
-            <h3 :id="`${ids}-audio`" class="text-sm font-semibold text-foreground">{{ t('book.detail.files.readAloud.dialog.audio') }}</h3>
-            <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <p class="text-sm text-foreground">{{ audioSummary }}</p>
-              <p v-if="skippedTracks.length > 0" class="text-xs text-muted-foreground">
-                {{ t('book.detail.files.readAloud.dialog.audioSkipped', { count: skippedTracks.length }) }}
-              </p>
-              <button
-                v-if="capability.audioFiles.length > 1"
-                type="button"
-                class="-mx-1 inline-flex min-h-7 items-center gap-1 rounded px-1 text-[13px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                :aria-expanded="orderOpen"
-                :aria-controls="trackListId"
-                @click="handleToggleOrder"
-              >
-                {{ t('book.detail.files.readAloud.dialog.changeOrder') }}
-                <ChevronDown
-                  class="size-3.5 transition-transform motion-reduce:transition-none"
-                  :class="orderOpen ? 'rotate-180' : ''"
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-            <div v-show="orderOpen" :id="trackListId" class="mt-2.5">
-              <ReadAloudTrackList v-model:order="trackOrder" v-model:skipped="skippedTracks" :tracks="capability.audioFiles" />
-              <button
-                v-if="orderChanged"
-                type="button"
-                class="-mx-1 mt-1.5 inline-flex min-h-7 items-center rounded px-1 text-[13px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                @click="handleRestoreOrder"
-              >
-                {{ t('book.detail.files.readAloud.dialog.restoreOrder') }}
-              </button>
-            </div>
-            <p v-if="includedTrackIds.length === 0" role="alert" class="mt-1.5 text-xs text-destructive">
-              {{ t('book.detail.files.readAloud.dialog.noTracks') }}
-            </p>
-          </section>
-
           <!-- Language -->
           <div>
-            <label :for="`${ids}-language`" class="text-sm font-semibold text-foreground">{{
+            <label :for="`${ids}-language`" class="block text-sm font-semibold text-foreground">{{
               t('book.detail.files.readAloud.dialog.language')
             }}</label>
-            <Select
-              :id="`${ids}-language`"
-              v-model="language"
-              class="mt-2 sm:max-w-xs"
-              :aria-describedby="unsupportedLanguageHint ? `${ids}-language-hint` : undefined"
-            >
-              <option value="" disabled>{{ t('book.detail.files.readAloud.dialog.chooseLanguage') }}</option>
-              <option v-for="option in languageOptions" :key="option.code" :value="option.code">{{ option.name }}</option>
-            </Select>
-            <p v-if="unsupportedLanguageHint" :id="`${ids}-language-hint`" class="mt-1.5 text-xs text-muted-foreground">
-              {{ unsupportedLanguageHint }}
+            <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <Select
+                :id="`${ids}-language`"
+                v-model="language"
+                class="sm:max-w-xs sm:flex-1"
+                :aria-describedby="languageHint ? languageHintId : undefined"
+              >
+                <option value="" disabled>{{ t('book.detail.files.readAloud.dialog.chooseLanguage') }}</option>
+                <option v-for="option in languageOptions" :key="option.code" :value="option.code">{{ option.name }}</option>
+              </Select>
+              <button
+                v-if="canSetDefaultLanguage"
+                type="button"
+                class="-mx-1 inline-flex min-h-7 items-center gap-1.5 rounded px-1 text-[13px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                :disabled="savingDefault"
+                @click="handleSetDefaultLanguage"
+              >
+                <Loader2 v-if="savingDefault" class="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                {{ t('book.detail.files.readAloud.dialog.setDefaultLanguage') }}
+              </button>
+            </div>
+            <p v-if="languageHint" :id="languageHintId" class="mt-1.5 text-xs text-muted-foreground">{{ languageHint }}</p>
+            <p v-if="defaultSaveFailed" role="alert" class="mt-1.5 text-xs text-destructive">
+              {{ t('book.detail.files.readAloud.dialog.defaultLanguageFailed') }}
             </p>
           </div>
 
-          <!-- Advanced -->
-          <div>
-            <button
-              type="button"
-              class="-mx-1 inline-flex min-h-7 items-center gap-1 rounded px-1 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              :aria-expanded="advancedOpen"
-              :aria-controls="`${ids}-advanced`"
-              @click="handleToggleAdvanced"
-            >
-              <ChevronDown
-                class="size-4 transition-transform motion-reduce:transition-none"
-                :class="advancedOpen ? '' : '-rotate-90 rtl:rotate-90'"
-                aria-hidden="true"
-              />
-              {{ t('book.detail.files.readAloud.dialog.advanced') }}
-            </button>
-            <fieldset v-show="advancedOpen" :id="`${ids}-advanced`" class="mt-2.5">
-              <legend class="text-sm font-medium text-foreground">{{ t('book.detail.files.readAloud.dialog.granularity') }}</legend>
-              <div class="mt-2 grid gap-1.5">
-                <label class="flex cursor-pointer items-start gap-3 rounded-md px-1 py-1">
-                  <input
-                    v-model="granularity"
-                    type="radio"
-                    :name="`${ids}-granularity`"
-                    value="sentence"
-                    class="mt-0.5 size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                  <span class="min-w-0 flex-1">
-                    <span class="block text-sm text-foreground">{{ t('book.detail.files.readAloud.dialog.sentence') }}</span>
-                    <span class="mt-0.5 block text-xs text-muted-foreground">{{ t('book.detail.files.readAloud.dialog.sentenceHint') }}</span>
-                  </span>
-                </label>
-                <label class="flex cursor-pointer items-start gap-3 rounded-md px-1 py-1">
-                  <input
-                    v-model="granularity"
-                    type="radio"
-                    :name="`${ids}-granularity`"
-                    value="word"
-                    class="mt-0.5 size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                  <span class="min-w-0 flex-1">
-                    <span class="flex flex-wrap items-center gap-1.5 text-sm text-foreground">
-                      {{ t('book.detail.files.readAloud.dialog.word') }}
-                      <span
-                        class="inline-flex h-[18px] items-center rounded bg-warning/15 px-1.5 text-[10.5px] font-bold uppercase tracking-wider text-foreground"
-                      >
-                        {{ t('book.detail.files.readAloud.dialog.experimental') }}
-                      </span>
+          <!-- Highlighting -->
+          <fieldset>
+            <legend class="text-sm font-semibold text-foreground">{{ t('book.detail.files.readAloud.dialog.granularity') }}</legend>
+            <div class="mt-2 grid gap-1.5">
+              <label class="flex cursor-pointer items-start gap-3 rounded-md px-1 py-1">
+                <input
+                  v-model="granularity"
+                  type="radio"
+                  :name="`${ids}-granularity`"
+                  value="sentence"
+                  class="mt-0.5 size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm text-foreground">{{ t('book.detail.files.readAloud.dialog.sentence') }}</span>
+                  <span class="mt-0.5 block text-xs text-muted-foreground">{{ t('book.detail.files.readAloud.dialog.sentenceHint') }}</span>
+                </span>
+              </label>
+              <label class="flex cursor-pointer items-start gap-3 rounded-md px-1 py-1">
+                <input
+                  v-model="granularity"
+                  type="radio"
+                  :name="`${ids}-granularity`"
+                  value="word"
+                  class="mt-0.5 size-4 shrink-0 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <span class="min-w-0 flex-1">
+                  <span class="flex flex-wrap items-center gap-1.5 text-sm text-foreground">
+                    {{ t('book.detail.files.readAloud.dialog.word') }}
+                    <span
+                      class="inline-flex h-[18px] items-center rounded bg-warning/15 px-1.5 text-[10.5px] font-bold uppercase tracking-wider text-foreground"
+                    >
+                      {{ t('book.detail.files.readAloud.dialog.experimental') }}
                     </span>
-                    <span class="mt-0.5 block text-xs text-muted-foreground">{{ t('book.detail.files.readAloud.dialog.wordHint') }}</span>
                   </span>
-                </label>
-              </div>
-            </fieldset>
-          </div>
+                  <span class="mt-0.5 block text-xs text-muted-foreground">{{ t('book.detail.files.readAloud.dialog.wordHint') }}</span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
 
           <!-- What runs it -->
-          <div class="flex items-start gap-3 rounded-lg border border-border bg-muted/40 p-3.5">
-            <Cpu class="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-            <div class="min-w-0 flex-1 text-xs text-muted-foreground">
-              <p class="text-sm font-medium text-foreground">{{ t('book.detail.files.readAloud.dialog.model', { model: modelName }) }}</p>
-              <p v-if="deviceLine || estimatedSize" class="mt-0.5 flex flex-wrap gap-x-3">
-                <span v-if="deviceLine">{{ deviceLine }}</span>
-                <span v-if="estimatedSize" class="tabular-nums">{{ estimatedSize }}</span>
+          <div class="flex items-start gap-2.5 border-t border-border pt-4 text-xs text-muted-foreground">
+            <Cpu class="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            <div class="min-w-0 flex-1">
+              <p class="flex flex-wrap gap-x-1.5">
+                <span class="font-medium text-foreground">{{ t('book.detail.files.readAloud.dialog.model', { model: modelName }) }}</span>
+                <template v-if="deviceLine">
+                  <span aria-hidden="true">·</span>
+                  <span>{{ deviceLine }}</span>
+                </template>
+                <template v-if="estimatedSize">
+                  <span aria-hidden="true">·</span>
+                  <span class="tabular-nums">{{ estimatedSize }}</span>
+                </template>
               </p>
-              <p class="mt-1.5">{{ t('book.detail.files.readAloud.dialog.processingNote') }}</p>
+              <p class="mt-1">{{ t('book.detail.files.readAloud.dialog.processingNote') }}</p>
             </div>
           </div>
 
