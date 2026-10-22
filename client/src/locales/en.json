@@ -8869,6 +8869,15 @@
         "clientRefused": "Your download client refused an earlier release",
         "clientUnavailable": "Your download client did not answer an earlier release"
       },
+      "clientProblem": {
+        "unavailable": "{client} is not responding",
+        "unavailableUnnamed": "Your download client is not responding",
+        "unavailableHint": "Releases that use it can't be sent until it answers. Check that it is running, then try again.",
+        "refused": "{client} turned down the release",
+        "refusedUnnamed": "Your download client turned down the release",
+        "refusedHint": "Releases that use it can't be sent until this is fixed.",
+        "retry": "Try again"
+      },
       "singleFileNote": "A release can be one book in several formats, an audiobook in parts, or an archive - all of those import as a single book. A release holding several separate books asks you which one to keep.",
       "holdForReview": "Review the download before it is filed",
       "releasePageLabel": "{title}, release page on {indexer}",
