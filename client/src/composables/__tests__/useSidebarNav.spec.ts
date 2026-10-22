@@ -122,7 +122,7 @@ describe('sidebar nav registry', () => {
     expect(resolved.isActive).toBe(true)
   })
 
-  it.each(['manage_libraries', 'library_delete_books'])('shows Tools for the any-of permission %s', (permission) => {
+  it.each(['manage_libraries', 'library_delete_books', 'library_edit_metadata'])('shows Tools for the any-of permission %s', (permission) => {
     expect(allowedIds(makeContext({ permissions: [permission] }))).toContain('tools')
   })
 
@@ -142,8 +142,25 @@ describe('sidebar nav registry', () => {
     expect(resolved.to).toEqual({ name: 'tools-duplicate-books' })
   })
 
+  it('resolves Tools to chapter health when the user can only edit metadata', () => {
+    const context = makeContext({ permissions: ['library_edit_metadata'] })
+
+    const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
+
+    expect(resolved.to).toEqual({ name: 'tools-chapter-health' })
+  })
+
+  it('prefers duplicate books over chapter health when the user can delete books too', () => {
+    const context = makeContext({ permissions: ['library_delete_books', 'library_edit_metadata'] })
+
+    const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
+
+    expect(resolved.to).toEqual({ name: 'tools-duplicate-books' })
+  })
+
   it('marks Tools active on any tools- route', () => {
     expect(entry('tools').isActive(makeRoute('tools-bulk-rename'))).toBe(true)
+    expect(entry('tools').isActive(makeRoute('tools-chapter-health'))).toBe(true)
     expect(entry('tools').isActive(makeRoute('dashboard'))).toBe(false)
   })
 

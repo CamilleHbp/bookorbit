@@ -32,6 +32,17 @@ type Db = NodePgDatabase<typeof schema>;
 export class FileWriteRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
 
+  async recordChapterWriteProvenance(
+    bookId: number,
+    fileId: number,
+    provenance: NonNullable<typeof bookFiles.$inferSelect.chapterWriteProvenance>,
+  ): Promise<void> {
+    await this.db
+      .update(bookFiles)
+      .set({ chapterWriteProvenance: provenance })
+      .where(and(eq(bookFiles.bookId, bookId), eq(bookFiles.id, fileId)));
+  }
+
   async findPrimaryFileForBook(bookId: number) {
     const [row] = await this.db
       .select({

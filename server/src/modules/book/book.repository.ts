@@ -28,6 +28,7 @@ import { SeriesIdentityService } from '../../common/services/series-identity.ser
 import { SeriesMembershipService } from '../../common/services/series-membership.service';
 import { BookQueryBuilder } from './book-query-builder.service';
 import { letterJumpBucketExpr } from './jump-bucket-expr';
+import { preserveOutgoingChapters } from '../../db/preserve-audiobook-revision';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import {
@@ -2362,9 +2363,17 @@ export class BookRepository {
     fields: Partial<typeof bookMetadata.$inferInsert>,
     executor: MetadataUpdateExecutor = this.db,
   ): Promise<void> {
+    if (executor === this.db && Object.prototype.hasOwnProperty.call(fields, 'chapters')) {
+      return this.db.transaction((tx) => this.updateMetadataFields(bookId, fields, tx));
+    }
     const shouldSyncSeries =
       Object.prototype.hasOwnProperty.call(fields, 'seriesName') || Object.prototype.hasOwnProperty.call(fields, 'seriesIndex');
-    const patch = (await this.seriesIdentity?.resolveMetadataPatch(fields, executor)) ?? fields;
+    const patch = await preserveOutgoingChapters(
+      executor,
+      bookId,
+      (await this.seriesIdentity?.resolveMetadataPatch(fields, executor)) ?? fields,
+      fields.chaptersSource !== 'manual',
+    );
     await executor.update(bookMetadata).set(patch).where(eq(bookMetadata.bookId, bookId));
     if (shouldSyncSeries) {
       await this.seriesMemberships?.syncPrimaryFromMetadata(bookId, executor);

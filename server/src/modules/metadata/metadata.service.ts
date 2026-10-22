@@ -1,5 +1,6 @@
 import type { RegexMetadataFields } from '@bookorbit/types';
 import { mergeRegexMetadata } from './regex/merge-regex-metadata';
+import { stat } from 'fs/promises';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -8,6 +9,7 @@ import sharp from 'sharp';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import { mapWithConcurrency } from '../../common/utils/batch.utils';
+import { isFileDerivedChapterSource } from '../../common/utils/audiobook-chapters.utils';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { isKnownPlaceholderCover } from '../../common/utils/placeholder-cover.utils';
 import {
@@ -22,6 +24,7 @@ import { SeriesIdentityService } from '../../common/services/series-identity.ser
 import { SeriesExpectedCountService } from '../../common/services/series-expected-count.service';
 import { SeriesMembershipService } from '../../common/services/series-membership.service';
 import { refreshPrimaryAuthorSortNamesForAuthors, refreshPrimaryAuthorSortNamesForBooks } from '../../db/book-author-sort-key';
+import { AudiobookChaptersService } from '../audiobook-chapters/audiobook-chapters.service';
 import { BookEmbedderService } from '../embedding/book-embedder.service';
 import { BookMetadataLockService } from '../book-metadata-lock/book-metadata-lock.service';
 import { ComicMetadataRepository } from './comic-metadata.repository';
@@ -84,6 +87,7 @@ export class MetadataService {
     private readonly comicMetadataRepository: ComicMetadataRepository,
     private readonly bookMetadataLockService: BookMetadataLockService,
     private readonly coverStore: BookCoverStore,
+    private readonly audiobookChapters: AudiobookChaptersService,
     @Optional() private readonly embedder: BookEmbedderService,
     @Optional() private readonly metadataEvents?: MetadataEventsService,
     @Optional() private readonly seriesIdentity?: SeriesIdentityService,
@@ -218,9 +222,7 @@ export class MetadataService {
     }
 
     if (filtered.audioMetadata?.chapters !== undefined) {
-      updates.push(
-        this.db.update(bookMetadata).set({ chapters: filtered.audioMetadata.chapters, updatedAt: new Date() }).where(eq(bookMetadata.bookId, bookId)),
-      );
+      updates.push(this.audiobookChapters.applyFileChapters(bookId, filtered.audioMetadata.chapters));
     }
 
     if (filtered.audioMetadata?.narrators !== undefined) {
@@ -430,18 +432,36 @@ export class MetadataService {
    * per-file lists into one book-length list.
    *
    * With no file changed this first checks the stored list against the files, so books scanned
-   * before chapters were merged are repaired without re-probing every audiobook on every scan.
+   * before chapters were merged are repaired without re-probing every audiobook on every scan. A
+   * locked list, or one a provider, a migration or a person supplied, is never re-derived that way.
    */
   async extractMergedAudioChapters(bookId: number, absolutePaths: string[], options: { filesChanged: boolean }): Promise<void> {
     const event = 'metadata.merge_audio_chapters';
     const startedAt = Date.now();
     if (absolutePaths.length < 2) return;
+    if (await this.bookMetadataLockService.isFieldLocked(bookId, 'chapters')) return;
     if (!options.filesChanged && (await this.storedChaptersCoverBook(bookId, absolutePaths))) return;
 
+    const hints = await this.audiobookChapters.fileChapterHints(bookId);
+    const byPath = new Map(hints.map((file) => [file.absolutePath, file]));
     const sources: AudioChapterSource[] = [];
     for (const absolutePath of absolutePaths) {
       const { chapters, durationMs } = await probeAudioChapters(absolutePath);
-      sources.push({ absolutePath, chapters, durationMs });
+      const hint = byPath.get(absolutePath);
+      const stamp = hint?.chapterWriteProvenance;
+      const stats = stamp ? await stat(absolutePath) : null;
+      const verified =
+        stamp &&
+        stats &&
+        stamp.sizeBytes === stats.size &&
+        stamp.mtimeMs === stats.mtime.getTime() &&
+        JSON.stringify(stamp.chapters) === JSON.stringify(chapters);
+      sources.push({
+        absolutePath,
+        chapters: verified ? chapters.map((chapter, index) => ({ ...chapter, startMs: stamp.startsMs[index]! })) : chapters,
+        durationMs: hint?.durationSeconds != null ? hint.durationSeconds * 1000 : durationMs === null ? null : Math.round(durationMs / 1000) * 1000,
+        continuation: verified ? stamp.continuation : undefined,
+      });
     }
 
     const merged = mergeAudioChapters(sources);
@@ -463,20 +483,59 @@ export class MetadataService {
     });
     if (filtered.audioMetadata?.chapters === undefined) return;
 
-    await this.db
-      .update(bookMetadata)
-      .set({ chapters: filtered.audioMetadata.chapters, updatedAt: new Date() })
-      .where(eq(bookMetadata.bookId, bookId));
+    const written = await this.audiobookChapters.applyFileChapters(bookId, filtered.audioMetadata.chapters);
 
     this.logger.debug(
-      `[${event}] [end] bookId=${bookId} files=${absolutePaths.length} durationMs=${Date.now() - startedAt} chapters=${merged.length} - merged audio chapters saved`,
+      `[${event}] [end] bookId=${bookId} files=${absolutePaths.length} durationMs=${Date.now() - startedAt} chapters=${merged.length} written=${written} - merged audio chapters saved`,
     );
   }
 
+  /**
+   * The chapters a book's audio files carry right now, merged onto one timeline in the given
+   * playback order. Null when a file's length cannot be read, since every later offset would be wrong.
+   */
+  async readEmbeddedChapters(
+    orderedAudioPaths: readonly string[],
+    bookId?: number,
+    onProgress?: (done: number, total: number) => Promise<void>,
+  ): Promise<AudiobookChapter[] | null> {
+    const hints = bookId === undefined ? [] : await this.audiobookChapters.fileChapterHints(bookId);
+    const byPath = new Map(hints.map((file) => [file.absolutePath, file]));
+    const sources: AudioChapterSource[] = [];
+    await onProgress?.(0, orderedAudioPaths.length);
+    for (const absolutePath of orderedAudioPaths) {
+      const { chapters, durationMs } = await probeAudioChapters(absolutePath);
+      // A failed probe also reads as "no chapters", so a missing or unreadable file would otherwise
+      // pass for a chapterless one and a revert would clear the stored list.
+      if (durationMs === null) return null;
+      const hint = byPath.get(absolutePath);
+      const stamp = hint?.chapterWriteProvenance;
+      const stats = stamp ? await stat(absolutePath) : null;
+      const verified =
+        stamp &&
+        stats &&
+        stamp.sizeBytes === stats.size &&
+        stamp.mtimeMs === stats.mtime.getTime() &&
+        JSON.stringify(stamp.chapters) === JSON.stringify(chapters);
+      sources.push({
+        absolutePath,
+        chapters: verified ? chapters.map((chapter, index) => ({ ...chapter, startMs: stamp.startsMs[index]! })) : chapters,
+        durationMs: hint?.durationSeconds != null ? hint.durationSeconds * 1000 : durationMs === null ? null : Math.round(durationMs / 1000) * 1000,
+        continuation: verified ? stamp.continuation : undefined,
+      });
+      await onProgress?.(sources.length, orderedAudioPaths.length);
+    }
+    return mergeAudioChapters(sources);
+  }
+
   private async storedChaptersCoverBook(bookId: number, orderedAudioPaths: string[]): Promise<boolean> {
-    const [meta] = await this.db.select({ chapters: bookMetadata.chapters }).from(bookMetadata).where(eq(bookMetadata.bookId, bookId)).limit(1);
+    const [meta] = await this.db
+      .select({ chapters: bookMetadata.chapters, source: bookMetadata.chaptersSource })
+      .from(bookMetadata)
+      .where(eq(bookMetadata.bookId, bookId))
+      .limit(1);
     const stored = (meta?.chapters ?? []) as AudiobookChapter[];
-    if (stored.length === 0) return true;
+    if (stored.length === 0 || !isFileDerivedChapterSource(meta?.source)) return true;
 
     const fileRows = await this.db
       .select({ absolutePath: schema.bookFiles.absolutePath, durationSeconds: schema.bookFiles.durationSeconds })
@@ -871,7 +930,6 @@ export class MetadataService {
     if (filtered.audibleId !== undefined) scalarFields.audibleId = filtered.audibleId;
     if (filtered.librofmId !== undefined) scalarFields.librofmId = filtered.librofmId;
     if (filtered.audioMetadata?.durationSeconds !== undefined) scalarFields.durationSeconds = filtered.audioMetadata.durationSeconds;
-    if (filtered.audioMetadata?.chapters !== undefined) scalarFields.chapters = filtered.audioMetadata.chapters;
     if (Object.keys(scalarFields).length > 0) {
       const shouldSyncSeries =
         Object.prototype.hasOwnProperty.call(scalarFields, 'seriesName') || Object.prototype.hasOwnProperty.call(scalarFields, 'seriesIndex');
@@ -892,6 +950,10 @@ export class MetadataService {
 
     if (filtered.audioMetadata?.narrators !== undefined) {
       await this.narratorService.replaceForBook(bookId, filtered.audioMetadata.narrators);
+    }
+
+    if (filtered.audioMetadata?.chapters !== undefined) {
+      await this.audiobookChapters.applyFileChapters(bookId, filtered.audioMetadata.chapters);
     }
 
     this.logger.debug(`[metadata.persist_audio] [end] bookId=${bookId} title="${sanitizeLogValue(data.title ?? '')}" - audio metadata persisted`);

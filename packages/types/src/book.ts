@@ -1,6 +1,6 @@
 import type { BookCommunityRating, MetadataFetchDiagnostics, MetadataProviderKey, MetadataSeriesMembership } from "./metadata-fetch";
 import type { BookMetadataLockField } from "./metadata-lock";
-import type { AudiobookChapter, NarratorRef } from "./audiobook";
+import type { AudiobookChapter, AudiobookChapterSource, NarratorRef } from "./audiobook";
 import type { ComicMetadataFields } from "./metadata-fetch";
 import type { BookFileWriteField, WriteResult } from "./file-write";
 import type { CustomMetadataBookValue } from "./custom-metadata";
@@ -250,6 +250,9 @@ export type AudioMetadata = {
   durationSeconds: number | null;
   abridged: boolean;
   chapters: AudiobookChapter[] | null;
+  chaptersSource?: AudiobookChapterSource | null;
+  /** When the stored chapter list last changed; null for a derived or legacy list. */
+  chaptersUpdatedAt?: string | null;
 };
 
 export type ReadAloudProgressSyncMode = "auto" | "disabled";

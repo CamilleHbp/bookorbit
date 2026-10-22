@@ -2,7 +2,9 @@ import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, Optional }
 import type { BookMetadataFetchReason } from '@bookorbit/types';
 import { MetadataProviderKey, NotificationType, Permission, parseSeriesIndex } from '@bookorbit/types';
 import { NotificationService } from '../notification/notification.service';
+import { chapterProvenance, normalizeAudiobookChapters } from '../../common/utils/audiobook-chapters.utils';
 import { coverFetchInputs, resolveIsAudiobook, type CoverFetchState } from '../../common/utils/book-media.utils';
+import { AudiobookChaptersService } from '../audiobook-chapters/audiobook-chapters.service';
 import { BookCoverStore } from '../book-cover-store/book-cover-store.service';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { normalizePublishedDate, publishedYearFromDateKey } from '../../common/utils/published-date.utils';
@@ -66,6 +68,7 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
     private readonly notificationService: NotificationService,
     private readonly coverStore: BookCoverStore,
     @Optional() private readonly gateway?: BookMetadataFetchGateway,
+    @Optional() private readonly audiobookChapters?: AudiobookChaptersService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -424,7 +427,12 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
     // overwrite an existing true value.
     const abridged = this.asBoolean(filteredResolved.abridged);
     if (abridged !== undefined) scalarFields.abridged = abridged;
-    if (filteredResolved.chapters !== undefined) scalarFields.chapters = filteredResolved.chapters;
+    if (filteredResolved.chapters !== undefined) {
+      const chapters = filteredResolved.chapters.length > 0 ? normalizeAudiobookChapters(filteredResolved.chapters) : null;
+      scalarFields.chapters = chapters;
+      Object.assign(scalarFields, chapterProvenance(chapters, 'provider'));
+      await this.audiobookChapters?.recordCurrentRevision(bookId);
+    }
 
     scalarFields.lastMetadataFetchAt = new Date();
     scalarFields.updatedAt = new Date();

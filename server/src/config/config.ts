@@ -78,6 +78,12 @@ export const readAloudConfig = registerAs('readAloud', () => {
   };
 });
 
+/** External audio tools. The binaries are looked up on PATH unless an absolute path is given. */
+export const audioToolsConfig = registerAs('audioTools', () => ({
+  ffmpegPath: process.env.FFMPEG_PATH?.trim() || 'ffmpeg',
+  ffprobePath: process.env.FFPROBE_PATH?.trim() || 'ffprobe',
+}));
+
 export const emailConfig = registerAs('email', () => ({
   encryptionKey: process.env.EMAIL_ENCRYPTION_KEY ?? '',
 }));

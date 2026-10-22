@@ -3,6 +3,7 @@ import { SelfWriteRegistryModule } from '../../common/self-write-registry.module
 
 import { AchievementModule } from '../achievement/achievement.module';
 import { AppSettingsModule } from '../app-settings/app-settings.module';
+import { AudiobookChaptersModule } from '../audiobook-chapters/audiobook-chapters.module';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { FileWriteModule } from '../file-write/file-write.module';
 import { LibraryModule } from '../library/library.module';
@@ -34,6 +35,7 @@ import { ReadingAttemptController } from './reading-attempt.controller';
 @Module({
   imports: [
     forwardRef(() => LibraryModule),
+    AudiobookChaptersModule,
     BookMetadataLockModule,
     BookCoverStoreModule,
     CustomMetadataModule,

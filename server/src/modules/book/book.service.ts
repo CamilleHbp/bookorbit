@@ -15,7 +15,8 @@ import { mkdtemp, rm, stat, rename } from 'fs/promises';
 import { inArray, type SQL } from 'drizzle-orm';
 
 import { MAX_BOOK_QUERY_OFFSET_ROWS, isBookQueryOffsetWithinLimit } from '../../common/constants/pagination.constants';
-import { compareAudioTracks, coverFetchInputs, resolveIsAudiobook } from '../../common/utils/book-media.utils';
+import { chapterProvenance, normalizeAudiobookChapters, resolveStoredAudiobookChapters } from '../../common/utils/audiobook-chapters.utils';
+import { coverFetchInputs, resolveIsAudiobook } from '../../common/utils/book-media.utils';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { mapWithConcurrency } from '../../common/utils/batch.utils';
 import { SelfWriteRegistry } from '../../common/services/self-write-registry.service';
@@ -54,6 +55,7 @@ import {
 import type {
   AccessLevel,
   AudiobookChapter,
+  AudiobookChapterSource,
   BookCommunityRating,
   BookKoboState,
   BookMetadataRefreshPreviewFields,
@@ -91,7 +93,7 @@ import { MetadataExtractionService } from '../metadata/metadata-extraction.servi
 import { MetadataScoreService } from '../metadata-score/metadata-score.service';
 import { LibraryService } from '../library/library.service';
 import { books } from '../../db/schema';
-import { ExistingMetadataFields, MetadataFetchPipeline, ResolvedMetadataFields } from '../metadata-fetch/metadata-fetch-pipeline';
+import { MetadataFetchPipeline, ResolvedMetadataFields, type ExistingMetadataFields } from '../metadata-fetch/metadata-fetch-pipeline';
 import type { CacheDirective } from '../../common/provider-cache/provider-cache-spec';
 import { splitMetadataIsbn } from '../../common/text-match/isbn-normalize';
 import type { MetadataSearchParams } from '../metadata-fetch/providers/metadata-search-params';
@@ -109,6 +111,7 @@ import { BookMetadataLockService } from '../book-metadata-lock/book-metadata-loc
 import { BookCoverStore } from '../book-cover-store/book-cover-store.service';
 import { selectEmbeddedCoverSources } from '../book-cover-store/cover-sources';
 import { CoverSlotReconciler } from '../metadata/cover-slot-reconciler.service';
+import { AudiobookChaptersService } from '../audiobook-chapters/audiobook-chapters.service';
 import { BookQueryBuilder } from './book-query-builder.service';
 import { AudiobookEbookProgressSyncService } from './audiobook-ebook-progress-sync.service';
 import type { DeliveryArtifact } from './delivery-artifact.service';
@@ -338,6 +341,7 @@ export class BookService {
     @Optional() private readonly deliverySelection?: DeliverySelectionService,
     @Optional() private readonly metadataExtraction?: MetadataExtractionService,
     @Optional() private readonly positionConverter?: PositionConverterService,
+    @Optional() private readonly audiobookChapters?: AudiobookChaptersService,
   ) {
     this.appDataPath = this.config.get<string>('storage.appDataPath')!;
   }
@@ -1810,7 +1814,7 @@ export class BookService {
     id: number,
     dto: UpdateBookMetadataDto,
     user: RequestUser,
-    options: { postSaveMode?: PostMetadataSaveMode } = {},
+    options: { postSaveMode?: PostMetadataSaveMode; chaptersSource?: AudiobookChapterSource } = {},
   ): Promise<MetadataSaveResult> {
     const event = 'book.update_metadata';
     const startedAt = Date.now();
@@ -1820,6 +1824,7 @@ export class BookService {
       await this.bookMetadataLockService.assertManualUpdateAllowed(id, dto);
       const { detail, scalarFieldCount, write, libraryAutoWriteEnabled } = await this.persistMetadataUpdate(id, dto, user, {
         postSaveMode: options.postSaveMode ?? 'schedule',
+        chaptersSource: options.chaptersSource,
       });
       this.logger.log(
         `[${event}] [end] bookId=${id} durationMs=${Date.now() - startedAt} scalarFields=${scalarFieldCount} authorsUpdated=${dto.authors !== undefined} narratorsUpdated=${dto.audioMetadata?.narrators !== undefined} genresUpdated=${dto.genres !== undefined} tagsUpdated=${dto.tags !== undefined} audioMetadataUpdated=${dto.audioMetadata !== undefined} comicMetadataUpdated=${dto.comicMetadata !== undefined} customMetadataUpdated=${dto.customMetadata !== undefined} - metadata update completed`,
@@ -1889,7 +1894,7 @@ export class BookService {
     id: number,
     dto: UpdateBookMetadataDto,
     user: RequestUser,
-    options: { lockedFields?: readonly string[]; postSaveMode?: PostMetadataSaveMode } = {},
+    options: { lockedFields?: readonly string[]; postSaveMode?: PostMetadataSaveMode; chaptersSource?: AudiobookChapterSource } = {},
   ): Promise<{
     detail: BookDetailDto;
     scalarFieldCount: number;
@@ -1940,7 +1945,14 @@ export class BookService {
     if (dto.audioMetadata) {
       if (dto.audioMetadata.durationSeconds !== undefined) scalarFields.durationSeconds = dto.audioMetadata.durationSeconds ?? null;
       if (dto.audioMetadata.abridged !== undefined) scalarFields.abridged = dto.audioMetadata.abridged ?? false;
-      if (dto.audioMetadata.chapters !== undefined) scalarFields.chapters = dto.audioMetadata.chapters ?? null;
+      if (dto.audioMetadata.chapters !== undefined) {
+        // Cleaned rather than rejected: this field shipped without ordering or title rules, and
+        // released clients must keep getting a 200 for a body that used to be accepted.
+        const chapters = dto.audioMetadata.chapters?.length ? normalizeAudiobookChapters(dto.audioMetadata.chapters) : null;
+        scalarFields.chapters = chapters;
+        Object.assign(scalarFields, chapterProvenance(chapters, options.chaptersSource ?? 'manual', user.id));
+        await this.audiobookChapters?.recordCurrentRevision(id);
+      }
     }
 
     const communityRatings = this.normalizeCommunityRatingInputs(dto.communityRatings);
@@ -3104,7 +3116,7 @@ export class BookService {
         // Without these a fill-missing narrators rule saw none and wrote over the book's own narrators
         // and chapters, which the queued fetch never did because it always passed them.
         narrators: narratorRows.map((narrator) => narrator.name),
-        chapters: meta?.chapters,
+        chapters: meta?.chapters ?? undefined,
       };
       if (meta?.lockedFields?.length) existingFields.lockedFields = meta.lockedFields;
       const coverState = await this.coverStore.fetchState(id);
@@ -3169,7 +3181,7 @@ export class BookService {
       const updatedFields = Object.keys(dto).length;
       let detail: BookDetailDto | undefined;
       if (updatedFields > 0) {
-        const saveResult = await this.updateMetadata(id, dto, user, { postSaveMode: 'schedule' });
+        const saveResult = await this.updateMetadata(id, dto, user, { postSaveMode: 'schedule', chaptersSource: 'provider' });
         detail = saveResult.book;
       }
 
@@ -3495,7 +3507,10 @@ export class BookService {
     const customMetadata = await this.customMetadataService.getBookValues(id, book.books.libraryId);
     const hasAudioFiles = fileRows.some((f) => f.format && isAudioFormat(f.format));
     const orderedFileRows = hasAudioFiles ? [...fileRows].sort((a, b) => compareBookFilePaths(a.absolutePath, b.absolutePath)) : fileRows;
-    const resolvedChapters = this.resolveChapters(meta?.chapters as AudiobookChapter[] | null | undefined, orderedFileRows);
+    const storedChapters = meta?.chapters as AudiobookChapter[] | null | undefined;
+    const resolvedChapters = resolveStoredAudiobookChapters(storedChapters, orderedFileRows);
+    const chapters = resolvedChapters ? normalizeAudiobookChapters(resolvedChapters) : null;
+    const hasStoredChapters = (storedChapters?.length ?? 0) > 0;
     const supplementalFields = buildBookDetailSupplementalFields({
       readStatus,
       hasAudioFiles,
@@ -3503,8 +3518,10 @@ export class BookService {
       audioMeta: {
         durationSeconds: meta?.durationSeconds,
         abridged: meta?.abridged,
+        chaptersSource: hasStoredChapters ? (meta?.chaptersSource ?? null) : chapters?.length ? 'tracks' : null,
+        chaptersUpdatedAt: hasStoredChapters ? (meta?.chaptersUpdatedAt ?? null) : null,
       },
-      chapters: resolvedChapters,
+      chapters,
       comicMeta,
       collections: collectionRows,
     });
@@ -3941,27 +3958,5 @@ export class BookService {
     }
 
     await this.scoreService.calculateAndSaveMany(bookIds);
-  }
-
-  private resolveChapters(
-    stored: AudiobookChapter[] | null | undefined,
-    fileRows: { absolutePath: string; format: string | null; durationSeconds: number | null; sortOrder?: number | null }[],
-  ): AudiobookChapter[] | null {
-    if (stored && stored.length > 0) return stored;
-
-    const audioFiles = fileRows.filter((f) => f.format && isAudioFormat(f.format)).sort(compareAudioTracks);
-    if (audioFiles.length < 2) return stored ?? null;
-    // Offsets past a track of unknown length would be wrong; clients fall back to one entry per track.
-    if (audioFiles.some((f) => f.durationSeconds === null || f.durationSeconds <= 0)) return stored ?? null;
-
-    const chapters: AudiobookChapter[] = [];
-    let offsetMs = 0;
-    for (const f of audioFiles) {
-      const nameWithExt = basename(f.absolutePath);
-      const title = nameWithExt.replace(/\.[^.]+$/, '');
-      chapters.push({ title, startMs: offsetMs });
-      offsetMs += Math.round((f.durationSeconds ?? 0) * 1000);
-    }
-    return chapters;
   }
 }

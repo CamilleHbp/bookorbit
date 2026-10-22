@@ -19,6 +19,7 @@ export * from "./book-duplicates";
 export * from "./book-move";
 export * from "./book-selection";
 export * from "./audiobook";
+export * from "./chapter-health";
 export * from "./upload";
 export * from "./media";
 export * from "./collection";

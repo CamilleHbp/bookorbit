@@ -890,6 +890,13 @@
       "when": 1792562395825,
       "tag": "0126_add_read_aloud_job_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1792639172417,
+      "tag": "0127_add_audiobook_chapter_editor",
+      "breakpoints": true
     }
   ]
 }

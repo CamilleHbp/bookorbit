@@ -1173,6 +1173,30 @@ describe('MetadataFetchPipeline', () => {
     expect(resolved.comicMetadata).toEqual({ volumeName: 'Provider Volume' });
   });
 
+  it.each([
+    { name: 'keeps provider chapters for a book with none stored', existing: {}, kept: true },
+    { name: 'keeps provider chapters for a book with an empty list', existing: { chapters: [] }, kept: true },
+    { name: 'drops provider chapters for a book that already has some', existing: { chapters: [{ title: 'Stored', startMs: 0 }] }, kept: false },
+  ])('$name, whatever the merge mode', async ({ existing, kept }) => {
+    const prefs = createPreferences((fields) => {
+      for (const field of ALL_METADATA_FIELDS) fields[field].providers = [MetadataProviderKey.AUDIBLE];
+    });
+    preferencesService.getGlobal.mockResolvedValue(prefs);
+    resolver.resolve.mockReturnValue(prefs);
+    resolver.withForwardCompatibility.mockReturnValue(prefs);
+    registry.all.mockReturnValue([{ key: MetadataProviderKey.AUDIBLE }] as never);
+    const providerChapters = [
+      { title: 'Opening Credits', startMs: 0 },
+      { title: 'Chapter 1', startMs: 30_000 },
+    ];
+    fetchService.searchCandidates.mockImplementation(() => of(candidate(MetadataProviderKey.AUDIBLE, 'B0AUDIBLE', { chapters: providerChapters })));
+
+    for (const options of [undefined, { preserveExisting: true }]) {
+      const { resolved } = await pipeline.runWithSources({ title: 'Dune', isAudiobook: true }, existing, undefined, options);
+      expect(resolved.chapters).toEqual(kept ? providerChapters : undefined);
+    }
+  });
+
   it('passes through comic metadata from the preferred provider', async () => {
     const prefs = createPreferences((fields) => {
       fields.title = {
@@ -2059,7 +2083,7 @@ describe('MetadataFetchPipeline', () => {
       expect(resolved.hardcoverEditionId).toBe('ebook-edition');
     });
 
-    it("keeps a book's own chapters under a fill-missing narrators rule, and replaces them otherwise", async () => {
+    it("keeps a book's own chapters under any narrators rule, and fills a book that has none", async () => {
       const chapters = [{ title: 'From Audnexus', startMs: 0 }];
       register(MetadataProviderKey.AUDNEXUS);
       answer({ [MetadataProviderKey.AUDNEXUS]: { audio: { title: 'Dune', authors: ['Frank Herbert'], chapters } } });
@@ -2074,8 +2098,8 @@ describe('MetadataFetchPipeline', () => {
       usePreferences((preferences) => {
         preferences.fields.narrators = { enabled: true, providers: [MetadataProviderKey.AUDNEXUS], mergeStrategy: 'overwriteIfProvided' };
       });
-      const replaced = await pipeline.runWithSources({ title: 'Dune', isAudiobook: true }, existing, undefined, { coverMedia: AUDIO_ONLY });
-      expect(replaced.resolved.chapters).toEqual(chapters);
+      const overwritten = await pipeline.runWithSources({ title: 'Dune', isAudiobook: true }, existing, undefined, { coverMedia: AUDIO_ONLY });
+      expect(overwritten.resolved.chapters).toBeUndefined();
 
       usePreferences((preferences) => {
         preferences.fields.narrators = { enabled: true, providers: [MetadataProviderKey.AUDNEXUS], mergeStrategy: 'fillMissing' };

@@ -1,5 +1,6 @@
 import type {
   AudiobookChapter,
+  AudiobookChapterSource,
   BookFileWriteStatus,
   BookSeriesMembership,
   BookMetadataLockField,
@@ -35,6 +36,8 @@ export class AudioMetadataDto {
   durationSeconds: number | null;
   abridged: boolean;
   chapters: AudiobookChapter[] | null;
+  chaptersSource: AudiobookChapterSource | null;
+  chaptersUpdatedAt: string | null;
 }
 
 export class BookDetailDto {

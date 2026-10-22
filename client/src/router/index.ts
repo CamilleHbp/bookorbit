@@ -731,6 +731,12 @@ export const routes: RouteRecordRaw[] = [
             meta: { title: () => t('titles.missingResources') },
           },
           {
+            path: 'chapter-health',
+            name: 'tools-chapter-health',
+            component: () => import('@/features/tools/chapter-health/views/ChapterHealthView.vue'),
+            meta: { title: () => t('titles.chapterHealth') },
+          },
+          {
             path: ':pathMatch(.*)*',
             redirect: { name: 'tools-entity-manager' },
           },

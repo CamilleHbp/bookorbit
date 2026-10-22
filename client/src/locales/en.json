@@ -6389,6 +6389,7 @@
         "details": "Details",
         "editMetadata": "Edit Metadata",
         "files": "Files",
+        "chapters": "Chapters",
         "readingLog": "Reading Log",
         "highlights": "Highlights"
       },
@@ -7543,6 +7544,365 @@
           "failed": "Write failed",
           "indexed": "{name} indexed",
           "indexedMany": "{count} {format} files indexed"
+        }
+      },
+      "chapters": {
+        "heading": "Chapters",
+        "untitled": "Untitled book",
+        "untitledChapter": "Untitled chapter",
+        "edit": "Edit chapters",
+        "done": "Done",
+        "protected": "Protected",
+        "unprotected": "Not protected",
+        "protectedHint": "Rescans and metadata refreshes leave these chapters alone.",
+        "unprotectedHint": "A rescan or a metadata refresh can replace these chapters.",
+        "stats": {
+          "chapters": "Chapters",
+          "runtime": "Runtime",
+          "average": "Average"
+        },
+        "source": {
+          "embedded": "Read from the audio files",
+          "tracks": "One chapter per audio file, not saved",
+          "provider": "From fetched metadata",
+          "migration": "Imported from Audiobookshelf",
+          "manual": "Edited in BookOrbit",
+          "manualBy": "Edited by {name} {when}",
+          "none": "No chapters yet"
+        },
+        "youAreHere": "You are here",
+        "playFrom": "Listen from {title}",
+        "selectRow": "Select chapter {index}",
+        "selectedCount": "{count, plural, one {# selected} other {# selected}}",
+        "selectAll": "Select all",
+        "selectNone": "Select none",
+        "removeSelected": "Remove selected",
+        "startOf": "Start of chapter {index}",
+        "titleOf": "Title of chapter {index}",
+        "titlePlaceholder": "Chapter title",
+        "retryOperation": "Retry chapter operation",
+        "operationProgress": "Chapter operation in progress: {done} of {total} files processed.",
+        "createFirst": "Add first chapter",
+        "newChapter": "New chapter",
+        "undo": "Undo",
+        "redo": "Redo",
+        "find": "Find chapters",
+        "toolsMenu": "Tools",
+        "export": "Export",
+        "saved": "Chapters saved",
+        "reload": "Reload",
+        "retry": "Try again",
+        "nudge": {
+          "backSecond": "Move the start back one second",
+          "backTenth": "Move the start back a tenth of a second",
+          "forwardTenth": "Move the start forward a tenth of a second",
+          "forwardSecond": "Move the start forward one second"
+        },
+        "issues": {
+          "emptyTitle": "This chapter needs a title.",
+          "firstNotZero": "The first chapter has to start at 0:00.",
+          "notAscending": "This chapter starts at the same time as the one before it.",
+          "pastEnd": "This chapter starts after the audiobook ends.",
+          "tooShort": "This chapter is under a second long."
+        },
+        "player": {
+          "scrubber": "Preview position",
+          "play": "Play preview",
+          "pause": "Pause preview",
+          "back": "Back 15 seconds",
+          "forward": "Forward 15 seconds"
+        },
+        "history": {
+          "heading": "History",
+          "empty": "Saved versions appear here.",
+          "by": "{source} by {name}",
+          "facts": "{when}: {count, plural, one {# chapter} other {# chapters}}",
+          "source": {
+            "embedded": "From the audio files",
+            "tracks": "One per audio file",
+            "provider": "From fetched metadata",
+            "migration": "From Audiobookshelf",
+            "manual": "Edited"
+          }
+        },
+        "revert": {
+          "action": "Revert to the files' chapters",
+          "title": "Revert to the chapters in the files?",
+          "description": "BookOrbit reads the chapters embedded in the audio files again and stops protecting them from rescans. Unsaved edits are lost. The current list stays in the history.",
+          "confirm": "Revert",
+          "done": "Chapters reverted to the audio files"
+        },
+        "discardDialog": {
+          "title": "Discard chapter edits?",
+          "description": "Your changes to the chapters have not been saved.",
+          "confirm": "Discard"
+        },
+        "save": {
+          "action": "Save chapters",
+          "discard": "Discard",
+          "lock": "Protect from rescans",
+          "lockHint": "Keep these chapters when the files are rescanned or metadata is refreshed.",
+          "unsaved": "Unsaved changes",
+          "unsavedWithWarnings": "{count, plural, one {Unsaved changes, # warning} other {Unsaved changes, # warnings}}",
+          "blocked": "{count, plural, one {Fix # problem to save} other {Fix # problems to save}}",
+          "upToDate": "All changes saved",
+          "short": "Save"
+        },
+        "writeFiles": {
+          "more": "More save options",
+          "saveAndWrite": "Save and write to files",
+          "writeSaved": "Write saved chapters to files",
+          "writing": "Writing chapters into the audio files...",
+          "confirmTitle": "Write chapters into the audio files?",
+          "confirmDescription": "{count, plural, one {This rewrites the book's audio file with these chapters.} other {This rewrites the book's # audio files with these chapters.}} The audio itself is copied unchanged. Anyone streaming the book right now may need to restart it, and phones that already downloaded it keep their copy until it is downloaded again.",
+          "confirm": "Write to files",
+          "done": "{count, plural, one {Chapters written into the audio file.} other {Chapters written into all # audio files.}}",
+          "partial": "Chapters were written into {written} of {total} files. The rest were left as they were.",
+          "reasons": {
+            "libraryDisabled": "Writing to files is off for this library. Turn it on in the library's settings.",
+            "noFiles": "This book has no audio files to write to.",
+            "formatNotSupported": "These audio files cannot hold chapters. Only M4B, M4A and MP3 can.",
+            "formatDisabled": "Writing to audio files is turned off for this library.",
+            "tooLarge": "A file is larger than this library's limit for writing to files."
+          }
+        },
+        "formats": {
+          "cue": "CUE sheet",
+          "ffmetadata": "FFmpeg metadata",
+          "audacity": "Audacity labels",
+          "timestamps": "Timestamped text",
+          "titles": "List of titles",
+          "json": "JSON"
+        },
+        "apply": {
+          "label": "How to use these chapters",
+          "action": "Apply to editor",
+          "replace": "Replace all",
+          "replaceHint": "Use these chapters, titles and times.",
+          "titles": "Titles only",
+          "titlesHint": "Keep your start times and take the titles of matching rows.",
+          "times": "Start times only",
+          "timesHint": "Keep your titles and take the start times of matching rows."
+        },
+        "sources": {
+          "description": "Compare them with the list you are editing, then choose what to take.",
+          "loading": "Reading chapters...",
+          "counts": "{incoming, plural, one {# incoming chapter} other {# incoming chapters}}, {current, plural, one {# in the editor} other {# in the editor}}",
+          "pastEnd": "{count, plural, one {# chapter starts after your audiobook ends.} other {# chapters start after your audiobook ends.}}",
+          "currentColumn": "In the editor",
+          "incomingColumn": "Incoming",
+          "deltaColumn": "Shift (s)",
+          "applied": "Applied to the editor. Save to keep it.",
+          "empty": "No chapters were found here.",
+          "files": {
+            "menu": "From the audio files",
+            "title": "Chapters in the audio files"
+          },
+          "tracks": {
+            "menu": "One per audio file",
+            "title": "One chapter per audio file"
+          },
+          "lookup": {
+            "menu": "From Audible...",
+            "title": "Chapters from Audible",
+            "asin": "ASIN",
+            "region": "Store",
+            "action": "Look up",
+            "hint": "Audible's chapters for that edition. Its timings come from Audible's own recording, so they may need an offset or a stretch to line up with your files."
+          },
+          "toc": {
+            "menu": "From the ebook's contents",
+            "title": "Titles from the ebook"
+          },
+          "readAlong": {
+            "menu": "From the read-along EPUB",
+            "title": "Chapters from the read-along"
+          },
+          "import": {
+            "menu": "Import...",
+            "title": "Import chapters",
+            "pasteLabel": "Paste chapters",
+            "placeholder": "00:00:00 Opening Credits\n00:00:14 Dedication\n00:00:23 Chapter 1",
+            "formats": "Reads CUE sheets, FFmpeg metadata, Audacity labels, Audiobookshelf JSON, timestamped lines, or a plain list of titles.",
+            "read": "Read chapters",
+            "chooseFile": "Choose a file",
+            "unreadable": "No chapters could be read from that.",
+            "tooLarge": "That file is too large to be a chapter list.",
+            "skipped": "{count, plural, one {# line skipped} other {# lines skipped}}",
+            "truncated": "Only the first {count} chapters were read."
+          },
+          "version": {
+            "title": "Saved version",
+            "detail": "Saved {when}",
+            "detailBy": "Saved {when} by {name}"
+          }
+        },
+        "review": {
+          "adjust": "Line up the times",
+          "runtimes": "Source runtime {theirs}, this audiobook {ours} ({difference} s)",
+          "accurate": "Audible marks these timings as exact",
+          "offset": "Offset (s)",
+          "suggestIntro": "Skip Audible's intro ({seconds} s)",
+          "suggestMatch": "Match the first chapters ({seconds} s)",
+          "fitPauses": "Fit to pauses",
+          "fitPausesResult": "Fit to pauses ({seconds} s, {hits} of {total})",
+          "fitPausesNone": "No single offset lines these chapters up with pauses in your audio.",
+          "resetOffset": "Reset",
+          "stretch": "Stretch to fit this audiobook",
+          "stretchHint": "Scales every start time by {factor}, which moves the last chapter by {seconds} s.",
+          "parts": "Part headings",
+          "partsOwn": "Keep as chapters",
+          "partsPrefix": "Add to chapter titles",
+          "partsDrop": "Leave out",
+          "match": "Match rows",
+          "matchTime": "By start time",
+          "matchPosition": "In order",
+          "matched": "{count, plural, one {# row matched} other {# rows matched}}",
+          "include": "Include",
+          "includeRow": "Include {title}",
+          "willReplace": "{count, plural, one {Replaces the list with # chapter} other {Replaces the list with # chapters}}",
+          "willChange": "{count, plural, =0 {Nothing would change} one {# chapter changes} other {# chapters change}}"
+        },
+        "tools": {
+          "apply": "Apply",
+          "changes": "{count, plural, =0 {Nothing would change.} one {# chapter will change.} other {# chapters will change.}}",
+          "scope": {
+            "label": "Apply to",
+            "all": "{count, plural, one {The # chapter} other {All # chapters}}",
+            "selected": "{count, plural, one {The # selected chapter} other {The # selected chapters}}",
+            "fromActive": "Chapter {index} to the end"
+          },
+          "shift": {
+            "title": "Shift times",
+            "description": "Move chapter starts earlier or later by the same amount. A chapter at 0:00 stays there.",
+            "amount": "Seconds",
+            "hint": "Negative moves chapters earlier. Use this when a release has a longer or shorter intro.",
+            "invalid": "Enter a number of seconds, such as 4.04 or -2."
+          },
+          "renumber": {
+            "title": "Renumber titles",
+            "description": "Give chapters numbered titles in order.",
+            "pattern": "Title pattern",
+            "hint": "{'{n}'} is replaced by the number.",
+            "defaultPattern": "Chapter {'{n}'}",
+            "start": "First number",
+            "invalid": "Enter a non-negative whole starting number and padding from 0 to 4.",
+            "padding": "Digits"
+          },
+          "replace": {
+            "title": "Find and replace",
+            "description": "Change text in chapter titles.",
+            "find": "Find",
+            "with": "Replace with",
+            "regex": "Regular expression",
+            "caseSensitive": "Match case",
+            "invalidPattern": "That regular expression is not valid."
+          },
+          "mergeShort": {
+            "title": "Merge short chapters",
+            "description": "Fold chapters shorter than a length into the chapter before them.",
+            "threshold": "Shorter than (seconds)",
+            "invalid": "Enter a number of seconds above 0."
+          },
+          "clean": {
+            "title": "Clean up titles",
+            "nothing": "Titles are already clean.",
+            "done": "{count, plural, one {Cleaned # title} other {Cleaned # titles}}"
+          }
+        },
+        "snap": {
+          "menu": "Snap to pauses...",
+          "title": "Snap to pauses",
+          "description": "Move chapter starts onto the nearest pause in the audio, where the narrator stops between chapters.",
+          "radius": "Look for a pause",
+          "radiusOption": "Within {seconds} s either side",
+          "placement": "Place each start",
+          "placementEnd": "Just before the narrator speaks again",
+          "placementMiddle": "In the middle of the pause",
+          "progressive": "Carry each correction forward",
+          "progressiveHint": "For timings that drift further off as the book goes on: each move also shifts where the next start is looked for.",
+          "run": "Find pauses",
+          "running": "Listening for pauses: {done} of {total}",
+          "progressLabel": "Pause search progress",
+          "stop": "Stop",
+          "back": "Change options",
+          "moved": "{count, plural, one {# chapter moves, by {average} s} other {# chapters move, by {average} s on average and {largest} s at most}}",
+          "nothing": "No chapter needs to move.",
+          "notFound": "{count, plural, one {# found no pause nearby} other {# found no pause nearby}}",
+          "blocked": "{count, plural, one {# stays put to keep the chapters in order} other {# stay put to keep the chapters in order}}",
+          "failed": "{count, plural, one {# could not be heard: its audio did not decode} other {# could not be heard: their audio did not decode}}",
+          "movedOne": "Moved to the pause at {time} ({delta} s).",
+          "notFoundOne": "No pause within {seconds} s of this start.",
+          "blockedOne": "The nearest pause would put this chapter out of order.",
+          "alreadyThere": "This start already sits on a pause."
+        },
+        "waveform": {
+          "label": "Chapter start in the audio",
+          "loading": "Loading the audio around this start...",
+          "failed": "The audio here could not be drawn."
+        },
+        "errors": {
+          "operation": "The chapter operation could not complete. Retry to reconnect or check its status.",
+          "load": "Chapters could not be loaded.",
+          "save": "Chapters could not be saved.",
+          "revert": "Chapters could not be reverted.",
+          "readFiles": "The audio files could not be read.",
+          "lookup": "Audible could not be asked for chapters.",
+          "readEbook": "The ebook could not be read.",
+          "analyze": "The audio could not be analyzed.",
+          "writeFiles": "The chapters could not be written into the files.",
+          "versions": "The chapter history could not be loaded.",
+          "preview": "The preview could not start.",
+          "stale": "Someone else changed these chapters. Reload to see their version; your edits are kept until you do."
+        },
+        "addCutTooClose": "Move the playhead at least a second away from a cut first.",
+        "columns": {
+          "chapter": "Chapter",
+          "inBook": "In the book",
+          "starts": "Starts",
+          "length": "Length",
+          "start": "Start",
+          "title": "Title"
+        },
+        "listen": {
+          "resume": "Resume",
+          "start": "Listen",
+          "progress": "{left} left in chapter · {percent} of the book",
+          "notStarted": "Not started",
+          "left": "{time} left"
+        },
+        "timeline": {
+          "label": "Chapters across the book",
+          "listened": "{percent} of the book listened"
+        },
+        "cut": {
+          "heading": "Cut",
+          "label": "Cut between {previous} and {next}",
+          "firstHeading": "Start of the book",
+          "count": "{index} of {total}",
+          "previous": "Previous cut",
+          "next": "Next cut",
+          "ends": "Ends",
+          "starts": "Starts",
+          "saved": "saved",
+          "backToCut": "Back to the cut",
+          "move": "Move the cut",
+          "playCut": "Play across the cut",
+          "playCutHint": "Play a few seconds either side of the cut (P)",
+          "stop": "Stop",
+          "stopHint": "Stop playing (P)",
+          "snap": "Snap to pause",
+          "onPause": "On a pause",
+          "noPause": "{seconds, plural, one {No pause within # second} other {No pause within # seconds}}",
+          "remove": "Remove cut",
+          "removeHint": "{title} joins {previous}",
+          "first": "The first chapter always starts at 0:00, so it has no cut to move. Pick any other chapter to adjust where it begins.",
+          "announce": "Cut at {time}",
+          "moveHere": "Move cut here",
+          "moveHereHint": "Move this cut to {time} (M)",
+          "moveHereOutside": "Put the playhead inside {previous} or {title} to move this cut there.",
+          "newChapterHere": "New chapter here",
+          "newChapterHereHint": "Start a new chapter at {time}"
         }
       },
       "highlights": {
@@ -10488,7 +10848,20 @@
       "PODCAST_LOCAL_FILE_NOT_REMOVABLE": "This episode is one of your own files, so BookOrbit will not delete it. Remove it from the folder yourself.",
       "PODCAST_LOCAL_MEDIA_MISSING": "The only copy of this episode is no longer on disk, so it cannot be played.",
       "PODCAST_LOCAL_FOLDER_EMPTY": "This folder holds no audio BookOrbit can import, so it cannot become a show.",
-      "PODCAST_STORAGE_FULL": "This podcast library is out of storage. Free some space or raise its quota, then try again. Files that belong to local shows are never removed to make room."
+      "PODCAST_STORAGE_FULL": "This podcast library is out of storage. Free some space or raise its quota, then try again. Files that belong to local shows are never removed to make room.",
+      "CHAPTERS_STALE": "Someone else changed these chapters. Reload to see their version.",
+      "CHAPTERS_EMPTY_TITLE": "Every chapter needs a title.",
+      "CHAPTERS_FIRST_NOT_ZERO": "The first chapter has to start at 0:00.",
+      "CHAPTERS_NOT_ASCENDING": "Chapters have to start in order, each after the one before.",
+      "CHAPTERS_PAST_END": "A chapter starts after the audiobook ends.",
+      "CHAPTERS_FILES_UNREADABLE": "An audio file could not be read, so its chapters are unknown.",
+      "CHAPTERS_LOOKUP_NOT_FOUND": "Audible has no chapters for that ASIN in this store.",
+      "CHAPTERS_LOOKUP_UNAVAILABLE": "Audible did not answer. Try again in a moment.",
+      "CHAPTERS_EBOOK_UNAVAILABLE": "That ebook has no chapter list to read.",
+      "CHAPTERS_ANALYSIS_TOO_LARGE": "That is too much audio to analyze at once.",
+      "CHAPTERS_ANALYSIS_UNAVAILABLE": "Finding pauses needs ffmpeg on the server.",
+      "CHAPTERS_WRITE_UNAVAILABLE": "Chapters can't be written into these files.",
+      "CHAPTERS_NOTHING_TO_WRITE": "There are no saved chapters to write."
     }
   },
   "hardcover": {
@@ -12695,7 +13068,8 @@
       "entityManager": "Entity Manager",
       "bulkRename": "Bulk Rename",
       "duplicateBooks": "Duplicate Books",
-      "missingResources": "Missing Resources"
+      "missingResources": "Missing Resources",
+      "chapterHealth": "Chapter Health"
     },
     "entityTypes": {
       "authors": "Authors",
@@ -13223,6 +13597,68 @@
         "list": "Could not load these entries.",
         "clean": "Cleanup failed."
       }
+    },
+    "chapterHealth": {
+      "accessDenied": "You need permission to edit metadata to use this tool.",
+      "untitled": "Untitled book",
+      "categoriesLabel": "Chapter problems",
+      "categories": {
+        "no_chapters": "No chapters",
+        "one_per_file": "One per file",
+        "numbered_tracks": "Numbered tracks",
+        "needs_review": "Needs review",
+        "edited": "Edited"
+      },
+      "hints": {
+        "no_chapters": "Audiobooks in a single file with one chapter or none.",
+        "one_per_file": "Audiobooks in several files with no chapters of their own, so each file plays as a chapter.",
+        "numbered_tracks": "Chapters named like files or tracks, such as \"001\" or \"Track 03\", rather than chapters.",
+        "needs_review": "Audible lookups that did not match your files well enough to apply on their own. Review opens the book's chapters with the lookup ready.",
+        "edited": "Chapter lists a person has edited, shown for reference."
+      },
+      "library": "Library",
+      "allLibraries": "All libraries",
+      "found": "{count, plural, =0 {No books here} one {# book} other {# books}}",
+      "emptyTitle": "Nothing here",
+      "clearSelection": "Clear selection",
+      "row": {
+        "select": "Select {title}",
+        "facts": "{files, plural, one {# file} other {# files}}; {chapters, plural, =0 {no chapters} one {# chapter} other {# chapters}}; {library}",
+        "files": "{count, plural, one {# file} other {# files}}",
+        "chapters": "{count, plural, =0 {no chapters} one {# chapter} other {# chapters}}",
+        "noAsin": "No ASIN",
+        "review": "Review",
+        "dismiss": "Dismiss"
+      },
+      "reasons": {
+        "runtime_mismatch": "Audible's runtime differs from your files by {seconds} s.",
+        "runtime_mismatch_long": "Audible's runtime differs from your files by {duration}, so it is probably a different edition.",
+        "runtime_unknown": "Audible does not list a runtime for this book, so its timings could not be checked against your files.",
+        "not_exact": "Audible does not mark these timings as exact.",
+        "implausible": "Audible's list does not look like chapters for this book.",
+        "unknown_length": "This book's length is unknown.",
+        "locked": "This book's chapters are protected, so nothing was replaced."
+      },
+      "lookup": {
+        "title": "Find chapters on Audible",
+        "description": "Looks up each book that has an Audible ASIN. When Audible marks its timings exact and its runtime matches your files, the chapters are applied and protected, and the old list stays in the book's history. Everything else waits under Needs review.",
+        "lookUpCategory": "{count, plural, =0 {No book here has an ASIN} one {Look up the # book with an ASIN} other {Look up the # books with an ASIN}}",
+        "lookUpSelected": "{count, plural, one {Look up # selected book} other {Look up # selected books}}",
+        "waiting": "{count, plural, =0 {Finishing up} one {# book waiting} other {# books waiting}}",
+        "current": "Looking up {title}",
+        "idle": "No lookups waiting.",
+        "finished": "Finished: {applied} applied, {review} to review, {notFound} not found, {failed} failed",
+        "stop": "Stop",
+        "clear": "Clear",
+        "queued": "{count, plural, =0 {No book was queued} one {# book queued} other {# books queued}}",
+        "queuedWithSkipped": "{count, plural, =0 {No book was queued} one {# book queued} other {# books queued}}; {skipped, plural, one {# had no ASIN} other {# had no ASIN}}"
+      },
+      "errors": {
+        "load": "Chapter health could not be loaded.",
+        "enqueue": "The lookups could not be queued.",
+        "cancel": "The lookups could not be changed.",
+        "dismiss": "The review could not be dismissed."
+      }
     }
   },
   "views": {
@@ -13279,6 +13715,7 @@
         "editMetadata": "Edit Metadata · {base}",
         "edit": "Edit · {base}",
         "files": "Files · {base}",
+        "chapters": "Chapters · {base}",
         "readingLog": "Reading Log · {base}",
         "highlights": "Highlights · {base}"
       }
@@ -14359,7 +14796,8 @@
     "bookRequests": "Requests",
     "bookRequestDetail": "Request",
     "bookRequestReleases": "Pick a release",
-    "tts": "Text-to-Speech"
+    "tts": "Text-to-Speech",
+    "chapterHealth": "Chapter Health"
   },
   "tts": {
     "readerControls": {

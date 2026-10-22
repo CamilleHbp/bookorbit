@@ -844,15 +844,15 @@ export class MetadataFetchPipeline {
       }
     }
 
-    // Pass through chapters from the first candidate that has them, using the narrators field's
-    // provider order as the authority for audiobook data, and its merge strategy too: a fill-missing
-    // rule keeps the chapters a book already has, as it keeps its narrators.
-    const narratorPreference = preferences.fields['narrators'];
-    const chapterProviders = [...(narratorPreference?.providers ?? []), ...identifying.keys()];
-    const chaptersFillOnly = options?.preserveExisting === true || narratorPreference?.mergeStrategy === 'fillMissing';
+    // Pass through chapters from the first candidate that has them, using the
+    // narrators field's provider preference order as the authority for audiobook data. A fetch only
+    // fills a book that has none: a provider's chapters time a release the files may not be, so
+    // replacing a list is the chapter editor's job, where the person reviews it first.
+    const narratorProviders = preferences.fields['narrators']?.providers ?? [];
+    const chapterProviders = [...narratorProviders, ...identifying.keys()];
     for (const providerKey of chapterProviders) {
       const candidate = identifying.get(providerKey);
-      if (candidate?.chapters?.length && (!chaptersFillOnly || this.isMissing(existing.chapters))) {
+      if (candidate?.chapters?.length && this.isMissing(existing.chapters)) {
         result.chapters = candidate.chapters;
         break;
       }

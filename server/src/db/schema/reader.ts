@@ -427,6 +427,22 @@ export const audiobookProgress = pgTable(
 export type AudiobookProgress = typeof audiobookProgress.$inferSelect;
 export type NewAudiobookProgress = typeof audiobookProgress.$inferInsert;
 
+// Manifest revisions a client may still hold, keyed to the track layout they describe. A playback
+// write naming an older revision is accepted when its positions key matches today's, because the
+// change (chapters, tags) did not move any audio. Released iOS never recovers from a 412.
+export const audiobookManifestRevisions = pgTable(
+  'audiobook_manifest_revisions',
+  {
+    bookId: integer('book_id')
+      .notNull()
+      .references(() => books.id, { onDelete: 'cascade' }),
+    revision: varchar('revision', { length: 64 }).notNull(),
+    positionsKey: varchar('positions_key', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.bookId, t.revision] }), index('amr_book_created_idx').on(t.bookId, t.createdAt)],
+);
+
 export type BookmarkOrigin = 'web' | 'koreader' | 'kobo';
 
 export const userBookReadAloudSyncSettings = pgTable(

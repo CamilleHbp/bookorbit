@@ -155,9 +155,15 @@ export const SIDEBAR_NAV_REGISTRY: readonly SidebarNavEntry[] = [
     icon: Wrench,
     zone: 'primary',
     modes: ['books'],
-    to: (context) => ({ name: context.hasPermission('manage_libraries') ? 'tools-entity-manager' : 'tools-duplicate-books' }),
+    to: (context) => ({
+      name: context.hasPermission('manage_libraries')
+        ? 'tools-entity-manager'
+        : context.hasPermission('library_delete_books')
+          ? 'tools-duplicate-books'
+          : 'tools-chapter-health',
+    }),
     isActive: (route) => routeNameStartsWith(route, 'tools-'),
-    permission: ['manage_libraries', 'library_delete_books'],
+    permission: ['manage_libraries', 'library_delete_books', 'library_edit_metadata'],
   },
   {
     id: 'podcast-queue',
