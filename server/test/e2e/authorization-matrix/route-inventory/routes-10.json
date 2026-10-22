@@ -1210,5 +1210,41 @@
     "isPublic": false,
     "allowDefault": false,
     "useGuards": []
+  },
+  {
+    "file": "server/src/modules/book/reading-progress.controller.ts",
+    "className": "ReadingProgressController",
+    "methodName": "list",
+    "httpMethod": "GET",
+    "path": "/reading-progress",
+    "permissions": [],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/book/reading-progress.controller.ts",
+    "className": "ReadingProgressController",
+    "methodName": "save",
+    "httpMethod": "PUT",
+    "path": "/reading-progress",
+    "permissions": [],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/book/reading-progress.controller.ts",
+    "className": "ReadingProgressController",
+    "methodName": "clear",
+    "httpMethod": "DELETE",
+    "path": "/reading-progress/:fileId",
+    "permissions": [],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
   }
 ]

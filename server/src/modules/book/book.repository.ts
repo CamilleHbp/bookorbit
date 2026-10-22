@@ -1700,6 +1700,9 @@ export class BookRepository {
         koboLocationValue: readingProgress.koboLocationValue,
         koboContentSourceProgressPercent: readingProgress.koboContentSourceProgressPercent,
         koreaderProgress: readingProgress.koreaderProgress,
+        narrationPercentage: readingProgress.narrationPercentage,
+        narrationUpdatedAt: readingProgress.narrationUpdatedAt,
+        textUpdatedAt: readingProgress.textUpdatedAt,
         updatedAt: readingProgress.updatedAt,
         lastReadAt: readingProgress.lastReadAt,
       })

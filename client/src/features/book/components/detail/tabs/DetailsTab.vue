@@ -51,6 +51,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/api'
+import { clearReadingProgress, fetchBookProgress } from '@/lib/reading-progress'
 import { useAuth } from '@/features/auth/composables/useAuth'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useLibraryPermissions } from '@/features/library/composables/useLibraryPermissions'
@@ -1135,9 +1136,7 @@ async function handleResetFileProgress(row: EditionProgress) {
   setFileResetting(fileId, true)
   try {
     const res =
-      fileId < 0
-        ? await api(`/api/v1/audiobooks/${props.book.id}/playback-state`, { method: 'DELETE' })
-        : await api(`/api/v1/books/files/${fileId}/progress`, { method: 'DELETE' })
+      fileId < 0 ? await api(`/api/v1/audiobooks/${props.book.id}/playback-state`, { method: 'DELETE' }) : await clearReadingProgress(fileId)
     if (!res.ok) throw new Error('Failed to reset file progress')
     await loadSupplemental()
   } finally {
@@ -1152,7 +1151,7 @@ async function loadSupplemental() {
   supplementalLoading.value = true
   const hasAudio = props.book.files.some((f) => f.format && FORMAT_TO_GROUP[f.format] === 'audio')
   try {
-    const progressPromise = api(`/api/v1/books/${props.book.id}/progress`).catch(() => null)
+    const progressPromise = fetchBookProgress(props.book.id).catch(() => null)
     const audioProgressPromise = hasAudio ? api(`/api/v1/audiobooks/${props.book.id}/playback-state`).catch(() => null) : Promise.resolve(null)
     const collectionsPromise = api('/api/v1/collections/membership', {
       method: 'POST',
@@ -1162,7 +1161,7 @@ async function loadSupplemental() {
     const koboPromise = canViewKobo.value ? api(`/api/v1/books/${props.book.id}/kobo-state`) : Promise.resolve(null)
     const koreaderProgressPromise = canViewKoreader.value ? fetchKoreaderProgress(props.book.id) : Promise.resolve()
 
-    const [progressRes, audioProgressRes, collectionsRes, koboRes] = await Promise.all([
+    const [fetchedProgressRows, audioProgressRes, collectionsRes, koboRes] = await Promise.all([
       progressPromise,
       audioProgressPromise,
       collectionsPromise,
@@ -1172,7 +1171,7 @@ async function loadSupplemental() {
 
     if (requestId !== supplementalRequestId) return
 
-    const progressRows: FileProgressRow[] = progressRes && progressRes.ok ? ((await progressRes.json()) as FileProgressRow[]) : []
+    const progressRows: FileProgressRow[] = fetchedProgressRows ?? []
     const progressMap: Record<number, FileProgress> = {}
     for (const row of progressRows) {
       if (!Number.isFinite(row.fileId)) continue

@@ -74,6 +74,7 @@ export * from "./dictionary";
 export * from "./achievement";
 export * from "./activity";
 export * from "./reading-history";
+export * from "./reading-progress";
 export * from "./reading-session";
 export * from "./reading-session-source-bucket";
 export * from "./shared-reading-insights";

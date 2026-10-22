@@ -46,6 +46,11 @@ export const SERVER_FEATURES = [
    * `/:attemptId/marks` and `PATCH /:attemptId/rating`.
    */
   "reading-history",
+  /**
+   * `GET`/`PUT /reading-progress` and `DELETE /reading-progress/:fileId`: positions grouped by
+   * kind, several files saved in one request, and `editedAt` so the newer of two saves wins.
+   */
+  "reading-progress",
 ] as const;
 
 export type ServerFeature = (typeof SERVER_FEATURES)[number];

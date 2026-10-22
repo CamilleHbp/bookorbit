@@ -199,6 +199,7 @@ describe('DetailsTab cover surface', () => {
         })
       }
       if (url.includes('/koreader/books/')) return response(null)
+      if (url.startsWith('/api/v1/reading-progress')) return response({ items: [] })
       if (url.includes('/progress')) return response([])
       return response({})
     })
@@ -531,6 +532,7 @@ describe('DetailsTab cover surface', () => {
         })
       }
       if (url.includes('/koreader/books/')) return response(null)
+      if (url.startsWith('/api/v1/reading-progress')) return response({ items: [] })
       if (url.includes('/progress')) return response([])
       return response({})
     })
@@ -697,6 +699,7 @@ describe('DetailsTab cover surface', () => {
         return response({ eligibleForKoboSync: false, syncCollections: [], readingState: null, snapshots: [] })
       }
       if (url.includes('/koreader/books/')) return response(null)
+      if (url.startsWith('/api/v1/reading-progress')) return response({ items: [] })
       if (url.includes('/progress')) return response([])
       return response({})
     })
@@ -705,7 +708,7 @@ describe('DetailsTab cover surface', () => {
     await flushPromises()
 
     expect(mocks.api).toHaveBeenNthCalledWith(1, '/api/v1/books/12/reset-reading-state', { method: 'POST' })
-    expect(mocks.api).toHaveBeenCalledWith('/api/v1/books/12/progress')
+    expect(mocks.api).toHaveBeenCalledWith('/api/v1/reading-progress?bookId=12')
     expect(mocks.api).toHaveBeenCalledWith('/api/v1/books/12/kobo-state')
     expect(mocks.api).toHaveBeenCalledWith('/api/v1/koreader/books/12/progress')
     expect(wrapper.emitted('saved')).toEqual([
@@ -795,6 +798,7 @@ describe('DetailsTab cover surface', () => {
       if (url.includes('/collections/membership')) return response([])
       if (url.includes('/kobo-state')) return response({ eligibleForKoboSync: false, syncCollections: [], readingState: null, snapshots: [] })
       if (url.includes('/koreader/books/')) return response(null)
+      if (url.startsWith('/api/v1/reading-progress')) return response({ items: [] })
       if (url.includes('/progress')) return response([])
       return response({})
     })
@@ -897,6 +901,7 @@ describe('DetailsTab cover surface', () => {
       if (url.includes('/collections/membership')) return response([])
       if (url.includes('/kobo-state')) return response({ eligibleForKoboSync: false, syncCollections: [], readingState: null, snapshots: [] })
       if (url.includes('/koreader/books/')) return response(null)
+      if (url.startsWith('/api/v1/reading-progress')) return response({ items: [] })
       if (url.includes('/progress')) return response([])
       return response({})
     })
