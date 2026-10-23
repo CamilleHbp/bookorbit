@@ -1100,12 +1100,14 @@ function Decor.badge(ctx, w, hh)
                 local dia = math.min(ih, round(iw * 0.36))
                 local tw = iw - dia - px(14)
                 if tw < px(110) then return skip("no room for words") end
+                -- The badge's name steps down to 12 before it is cut.
+                local name_s = BoardUI.fitSize(b.name, { s = v[1], b = true }, tw, 12)
                 return padded(w, hh, {
                     hstack({ w = iw, h = ih, gap = px(14) }, {
                         medal(dia, b, earned),
                         vstack({ w = tw }, {
                             v[4] and text(label, { s = 12, col = INK.g4, w = tw }) or false,
-                            text(b.name, { s = v[1], b = true, w = tw, data = true }),
+                            text(b.name, { s = name_s, b = true, w = tw, data = true }),
                             v[2] > 0 and text(b.desc, { s = 12, col = INK.g4, w = tw, lines = v[2], data = true }) or false,
                             space(nil, px(4)),
                             progressRuns(12),
@@ -1122,11 +1124,12 @@ function Decor.badge(ctx, w, hh)
             local dia = math.min(iw, ih - cap_h)
             if dia < px(44) and with_name then return skip("medal too small") end
             dia = math.max(1, dia)
+            local name_s = BoardUI.fitSize(b.name, { s = 12, b = true }, iw, 10)
             return padded(w, hh, {
                 flex(0),
                 medal(dia, b, earned),
                 with_name and space(nil, px(6)) or false,
-                with_name and text(b.name, { s = 12, b = true, w = iw, align = "center", data = true }) or false,
+                with_name and text(b.name, { s = name_s, b = true, w = iw, align = "center", data = true }) or false,
                 with_name and hstack({ w = iw }, { flex(0), progressRuns(12), flex(0) }) or false,
                 flex(0),
             }, "center")

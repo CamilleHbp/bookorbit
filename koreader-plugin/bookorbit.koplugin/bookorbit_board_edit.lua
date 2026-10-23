@@ -128,29 +128,40 @@ end
 function BoardEdit:boardGeometry()
     local m = BoardMetrics.get()
     local _top, bottom = self:menuChromeHeight()
-    return BoardLayout.geometry(px, self.inner_dimen.w, self.inner_dimen.h - bottom, m.W)
+    return BoardLayout.geometry(px, self.inner_dimen.w, self.inner_dimen.h - bottom, m.LW)
 end
 
 -- The pages being edited, as they are currently drawn: the reader's own or
 -- the starter layout, fitted to this screen. A saved page that no longer fits
--- (a larger font, a shelf grown to two rows) is edited as shown, never as an
--- overfull grid the editor could not change.
+-- (a larger interface size, a shelf grown to two rows) is edited as shown,
+-- never as an overfull grid the editor could not change; the widgets it has
+-- no room for are kept aside as hidden.
 function BoardEdit:boardEditablePages(g)
     local pages = self:boardPages(g.cols)
     local out = {}
     for index = 1, BoardStore.PAGE_COUNT do
         local page = pages[index] or { base = {} }
-        local items = {}
+        local items, hidden = {}, {}
         local packed = BoardLayout.fitPage(g, page.base, page.extras)
         for _i, it in ipairs(packed.placed) do table.insert(items, copyItem(it)) end
-        out[index] = { id = page.id, items = items }
+        for _i, it in ipairs(packed.dropped) do table.insert(hidden, copyItem(it)) end
+        out[index] = { id = page.id, items = items, hidden = hidden }
     end
     return out
 end
 
+-- Hidden widgets are saved after the ones on screen, so a smaller interface
+-- size shows them again.
 function BoardEdit:boardSavePages(g, pages)
     local m = BoardMetrics.get()
-    self:persistSetting(BoardStore.SETTING_KEY, BoardStore.withCustomPages(self.settings, g.cols, pages, m.w > m.h))
+    local saved = {}
+    for index, page in ipairs(pages) do
+        local items = {}
+        for _i, it in ipairs(page.items or {}) do table.insert(items, it) end
+        for _i, it in ipairs(page.hidden or {}) do table.insert(items, it) end
+        saved[index] = { id = page.id, items = items }
+    end
+    self:persistSetting(BoardStore.SETTING_KEY, BoardStore.withCustomPages(self.settings, g.cols, saved, m.w > m.h))
 end
 
 function BoardEdit:boardPageFits(g, items)

@@ -220,7 +220,7 @@ local function body(page, w)
     if page.sync and page.sync.err then
         outcome = hstack({ w = w, gap = px(6) }, {
             icon("triangle-alert", px(16), { sw = 2.25 }),
-            text(T(_("Could not sync: %1"), page.sync.err), { s = 13, b = true, w = w - px(22), data = true }),
+            text(T(_("Could not sync: %1"), page.sync.err), { s = 13, b = true, w = w - px(16) - px(6), data = true }),
         })
     end
 
@@ -256,7 +256,7 @@ end
 
 local function build(page, sw, sh)
     local mx = MenuUI.mx()
-    local wide = BoardMetrics.get().W >= 700
+    local wide = BoardMetrics.layoutW() >= 700
     local panel_w = wide and math.min(px(520), sw - 2 * mx) or sw
     local pad = wide and px(20) or mx
     local w = panel_w - 2 * pad

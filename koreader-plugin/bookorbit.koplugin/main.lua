@@ -16,9 +16,8 @@ kosync mirror) and bookorbit_updater (self-update checks and apply).
 
 local Device = require("device")
 local Dispatcher = require("dispatcher")
-local InfoMessage = require("ui/widget/infomessage")
 local NetworkMgr = require("ui/network/manager")
-local Notification = require("ui/widget/notification")
+local Toast = setmetatable({}, { __index = function(_t, key) return require("bookorbit_toast")[key] end })
 local PluginShare = require("pluginshare")
 local Trapper = require("ui/trapper")
 local UIManager = require("ui/uimanager")
@@ -52,7 +51,7 @@ local BookOrbitSidecar = require("bookorbit_sidecar")
 local BookOrbitSweep = require("bookorbit_sweep")
 local BookOrbitUpdater = require("bookorbit_updater")
 
-local PLUGIN_VERSION = "2.0.0"
+local PLUGIN_VERSION = "2.1.0"
 
 local SYNC_STRATEGY = {
     PROMPT = 1,
@@ -251,10 +250,7 @@ function BookOrbit:applyProvision()
         G_reader_settings:flush()
         logger.info("BookOrbit: applied provision file for", provision.username)
         UIManager:nextTick(function()
-            UIManager:show(InfoMessage:new{
-                text = T(_("BookOrbit sync is set up for %1 as %2."), provision.server_url, provision.username),
-                timeout = 5,
-            })
+            Toast.show(T(_("BookOrbit is set up as %1"), provision.username), { timeout = 5 })
         end)
     end
     os.remove(provision_path)
@@ -392,7 +388,7 @@ function BookOrbit:recordLifecycleOutboxError(err)
         message = _("Lifecycle sync storage is full. Open BookOrbit diagnostics and reconnect before closing more books.")
     end
     self:recordSyncError("lifecycle_outbox", "outbox_persistence", message)
-    Notification:notify(message)
+    require("bookorbit_dialog_ui").notice{ title = _("BookOrbit could not save a sync"), text = message }
 end
 
 function BookOrbit:enqueueLifecycleSnapshot(snap, reason)
@@ -407,7 +403,7 @@ function BookOrbit:enqueueLifecycleSnapshot(snap, reason)
     if status_or_err and status_or_err.soft_limit then
         local message = _("BookOrbit has many pending lifecycle syncs. Reconnect soon to drain them.")
         self:recordSyncError("lifecycle_outbox", "outbox_persistence", message)
-        Notification:notify(message)
+        Toast.error(_("Many syncs are waiting. Reconnect soon"))
     end
     return entry
 end
@@ -654,7 +650,7 @@ function BookOrbit:submitSyncJob(job)
         if job.on_queued then
             job.on_queued()
         else
-            UIManager:show(InfoMessage:new{ text = _("BookOrbit sync queued."), timeout = 2 })
+            Toast.show(_("BookOrbit sync queued"), { icon = "hourglass" })
         end
     end
     return result
@@ -888,13 +884,13 @@ function BookOrbit:requestManualBookSync(snap, opts)
             local function run_book_sync(skip_progress, after_sync)
                 local latest_snap = BookOrbitBookSync.capture(self)
                 if not latest_snap then
-                    UIManager:show(InfoMessage:new{ text = _("Could not read this book's data."), timeout = 2 })
+                    Toast.error(_("Could not read this book's data"))
                     done()
                     finished("capture")
                     return
                 end
                 if latest_snap.digest ~= snap.digest then
-                    UIManager:show(InfoMessage:new{ text = _("The open book changed. Start the sync again."), timeout = 3 })
+                    Toast.error(_("The open book changed. Sync again"))
                     done()
                     finished("changed")
                     return
@@ -959,10 +955,7 @@ function BookOrbit:maybeAutoOpenCatalog(mode)
 end
 
 local function promptLogin()
-    UIManager:show(InfoMessage:new{
-        text = _("Please configure the BookOrbit server and login first."),
-        timeout = 3,
-    })
+    Toast.error(_("Sign in to BookOrbit first"))
 end
 
 -- Signed out, anything that needs the server opens the sign-in page.
@@ -1189,12 +1182,10 @@ function BookOrbit:exchangeAnnotationsForOpenBook(reason, retry_count)
 
     self:recordHighlightSync(summary, error_code)
     if BookOrbitHighlightSummary.hasRemoteChanges(summary) then
-        Notification:notify(T(_("BookOrbit: %1 highlight(s) updated"),
-            summary.applied + summary.deleted))
+        Toast.show(T(_("%1 highlight(s) updated"), summary.applied + summary.deleted))
     end
     if BookOrbitHighlightSummary.hasRemoteBookmarkChanges(summary) then
-        Notification:notify(T(_("BookOrbit: %1 bookmark(s) updated"),
-            summary.bm_applied + summary.bm_deleted))
+        Toast.show(T(_("%1 bookmark(s) updated"), summary.bm_applied + summary.bm_deleted))
     end
     if ok and result then
         if reason == "annotation_open" and (summary.failed or 0) > 0 then
@@ -1277,13 +1268,13 @@ function BookOrbit:onBookOrbitSyncBook(opts)
         return
     end
     if not self.ui or not self.ui.document then
-        UIManager:show(InfoMessage:new{ text = _("No reader book is open."), timeout = 2 })
+        Toast.error(_("No book is open"))
         return
     end
 
     local snap = BookOrbitBookSync.capture(self)
     if not snap then
-        UIManager:show(InfoMessage:new{ text = _("Could not read this book's data."), timeout = 2 })
+        Toast.error(_("Could not read this book's data"))
         return
     end
 
@@ -1424,9 +1415,10 @@ function BookOrbit:onBookOrbitToggleAutoSync(toggle, from_menu, quiet)
     if not self.settings.auto_sync
             and Device:hasSeamlessWifiToggle()
             and G_reader_settings:readSetting("wifi_enable_action") ~= "turn_on" then
-        UIManager:show(InfoMessage:new{
-            text = _("Auto sync needs KOReader to turn Wi-Fi on without asking. Open Network settings, set 'Action when Wi-Fi is off' to 'Turn on', then enable Auto sync again."),
-        })
+        require("bookorbit_dialog_ui").notice{
+            title = _("Auto sync needs Wi-Fi to turn on by itself"),
+            text = _("Open KOReader's Network settings, set 'Action when Wi-Fi is off' to 'Turn on', then turn Auto sync on again."),
+        }
         return true
     end
     self.settings.auto_sync = not self.settings.auto_sync
@@ -1445,7 +1437,7 @@ function BookOrbit:onBookOrbitToggleAutoSync(toggle, from_menu, quiet)
     end
 
     if not from_menu then
-        Notification:notify(self.settings.auto_sync and _("BookOrbit auto progress sync: on") or _("BookOrbit auto progress sync: off"))
+        Toast.show(self.settings.auto_sync and _("Auto sync on") or _("Auto sync off"))
     end
     return true
 end

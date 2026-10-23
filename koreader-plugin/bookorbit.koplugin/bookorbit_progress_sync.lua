@@ -9,7 +9,6 @@ regular methods.
 
 local Device = require("device")
 local Event = require("ui/event")
-local InfoMessage = require("ui/widget/infomessage")
 local Math = require("optmath")
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
@@ -170,11 +169,11 @@ end
 
 function ProgressSync:reconcileProgressBeforeBookSync(digest, on_done)
     if not self.ui or not self.ui.document then
-        UIManager:show(InfoMessage:new{ text = _("No reader book is open."), timeout = 2 })
+        Toast.error(_("No book is open"))
         return false
     end
     if self:getDocumentDigest() ~= digest then
-        UIManager:show(InfoMessage:new{ text = _("The open book changed. Start the sync again."), timeout = 3 })
+        Toast.error(_("The open book changed. Sync again"))
         return false
     end
 
@@ -273,7 +272,7 @@ function ProgressSync:updateProgress(ensure_networking, interactive, on_suspend)
     end
     if not self.ui or not self.ui.document then
         if interactive then
-            UIManager:show(InfoMessage:new{ text = _("No reader book is open."), timeout = 2 })
+            Toast.error(_("No book is open"))
         end
         return
     end
@@ -349,7 +348,7 @@ function ProgressSync:getProgress(ensure_networking, interactive)
     end
     if not self.ui or not self.ui.document then
         if interactive then
-            UIManager:show(InfoMessage:new{ text = _("No reader book is open."), timeout = 2 })
+            Toast.error(_("No book is open"))
         end
         return
     end

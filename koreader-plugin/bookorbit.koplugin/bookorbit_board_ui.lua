@@ -176,6 +176,21 @@ function BoardUI.text(str, o)
     return LeftContainer:new{ dimen = dimen, tw }
 end
 
+-- The largest size from o.s down to min_s at which str fits one line of w,
+-- so a label in a narrow column steps down before it is cut.
+function BoardUI.fitSize(str, o, w, min_s)
+    local size = o.s or 14
+    local face_kind = faceKind(o)
+    while size > (min_s or size) do
+        local tw = TextWidget:new{ text = BD.auto(tostring(str or "")), face = BoardMetrics.face(size, face_kind), bold = o.b == true, padding = 0 }
+        local fits = tw:getSize().w <= w
+        tw:free()
+        if fits then break end
+        size = size - 1
+    end
+    return size
+end
+
 -- The largest of `sizes` at which `str` fits in max_lines lines and max_h
 -- pixels, with the line count it takes there.
 local fit_title_cache, fit_title_count = {}, 0
@@ -191,8 +206,20 @@ function BoardUI.fitTitle(str, o, width, sizes, max_lines, max_h)
     return { s = result.s, lines = result.lines }
 end
 
+-- The widest single word of str at size s: a box narrower than it breaks
+-- the word across lines.
+local function widestWord(str, o, s)
+    local widest = 0
+    for word in tostring(str or ""):gmatch("%S+") do
+        local tw = TextWidget:new{ text = BD.auto(word), face = BoardMetrics.face(s, faceKind(o or {})), bold = o and o.b == true, padding = 0 }
+        widest = math.max(widest, tw:getSize().w)
+        tw:free()
+    end
+    return widest
+end
+
 function BoardUI._fitTitle(str, o, width, sizes, max_lines, max_h)
-    for _i, s in ipairs(sizes) do
+    for index, s in ipairs(sizes) do
         local tb = TextBoxWidget:new{
             text = BD.auto(tostring(str or "")),
             face = BoardMetrics.face(s, faceKind(o or {})),
@@ -201,7 +228,9 @@ function BoardUI._fitTitle(str, o, width, sizes, max_lines, max_h)
         }
         local lines = math.max(1, math.floor(tb:getSize().h / BoardMetrics.lh(s) + 0.5))
         tb:free()
-        if lines <= max_lines and (not max_h or lines * BoardMetrics.lh(s) <= max_h) then
+        -- A size that would split a word goes to the next one down.
+        if lines <= max_lines and (not max_h or lines * BoardMetrics.lh(s) <= max_h)
+                and (index == #sizes or lines == 1 or widestWord(str, o, s) <= width) then
             return { s = s, lines = lines }
         end
     end
@@ -305,14 +334,16 @@ function BoardUI.vstack(o, items)
             else
                 local w, h = sizeOf(item)
                 fixed = fixed + h
-                -- Content may run into the padding, never past the box.
                 if w > iw + pr + 1 then problem("overflow-x", "vstack child w=" .. w .. " iw=" .. iw) end
             end
         end
     end
     local ih = o.h and (o.h - pt - pb) or (fixed + flex_min)
     local remaining = ih - fixed
-    local padding_slack = o.strict_padding and 0 or pb
+    -- Content may overhang the bottom padding by a text line's own leading
+    -- (2dp), never more: a fuller layout loses to a smaller one before a
+    -- card's bottom margin looks thinner than its top.
+    local padding_slack = o.strict_padding and 0 or math.min(pb, px(2))
     if remaining + padding_slack < flex_min - 0.5 then problem("overflow-y", "vstack need=" .. (fixed + flex_min) .. " have=" .. ih) end
     local left = math.max(0, remaining)
     local share = flexes > 0 and math.floor(left / flexes) or 0
@@ -517,6 +548,19 @@ function BoardUI.hit(child, action)
     return area
 end
 
+-- How many hit areas the current build has made, and dropping the ones made
+-- after a mark: a layout built, measured and then rebuilt another way.
+function BoardUI.hitMark()
+    local sink = hit_sinks[#hit_sinks]
+    return sink and #sink or 0
+end
+
+function BoardUI.hitTrim(mark)
+    local sink = hit_sinks[#hit_sinks]
+    if not sink then return end
+    for i = #sink, mark + 1, -1 do table.remove(sink, i) end
+end
+
 -- Runs fn and returns its result plus the hit areas it created.
 function BoardUI.collectHits(fn)
     local sink = {}
@@ -671,6 +715,34 @@ end
 -- A book cover at an exact box. o: border (px), border_col, dim, lighten, path,
 -- valign ("top" or the default "bottom") for an image of another shape,
 -- placeholder title when there is no image.
+-- The placeholder title's size: the largest at which every word (split
+-- after hyphens, where lines may break) fits the cover's width, so a narrow
+-- cover never breaks a word in two.
+local PLACEHOLDER_SIZES = { 14, 13, 12, 11, 10, 9 }
+local placeholder_cache, placeholder_count = {}, 0
+
+local function placeholderSize(title, w)
+    local key = title .. "|" .. w .. "|" .. BoardMetrics.get().dp
+    local hit = placeholder_cache[key]
+    if hit then return hit end
+    local result = PLACEHOLDER_SIZES[#PLACEHOLDER_SIZES]
+    for _i, s in ipairs(PLACEHOLDER_SIZES) do
+        local face = BoardMetrics.face(s, "serif")
+        local fits = true
+        for word in title:gmatch("[^%s%-]+%-?") do
+            local tw = TextWidget:new{ text = word, face = face, bold = true, padding = 0 }
+            local word_w = tw:getSize().w
+            tw:free()
+            if word_w > w then fits = false; break end
+        end
+        if fits then result = s; break end
+    end
+    if placeholder_count > 400 then placeholder_cache, placeholder_count = {}, 0 end
+    placeholder_cache[key] = result
+    placeholder_count = placeholder_count + 1
+    return result
+end
+
 function BoardUI.cover(book, w, h, o)
     o = o or {}
     if o.path then
@@ -690,11 +762,14 @@ function BoardUI.cover(book, w, h, o)
     local pad = px(8)
     local frame_b = math.max(1, px(1))
     local inner = {}
+    local title = book and book.title or ""
+    local tw = w - 2 * pad - 2 * frame_b
+    local s = placeholderSize(title, tw)
     -- The title takes the lines the cover has room for, up to four; a cover
     -- too small for one line stays an empty frame.
-    local lines = math.min(4, math.floor((h - 2 * frame_b - 2 * pad) / BoardMetrics.lh(14)))
+    local lines = math.min(4, math.floor((h - 2 * frame_b - 2 * pad) / BoardMetrics.lh(s)))
     if o.loading ~= true and w > px(48) and lines >= 1 then
-        inner = { BoardUI.flex(0), BoardUI.text(book and book.title or "", { s = 14, b = true, serif = true, lines = lines, w = w - 2 * pad - 2 * frame_b, align = "center", data = true }), BoardUI.flex(0) }
+        inner = { BoardUI.flex(0), BoardUI.text(title, { s = s, b = true, serif = true, lines = lines, w = tw, align = "center", data = true }), BoardUI.flex(0) }
     end
     return BoardUI.box({ w = w, h = h, border = frame_b, border_col = INK.black, bg = INK.ge },
         BoardUI.vstack({ w = w - 2 * frame_b, h = h - 2 * frame_b, pad = pad, align = "center" }, inner))
