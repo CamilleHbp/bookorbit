@@ -269,7 +269,6 @@
   "POST /migration/sources/:id/path-mappings/validate",
   "POST /migration/sources/:id/validate",
   "POST /migration/sources/test",
-  "POST /path",
   "POST /readwise/validate-token",
   "POST /server-fonts/upload",
   "POST /smart-scopes/:id/books/jump-buckets",

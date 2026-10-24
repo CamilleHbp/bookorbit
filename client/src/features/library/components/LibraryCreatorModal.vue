@@ -272,6 +272,11 @@ const sectionProps = computed(() => ({
     libraryType: form.type,
     checks: folderChecks.value,
     stats: stats.value,
+    libraryName: form.name,
+    libraryIcon: form.icon,
+    libraryId: editingLibraryId.value,
+    organizationMode: form.organizationMode,
+    organizationModeLocked: !creating.value,
   },
   scanner: {
     organizationMode: form.organizationMode,

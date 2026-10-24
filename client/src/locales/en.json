@@ -11808,6 +11808,194 @@
         "createFolder": "Could not create folder"
       }
     },
+    "folderBrowser": {
+      "title": "Choose folders",
+      "titleStorage": "Choose a storage folder",
+      "subtitle": "For {name} · {mode}",
+      "subtitleStorage": "For {name} · one folder; each show gets its own folder inside",
+      "subtitleLocal": "For {name} · folders that already hold episodes",
+      "unnamedLibrary": "the new library",
+      "close": "Close",
+      "mode": {
+        "folder": "Folder as Book",
+        "file": "File as Book"
+      },
+      "field": {
+        "placeholder": "Find a folder, or paste a path",
+        "label": "Find a folder or type a path",
+        "clear": "Clear",
+        "mounted": "Mounted",
+        "libraries": "Libraries",
+        "recent": "Recent",
+        "thisLibrary": "{name} (this library)",
+        "jumpHint": "Type to find a folder by name, or start with {key} to type a path",
+        "inFolder": "In {path}",
+        "completeHint": "{tab} complete {enter} show in tree",
+        "noCompletion": "No folder in {path} starts with that. {key} tries the path as typed.",
+        "pathMissing": "{path} doesn't exist on the server.",
+        "pathMissingSuggest": "{path} doesn't exist on the server. Did you mean {suggestion}?",
+        "pathBlocked": "BookOrbit never opens {path}: it is a system folder.",
+        "findSummary": "{count, plural, one {# folder matches} other {# folders match}} “{query}”, shown with the folders around {count, plural, one {it} other {them}}.",
+        "findEnter": "{key} goes to the first.",
+        "findTruncated": "Showing the first {count} matches.",
+        "findNone": "No folder on the server matches. Try fewer letters."
+      },
+      "view": {
+        "button": "View",
+        "label": "View options",
+        "sort": "Sort",
+        "sortName": "Name",
+        "sortBooks": "Most books first",
+        "show": "Show",
+        "showEmpty": "Folders without books",
+        "showSystem": "System folders"
+      },
+      "newFolder": {
+        "button": "New folder",
+        "label": "New folder in {name}",
+        "placeholder": "New folder in {name}",
+        "inputLabel": "New folder name",
+        "hint": "{enter} create {escape} cancel",
+        "create": "Create",
+        "errors": {
+          "empty": "Enter a folder name.",
+          "invalid": "Use one folder name, without slashes or a leading dot.",
+          "exists": "{name} already exists here.",
+          "denied": "BookOrbit can't write here.",
+          "failed": "The folder could not be created."
+        }
+      },
+      "tree": {
+        "label": "Server folders",
+        "expand": "Expand {name}",
+        "collapse": "Collapse {name}",
+        "select": "Select {name}",
+        "use": "Use {name}",
+        "readsThis": "{name} reads this folder",
+        "thisLibrary": "This library",
+        "librariesInside": "{names} {count, plural, one {reads a folder} other {read folders}} inside",
+        "inside": "{count} inside",
+        "appData": "BookOrbit data",
+        "noAccess": "No access",
+        "loading": "Loading folders",
+        "systemHidden": "{count, plural, one {# system folder} other {# system folders}} hidden at {path}",
+        "moreFolders": "Only the first {count} folders here are listed. Find by name or type a path to reach the rest.",
+        "unreadable": "BookOrbit can't read {path}.",
+        "placesFailed": "BookOrbit could not load the server's folders.",
+        "retry": "Try again"
+      },
+      "count": {
+        "books": "{count, plural, one {# book} other {# books}}",
+        "episodes": "{count, plural, one {# episode} other {# episodes}}",
+        "atLeast": "{count}+",
+        "more": "+{count} more"
+      },
+      "plan": {
+        "label": "What this library will read",
+        "willRead": "{name} will read",
+        "storage": "Episodes will download to",
+        "newFolders": "{count, plural, one {# new folder} other {# new folders}}",
+        "already": "already · {books}",
+        "emptyTitle": "Nothing picked yet",
+        "emptyHint": "Tick folders in the tree. A ticked folder brings everything inside it.",
+        "emptyStorageTitle": "No folder chosen yet",
+        "emptyStorageHint": "Tick one folder in the tree, or make a new one.",
+        "rowSize": "{books} · {size}",
+        "show": "Show {name} in the tree",
+        "showTitle": "Show in the tree",
+        "remove": "Remove {name}",
+        "empty": "Empty",
+        "fit": {
+          "folder": "Each folder holds one book.",
+          "file": "Each file is one book.",
+          "empty": "Empty for now.",
+          "storage": "Empty: a clean place for episodes."
+        },
+        "attention": {
+          "containsOne": "Contains {folder}, which {library} reads. Those books would be in two libraries.",
+          "containsMany": "Contains folders that {libraries} read. Those books would be in two libraries.",
+          "overlapExact": "{library} already reads this folder. Both libraries would import the same {count, plural, one {# book} other {# books}}.",
+          "overlapInside": "This folder is inside {library}'s folder, so its books would be in both libraries.",
+          "merge": "{count, plural, one {# folder here holds} other {# folders here hold}} several books: as Folder as Book each becomes 1 book.",
+          "split": "{count, plural, one {# audiobook here is} other {# audiobooks here are}} in parts: as File as Book each part becomes its own book.",
+          "locked": "Organization is fixed once a library exists.",
+          "notEmpty": "Not empty: episodes would sit beside {what}. An empty folder keeps them apart.",
+          "leaveOutOne": "Leave out {folder}",
+          "leaveOutMany": "Leave them out",
+          "remove": "Remove",
+          "useFile": "Use File as Book",
+          "useFolder": "Use Folder as Book"
+        },
+        "suggestions": "Not in any library yet",
+        "suggestionsMeta": "books no library reads",
+        "add": "Add",
+        "preview": {
+          "label": "Looking at",
+          "ticks": "{key} ticks it",
+          "use": "Use this",
+          "wouldAdd": "Would add {books} · {size}",
+          "empty": "Empty for now",
+          "holds": "Holds {what}",
+          "storageEmpty": "Empty: a clean place for episodes",
+          "storageTip": "Episodes would sit beside what is here. An empty folder keeps them apart.",
+          "storageFine": "Each show gets its own folder inside.",
+          "merge": "Several books share a folder here: as Folder as Book each such folder is 1 book.",
+          "split": "Audiobooks in parts: as File as Book each part is its own book."
+        },
+        "totals": {
+          "books": "{count, plural, one {book} other {books}} · {size}",
+          "booksOnly": "{count, plural, one {book} other {books}}",
+          "shared": "{count} also in other libraries",
+          "organize": "Organize as",
+          "organizeLabel": "Organization",
+          "segmentBooks": "{count, plural, one {# book} other {# books}}",
+          "folderTitle": "Each folder that holds books is one book",
+          "fileTitle": "Each file is one book",
+          "locked": "{mode}, fixed since {name} was created"
+        },
+        "holdsBooks": "{count, plural, one {# book} other {# books}}",
+        "holdsEpisodes": "{count, plural, one {# episode} other {# episodes}}",
+        "holdsFolders": "{count, plural, one {# folder} other {# folders}}",
+        "holdsBoth": "{books} and {folders}"
+      },
+      "reason": {
+        "denied": "BookOrbit can't read this folder. Give the user BookOrbit runs as read access, then reopen it.",
+        "appData": "BookOrbit keeps covers, caches and plugins here. Pick the folder that holds your books instead.",
+        "own": "{name} is already in this library.",
+        "ownCovered": "This library already reads {path}, which includes this folder.",
+        "included": "Included because you selected {path}."
+      },
+      "notice": {
+        "folded": "{path} includes {count, plural, one {{name}} other {# folders you picked}}, so {count, plural, one {it was} other {they were}} folded into it.",
+        "range": "Ticked {count, plural, one {# folder} other {# folders}}, {from} to {to}.",
+        "removed": "Removed {name}",
+        "leftOut": "{name} became {count, plural, one {# folder} other {# folders}} beside the other libraries",
+        "modeFile": "Switched to File as Book; the library's Scanning setting follows",
+        "modeFolder": "Switched to Folder as Book; the library's Scanning setting follows",
+        "created": "Made {path} and ticked it.",
+        "createdOnly": "Made {path}.",
+        "undo": "Undo"
+      },
+      "keys": {
+        "space": "Space",
+        "tab": "Tab",
+        "escape": "Esc"
+      },
+      "footer": {
+        "hints": "{move} move {fold} fold {tick} tick {range} click for a range {find} find",
+        "add": "Add folders",
+        "addCount": "Add {count, plural, one {# folder} other {# folders}}",
+        "addShort": "Add",
+        "addShortCount": "Add {count}",
+        "use": "Use folder",
+        "nothingPicked": "Nothing picked yet",
+        "seePlan": "See the plan"
+      },
+      "divider": {
+        "label": "Resize the plan",
+        "title": "Drag to resize. Double-click to reset."
+      }
+    },
     "destination": {
       "loadFailed": "Could not load destination libraries. Close and reopen to try again.",
       "noLibraries": "No book libraries are available. Create a library or ask an administrator for access.",

@@ -165,6 +165,38 @@ export class ScannerRepository {
       .where(eq(books.libraryFolderId, libraryFolderId));
   }
 
+  /** Books filed under a library folder but located at `folderPath`, with their content files. */
+  async findBooksAtFolderPath(libraryFolderId: number, folderPath: string) {
+    const rows = await this.db
+      .select({ id: books.id, libraryId: books.libraryId, primaryFileId: books.primaryFileId })
+      .from(books)
+      .where(and(eq(books.libraryFolderId, libraryFolderId), eq(books.folderPath, folderPath)));
+    if (rows.length === 0) return [];
+    const files = await this.db
+      .select({ id: bookFiles.id, bookId: bookFiles.bookId, absolutePath: bookFiles.absolutePath })
+      .from(bookFiles)
+      .where(
+        and(
+          inArray(
+            bookFiles.bookId,
+            rows.map((row) => row.id),
+          ),
+          eq(bookFiles.role, 'content'),
+        ),
+      )
+      .orderBy(asc(bookFiles.sortOrder), asc(bookFiles.id));
+    return rows.map((row) => ({ ...row, contentFiles: files.filter((file) => file.bookId === row.id) }));
+  }
+
+  async bookExistsAtFolderPath(libraryId: number, folderPath: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: books.id })
+      .from(books)
+      .where(and(eq(books.libraryId, libraryId), eq(books.folderPath, folderPath)))
+      .limit(1);
+    return !!row;
+  }
+
   async findPrimaryBookFilesByLibrary(libraryId: number) {
     return this.db
       .select({ bookId: books.id, absolutePath: bookFiles.absolutePath, format: bookFiles.format })

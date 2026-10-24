@@ -46,6 +46,7 @@ import {
   findBookCandidates,
   findLooseFileCandidates,
   buildSingleBookCandidate,
+  isDiscDirectory,
   type WalkResult,
 } from './lib/walk';
 import { ScannerRepository } from './scanner.repository';
@@ -1132,6 +1133,38 @@ export class ScannerService implements OnApplicationBootstrap {
     );
   }
 
+  /**
+   * A library folder named like a disc folder ("disk1", "CD 1") used to be flattened into the folder
+   * above it, so its loose files became one book filed there. Each is now its own book: the old book
+   * moves to its primary file, keeping its progress, notes and edits, and the scan that follows gives
+   * the other files books of their own.
+   */
+  private async repairFlattenedLibraryFolder(libraryId: number, folder: { id: number; path: string }): Promise<void> {
+    if (!isDiscDirectory(basename(folder.path))) return;
+    const event = 'scanner.repair_flattened_library_folder';
+    try {
+      const stranded = await this.scannerRepo.findBooksAtFolderPath(folder.id, dirname(folder.path));
+      for (const book of stranded) {
+        const inside = book.contentFiles.filter((file) => file.absolutePath.startsWith(folder.path + sep));
+        const target = inside.find((file) => file.id === book.primaryFileId) ?? inside[0];
+        if (!target || (await this.scannerRepo.bookExistsAtFolderPath(book.libraryId, target.absolutePath))) {
+          this.logger.warn(
+            `[${event}] [fail] libraryId=${libraryId} bookId=${book.id} fileCount=${book.contentFiles.length} - no free file left to move the book to`,
+          );
+          continue;
+        }
+        await this.scannerRepo.updateBookFolderPath(book.id, target.absolutePath);
+        this.logger.log(
+          `[${event}] [end] libraryId=${libraryId} bookId=${book.id} folder="${sanitizeLogValue(target.absolutePath)}" fileCount=${book.contentFiles.length} - book moved from above its library folder to its primary file`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[${event}] [fail] libraryId=${libraryId} libraryFolderId=${folder.id} errorClass=${err instanceof Error ? err.name : 'Error'} error="${sanitizeLogValue(err instanceof Error ? err.message : String(err))}" - flattened library folder repair failed`,
+      );
+    }
+  }
+
   private async loadCandidateMaps(folderPath: string, libraryId: number): Promise<ScanLookupMaps> {
     const knownBooks = await this.scannerRepo.findBooksByFolderPath(folderPath, libraryId);
     const knownFiles = await this.scannerRepo.findBookFilesByBookIds(knownBooks.map((b) => b.id));
@@ -1438,6 +1471,7 @@ export class ScannerService implements OnApplicationBootstrap {
       this.emitFromStore(libraryId, jobId, 'running');
 
       for (const folder of folders) {
+        await this.repairFlattenedLibraryFolder(libraryId, folder);
         let candidates: BookCandidate[] = [];
         let skippedDirs = new Set<string>();
         let unchangedDirs = new Set<string>();
