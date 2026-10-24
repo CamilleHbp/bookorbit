@@ -4889,6 +4889,10 @@
       "clearAll": "Clear",
       "permissionsHint": "What this account is allowed to do. {granted} of {total} granted.",
       "groupLegend": "{group}: {granted} of {total} granted",
+      "permissionNotes": {
+        "editMetadataNowhere": "No effect yet: it also needs the Editor or Owner role on a library, set in Settings > Libraries > Access.",
+        "editMetadataExcept": "Not in {libraries}, where this account is a Viewer. Set Editor or Owner in Settings > Libraries > Access."
+      },
       "presets": {
         "label": "Permission preset",
         "none": "None",

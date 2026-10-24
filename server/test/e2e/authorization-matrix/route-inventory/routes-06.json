@@ -766,5 +766,17 @@
     "isPublic": false,
     "allowDefault": false,
     "useGuards": []
+  },
+  {
+    "file": "server/src/modules/user/user.controller.ts",
+    "className": "UserController",
+    "methodName": "getLibraryGrants",
+    "httpMethod": "GET",
+    "path": "/users/:id/library-access",
+    "permissions": ["Permission.ManageUsers"],
+    "libraryAccess": [],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
   }
 ]

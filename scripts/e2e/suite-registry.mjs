@@ -621,6 +621,23 @@ export const E2E_SUITES = Object.freeze({
       ...SHARED_DB_AND_HELPER_PATHS,
     ],
   },
+  "metadata-editor-access-migration": {
+    id: "metadata-editor-access-migration",
+    name: "Metadata Editor Access Migration",
+    timeout: 60,
+    lane: "full",
+    description: "Editor role backfill for accounts that held Edit metadata before library roles were enforced",
+    vitestTarget: "test/metadata-editor-access-migration.e2e-spec.ts",
+    junitOutput: `${TEST_RESULTS_DIR}/metadata-editor-access-migration-e2e-junit.xml`,
+    prepareDedicatedDatabase: true,
+    useDedicatedDatabase: true,
+    changedPaths: [
+      "server/src/db/migrations/**",
+      "server/src/scripts/migrate.ts",
+      "server/test/metadata-editor-access-migration.e2e-spec.ts",
+      ...SHARED_DB_AND_HELPER_PATHS,
+    ],
+  },
   "reading-attempts": {
     id: "reading-attempts",
     name: "Reading Attempts",
