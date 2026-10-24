@@ -856,7 +856,11 @@ function BoardUI.snapshot(key, full_w, full_h, w, h, build)
     if not snapshot_cache[key] then
         local Screen = require("device").screen
         local Blitbuffer_ = require("ffi/blitbuffer")
-        local canvas = Blitbuffer_.new(full_w, full_h, Screen.bb:getType())
+        -- KOReader's MuPDF scaler keeps the 16-bit stride when it widens RGB565 and throws, so the
+        -- reMarkable's RGB565 screen draws its thumbnails in RGB32 instead.
+        local canvas_type = Screen.bb:getType()
+        if canvas_type == Blitbuffer_.TYPE_BBRGB16 then canvas_type = Blitbuffer_.TYPE_BBRGB32 end
+        local canvas = Blitbuffer_.new(full_w, full_h, canvas_type)
         canvas:fill(INK.white)
         -- Built in a sink of its own: a thumbnail's buttons are not tappable.
         local widget = BoardUI.collectHits(build)
