@@ -177,6 +177,7 @@ const {
   isLocked,
   isUpdating: isUpdatingLock,
   replace: replaceLocks,
+  persist: persistLocks,
   toggle,
   lockAll,
   unlockAll,
@@ -343,30 +344,54 @@ const communityRatingLines = computed(() =>
   form.communityRatings.map((rating) => formatCommunityRatingLine(rating, availableMetadataProviders.value ?? [])),
 )
 
+// Held while a save runs, so the parent's refetch reads the book after every write, locks included.
+let heldCoverChanges: (CoverMedium | null)[] | null = null
+
+async function submit() {
+  if (submitDisabled.value) return
+  heldCoverChanges = []
+  try {
+    await saveFormAndCovers()
+  } finally {
+    const held = new Set(heldCoverChanges)
+    heldCoverChanges = null
+    for (const medium of held) emit('coverChanged', medium)
+  }
+}
+
 /**
  * Locks here save with the form, so a pending cover whose slot is locked on the server can only be
  * written after the form has unlocked it. Every other pending cover is written first, and a failure
- * there stops the form save.
+ * there stops the form save. A cover staged while its slot was unlocked here, then locked again, is
+ * still written: the form save leaves that slot open, and it is locked again once the write ends.
  */
-async function submit() {
-  if (submitDisabled.value) return
+async function saveFormAndCovers() {
   const panel = coverPanel.value
   const pendingMedia = panel?.pendingMedia ?? []
   const lockedOnServer = (medium: CoverMedium | null) => props.book.lockedFields.includes(coverLockField(medium))
   if (panel && !(await panel.confirm(pendingMedia.filter((medium) => !lockedOnServer(medium))))) return
 
+  const writeAfterSave = pendingMedia.filter(lockedOnServer)
+  const relockFields: BookMetadataLockField[] = writeAfterSave.map(coverLockField).filter((field) => isLocked(field))
   const locksChanged = locksDirty.value
-  const result = await save(props.book.id, lockedFields.value)
+  const result = await save(
+    props.book.id,
+    lockedFields.value.filter((field) => !relockFields.includes(field)),
+  )
   if (!result) return
   markLocksPersisted(result.book.lockedFields)
+  if (relockFields.length > 0) await replaceLocks(props.book.id, [...result.book.lockedFields, ...relockFields], 'all')
   emit('saved', result.book)
-  if (locksChanged) emit('locksChanged', result.book.lockedFields)
   showSaveResultToast(result.write, result.libraryAutoWriteEnabled)
 
-  const unlockedBySave = pendingMedia.filter((medium) => lockedOnServer(medium) && !result.book.lockedFields.includes(coverLockField(medium)))
-  if (!panel || unlockedBySave.length === 0) return
-  await nextTick()
-  await panel.confirm(unlockedBySave)
+  const unlockedBySave = writeAfterSave.filter((medium) => !result.book.lockedFields.includes(coverLockField(medium)))
+  if (panel && unlockedBySave.length > 0) {
+    await nextTick()
+    await panel.confirm(unlockedBySave)
+  }
+  const relocked = relockFields.length > 0 ? await persistLocks(props.book.id) : null
+  if (relocked) emit('saved', relocked)
+  if (locksChanged) emit('locksChanged', (relocked ?? result.book).lockedFields)
 }
 
 function handleReset() {
@@ -874,7 +899,8 @@ async function handleUnlockAll() {
 }
 
 function handleCoverChanged(medium: CoverMedium | null) {
-  emit('coverChanged', medium)
+  if (heldCoverChanges) heldCoverChanges.push(medium)
+  else emit('coverChanged', medium)
 }
 </script>
 
