@@ -95,4 +95,67 @@ describe('LibraryCreatorMetadata', () => {
 
     expect(wrapper.emitted('update:metadataPrecedence')).toEqual([[['opfFile', 'embedded', 'regex']]])
   })
+
+  describe('applying rules to existing books', () => {
+    const rules = { rules: [{ pattern: '(?<series>[^/]+)/', flags: 'u' }] }
+    const job = {
+      id: 'j',
+      libraryId: 1,
+      status: 'running' as const,
+      total: 4,
+      processed: 1,
+      updated: 1,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+      failureSamples: [],
+    }
+
+    function mountReapply(props: Record<string, unknown>) {
+      return mount(LibraryCreatorMetadata, {
+        props: { metadataPrecedence: ['embedded', 'opfFile', 'regex'], formatPriority: ['cbz'], canReapplyRules: true, ...props },
+      })
+    }
+    const actionButton = (wrapper: ReturnType<typeof mountReapply>) =>
+      wrapper.findAll('button').find((button) => button.text().includes('Apply rules to existing books'))
+
+    it('is not offered before the library exists or without rules', () => {
+      expect(actionButton(mountReapply({ canReapplyRules: false, regexMetadata: rules, storedRegexMetadata: rules }))).toBeUndefined()
+      expect(actionButton(mountReapply({ regexMetadata: null, storedRegexMetadata: null }))).toBeUndefined()
+    })
+
+    it('asks for unsaved rules to be saved first', () => {
+      const wrapper = mountReapply({ regexMetadata: rules, storedRegexMetadata: null })
+
+      expect(actionButton(wrapper)!.attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).toContain('Save your changes first')
+    })
+
+    it('confirms before applying the saved rules', async () => {
+      const wrapper = mountReapply({ regexMetadata: rules, storedRegexMetadata: rules })
+
+      await actionButton(wrapper)!.trigger('click')
+      expect(wrapper.emitted('reapply')).toBeUndefined()
+      expect(wrapper.text()).toContain('Only fields the rules decide are written')
+
+      await wrapper.findAll('[role="group"] button')[0]!.trigger('click')
+      expect(wrapper.emitted('reapply')).toEqual([[]])
+    })
+
+    it('reports progress while the rules are applied, announcing only the outcome', () => {
+      const wrapper = mountReapply({ regexMetadata: rules, storedRegexMetadata: rules, reapplyingRules: true, reapplyJob: job })
+
+      expect(wrapper.text()).toContain('Processed 1 of 4: 1 updated')
+      expect(wrapper.get('[role="status"]').text()).not.toContain('Processed')
+      expect(actionButton(wrapper)).toBeUndefined()
+    })
+
+    it('announces the final counts once the rules are applied', () => {
+      const done = { ...job, status: 'completed' as const, processed: 4, updated: 3, unchanged: 1 }
+      const wrapper = mountReapply({ regexMetadata: rules, storedRegexMetadata: rules, reapplyJob: done })
+
+      expect(wrapper.get('[role="status"]').text()).toContain('Rules applied to existing books.')
+      expect(wrapper.get('[role="status"]').text()).toContain('Processed 4 of 4: 3 updated, 1 unchanged')
+    })
+  })
 })

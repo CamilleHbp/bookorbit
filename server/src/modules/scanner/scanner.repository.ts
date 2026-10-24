@@ -1,7 +1,7 @@
 import { realignAudioTrackOrder } from '../../db/audio-track-order';
 import { recordBookFileHashHistory, deleteBookFilesWithHashInvalidation, deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { DB } from '../../db';
@@ -701,6 +701,24 @@ export class ScannerRepository {
   async findBookById(bookId: number) {
     const [row] = await this.db.select().from(books).where(eq(books.id, bookId)).limit(1);
     return row ?? null;
+  }
+
+  /** Present books of a library, counted once up front so a re-apply job reports a stable total. */
+  async getRuleReapplyBounds(libraryId: number): Promise<{ total: number; maxId: number }> {
+    const [row] = await this.db
+      .select({ total: sql<number>`count(*)::int`, maxId: sql<number>`coalesce(max(${books.id}), 0)::int` })
+      .from(books)
+      .where(and(eq(books.libraryId, libraryId), eq(books.status, 'present')));
+    return { total: row?.total ?? 0, maxId: row?.maxId ?? 0 };
+  }
+
+  async findRuleReapplyBookBatch(libraryId: number, afterId: number, maxId: number, limit: number) {
+    return this.db
+      .select({ id: books.id, primaryFileId: books.primaryFileId })
+      .from(books)
+      .where(and(eq(books.libraryId, libraryId), eq(books.status, 'present'), gt(books.id, afterId), lte(books.id, maxId)))
+      .orderBy(asc(books.id))
+      .limit(limit);
   }
 
   async findBooksByIds(bookIds: number[]) {

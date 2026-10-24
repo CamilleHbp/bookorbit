@@ -5450,6 +5450,7 @@
       "LibraryWriteMetadataToFiles": "Write metadata to files",
       "LibraryBulkRename": "Rename library files",
       "LibraryRecomputeAddedAt": "Recompute date added",
+      "LibraryReapplyRegexMetadata": "Apply path rules to existing books",
       "PodcastCreate": "Create podcast",
       "PodcastUpdate": "Update podcast",
       "PodcastArchive": "Archive podcast",
@@ -11354,6 +11355,10 @@
           "fileAsBook": {
             "title": "File as Book",
             "hint": "Treats every file as an individual book. Best suited for libraries with one format per title. Avoid if your audiobooks span multiple files."
+          },
+          "seriesFolders": {
+            "title": "Series folders",
+            "uses": "Uses File as Book"
           }
         },
         "addedAt": {
@@ -11419,8 +11424,11 @@
           "cannotChange": "This is the one setting you cannot change later.",
           "folderHint": "Every folder is one book. Best when a title keeps several formats together, or an audiobook spans many files.",
           "fileHint": "Every file is its own book. Best for flat folders with one format per title.",
+          "fileHintSeries": "Every file is its own book. Best for comics and manga kept in one folder per series, or a flat folder with one format per title.",
           "folderResult": "One book with two formats",
-          "fileResult": "Three books, one per file"
+          "fileResult": "Three books, one per file",
+          "seriesHint": "Every file is its own book, and the folder it sits in is its series, the layout Komga and Kavita use. Best for comics and manga.",
+          "seriesResult": "Two series, one book per file"
         },
         "import": {
           "title": "Import",
@@ -11442,6 +11450,15 @@
           "placeholder": "Type a pattern like **/samples/** and press Enter",
           "placeholderMore": "Add another pattern",
           "remove": "Remove pattern {pattern}"
+        },
+        "series": {
+          "title": "Series",
+          "toggle": "Folders are series",
+          "hintOn": "Each folder becomes a series, and the number in each file name sets the book's place in it, as Komga and Kavita do. A different series named inside a file still comes first.",
+          "hintOff": "Turn this on for comics and manga kept in one folder per series, so each folder names the series of the files inside it.",
+          "replacesCustom": "Turning this on replaces the path rules set under Metadata. Turning it off again before you save brings them back.",
+          "existingBooks": "Books already in this library get these series when you apply the rules to them under Metadata.",
+          "previewSeries": "Series"
         }
       },
       "metadata": {
@@ -11536,6 +11553,38 @@
             "seriesIndex": "Series number",
             "publishedYear": "Published year",
             "publishedDate": "Published date"
+          },
+          "preset": {
+            "title": "Folders are series",
+            "hint": "Rules for one folder per series and one file per volume, chapter or issue, as Komga and Kavita expect. They replace the rules below.",
+            "apply": "Use these rules"
+          },
+          "reapply": {
+            "action": "Apply rules to existing books",
+            "applying": "Applying rules...",
+            "hint": "Updates books already in this library with the fields these rules decide. Nothing else changes, and locked fields are kept.",
+            "saveFirst": "Save your changes first, then apply the rules to existing books.",
+            "confirm": "Apply the saved rules to every book in this library? This runs in the background, and you can close this editor. Only fields the rules decide are written; locked fields and metadata the files supply themselves are kept.",
+            "progressSummary": "Processed {processed} of {total}: {updated} updated, {unchanged} unchanged, {skipped} skipped, {failed} failed.",
+            "jobStatus": {
+              "running": "Applying rules in the background.",
+              "completed": "Rules applied to existing books.",
+              "failed": "Applying stopped before finishing. Changes already made were kept; you can safely run it again."
+            },
+            "errors": {
+              "notConfigured": "Save path rules for this library before applying them.",
+              "alreadyRunning": "The rules are already being applied to this library.",
+              "busy": "Other libraries are applying rules. Try again shortly.",
+              "requestFailed": "Could not reach the server. Close and reopen this editor to check the status.",
+              "interrupted": "The job status is no longer available. It may have been interrupted by a server restart. You can safely run it again."
+            },
+            "failureSample": "Book {bookId}: {reason}",
+            "failureReasons": {
+              "rules_unavailable": "The rules could not be evaluated in time.",
+              "rules_invalid": "The saved rules could not be run. Open Configure, check them, and save again.",
+              "file_unavailable": "The book's file could not be read, so nothing was changed. Check that the library folder is reachable.",
+              "metadata_failed": "The book's metadata could not be saved."
+            }
           }
         }
       },

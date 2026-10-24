@@ -59,7 +59,7 @@ interface FfprobeOutput {
 
 // Null means the file could not be read, which is not the same as a file that carries no tags:
 // callers persist what they get, so a failed read must never be mistaken for empty metadata.
-export async function extractAudioMetadata(absolutePath: string): Promise<AudioExtractResult | null> {
+export async function extractAudioMetadata(absolutePath: string, options: { cover?: boolean } = {}): Promise<AudioExtractResult | null> {
   try {
     const { stdout } = await execFile(
       FFPROBE_PATH,
@@ -114,7 +114,7 @@ export async function extractAudioMetadata(absolutePath: string): Promise<AudioE
 
     const mappedChapters = mapChapters(chapters);
 
-    const coverBytes = await extractCoverBytes(absolutePath, streams);
+    const coverBytes = options.cover === false ? null : await extractCoverBytes(absolutePath, streams);
 
     return {
       title,

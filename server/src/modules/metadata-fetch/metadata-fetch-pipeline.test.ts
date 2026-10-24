@@ -930,6 +930,44 @@ describe('MetadataFetchPipeline', () => {
     expect(sources.description).toBe(MetadataProviderKey.OPEN_LIBRARY);
   });
 
+  it('keeps a run-year series name when a provider names the same run without its year', async () => {
+    const prefs = createPreferences((fields) => {
+      fields.seriesName = { enabled: true, providers: [MetadataProviderKey.COMICVINE], mergeStrategy: 'overwrite' };
+      fields.seriesIndex = { enabled: true, providers: [MetadataProviderKey.COMICVINE], mergeStrategy: 'overwrite' };
+    });
+
+    preferencesService.getGlobal.mockResolvedValue(prefs);
+    resolver.resolve.mockReturnValue(prefs);
+    resolver.withForwardCompatibility.mockReturnValue(prefs);
+    registry.all.mockReturnValue([{ key: MetadataProviderKey.COMICVINE }] as never);
+    fetchService.searchCandidates.mockReturnValue(of(candidate(MetadataProviderKey.COMICVINE, 'cv1', { seriesName: 'Batman', seriesIndex: '7' })));
+
+    const { resolved, sources } = await pipeline.runWithSources(
+      { title: 'Query', seriesName: 'Batman (2016)', seriesIndex: '7' },
+      { seriesName: 'Batman (2016)', seriesIndex: '7' },
+    );
+
+    expect(resolved.seriesName).toBeUndefined();
+    expect(sources.seriesName).toBeUndefined();
+    expect(resolved.seriesIndex).toBe('7');
+  });
+
+  it('still lets a provider replace a series name that only differs by more than the run year', async () => {
+    const prefs = createPreferences((fields) => {
+      fields.seriesName = { enabled: true, providers: [MetadataProviderKey.COMICVINE], mergeStrategy: 'overwrite' };
+    });
+
+    preferencesService.getGlobal.mockResolvedValue(prefs);
+    resolver.resolve.mockReturnValue(prefs);
+    resolver.withForwardCompatibility.mockReturnValue(prefs);
+    registry.all.mockReturnValue([{ key: MetadataProviderKey.COMICVINE }] as never);
+    fetchService.searchCandidates.mockReturnValue(of(candidate(MetadataProviderKey.COMICVINE, 'cv1', { seriesName: 'Detective Comics' })));
+
+    const { resolved } = await pipeline.runWithSources({ title: 'Query' }, { seriesName: 'Batman (2016)' });
+
+    expect(resolved.seriesName).toBe('Detective Comics');
+  });
+
   it('preserves empty arrays as explicit clears under overwrite', async () => {
     const prefs = createPreferences((fields) => {
       fields.authors = {

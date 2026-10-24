@@ -722,6 +722,30 @@
   {
     "file": "server/src/modules/scanner/scanner.controller.ts",
     "className": "ScannerController",
+    "methodName": "getRegexReapply",
+    "httpMethod": "GET",
+    "path": "/scanner/libraries/:id/reapply-regex-metadata",
+    "permissions": ["Permission.ManageLibraries"],
+    "libraryAccess": ["'editor'"],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/scanner/scanner.controller.ts",
+    "className": "ScannerController",
+    "methodName": "reapplyRegexMetadata",
+    "httpMethod": "POST",
+    "path": "/scanner/libraries/:id/reapply-regex-metadata",
+    "permissions": ["Permission.ManageLibraries"],
+    "libraryAccess": ["'editor'"],
+    "isPublic": false,
+    "allowDefault": false,
+    "useGuards": []
+  },
+  {
+    "file": "server/src/modules/scanner/scanner.controller.ts",
+    "className": "ScannerController",
     "methodName": "refreshCovers",
     "httpMethod": "POST",
     "path": "/scanner/libraries/:id/refresh-covers",

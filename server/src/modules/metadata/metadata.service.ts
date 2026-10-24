@@ -1,5 +1,5 @@
 import type { RegexMetadataFields } from '@bookorbit/types';
-import { mergeRegexMetadata } from './regex/merge-regex-metadata';
+import { decideRegexFields, mergeRegexMetadata } from './regex/merge-regex-metadata';
 import { stat } from 'fs/promises';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
@@ -41,7 +41,7 @@ import {
 } from '@bookorbit/types';
 import { chaptersReachLastFile, mergeAudioChapters, type AudioChapterSource } from './extractors/audio-chapter-merge';
 import { parseAudioDuration, probeAudioChapters } from './extractors/audio.extractor';
-import type { ParsedBookData } from './extractors/format-extractor.interface';
+import type { FormatExtractOptions, ParsedBookData } from './extractors/format-extractor.interface';
 import { METADATA_AUDIO_FORMATS, MetadataExtractionService } from './metadata-extraction.service';
 import { MetadataEventsService, METADATA_AUTHORS_REPLACED } from './metadata-events.service';
 import { BookCoverStore } from '../book-cover-store/book-cover-store.service';
@@ -73,6 +73,22 @@ function normalizePublishedYear(year: number | null | undefined): number | null 
   if (!Number.isInteger(year)) return null;
   if (year < MIN_PUBLISHED_YEAR || year > MAX_PUBLISHED_YEAR) return null;
   return year;
+}
+
+export interface MetadataSourceFile {
+  key: string;
+  absolutePath: string;
+  format: string;
+}
+
+/** What applying path rules did to a book; `unreadable` means its files could not be read, so nothing was written. */
+export type RegexRulesWriteResult = 'updated' | 'unchanged' | 'unreadable';
+
+/** Rules lead when nothing was read from the files or the library ranks regex above the source that was. */
+function regexLeads(precedence: string[], selectedKey: string | undefined): boolean {
+  const regexIndex = precedence.indexOf('regex');
+  const baseIndex = selectedKey ? precedence.indexOf(selectedKey) : -1;
+  return !selectedKey || (regexIndex !== -1 && (baseIndex === -1 || regexIndex < baseIndex));
 }
 
 @Injectable()
@@ -144,36 +160,12 @@ export class MetadataService {
     }
   }
 
-  async extractAndSaveWithRegex(
-    bookId: number,
-    sources: { key: string; absolutePath: string; format: string }[],
-    regex: RegexMetadataFields,
-    precedence: string[],
-  ): Promise<void> {
+  async extractAndSaveWithRegex(bookId: number, sources: MetadataSourceFile[], regex: RegexMetadataFields, precedence: string[]): Promise<void> {
     const startedAt = Date.now();
     this.logger.debug(`[metadata.extract_with_regex] [start] bookId=${bookId} sourceCount=${sources.length} - metadata extraction started`);
     try {
-      let base: ParsedBookData | null = null;
-      let selected: (typeof sources)[number] | undefined;
-      for (const source of sources) {
-        const sourceStartedAt = Date.now();
-        try {
-          base = await this.extractionService.extract(source.absolutePath, source.format);
-        } catch (error) {
-          this.logger.warn(
-            `[metadata.extract_source] [fail] bookId=${bookId} source="${sanitizeLogValue(source.key)}" format="${sanitizeLogValue(source.format)}" durationMs=${Date.now() - sourceStartedAt} errorClass=${error instanceof Error ? error.name : 'Error'} error="${sanitizeLogValue(error instanceof Error ? error.message : String(error))}" - file metadata extraction failed; continuing with remaining sources and regex`,
-          );
-          continue;
-        }
-        if (base) {
-          selected = source;
-          break;
-        }
-      }
-      const regexIndex = precedence.indexOf('regex');
-      const baseIndex = selected ? precedence.indexOf(selected.key) : -1;
-      const preferRegex = !selected || (regexIndex !== -1 && (baseIndex === -1 || regexIndex < baseIndex));
-      const data = mergeRegexMetadata(base, regex, preferRegex);
+      const { base, selected } = await this.readFirstMetadataSource(bookId, sources);
+      const data = mergeRegexMetadata(base, regex, regexLeads(precedence, selected?.key));
       await this.persistMetadata(bookId, data, selected?.format ?? 'regex', true);
       if (selected) {
         if (base?.cover) await this.persistSourceCover(bookId, selected.format, base.cover);
@@ -189,6 +181,115 @@ export class MetadataService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Writes only the fields a library's path rules decide for this book, so applying rules to books
+   * already in a library leaves every value a file, a provider or a person supplied alone. Covers
+   * are not read.
+   */
+  async applyRegexMetadataRules(
+    bookId: number,
+    sources: MetadataSourceFile[],
+    regex: RegexMetadataFields,
+    precedence: string[],
+  ): Promise<RegexRulesWriteResult> {
+    const { base, selected, readFailed } = await this.readFirstMetadataSource(bookId, sources, { cover: false });
+    // A file that exists but cannot be read right now is not a file without metadata: letting the
+    // rules lead would replace what it says, and an unchanged file is never re-read to repair that.
+    if (!base && readFailed) return 'unreadable';
+    const decided = decideRegexFields(base, regex, regexLeads(precedence, selected?.key));
+    if (Object.keys(decided).length === 0) return 'unchanged';
+
+    const [current] = await this.db
+      .select({
+        title: bookMetadata.title,
+        seriesName: bookMetadata.seriesName,
+        seriesIndex: bookMetadata.seriesIndex,
+        publishedYear: bookMetadata.publishedYear,
+        publishedDate: bookMetadata.publishedDate,
+      })
+      .from(bookMetadata)
+      .where(eq(bookMetadata.bookId, bookId))
+      .limit(1);
+    if (!current) return 'unchanged';
+
+    const update: Parameters<BookMetadataLockService['filterAutomatedBookUpdate']>[1] = {};
+    if (decided.title !== undefined && decided.title !== current.title) update.title = decided.title;
+    const seriesName = normalizeMetadataText(decided.seriesName);
+    if (seriesName && seriesName !== current.seriesName) update.seriesName = seriesName;
+    if (decided.seriesIndex !== undefined && decided.seriesIndex !== current.seriesIndex) update.seriesIndex = decided.seriesIndex;
+    if (Object.prototype.hasOwnProperty.call(decided, 'publishedYear')) {
+      const publishedDate = normalizePublishedDate(decided.publishedDate) ?? null;
+      const publishedYear = publishedDate ? publishedYearFromDateKey(publishedDate) : normalizePublishedYear(decided.publishedYear);
+      if (publishedYear !== current.publishedYear || publishedDate !== current.publishedDate) {
+        update.publishedYear = publishedYear;
+        update.publishedDate = publishedDate;
+      }
+    }
+    if (decided.authors?.length) {
+      const currentAuthors = await this.db
+        .select({ name: authors.name })
+        .from(bookAuthors)
+        .innerJoin(authors, eq(authors.id, bookAuthors.authorId))
+        .where(eq(bookAuthors.bookId, bookId))
+        .orderBy(bookAuthors.displayOrder);
+      const key = (names: (string | null)[]) => names.map((name) => normalizeMetadataTextKey(name)).join('\u0000');
+      if (key(decided.authors) !== key(currentAuthors.map((author) => author.name))) update.authors = decided.authors;
+    }
+    if (Object.keys(update).length === 0) return 'unchanged';
+
+    const { dto: filtered } = await this.bookMetadataLockService.filterAutomatedBookUpdate(bookId, update);
+    const scalarFields: Partial<typeof schema.bookMetadata.$inferInsert> = {};
+    if (filtered.title !== undefined) scalarFields.title = filtered.title;
+    if (filtered.seriesName !== undefined) scalarFields.seriesName = filtered.seriesName;
+    if (filtered.seriesIndex !== undefined) scalarFields.seriesIndex = filtered.seriesIndex;
+    if (filtered.publishedYear !== undefined) {
+      scalarFields.publishedYear = filtered.publishedYear;
+      scalarFields.publishedDate = filtered.publishedDate ?? null;
+    }
+    const writesAuthors = filtered.authors !== undefined;
+    if (Object.keys(scalarFields).length === 0 && !writesAuthors) return 'unchanged';
+
+    if (Object.keys(scalarFields).length > 0) {
+      scalarFields.updatedAt = new Date();
+      const patch = (await this.seriesIdentity?.resolveMetadataPatch(scalarFields)) ?? scalarFields;
+      await this.db.update(bookMetadata).set(patch).where(eq(bookMetadata.bookId, bookId));
+      if (scalarFields.seriesName !== undefined || scalarFields.seriesIndex !== undefined)
+        await this.seriesMemberships?.syncPrimaryFromMetadata(bookId);
+    }
+    if (writesAuthors) {
+      await this.replaceAuthors(
+        bookId,
+        filtered.authors!.map((name) => ({ name, sortName: null })),
+      );
+    }
+    await this.scoreService.calculateAndSave(bookId);
+    return 'updated';
+  }
+
+  /** The first configured source that yields metadata, with a failing source logged and skipped. */
+  private async readFirstMetadataSource(
+    bookId: number,
+    sources: MetadataSourceFile[],
+    options?: FormatExtractOptions,
+  ): Promise<{ base: ParsedBookData | null; selected: MetadataSourceFile | undefined; readFailed: boolean }> {
+    let readFailed = false;
+    for (const source of sources) {
+      const sourceStartedAt = Date.now();
+      try {
+        const base = options
+          ? await this.extractionService.extract(source.absolutePath, source.format, options)
+          : await this.extractionService.extract(source.absolutePath, source.format);
+        if (base) return { base, selected: source, readFailed };
+      } catch (error) {
+        readFailed = true;
+        this.logger.warn(
+          `[metadata.extract_source] [fail] bookId=${bookId} source="${sanitizeLogValue(source.key)}" format="${sanitizeLogValue(source.format)}" durationMs=${Date.now() - sourceStartedAt} errorClass=${error instanceof Error ? error.name : 'Error'} error="${sanitizeLogValue(error instanceof Error ? error.message : String(error))}" - file metadata extraction failed; continuing with remaining sources and regex`,
+        );
+      }
+    }
+    return { base: null, selected: undefined, readFailed };
   }
 
   // Called when ebook is the winner but audio files are also present.

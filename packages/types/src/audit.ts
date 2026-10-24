@@ -43,6 +43,7 @@ export enum AuditAction {
   LibraryWriteMetadataToFiles = "library.write_metadata_to_files",
   LibraryBulkRename = "library.bulk_rename",
   LibraryRecomputeAddedAt = "library.recompute_added_at",
+  LibraryReapplyRegexMetadata = "library.reapply_regex_metadata",
 
   PodcastCreate = "podcast.create",
   PodcastUpdate = "podcast.update",

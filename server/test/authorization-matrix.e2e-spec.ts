@@ -941,6 +941,8 @@ describe('Authorization matrix (e2e)', () => {
           'POST /libraries/:id/recompute-added-at',
           'POST /libraries/:id/write-metadata-to-files',
           'GET /scanner/libraries/:id/scan-history',
+          'GET /scanner/libraries/:id/reapply-regex-metadata',
+          'POST /scanner/libraries/:id/reapply-regex-metadata',
           'POST /libraries/:id/books/jump-buckets',
           'POST /libraries/:id/books/facets',
           'GET /libraries/:id/bulk-rename/preview',

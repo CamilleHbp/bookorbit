@@ -28,6 +28,7 @@ import { MetadataPreferencesService } from '../metadata-preferences/metadata-pre
 import { SeriesExpectedCountService } from '../../common/services/series-expected-count.service';
 import { applyGenreFetchOptions, createGenreBlocklistTokenSet, mergeExistingGenres } from '../../common/utils/genre-fetch-options.utils';
 import { normalizeMetadataText, normalizeMetadataTextKey } from '../../common/utils/metadata-text-normalize.utils';
+import { isRunYearQualifiedName } from '../../common/utils/series-run-year.utils';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { canonicalIsbn13, isValidIsbn10, isValidIsbn13, normalizeMetadataIsbn } from '../../common/text-match/isbn-normalize';
 import { acceptAgainstAnchor, resolveCandidateAgreement } from './candidate-agreement';
@@ -813,6 +814,10 @@ export class MetadataFetchPipeline {
             break;
           case 'overwrite':
           case 'overwriteIfProvided':
+            // Providers name a comic run without its start year, so taking their name would merge
+            // "Batman (2016)" back into every other "Batman" run.
+            if (field === 'seriesName' && typeof value === 'string' && isRunYearQualifiedName(existingValue as string | null | undefined, value))
+              break;
             (result as Record<string, unknown>)[field] = value;
             this.copyPublishedDateForYear(result, candidate, field);
             sources[field] = providerKey;

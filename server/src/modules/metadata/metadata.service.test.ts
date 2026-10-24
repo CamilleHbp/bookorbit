@@ -357,6 +357,125 @@ describe('MetadataService', () => {
       });
     });
 
+    describe('applying path rules to books already in a library', () => {
+      const sources = [{ key: 'embedded', absolutePath: '/comics/Saga/Saga #12.cbz', format: 'cbz' }];
+      const precedence = ['embedded', 'opfFile', 'regex'];
+      const stored = { title: 'Fetched title', seriesName: null, seriesIndex: null, publishedYear: null, publishedDate: null };
+
+      afterEach(() => vi.restoreAllMocks());
+
+      it('writes only the fields the rules decide and never reads the cover', async () => {
+        const { db, updateSet, selectLimit } = makeDb();
+        selectLimit.mockResolvedValueOnce([stored]);
+        const scoreService = { calculateAndSave: vi.fn().mockResolvedValue(undefined) };
+        const service = makeService(db, undefined, { scoreService });
+        const extraction = vi
+          .spyOn(MetadataExtractionService.prototype, 'extract')
+          .mockResolvedValueOnce({ title: 'File title', authors: [], genres: [], cover: null });
+
+        const changed = await service.applyRegexMetadataRules(
+          9,
+          sources,
+          { title: 'Regex title', seriesName: 'Saga', seriesIndex: '12' },
+          precedence,
+        );
+
+        expect(changed).toBe('updated');
+        expect(extraction).toHaveBeenCalledWith('/comics/Saga/Saga #12.cbz', 'cbz', { cover: false });
+        expect(updateSet).toHaveBeenCalledTimes(1);
+        expect(updateSet.mock.calls[0][0]).toMatchObject({ seriesName: 'Saga', seriesIndex: '12' });
+        expect(updateSet.mock.calls[0][0]).not.toHaveProperty('title');
+        expect(scoreService.calculateAndSave).toHaveBeenCalledWith(9);
+      });
+
+      it('adds the run year to a series the file names without it', async () => {
+        const { db, updateSet, selectLimit } = makeDb();
+        selectLimit.mockResolvedValueOnce([{ ...stored, seriesName: 'Batman', seriesIndex: '12' }]);
+        const service = makeService(db);
+        vi.spyOn(MetadataExtractionService.prototype, 'extract').mockResolvedValueOnce({
+          seriesName: 'Batman',
+          seriesIndex: '12',
+          authors: [],
+          genres: [],
+          cover: null,
+        });
+
+        const changed = await service.applyRegexMetadataRules(9, sources, { seriesName: 'Batman (2016)', seriesIndex: '12' }, precedence);
+
+        expect(changed).toBe('updated');
+        expect(updateSet.mock.calls[0][0]).toMatchObject({ seriesName: 'Batman (2016)' });
+        expect(updateSet.mock.calls[0][0]).not.toHaveProperty('seriesIndex');
+      });
+
+      it('leaves a series the file supplies alone when the file ranks above the rules', async () => {
+        const { db, updateSet } = makeDb();
+        const service = makeService(db);
+        vi.spyOn(MetadataExtractionService.prototype, 'extract').mockResolvedValueOnce({
+          seriesName: 'Detective Comics',
+          seriesIndex: '7',
+          authors: [],
+          genres: [],
+          cover: null,
+        });
+
+        const changed = await service.applyRegexMetadataRules(9, sources, { seriesName: 'Batman (2016)', seriesIndex: '12' }, precedence);
+
+        expect(changed).toBe('unchanged');
+        expect(updateSet).not.toHaveBeenCalled();
+      });
+
+      it('reports no change when the book already carries what the rules decide', async () => {
+        const { db, updateSet, selectLimit } = makeDb();
+        selectLimit.mockResolvedValueOnce([{ ...stored, seriesName: 'Saga', seriesIndex: '12' }]);
+        const scoreService = { calculateAndSave: vi.fn() };
+        const service = makeService(db, undefined, { scoreService });
+        vi.spyOn(MetadataExtractionService.prototype, 'extract').mockResolvedValueOnce({ authors: [], genres: [], cover: null });
+
+        expect(await service.applyRegexMetadataRules(9, sources, { seriesName: 'Saga', seriesIndex: '12' }, precedence)).toBe('unchanged');
+        expect(updateSet).not.toHaveBeenCalled();
+        expect(scoreService.calculateAndSave).not.toHaveBeenCalled();
+      });
+
+      it('writes nothing when no file of the book can be read', async () => {
+        const { db, updateSet } = makeDb();
+        const service = makeService(db);
+        const extraction = vi.spyOn(MetadataExtractionService.prototype, 'extract').mockRejectedValue(new Error('EIO: i/o error'));
+
+        const result = await service.applyRegexMetadataRules(
+          9,
+          [...sources, { key: 'opfFile', absolutePath: '/comics/Saga/metadata.opf', format: 'opf' }],
+          { title: 'Regex title', seriesName: 'Saga', seriesIndex: '12' },
+          precedence,
+        );
+
+        expect(result).toBe('unreadable');
+        expect(extraction).toHaveBeenCalledTimes(2);
+        expect(updateSet).not.toHaveBeenCalled();
+      });
+
+      it('lets the rules lead when the files simply carry no metadata', async () => {
+        const { db, updateSet, selectLimit } = makeDb();
+        selectLimit.mockResolvedValueOnce([stored]);
+        const service = makeService(db);
+        vi.spyOn(MetadataExtractionService.prototype, 'extract').mockResolvedValueOnce(null);
+
+        expect(await service.applyRegexMetadataRules(9, sources, { seriesName: 'Saga', seriesIndex: '12' }, precedence)).toBe('updated');
+        expect(updateSet.mock.calls[0][0]).toMatchObject({ seriesName: 'Saga', seriesIndex: '12' });
+      });
+
+      it('respects locked fields', async () => {
+        const { db, updateSet, selectLimit } = makeDb();
+        selectLimit.mockResolvedValueOnce([stored]);
+        const filter = vi.fn().mockResolvedValue({ dto: {}, skippedFields: ['seriesName', 'seriesIndex'] });
+        const service = makeService(db, undefined, { bookMetadataLockService: { isFieldLocked: vi.fn(), filterAutomatedBookUpdate: filter } });
+        vi.spyOn(MetadataExtractionService.prototype, 'extract').mockResolvedValueOnce({ authors: [], genres: [], cover: null });
+
+        expect(await service.applyRegexMetadataRules(9, sources, { seriesName: 'Saga', seriesIndex: '12' }, precedence)).toBe('unchanged');
+        expect(filter).toHaveBeenCalledWith(9, { seriesName: 'Saga', seriesIndex: '12' });
+        expect(updateSet).not.toHaveBeenCalled();
+      });
+    });
+
     describe('file extraction failures', () => {
       const sources = [
         { key: 'embedded', absolutePath: '/books/file.epub', format: 'epub' },
