@@ -216,6 +216,10 @@ When adding user-facing text in code, add the Vue I18n key only to `client/src/l
 
 Questions are welcome, even if you are unsure whether something is a bug. Share workflows, your setup, or companion apps in community conversations. See the [community guide](docs/COMMUNITY.md) for choosing a category and how topics are handled.
 
+## A Note on the API
+
+BookOrbit is under very active development, with new features and improvements landing often. Its API grows alongside the official apps and is shaped around what they need, so it changes at the same pace. Care is taken to keep released app versions working, but the API is not a stable public interface and carries no compatibility guarantees. The official apps, OPDS, Kobo sync, and the KOReader plugin are the supported ways to connect, so for the smoothest experience start there.
+
 ## License and Attribution
 
 Copyright (C) 2025-2026 neon and BookOrbit contributors.
