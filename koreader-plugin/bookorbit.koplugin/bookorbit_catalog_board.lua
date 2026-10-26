@@ -779,11 +779,27 @@ function CatalogBoard:updateDashboardItems(select_number, no_recalculate_dimen)
     if packed then self:boardDump(d, page) end
     self:boardScheduleClock()
     self:finishCustomUpdate(old_dimen, select_number)
+    self:boardRefreshPets()
+end
+
+-- The pets are colour pictures. A colour screen shows them in full colour only
+-- through a dithered refresh (on Kaleido, its colour waveform), and the
+-- board's own "ui" refresh is not one, so each pet tile gets its own.
+function CatalogBoard:boardRefreshPets()
+    if not Screen:isColorEnabled() then return end
+    for _i, entry in ipairs(self._board_tiles or {}) do
+        if entry.item.type == "buddy" then
+            local tile = entry.tile
+            UIManager:setDirty(nil, function()
+                if tile.dimen and tile.dimen.x then return "partial", tile.dimen, true end
+            end)
+        end
+    end
 end
 
 -- Repaints one tile in place: rebuilds its content and refreshes only its
 -- rectangle, so a stepper or a hero page does not flash the whole board.
-function CatalogBoard:boardRefreshTile(entry, mode)
+function CatalogBoard:boardRefreshTile(entry, mode, dither)
     if not entry or not self._board_ctx then return end
     self._board_ctx.d = BoardData.build(self, self.current_context or {}, os.time())
     local fresh = self:boardBuildTile(self._board_ctx, entry.item, entry.w, entry.h)
@@ -791,7 +807,7 @@ function CatalogBoard:boardRefreshTile(entry, mode)
     entry.tile.hits = fresh.hits
     local dimen = entry.tile.dimen
     if dimen and dimen.x then
-        UIManager:setDirty(self.show_parent, function() return mode or "ui", dimen end)
+        UIManager:setDirty(self.show_parent, function() return mode or "ui", dimen, dither end)
     else
         self:updateItems(nil, true)
     end
@@ -831,7 +847,12 @@ function CatalogBoard:boardRefreshClock()
         local t = entry.item.type
         -- The buddy yawns at night and the moon moves on: both change at most
         -- by the hour, so they are redrawn only when one turns.
-        if t == "clock" or t == "analog" or (new_hour and (t == "buddy" or t == "moon")) then
+        if new_hour and t == "buddy" then
+            -- "fast" is black and white only: a shaded pet needs its greys, or
+            -- its colours through the dithered colour refresh.
+            local colour = Screen:isColorEnabled()
+            self:boardRefreshTile(entry, colour and "partial" or "ui", colour or nil)
+        elseif t == "clock" or t == "analog" or (new_hour and t == "moon") then
             self:boardRefreshTile(entry, "fast")
         end
     end

@@ -38,7 +38,7 @@ Inside BookOrbit, the menu button (or a swipe down from the top edge, on any Boo
 
 Interface size defaults to 1.05x when no preference is saved. Existing scale choices are preserved.
 
-To add a companion, choose Customize > Add widget > Decor: Reading dog, Reading rabbit, Reading owl, Reading penguin, Reading robot, Reading vampire, Reading dragon or Reading ghost. The original Reading buddy is the cat. Each companion reacts to reading, idle time, streak milestones, finishing a book and late-night sessions, with six distinct pixel-art poses. All support small, medium and large tiles; each widget keeps its selected character when the dashboard is saved.
+To add a companion, choose Customize > Add widget > Decor: Reading dog, Reading rabbit, Reading owl, Reading penguin, Reading robot, Reading vampire, Reading dragon, Reading ghost, Reading mimic, Reading mummy, Reading witch, Reading skeleton, Reading candle or Reading alien. The original Reading buddy is the cat. Each companion reacts to reading, idle time, streak milestones, finishing a book and late-night sessions, with six distinct pixel-art poses, in colour on a colour screen and in shades of grey on any other. All support small, medium and large tiles; each widget keeps its selected character when the dashboard is saved.
 
 The plugin extends KOReader's live menu order to keep its Tools entry below Calibre and its icon just before the main menu without replacing tabs or tools added by other plugins. Older BookOrbit-generated menu-order files are removed automatically; hand-maintained menu-order files keep their other entries.
 

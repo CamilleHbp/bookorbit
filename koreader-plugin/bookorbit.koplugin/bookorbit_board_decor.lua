@@ -27,8 +27,6 @@ local BoardData = require("bookorbit_board_data")
 local BoardIcons = require("bookorbit_board_icons")
 local BoardMetrics = require("bookorbit_board_metrics")
 local BoardUI = require("bookorbit_board_ui")
-local SPRITES = require("bookorbit_board_sprites")
-local ANIMAL_SPRITES = require("bookorbit_board_animal_sprites")
 
 local INK = BoardMetrics.INK
 local px, lh1 = BoardMetrics.px, BoardMetrics.lh1
@@ -157,9 +155,20 @@ local function bubble(w, lines, s, tail, second_is_data)
     return overlay(w, h + t - bw, { { widget = frame }, { widget = tail_art, x = round(w * 0.42) - t, y = h - bw } }), 0, h
 end
 
-local function shadow(sw, k)
-    local sh_w, sh_h = round(sw * 0.62), math.max(3, round(k * 1.6))
+local function shadow(sw)
+    local sh_w, sh_h = round(sw * 0.62), math.max(3, round(sw * 0.05))
     return svg(sh_w, sh_h, '<ellipse cx="' .. n(sh_w / 2) .. '" cy="' .. n(sh_h / 2) .. '" rx="' .. n(sh_w / 2) .. '" ry="' .. n(sh_h / 2) .. '" fill="#dddddd"/>')
+end
+
+-- The pets, one module each (bookorbit_pets), loaded the first time a tile
+-- shows one. A name this plugin does not know shows the cat.
+Decor.PETS = { "cat", "dog", "rabbit", "owl", "penguin", "robot", "vampire", "dragon", "ghost",
+    "mimic", "mummy", "witch", "skeleton", "candle", "alien" }
+local KNOWN_PETS = {}
+for _i, name in ipairs(Decor.PETS) do KNOWN_PETS[name] = true end
+
+function Decor.pet(name)
+    return require("bookorbit_pets." .. (KNOWN_PETS[name] and name or "cat"))
 end
 
 function Decor.buddy(ctx, w, hh, props)
@@ -167,32 +176,38 @@ function Decor.buddy(ctx, w, hh, props)
     local pad = px(12)
     local iw, ih = w - 2 * pad, hh - 2 * pad
     local pose = Decor.buddyPose(d)
-    local sprites = ANIMAL_SPRITES[props and props.animal] or SPRITES
-    local rows = sprites[pose]
+    local pet = Decor.pet(props and props.animal)
+    local rows, palette = pet[pose], pet.palette
     local SW, SH = #rows[1], #rows
     local lines, data2 = buddyLines(pose, d)
-    local function scaleFor(aw, ah) return math.max(1, math.floor(math.min(aw / SW, ah / SH))) end
+    -- Half steps, so a 64-cell pet has a size between 64 and 128 pixels.
+    local function scaleFor(aw, ah) return math.max(1, math.floor(math.min(aw / SW, ah / SH) * 2) / 2) end
+    local function size(k) return BoardArt.spriteEdge(SW, k), BoardArt.spriteEdge(SH, k) end
+    local function sprite(k) return BoardArt.sprite(rows, k, palette) end
+    -- The floor shadow is a twentieth of the sprite's width.
+    local with_shadow = 1 + 0.05 * SW / SH
     local variants = {}
     local wide = iw > ih * 1.6
     local tall = ih > iw * 0.6 and ih > px(150)
     if tall then
         -- Near-square tiles: the bubble above, the companion on the floor under it,
         -- when that gives a bigger companion than sitting side by side.
-        local side_k = scaleFor(math.min(iw * 0.6, iw - px(10) - px(124)), (ih - px(2)) / (1 + 1.6 / SH))
+        local side_k = scaleFor(math.min(iw * 0.6, iw - px(10) - px(124)), (ih - px(2)) / with_shadow)
         for _i, s in ipairs({ 15, 14 }) do
             table.insert(variants, function()
                 local bw = math.min(iw, math.max(px(200), round(iw * 0.72)))
                 local bub, _ox, bh = bubble(bw, lines, s, "down", data2)
                 local gap_v = px(14)
-                local k = scaleFor(iw * 0.8, (ih - bh - gap_v) / (1 + 1.6 / SH))
+                local k = scaleFor(iw * 0.8, (ih - bh - gap_v) / with_shadow)
                 if k <= side_k then return skip("stacked companion no bigger") end
-                local sh, sh_h, sw = SH * k, math.max(3, round(k * 1.6)), SW * k
+                local sw, sh = size(k)
+                local sh_h = math.max(3, round(sw * 0.05))
                 local top = round((ih - (bh + gap_v + sh + sh_h)) / 2)
                 if top < 0 then return skip("stack too tall") end
                 return padded(w, hh, { overlay(iw, ih, {
                     { widget = bub, x = round((iw - bw) / 2), y = top },
-                    { widget = shadow(sw, k), x = round((iw - round(sw * 0.62)) / 2), y = top + bh + gap_v + sh - round(sh_h / 2) },
-                    { widget = BoardArt.sprite(rows, k), x = round((iw - sw) / 2), y = top + bh + gap_v },
+                    { widget = shadow(sw), x = round((iw - round(sw * 0.62)) / 2), y = top + bh + gap_v + sh - round(sh_h / 2) },
+                    { widget = sprite(k), x = round((iw - sw) / 2), y = top + bh + gap_v },
                 }) })
             end)
         end
@@ -200,17 +215,20 @@ function Decor.buddy(ctx, w, hh, props)
         for _i, s in ipairs({ 15, 14, 13 }) do
             table.insert(variants, function()
                 local gap = px(10)
-                local k = scaleFor(math.min(iw * 0.6, iw - gap - px(124)), (ih - px(2)) / (1 + 1.6 / SH))
-                if k < 3 then return skip("companion too small") end
-                local sw, sh, sh_h = SW * k, SH * k, math.max(3, round(k * 1.6))
+                local k = scaleFor(math.min(iw * 0.6, iw - gap - px(124)), (ih - px(2)) / with_shadow)
+                local sw, sh = size(k)
+                -- Floors are sprite widths in pixels, not scales, so they mean the
+                -- same for every canvas size.
+                if sw < 96 then return skip("companion too small") end
+                local sh_h = math.max(3, round(sw * 0.05))
                 local bw = iw - sw - gap
                 local bub, ox, bh = bubble(bw, lines, s, "left", data2)
                 if bh > ih then return skip("bubble too tall") end
                 local top = round((ih - sh - sh_h / 2) / 2)
                 local btop = clamp(top + round(sh * 0.22) - px(14), 0, ih - bh)
                 return padded(w, hh, { overlay(iw, ih, {
-                    { widget = shadow(sw, k), x = round((sw - round(sw * 0.62)) / 2), y = top + sh - round(sh_h / 2) },
-                    { widget = BoardArt.sprite(rows, k), x = 0, y = top },
+                    { widget = shadow(sw), x = round((sw - round(sw * 0.62)) / 2), y = top + sh - round(sh_h / 2) },
+                    { widget = sprite(k), x = 0, y = top },
                     { widget = bub, x = sw + gap - ox, y = btop },
                 }) })
             end)
@@ -222,14 +240,14 @@ function Decor.buddy(ctx, w, hh, props)
             for _j, two in ipairs({ true, false }) do
                 table.insert(variants, function()
                     local k = scaleFor(iw * 0.42, ih)
-                    local sw = SW * k
+                    local sw = size(k)
                     local gap = px(14)
                     local bw = iw - sw - gap
                     if bw < px(96) then return skip("bubble too narrow") end
                     local bub, ox = bubble(bw, two and lines or { lines[1] }, s, "left", data2)
                     return padded(w, hh, {
                         hstack({ w = iw, h = ih }, {
-                            vstack({ w = sw, h = ih }, { flex(0), BoardArt.sprite(rows, k) }),
+                            vstack({ w = sw, h = ih }, { flex(0), sprite(k) }),
                             space(gap - ox, 1),
                             bub,
                         }),
@@ -242,11 +260,11 @@ function Decor.buddy(ctx, w, hh, props)
     table.insert(variants, function()
         local cap_h = lh1(12) + px(4)
         local k = scaleFor(iw, ih - cap_h)
-        if k < 2 then return skip("companion too small") end
-        return padded(w, hh, { flex(0), BoardArt.sprite(rows, k), space(nil, px(4)), text(lines[1], { s = 12, b = true, w = iw, align = "center" }) }, "center")
+        if size(k) < 64 then return skip("companion too small") end
+        return padded(w, hh, { flex(0), sprite(k), space(nil, px(4)), text(lines[1], { s = 12, b = true, w = iw, align = "center" }) }, "center")
     end)
     table.insert(variants, function()
-        return padded(w, hh, { flex(0), BoardArt.sprite(rows, scaleFor(iw, ih)), flex(0) }, "center")
+        return padded(w, hh, { flex(0), sprite(scaleFor(iw, ih)), flex(0) }, "center")
     end)
     return pick(variants)
 end
