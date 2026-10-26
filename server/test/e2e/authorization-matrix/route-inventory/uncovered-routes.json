@@ -109,6 +109,7 @@
   "GET /koreader/plugin/version",
   "GET /koreader/syncs/progress/:document",
   "GET /koreader/unmatched-books",
+  "GET /koreader/unmatched-books/suggestions",
   "GET /koreader/users/auth",
   "GET /libraries/:id|:libraryId",
   "GET /libraries/:id|:libraryId/access",

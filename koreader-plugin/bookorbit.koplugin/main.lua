@@ -585,6 +585,11 @@ function BookOrbit:isOpenBookMatched(digest)
     return BookOrbitStateManager.getBook(digest) ~= nil
 end
 
+function BookOrbit:isOpenBookPositionIncompatible(digest)
+    local book = digest and BookOrbitStateManager.getBook(digest) or nil
+    return book ~= nil and book.positionIncompatible == true
+end
+
 function BookOrbit:recordOpenAnnotationUnmatched(reason)
     self:recordHighlightSync({
         event = "open_book",
@@ -1072,7 +1077,7 @@ function BookOrbit:matchOpenBookForAutoSync(on_done)
         local matched = false
         for _, match in ipairs(body.matches or {}) do
             if match.hash == digest then
-                state:setMatched(match.hash, match.bookFileId, match.bookId, self.ui.document.file)
+                state:setMatched(match.hash, match.bookFileId, match.bookId, self.ui.document.file, nil, match.positionCompatible)
                 matched = true
                 break
             end
@@ -1143,10 +1148,10 @@ function BookOrbit:exchangeAnnotationsForOpenBook(reason, retry_count)
         if bm_ok and bm_err == "unsupported_server" then
             BookOrbitBookmarks.markUnsupported(client)
         else
-            bm_done = bm_ok and bm_result ~= nil and not bm_result.had_errors
+            bm_done = bm_ok and bm_result ~= nil and not bm_result.had_errors and not bm_result.incompatible
         end
     end
-    if ok and result and not result.had_errors and bm_done then
+    if ok and result and not result.had_errors and not result.incompatible and bm_done then
         BookOrbitSidecar.markLive(self.ui.doc_settings)
     end
     state:flush()

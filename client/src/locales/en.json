@@ -3577,7 +3577,10 @@
             "reviewDismissed": "Book dismissed from review",
             "reviewDismissFailed": "Failed to dismiss book from review",
             "reviewAllDismissed": "{count, plural, =0 {Dismissed no books from review} one {Dismissed # book from review} other {Dismissed # books from review}}",
-            "reviewDismissAllFailed": "Failed to dismiss all books from review"
+            "reviewDismissAllFailed": "Failed to dismiss all books from review",
+            "suggestedLinked": "{count, plural, one {Linked # suggested book} other {Linked # suggested books}}",
+            "suggestedPartlyLinked": "{linked, plural, one {Linked # suggested book.} other {Linked # suggested books.}} {failed, plural, one {# could not be linked and stays in the list.} other {# could not be linked and stay in the list.}}",
+            "suggestedLinkFailed": "Could not link the suggested books"
           },
           "modal": {
             "linkTitle": "Link KOReader book",
@@ -3638,7 +3641,21 @@
           "manualUnlinkConfirmBody": "Remove the manual link to {title} and return this book to the review list. Future syncs will use an automatic match if one exists. Already synced stats will stay on their current BookOrbit book.",
           "reviewDismissConfirmBody": "This removes it from your books to review. Automatic matching and existing sync data are kept. If a device reports the hash again without a match, it can reappear.",
           "reviewDismissAllConfirmTitle": "{count, plural, =0 {No books to review} one {Dismiss all # book to review?} other {Dismiss all # books to review?}}",
-          "reviewDismissAllConfirmBody": "This clears your entire books to review list, including entries on other pages. Automatic matching and existing sync data are kept. If a device reports a hash again without a match, it can reappear."
+          "reviewDismissAllConfirmBody": "This clears your entire books to review list, including entries on other pages. Automatic matching and existing sync data are kept. If a device reports a hash again without a match, it can reappear.",
+          "copyNote": "This KOReader copy is a different file from the one in BookOrbit. Reading status, rating, reading time and progress (as a percentage) will sync. Highlights and bookmarks will not. To sync everything, download the book to KOReader from BookOrbit.",
+          "differentCopyHint": "Different file from the one in BookOrbit: progress syncs as a percentage, and highlights and bookmarks don't sync.",
+          "suggestedMatch": "Suggested match",
+          "possibleMatches": "{count, plural, one {# possible match} other {# possible matches}}",
+          "morePossibleMatches": "{count, plural, one {More than # possible match} other {More than # possible matches}}",
+          "possibleMatchesHint": "Books in your library with the same title and authors. Check the edition before you link.",
+          "reviewMatch": "Review match",
+          "chooseMatch": "Choose match",
+          "linkSuggested": "Link suggested ({count})",
+          "bulkLinkTitle": "{count, plural, one {Link # suggested book?} other {Link # suggested books?}}",
+          "bulkLinkDescription": "Each KOReader book below has the same title and authors as exactly one book in your library. Check the list before linking.",
+          "bulkLinkConfirm": "{count, plural, one {Link # book} other {Link # books}}",
+          "bulkLinkListLabel": "Suggested links",
+          "openCandidate": "Open {title} in a new tab"
         },
         "remove": "Remove",
         "removing": "Removing...",

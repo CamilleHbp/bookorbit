@@ -340,7 +340,7 @@ stepMatch = function(ctx)
 
     for _, match in ipairs(body.matches or {}) do
         if match.hash == ctx.snap.digest then
-            ctx.state:setMatched(match.hash, match.bookFileId, match.bookId, ctx.snap.file)
+            ctx.state:setMatched(match.hash, match.bookFileId, match.bookId, ctx.snap.file, nil, match.positionCompatible)
             bindStatsRow(ctx, ctx.state:getBook(ctx.snap.digest))
             if not acknowledge(ctx, "match") then return end
             return step(ctx, stepStats)
@@ -561,7 +561,8 @@ stepAnnotations = function(ctx)
         closed_book = apply_mode == "sidecar",
     })
     if not result.had_errors then
-        ctx.sidecar_ann_done = true
+        -- An incompatible copy exchanged nothing, so its sidecar is not marked as known.
+        if not result.incompatible then ctx.sidecar_ann_done = true end
         book.annCount = ctx.snap.ann_count
         -- Only park remote changes when the user actually wants them applied;
         -- with two-way highlights off there is nothing to come back for.
@@ -716,7 +717,11 @@ stepBookmarks = function(ctx)
         return step(ctx, stepState)
     end
 
-    if result.had_errors then ctx.had_errors = true else ctx.sidecar_bm_done = true end
+    if result.had_errors then
+        ctx.had_errors = true
+    elseif not result.incompatible then
+        ctx.sidecar_bm_done = true
+    end
     ctx.counts.bookmarks = (ctx.counts.bookmarks or 0) + result.uploaded
     ctx.highlight_summary = BookOrbitHighlightSummary.addBookmarks(ctx.highlight_summary, result)
     if not result.had_errors and result.remote_pending and ctx.on_remote_pending then
