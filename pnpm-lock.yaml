@@ -24,7 +24,11 @@ overrides:
   piscina: ^4.9.3
   qs: ^6.15.2
   typescript-eslint: ^8.71.1
+  undici@>=6.0.0 <6.29.1: ^6.29.1
+  undici@>=7.0.0 <7.30.1: ^7.30.1
+  undici@>=8.0.0 <8.12.2: ^8.12.2
   ws: ^8.21.3
+  zod@>=4.0.0 <4.6.6: ^4.6.6
 
 packageExtensionsChecksum: sha256-lYHZSbnY3HtmtA7cTNBaRHB7pR5jsVv2XAfakE6TS/A=
 
@@ -494,14 +498,14 @@ importers:
         specifier: ^4.8.4
         version: 4.8.4(supports-color@10.2.2)
       undici:
-        specifier: ^8.11.2
-        version: 8.11.2
+        specifier: ^8.12.2
+        version: 8.12.3
       unzipper:
         specifier: ^0.12.5
         version: 0.12.5
       zod:
-        specifier: ^4.6.5
-        version: 4.6.5
+        specifier: ^4.6.6
+        version: 4.6.7
     devDependencies:
       '@eslint/eslintrc':
         specifier: ^3.3.7
@@ -2281,7 +2285,7 @@ packages:
     resolution: {integrity: sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==}
     peerDependencies:
       hono: '>=3.9.0'
-      zod: ^3.25.0 || ^4.0.0
+      zod: ^4.6.6
 
   '@huggingface/jinja@0.5.10':
     resolution: {integrity: sha512-SgS1D1bglQ94ceD4ZCL6eayUDy9uV1xuyk61OjgSxU5GJh7upqZCKII0JoTYMc6wWsg3JUgaPRX0ElQzXPk3Cw==}
@@ -3415,7 +3419,7 @@ packages:
     deprecated: Renamed to zodline - install zodline instead.
     hasBin: true
     peerDependencies:
-      zod: ^4.0.0
+      zod: ^4.6.6
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     resolution: {integrity: sha512-Vu/NICrgdRvUOeaJZIyB2FP63s6fO/4ud5l8dXmxDx9yDyn+mN0y+gsvsVviSli+T361Aqo0h46EuMoobrwawA==}
@@ -6451,7 +6455,7 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4.8.0
-      zod: ^4.0.0
+      zod: ^4.6.6
 
   hono@4.13.13:
     resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
@@ -9065,20 +9069,16 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
-  undici@6.29.0:
-    resolution: {integrity: sha512-R+RODBqp6i2pPflGdq+xIOUkl+RNfGgHwoinecKu/JCuf2uO06cOKoDbI2P7Dn6KcswdKwrczbU6IYJ6K8X+wg==}
+  undici@6.29.1:
+    resolution: {integrity: sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==}
     engines: {node: '>=18.17'}
 
-  undici@7.14.0:
-    resolution: {integrity: sha512-Vqs8HTzjpQXZeXdpsfChQTlafcMQaaIwnGwLam1wudSSjlJeQ3bw1j+TLPePgrCnCpUXx7Ba5Pdpf5OBih62NQ==}
+  undici@7.30.1:
+    resolution: {integrity: sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg==}
     engines: {node: '>=20.18.1'}
 
-  undici@7.30.0:
-    resolution: {integrity: sha512-dkrQXeHSaoamnItlYbmzG0wFYrM0ZwDxCIg0A7aKjTyyhh9svRzCNFEzV+Vm05/yehjCzjDZ31KXfGEjYSztDQ==}
-    engines: {node: '>=20.18.1'}
-
-  undici@8.11.2:
-    resolution: {integrity: sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ==}
+  undici@8.12.3:
+    resolution: {integrity: sha512-+fdndUTwBP86cVjihTp21hZHo7d6oj1c/47XPA3lL8mM0XHs+C4EkcjmgRsFnFk2f/UONGDy9ItBItmXsLOQHw==}
     engines: {node: '>=22.19.0'}
 
   unicode-canonical-property-names-ecmascript@2.0.1:
@@ -9709,10 +9709,10 @@ packages:
     resolution: {integrity: sha512-P2jsOOBAq/6hCwUsMCjUATZ8szkMsV5VAwZENfyxp2Hc/XPJQpVwAgevWZc65xZauCwWB9LAn7zYeiCJFAEL+A==}
     engines: {node: '>=20'}
     peerDependencies:
-      zod: ^3.25.74 || ^4.0.0
+      zod: ^4.6.6
 
-  zod@4.6.5:
-    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
   zrender@6.1.0:
     resolution: {integrity: sha512-oEGMDB6pOP2S6OwRR4PdVv610zrjnA3Bh+JnSG12fYJlBKjtNAoEb5fSUoCOOINlH96I2fU38/A2UpRKs67xYQ==}
@@ -9735,7 +9735,7 @@ snapshots:
   '@actions/http-client@4.0.1':
     dependencies:
       tunnel: 0.0.6
-      undici: 6.29.0
+      undici: 6.29.1
 
   '@actions/io@3.0.2': {}
 
@@ -11538,10 +11538,10 @@ snapshots:
     dependencies:
       hono: 4.13.13
 
-  '@hono/zod-validator@0.7.6(hono@4.13.13)(zod@4.6.5)':
+  '@hono/zod-validator@0.7.6(hono@4.13.13)(zod@4.6.7)':
     dependencies:
       hono: 4.13.13
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@huggingface/jinja@0.5.10': {}
 
@@ -12403,9 +12403,9 @@ snapshots:
     dependencies:
       '@readium/helpers': 1.2.1
 
-  '@robingenz/zli@0.2.0(zod@4.6.5)':
+  '@robingenz/zli@0.2.0(zod@4.6.7)':
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     optional: true
@@ -12610,7 +12610,7 @@ snapshots:
       p-filter: 4.1.0
       semantic-release: 25.0.9(supports-color@10.2.2)(typescript@6.0.3)
       tinyglobby: 0.2.17
-      undici: 7.30.0
+      undici: 7.30.1
       url-join: 5.0.0
     transitivePeerDependencies:
       - kerberos
@@ -12766,9 +12766,9 @@ snapshots:
       '@aws-sdk/client-s3': 3.1152.0
       '@aws-sdk/client-transcribe': 3.1152.0
       '@hono/node-server': 2.1.5(hono@4.13.13)
-      '@hono/zod-validator': 0.7.6(hono@4.13.13)(zod@4.6.5)
+      '@hono/zod-validator': 0.7.6(hono@4.13.13)(zod@4.6.7)
       '@huggingface/transformers': 4.3.1(@types/node@26.6.5)
-      '@robingenz/zli': 0.2.0(zod@4.6.5)
+      '@robingenz/zli': 0.2.0(zod@4.6.7)
       '@storyteller-platform/fs': 0.3.1
       '@storyteller-platform/media-types': 0.2.1
       chalk: 5.6.2
@@ -12776,15 +12776,15 @@ snapshots:
       ffmpeg-stream: 1.0.1(supports-color@10.2.2)
       fs-extra: 11.3.1
       hono: 4.13.13
-      hono-zod-openapi: 1.1.1(hono@4.13.13)(zod@4.6.5)
+      hono-zod-openapi: 1.1.1(hono@4.13.13)(zod@4.6.7)
       lodash.merge: 4.6.2
       microsoft-cognitiveservices-speech-sdk: 1.44.1(supports-color@10.2.2)
       onnxruntime-node: 1.30.0
-      openai: 4.103.0(ws@8.22.0)(zod@4.6.5)
+      openai: 4.103.0(ws@8.22.0)(zod@4.6.7)
       p-queue: 9.3.5
       tar: 7.5.22
-      undici: 7.14.0
-      zod: 4.6.5
+      undici: 7.30.1
+      zod: 4.6.7
     optionalDependencies:
       '@storyteller-platform/mlx-audio': 0.1.2
     transitivePeerDependencies:
@@ -14318,7 +14318,7 @@ snapshots:
       parse5: 7.3.0
       parse5-htmlparser2-tree-adapter: 7.1.0
       parse5-parser-stream: 7.1.2
-      undici: 7.30.0
+      undici: 7.30.1
       whatwg-mimetype: 4.0.0
 
   chokidar@4.0.3:
@@ -15652,12 +15652,12 @@ snapshots:
 
   highlight.js@10.7.3: {}
 
-  hono-zod-openapi@1.1.1(hono@4.13.13)(zod@4.6.5):
+  hono-zod-openapi@1.1.1(hono@4.13.13)(zod@4.6.7):
     dependencies:
-      '@hono/zod-validator': 0.7.6(hono@4.13.13)(zod@4.6.5)
+      '@hono/zod-validator': 0.7.6(hono@4.13.13)(zod@4.6.7)
       hono: 4.13.13
-      zod: 4.6.5
-      zod-openapi: 5.4.6(zod@4.6.5)
+      zod: 4.6.7
+      zod-openapi: 5.4.6(zod@4.6.7)
 
   hono@4.13.13: {}
 
@@ -16051,7 +16051,7 @@ snapshots:
       parse5: 8.0.1
       saxes: 6.0.0
       tough-cookie: 6.0.2
-      undici: 8.11.2
+      undici: 8.12.3
       w3c-xmlserializer: 6.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -16684,7 +16684,7 @@ snapshots:
       powershell-utils: 0.2.1
       wsl-utils: 1.0.1
 
-  openai@4.103.0(ws@8.22.0)(zod@4.6.5):
+  openai@4.103.0(ws@8.22.0)(zod@4.6.7):
     dependencies:
       '@types/node': 18.19.130
       '@types/node-fetch': 2.6.13
@@ -16695,7 +16695,7 @@ snapshots:
       node-fetch: 2.7.0
     optionalDependencies:
       ws: 8.22.0
-      zod: 4.6.5
+      zod: 4.6.7
     transitivePeerDependencies:
       - encoding
 
@@ -18321,13 +18321,11 @@ snapshots:
 
   undici-types@8.9.0: {}
 
-  undici@6.29.0: {}
+  undici@6.29.1: {}
 
-  undici@7.14.0: {}
+  undici@7.30.1: {}
 
-  undici@7.30.0: {}
-
-  undici@8.11.2: {}
+  undici@8.12.3: {}
 
   unicode-canonical-property-names-ecmascript@2.0.1: {}
 
@@ -18971,11 +18969,11 @@ snapshots:
 
   zlibjs@0.3.1: {}
 
-  zod-openapi@5.4.6(zod@4.6.5):
+  zod-openapi@5.4.6(zod@4.6.7):
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.7
 
-  zod@4.6.5: {}
+  zod@4.6.7: {}
 
   zrender@6.1.0:
     dependencies:
