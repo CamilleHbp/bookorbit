@@ -263,7 +263,13 @@ function GlyphWidget:paintTo(bb, x, y)
     self.dimen.x, self.dimen.y = x, y
     local g = renderGlyph(self.file, self.codepoint, self.size)
     if not g then return end
-    bb:colorblitFrom(g.bb, x, y, 0, 0, g.bb:getWidth(), g.bb:getHeight(), self.color or Blitbuffer.COLOR_BLACK)
+    local color = self.color or Blitbuffer.COLOR_BLACK
+    -- The plain colour blit keeps only gray; an RGB colour takes the RGB one.
+    if Blitbuffer.isColor8 and not Blitbuffer.isColor8(color) and bb.colorblitFromRGB32 then
+        bb:colorblitFromRGB32(g.bb, x, y, 0, 0, g.bb:getWidth(), g.bb:getHeight(), color)
+    else
+        bb:colorblitFrom(g.bb, x, y, 0, 0, g.bb:getWidth(), g.bb:getHeight(), color)
+    end
 end
 
 -- One character's bitmap at a pixel size: { bb, l, t }, or nil. Drawn by

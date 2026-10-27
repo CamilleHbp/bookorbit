@@ -12,6 +12,7 @@ local datetime = require("datetime")
 local T = require("ffi/util").template
 local _ = require("gettext")
 
+local BoardColour = require("bookorbit_board_colour")
 local BoardData = require("bookorbit_board_data")
 local BoardStore = require("bookorbit_board_store")
 local BoardMetrics = require("bookorbit_board_metrics")
@@ -85,7 +86,7 @@ local function cover(ctx, book, w, h, o)
         path = book and book.cover_path,
         loading = book and book.cover_state == "loading",
         border = o.border or thin(),
-        border_col = o.border_col or INK.gb,
+        border_col = o.border_col or BoardColour.coverEdge(ctx, INK.gb),
         dim = o.dim,
     })
 end
@@ -132,7 +133,7 @@ W.hero = function(ctx, w, hh)
                     return hstack({ w = w, h = hh }, {
                         space(pad, 1),
                         vstack({ w = tw }, {
-                            text(_("Start reading"), { s = 11, b = true, col = INK.gb, w = tw }),
+                            text(_("Start reading"), { s = 11, b = true, col = BoardColour.onInk(ctx, INK.gb, "hero"), w = tw }),
                             space(nil, px(3)),
                             text(label, { s = 16, b = true, col = INK.white, lines = 2, w = tw }),
                         }),
@@ -159,7 +160,7 @@ W.hero = function(ctx, w, hh)
                     local shuffle = BoardUI.box({ w = BoardUI.runs({ _("Shuffle") }, { s = 14 }):getSize().w + px(16) + px(13) + px(16) + px(8), h = btn_h, radius = math.floor(btn_h / 2), bg = INK.white },
                         hstack({ h = btn_h, gap = px(8) }, { space(px(13), 1), icon("shuffle", px(16), { sw = 2.25 }), text(_("Shuffle"), { s = 14, b = true }) }))
                     return vstack({ w = w, h = hh, pad = pad }, {
-                        text(_("Start reading"), { s = 11, b = true, col = INK.gb, w = iw }),
+                        text(_("Start reading"), { s = 11, b = true, col = BoardColour.onInk(ctx, INK.gb, "hero"), w = iw }),
                         space(nil, px(3)),
                         text(_("Pick a book from your library to begin"), { s = 16, b = true, col = INK.white, lines = 2, w = iw }),
                         flex(px(10)),
@@ -195,9 +196,9 @@ W.hero = function(ctx, w, hh)
         local function meta(mv)
             local m = { { t = BoardData.pctLabel(book) or "0%", b = true, col = INK.white } }
             if mv == 2 and book.minutes_left then
-                table.insert(m, { t = " · " .. T(_("%1 left"), BoardData.formatDuration(book.minutes_left)), col = INK.gc })
+                table.insert(m, { t = " · " .. T(_("%1 left"), BoardData.formatDuration(book.minutes_left)), col = BoardColour.onInk(ctx, INK.gc, "hero") })
             elseif mv == 1 and book.minutes_left then
-                table.insert(m, { t = " · " .. T(_("%1 left"), BoardData.formatShortDuration(book.minutes_left)), col = INK.gc })
+                table.insert(m, { t = " · " .. T(_("%1 left"), BoardData.formatShortDuration(book.minutes_left)), col = BoardColour.onInk(ctx, INK.gc, "hero") })
             end
             return m
         end
@@ -216,11 +217,11 @@ W.hero = function(ctx, w, hh)
                     space(px(14), 1),
                     vstack({ w = tw2, h = ch }, {
                         flex(0),
-                        lab and text(lab, { s = 11, b = true, col = INK.gb, w = tw2 }) or false,
+                        lab and text(lab, { s = 11, b = true, col = BoardColour.onInk(ctx, INK.gb, "hero"), w = tw2 }) or false,
                         lab and space(nil, px(3)) or false,
                         text(book.title, { s = tf.s, b = true, col = INK.white, lines = tf.lines, w = tw2, data = true }),
                         space(nil, px(7)),
-                        hstack({ w = tw2, gap = px(10) }, { bar(math.max(px(20), tw2 - mw - px(10)), px(5), pct, { track = INK.g5, fill = INK.white, r = px(2.5) }), m }),
+                        hstack({ w = tw2, gap = px(10) }, { bar(math.max(px(20), tw2 - mw - px(10)), px(5), pct, { track = BoardColour.inkTrack(ctx, INK.g5, "hero"), fill = INK.white, r = px(2.5) }), m }),
                         flex(0),
                     }),
                     space(px(14), 1),
@@ -252,13 +253,13 @@ W.hero = function(ctx, w, hh)
     end
     local function pager()
         if total <= 1 then return nil end
-        return hstack({ gap = px(2) }, { text(T(_("%1 / %2"), 1, total), { s = 12, col = INK.gb }), icon("chevron-right", px(15), { col = "gb", sw = 2.5 }) })
+        return hstack({ gap = px(2) }, { text(T(_("%1 / %2"), 1, total), { s = 12, col = BoardColour.onInk(ctx, INK.gb, "hero") }), icon("chevron-right", px(15), { col = BoardColour.onInkHex(ctx, "gb", "hero"), sw = 2.5 }) })
     end
     local function meta(full)
         local m = { { t = tostring(math.floor(pct + 0.5)) .. "%", b = true, col = INK.white } }
         if book.minutes_left then
             local dur = full and BoardData.formatDuration(book.minutes_left) or BoardData.formatShortDuration(book.minutes_left)
-            table.insert(m, { t = " · " .. T(_("%1 left"), dur), col = INK.gc })
+            table.insert(m, { t = " · " .. T(_("%1 left"), dur), col = BoardColour.onInk(ctx, INK.gc, "hero") })
         end
         return m
     end
@@ -276,7 +277,7 @@ W.hero = function(ctx, w, hh)
             local fixed = lh1(12) + label_gap + author_gap + lh1(15) + progress_gap + px(6) + meta_gap + lh1(13) + action_gap + px(40)
             local tf = BoardUI.fitTitle(book.title, { b = true }, tw, { 26, 23, 20, 18, 16 }, 3, cover_h - fixed)
             local actions = opt.ghost and hstack({ gap = px(8) }, { btn(opt.short), ghost() }) or btn(opt.short)
-            local label = text(_("Continue reading"), { s = 12, b = true, col = INK.gb })
+            local label = text(_("Continue reading"), { s = 12, b = true, col = BoardColour.onInk(ctx, INK.gb, "hero") })
             return hstack({ w = w, h = hh, valign = "top" }, {
                 space(pad, 1),
                 -- A cover narrower than the column's height is centred in it,
@@ -288,9 +289,9 @@ W.hero = function(ctx, w, hh)
                     space(nil, label_gap),
                     text(book.title, { s = tf.s, b = true, col = INK.white, lines = tf.lines, w = tw, data = true }),
                     space(nil, author_gap),
-                    text(firstAuthor(book) or "", { s = 15, col = INK.gd, w = tw, data = true }),
+                    text(firstAuthor(book) or "", { s = 15, col = BoardColour.onInk(ctx, INK.gd, "hero"), w = tw, data = true }),
                     flex(progress_gap),
-                    bar(tw, px(6), pct, { track = INK.g5, fill = INK.white, r = px(3) }),
+                    bar(tw, px(6), pct, { track = BoardColour.inkTrack(ctx, INK.g5, "hero"), fill = INK.white, r = px(3) }),
                     space(nil, meta_gap),
                     runs(meta(opt.full_meta), { s = 13, w = tw }),
                     space(nil, action_gap),
@@ -319,17 +320,17 @@ W.hero = function(ctx, w, hh)
                 vstack({ w = cover_w, h = hh, pad = { pad, 0, pad, 0 } }, { flex(0), cover(ctx, book, cover_w, math.min(cover_h, math.floor(cover_w * 1.5 + 0.5)), { border = math.max(1, px(1)), border_col = INK.g4 }), flex(0) }),
                 space(gutter, 1),
                 vstack({ w = tw, h = hh, pad = { pad, 0, pad, 0 }, strict_padding = true }, {
-                    text(_("Continue reading"), { s = 12, b = true, col = INK.gb, w = tw }),
+                    text(_("Continue reading"), { s = 12, b = true, col = BoardColour.onInk(ctx, INK.gb, "hero"), w = tw }),
                     space(nil, px(6)),
                     text(book.title, { s = tf.s, b = true, col = INK.white, lines = tf.lines, w = tw, data = true }),
                     opt.author and space(nil, px(4)) or false,
-                    opt.author and text(firstAuthor(book) or "", { s = 13, col = INK.gd, w = tw, data = true }) or false,
+                    opt.author and text(firstAuthor(book) or "", { s = 13, col = BoardColour.onInk(ctx, INK.gd, "hero"), w = tw, data = true }) or false,
                     flex(px(8)),
                     hstack({ w = tw, gap = px(10) }, {
                         vstack({ w = bar_w }, {
                             text(tostring(math.floor(pct + 0.5)) .. "%", { s = 13, b = true, col = INK.white, w = bar_w }),
                             space(nil, px(5)),
-                            bar(bar_w, px(6), pct, { track = INK.g5, fill = INK.white, r = px(3) }),
+                            bar(bar_w, px(6), pct, { track = BoardColour.inkTrack(ctx, INK.g5, "hero"), fill = INK.white, r = px(3) }),
                         }),
                         BoardUI.hit(roundButton(ctx, btn_d, play_icon, book.on_device, true, not book.on_device and not d.online), { kind = "book", book = book, resume = true, list = { label = _("Continue reading"), books = d.continue_reading } }),
                     }),
@@ -345,7 +346,7 @@ W.hero = function(ctx, w, hh)
             local cover_w = math.floor(cover_h * 2 / 3 + 0.5)
             local tw = iw - cover_w - px(12)
             local tf = BoardUI.fitTitle(book.title, { b = true }, tw, { 20, 18, 16, 15 }, 3, cover_h - (opt.author and (lh1(13) + px(4)) or 0))
-            local label = text(_("Continue reading"), { s = 12, b = true, col = INK.gb })
+            local label = text(_("Continue reading"), { s = 12, b = true, col = BoardColour.onInk(ctx, INK.gb, "hero") })
             return vstack({ w = w, h = hh, pad = pad, strict_padding = true }, {
                 opt.pager and BoardUI.spread(iw, label, pager()) or label,
                 space(nil, px(8)),
@@ -354,11 +355,11 @@ W.hero = function(ctx, w, hh)
                     vstack({ w = tw }, {
                         text(book.title, { s = tf.s, b = true, col = INK.white, lines = tf.lines, w = tw, data = true }),
                         opt.author and space(nil, px(4)) or false,
-                        opt.author and text(firstAuthor(book) or "", { s = 13, col = INK.gd, w = tw, data = true }) or false,
+                        opt.author and text(firstAuthor(book) or "", { s = 13, col = BoardColour.onInk(ctx, INK.gd, "hero"), w = tw, data = true }) or false,
                     }),
                 }),
                 flex(px(8)),
-                bar(iw, px(6), pct, { track = INK.g5, fill = INK.white, r = px(3) }),
+                bar(iw, px(6), pct, { track = BoardColour.inkTrack(ctx, INK.g5, "hero"), fill = INK.white, r = px(3) }),
                 space(nil, px(8)),
                 runs(meta(opt.full_meta), { s = 13, w = iw }),
                 space(nil, px(12)),
@@ -374,7 +375,7 @@ W.hero = function(ctx, w, hh)
             local bar_w = iw - btn_d - px(10)
             local tf = BoardUI.fitTitle(book.title, { b = true }, iw, { 18, 16, 15 }, 2, ih - lh1(12) - px(6) - px(8) - btn_d)
             return vstack({ w = w, h = hh, pad = pad, strict_padding = true }, {
-                text(_("Continue reading"), { s = 12, b = true, col = INK.gb, w = iw }),
+                text(_("Continue reading"), { s = 12, b = true, col = BoardColour.onInk(ctx, INK.gb, "hero"), w = iw }),
                 space(nil, px(6)),
                 text(book.title, { s = tf.s, b = true, col = INK.white, lines = tf.lines, w = iw, data = true }),
                 flex(px(8)),
@@ -382,7 +383,7 @@ W.hero = function(ctx, w, hh)
                     vstack({ w = bar_w }, {
                         text(tostring(math.floor(pct + 0.5)) .. "%", { s = 13, b = true, col = INK.white, w = bar_w }),
                         space(nil, px(5)),
-                        bar(bar_w, px(6), pct, { track = INK.g5, fill = INK.white, r = px(3) }),
+                        bar(bar_w, px(6), pct, { track = BoardColour.inkTrack(ctx, INK.g5, "hero"), fill = INK.white, r = px(3) }),
                     }),
                     BoardUI.hit(roundButton(ctx, btn_d, play_icon, book.on_device, true, not book.on_device and not d.online), { kind = "book", book = book, resume = true, list = { label = _("Continue reading"), books = d.continue_reading } }),
                 }),
@@ -424,9 +425,9 @@ W.streak = function(ctx, w, hh)
     local dot_gap = wide and px(7) or math.max(px(3), math.floor((iw - 7 * px(9)) / 6))
     return pick({
         function()
-            local dot_row = dots(d.streak_week, dot_size, dot_gap)
+            local dot_row = dots(d.streak_week, dot_size, dot_gap, { col = BoardColour.ink(ctx, INK.black) })
             return vstack({ w = w, h = hh, pad = pad }, {
-                head(iw, _("Streak"), icon("flame", px(17), { sw = 2.25 })),
+                head(iw, _("Streak"), icon("flame", px(17), BoardColour.icon(ctx, 2.25))),
                 flex(0),
                 count(iw),
                 flex(0),
@@ -436,14 +437,14 @@ W.streak = function(ctx, w, hh)
         -- A short row: the week beside the count.
         function()
             return vstack({ w = w, h = hh, pad = pad }, {
-                head(iw, _("Streak"), icon("flame", px(17), { sw = 2.25 })),
+                head(iw, _("Streak"), icon("flame", px(17), BoardColour.icon(ctx, 2.25))),
                 flex(0),
-                BoardUI.spread(iw, count(nil), dots(d.streak_week, dot_size, dot_gap)),
+                BoardUI.spread(iw, count(nil), dots(d.streak_week, dot_size, dot_gap, { col = BoardColour.ink(ctx, INK.black) })),
             })
         end,
         function()
             return vstack({ w = w, h = hh, pad = pad }, {
-                head(iw, _("Streak"), icon("flame", px(17), { sw = 2.25 })),
+                head(iw, _("Streak"), icon("flame", px(17), BoardColour.icon(ctx, 2.25))),
                 flex(0),
                 count(iw),
             })
@@ -464,7 +465,7 @@ W.week = function(ctx, w, hh)
         local bars = {}
         for i, v in ipairs(d.week) do
             local h = v > 0 and math.max(px(3), math.floor((chart_h - px(2)) * v / max + 0.5)) or px(2)
-            local col = v > 0 and (i == 7 and INK.black or INK.g8) or INK.gc
+            local col = v > 0 and (i == 7 and BoardColour.ink(ctx, INK.black) or BoardColour.mid(ctx, INK.g8)) or BoardColour.track(ctx, INK.gc)
             table.insert(bars, BoardUI.rect(bar_w, h, col))
         end
         return vstack({ w = iw }, {
@@ -530,7 +531,7 @@ W.today = function(ctx, w, hh)
     return pick({
         function()
             return vstack({ w = w, h = hh, pad = pad }, {
-                head(iw, _("Today"), icon("clock", px(17), { sw = 2.25 })),
+                head(iw, _("Today"), icon("clock", px(17), BoardColour.icon(ctx, 2.25))),
                 flex(0),
                 value(),
                 flex(0),
@@ -539,7 +540,7 @@ W.today = function(ctx, w, hh)
         end,
         function()
             return vstack({ w = w, h = hh, pad = pad }, {
-                head(iw, _("Today"), icon("clock", px(17), { sw = 2.25 })),
+                head(iw, _("Today"), icon("clock", px(17), BoardColour.icon(ctx, 2.25))),
                 flex(0),
                 value(),
             })
@@ -559,7 +560,7 @@ W.goalpace = function(ctx, w, hh)
         local function empty(str)
             return function()
                 return vstack({ w = w, h = hh, pad = pad }, {
-                    head(iw, T(_("%1 goal"), g.year), icon("target", px(16), { sw = 2.25 })),
+                    head(iw, T(_("%1 goal"), g.year), icon("target", px(16), BoardColour.icon(ctx, 2.25))),
                     space(nil, px(6)),
                     hint(str, iw, hh - 2 * pad - lh1(13) - px(6)),
                 })
@@ -583,7 +584,7 @@ W.goalpace = function(ctx, w, hh)
         statuses = { T(_("%1 behind pace"), behind), T(_("%1 behind"), behind) }
     end
     local behind = not met and done > 0 and done < expected
-    local trophy = icon(met and "trophy" or "target", px(16), { sw = 2.25 })
+    local trophy = icon(met and "trophy" or "target", px(16), BoardColour.icon(ctx, 2.25))
     local function goalBar()
         local scale = math.max(goal, projected, done, 1)
         local goal_x = math.floor(iw * goal / scale + 0.5)
@@ -592,7 +593,7 @@ W.goalpace = function(ctx, w, hh)
             and BoardUI.box({ w = tick_w + 2 * math.max(1, px(1)), h = px(14) + 2 * math.max(1, px(1)), border = math.max(1, px(1)), bg = INK.white })
             or rect(tick_w, px(14), INK.black)
         return BoardUI.overlay(iw, px(14), {
-            { widget = bar(iw, px(6), math.floor(100 * done / scale + 0.5), { track = INK.gd, r = px(3) }), x = 0, y = px(4) },
+            { widget = bar(iw, px(6), math.floor(100 * done / scale + 0.5), { track = BoardColour.track(ctx, INK.gd), fill = BoardColour.ink(ctx, INK.black), r = px(3) }), x = 0, y = px(4) },
             { widget = tick, x = math.min(iw - px(2), goal_x) - (met and math.max(1, px(1)) or 0), y = met and -math.max(1, px(1)) or 0 },
         })
     end
@@ -669,13 +670,14 @@ W.heatmap = function(ctx, w, hh)
         if v > 0 then days_read = days_read + 1 end
         if v > best then best, best_i = v, i end
     end
+    local ramp = BoardColour.ramp(ctx, { INK.ge, INK.gb, INK.g8, INK.g4, INK.black })
     local function level(v)
         if v == nil then return nil end
-        if v <= 0 then return INK.ge end
-        if v < 30 then return INK.gb end
-        if v < 60 then return INK.g8 end
-        if v < 120 then return INK.g4 end
-        return INK.black
+        if v <= 0 then return ramp[1] end
+        if v < 30 then return ramp[2] end
+        if v < 60 then return ramp[3] end
+        if v < 120 then return ramp[4] end
+        return ramp[5]
     end
     local grid_w = weeks * cell + (weeks - 1) * g
     local radius = math.max(1, px(1.5))
@@ -816,7 +818,7 @@ W.calendar = function(ctx, w, hh)
             local x, y = (i % per_row) * (cell + gap), math.floor(i / per_row) * (cell + gap)
             local is_read = read[day] == true
             if is_read then
-                table.insert(cells, { x = x, y = y, col = day == today and INK.black or INK.g6 })
+                table.insert(cells, { x = x, y = y, col = day == today and BoardColour.deep(ctx, INK.black) or BoardColour.ink(ctx, INK.g6) })
             else
                 table.insert(cells, { x = x, y = y, col = day > today and INK.gd or INK.gb, border = outline })
             end
@@ -878,11 +880,11 @@ W.also = function(ctx, w, hh)
         })
         table.insert(rows, sep or false)
         table.insert(rows, BoardUI.hit(hstack({ w = iw, h = row_inner_h, gap = px(10) }, {
-            cover(ctx, b, cover_w, cover_h, { border = thin(), border_col = INK.gb, dim = offlineDim(ctx, b) }),
+            cover(ctx, b, cover_w, cover_h, { border = thin(), dim = offlineDim(ctx, b) }),
             vstack({ w = tw }, {
                 text(b.title, { s = 14, b = true, w = tw, data = true }),
                 space(nil, px(5)),
-                hstack({ w = tw, gap = px(8) }, { bar(tw - right_w - px(8), px(4), pct, { track = INK.gc, r = px(2) }), right }),
+                hstack({ w = tw, gap = px(8) }, { bar(tw - right_w - px(8), px(4), pct, { track = BoardColour.track(ctx, INK.gc), fill = BoardColour.ink(ctx, INK.black), r = px(2) }), right }),
             }),
         }), { kind = "book", book = b, resume = ctx.tap_resumes, list = { label = _("Continue reading"), books = d.continue_reading } }))
     end
@@ -907,7 +909,7 @@ W.highlight = function(ctx, w, hh)
         return pick({
             function()
                 return vstack({ w = w, h = hh, pad = pad }, {
-                    icon("quote", px(20), { fill = true, sw = 1 }),
+                    icon("quote", px(20), { fill = true, sw = 1, col = BoardColour.artHex(ctx, "#000000", "deep") }),
                     space(nil, px(8)),
                     hint(str, iw, hh - 2 * pad - px(20) - px(8), o),
                 })
@@ -925,7 +927,7 @@ W.highlight = function(ctx, w, hh)
         return text(hl.text, { s = qs, i = true, serif = true, lines = lines > 1 and lines or nil, w = iw3, col = INK.g1, data = true })
     end
     local label = function()
-        return hstack({ w = iw3, h = lh1(12), gap = px(6) }, { icon("quote", px(14), { fill = true, sw = 1 }), text(_("Highlight of the day"), { s = 12, b = true, col = INK.g4 }), flex(0) })
+        return hstack({ w = iw3, h = lh1(12), gap = px(6) }, { icon("quote", px(14), { fill = true, sw = 1, col = BoardColour.artHex(ctx, "#000000", "deep") }), text(_("Highlight of the day"), { s = 12, b = true, col = INK.g4 }), flex(0) })
     end
     return pick({
         function()
@@ -1005,7 +1007,7 @@ W.shelf = function(ctx, w, hh, props, item)
     local title = finished and T(_("Finished in %1"), d.goal.year) or BoardWidgets.shelfTitle(props)
     local right
     if props.shuffle then
-        right = BoardUI.hit(hstack({ w = px(36), h = lh1(13) }, { flex(0), icon("shuffle", px(17), { sw = 2.25, col = d.online and "black" or "ga" }) }),
+        right = BoardUI.hit(hstack({ w = px(36), h = lh1(13) }, { flex(0), icon("shuffle", px(17), { sw = BoardColour.icon(ctx, 2.25).sw, col = d.online and BoardColour.artHex(ctx, "#000000") or "ga" }) }),
             d.online and { kind = "shuffle" } or { kind = "noop" })
     elseif finished then
         right = hstack({ gap = px(2) }, { text(tostring(d.goal.done or 0), { s = 13, b = true }), icon("chevron-right", px(15), { sw = 2.5 }) })
@@ -1035,7 +1037,7 @@ W.shelf = function(ctx, w, hh, props, item)
     for i = 1, math.min(n, #books) do
         local b = books[i]
         table.insert(cards, BoardUI.hit(vstack({ w = cover_w }, {
-            cover(ctx, b, cover_w, cover_h, { border = thin(), border_col = INK.gb, dim = offlineDim(ctx, b) }),
+            cover(ctx, b, cover_w, cover_h, { border = thin(), dim = offlineDim(ctx, b) }),
             space(nil, px(6)),
             text(b.title, { s = title_size, b = true, w = cover_w, data = true }),
         }), { kind = "detail", book_id = b.id, list = { label = title, books = books } }))
@@ -1080,8 +1082,8 @@ local function fan(ctx, books, cover_h)
     local layers = {}
     for i = #list, 1, -1 do
         local x = (#list - i) * step
-        table.insert(layers, { widget = rect(cw + 2 * ring, cover_h + 2 * ring, INK.white), x = x - ring, y = -ring })
-        table.insert(layers, { widget = cover(ctx, list[i], cw, cover_h, { border = thin(), border_col = INK.g9 }), x = x, y = 0 })
+        table.insert(layers, { widget = rect(cw + 2 * ring, cover_h + 2 * ring, BoardColour.halo(ctx, INK.white)), x = x - ring, y = -ring })
+        table.insert(layers, { widget = cover(ctx, list[i], cw, cover_h, { border = thin(), border_col = BoardColour.coverEdge(ctx, INK.g9) }), x = x, y = 0 })
     end
     return BoardUI.overlay(width, cover_h, layers)
 end
@@ -1117,7 +1119,7 @@ W.link = function(ctx, w, hh, props)
             need = text(label, { s = size, b = true }):getSize().w
         end
         return hstack({ w = iw, h = lh1(13), gap = px(5) }, {
-            with_icon and icon(spec[1], px(15), { sw = 2.25 }) or false,
+            with_icon and icon(spec[1], px(15), BoardColour.icon(ctx, 2.25)) or false,
             text(label, { s = size, b = true, w = lab_w }),
             chevron or false,
         })
@@ -1141,7 +1143,7 @@ W.link = function(ctx, w, hh, props)
                     local label2 = text(T(_("%1 GB free"), string.format("%.1f", storage.free_gb):gsub("%.0$", "")), { s = 11, col = INK.g4 })
                     local used = math.floor(100 * (storage.total_gb - storage.free_gb) / storage.total_gb + 0.5)
                     table.insert(items, space(nil, px(5)))
-                    table.insert(items, hstack({ w = iw, gap = px(8) }, { bar(iw - label2:getSize().w - px(8), px(6), used, { track = INK.gd, r = px(3) }), label2 }))
+                    table.insert(items, hstack({ w = iw, gap = px(8) }, { bar(iw - label2:getSize().w - px(8), px(6), used, { track = BoardColour.track(ctx, INK.gd), fill = BoardColour.ink(ctx, INK.black), r = px(3) }), label2 }))
                 end
                 return vstack({ w = w, h = hh, pad = pad }, items)
             end,
@@ -1253,7 +1255,7 @@ W.clock = function(ctx, w, hh)
                 text(d.clock, { s = val_s, b = true, w = iw, col = INK.white }),
                 flex(0),
                 text(d.weekday, { s = 13, b = true, w = iw, col = INK.white }),
-                text(d.day_month, { s = 13, w = iw, col = INK.gc }),
+                text(d.day_month, { s = 13, w = iw, col = BoardColour.onInk(ctx, INK.gc) }),
             })
         end,
         -- A short row: the time over the date.
@@ -1281,11 +1283,11 @@ W.sync = function(ctx, w, hh)
     for _i, o in ipairs(opts) do
         table.insert(variants, function()
             return vstack({ w = w, h = hh, pad = pad }, {
-                head(iw, title, icon(on and "cloud-check" or "cloud-off", px(17), { sw = 2.25 })),
+                head(iw, title, icon(on and "cloud-check" or "cloud-off", px(17), BoardColour.icon(ctx, 2.25))),
                 flex(0),
                 text(o[1], { s = o[2], b = true, w = iw }),
                 space(nil, px(6)),
-                hstack({ gap = px(5) }, { icon(on and "refresh-cw" or "wifi", px(14), { sw = 2.5 }), text(on and _("Sync now") or _("Connect"), { s = 12, b = true }) }),
+                hstack({ gap = px(5) }, { icon(on and "refresh-cw" or "wifi", px(14), BoardColour.icon(ctx, 2.5)), text(on and _("Sync now") or _("Connect"), { s = 12, b = true }) }),
             })
         end)
     end
@@ -1293,7 +1295,7 @@ W.sync = function(ctx, w, hh)
     for _i, o in ipairs(opts) do
         table.insert(variants, function()
             return vstack({ w = w, h = hh, pad = pad }, {
-                head(iw, title, icon(on and "cloud-check" or "cloud-off", px(17), { sw = 2.25 })),
+                head(iw, title, icon(on and "cloud-check" or "cloud-off", px(17), BoardColour.icon(ctx, 2.25))),
                 flex(0),
                 text(o[1], { s = o[2], b = true, w = iw }),
             })
@@ -1327,7 +1329,7 @@ W.hours = function(ctx, w, hh)
     local iw = w - 2 * pad
     local hours = d.hours or {}
     local part = dayPart(hours)
-    local function sunMoon() return icon("sun-moon", px(17), { sw = 2.25 }) end
+    local function sunMoon() return icon("sun-moon", px(17), BoardColour.icon(ctx, 2.25)) end
     if not part then
         return vstack({ w = w, h = hh, pad = pad }, {
             head(iw, _("When you read"), sunMoon()),
@@ -1351,7 +1353,7 @@ W.hours = function(ctx, w, hh)
             local v = hours[i] or 0
             if v > 0 then
                 local h = math.max(px(2), math.floor((chart_h - px(2)) * v / max + 0.5))
-                table.insert(bars, BoardUI.rect(bar_w, h, i - 1 == peak and INK.black or INK.g8))
+                table.insert(bars, BoardUI.rect(bar_w, h, i - 1 == peak and BoardColour.ink(ctx, INK.black) or BoardColour.mid(ctx, INK.g8)))
             else
                 table.insert(bars, space(bar_w, 0))
             end
@@ -1419,7 +1421,7 @@ W.records = function(ctx, w, hh)
     local r = d.records
     local pad = px(12)
     local iw = w - 2 * pad
-    local function award() return icon("award", px(17), { sw = 2.25 }) end
+    local function award() return icon("award", px(17), BoardColour.icon(ctx, 2.25)) end
     if not r then
         return vstack({ w = w, h = hh, pad = pad }, {
             head(iw, _("Reading records"), award()),
@@ -1503,7 +1505,7 @@ W.toggles = function(ctx, w, hh)
     table.insert(items, { "refresh-cw", _("Sync"), false, "sync" })
     local function circleBtn(size, it)
         local on = it[3]
-        return BoardUI.hit(BoardUI.circle(size, { bg = on and INK.black or INK.white, border = on and 0 or math.max(1, px(1.5)) },
+        return BoardUI.hit(BoardUI.circle(size, { bg = on and BoardColour.ink(ctx, INK.black) or INK.white, border = on and 0 or math.max(1, px(1.5)) },
             icon(it[1], math.floor(size * 0.46 + 0.5), { col = on and "white" or "black", sw = 2.25 })), { kind = it[4] })
     end
     if small then
@@ -1541,7 +1543,7 @@ W.light = function(ctx, w, hh)
     local iw, ih = w - 2 * pad, hh - 2 * pad
     if not lt then
         return vstack({ w = w, h = hh, pad = pad }, {
-            head(iw, _("Light"), icon("sun", px(16), { sw = 2.25 })),
+            head(iw, _("Light"), icon("sun", px(16), BoardColour.icon(ctx, 2.25))),
             space(nil, px(6)),
             hint(_("This device has no frontlight."), iw, hh - 2 * pad - lh1(13) - px(6), { sizes = { 12, 11 } }),
         })
@@ -1549,7 +1551,7 @@ W.light = function(ctx, w, hh)
     local function compact(bd, s)
         return function()
             return vstack({ w = w, h = hh, pad = pad }, {
-                head(iw, _("Light"), icon("sun", px(16), { sw = 2.25 })),
+                head(iw, _("Light"), icon("sun", px(16), BoardColour.icon(ctx, 2.25))),
                 flex(0),
                 hstack({ w = iw }, {
                     BoardUI.hit(stepButton(bd, "minus"), { kind = "light", what = "brightness", delta = -5 }),
@@ -1565,13 +1567,13 @@ W.light = function(ctx, w, hh)
             local avail = ih - lh1(13) - px(6)
             local rh = math.min(px(38), math.floor((avail - (rows_n - 1) * px(5)) / rows_n))
             local bd = math.min(px(32), rh)
-            local function stepper(name, val, what)
+            local function stepper(name, val, what, fam)
                 local vw = px(36)
                 local bw = iw - px(18) - 2 * bd - vw - 4 * px(8)
                 return hstack({ w = iw, h = rh, gap = px(8) }, {
-                    icon(name, px(18), { sw = 2.25 }),
+                    icon(name, px(18), BoardColour.icon(ctx, 2.25, fam)),
                     BoardUI.hit(stepButton(bd, "minus"), { kind = "light", what = what, delta = -5 }),
-                    bar(math.max(px(16), bw), px(8), val, { track = INK.gd, r = px(4) }),
+                    bar(math.max(px(16), bw), px(8), val, { track = BoardColour.track(ctx, INK.gd, fam), fill = BoardColour.ink(ctx, INK.black, fam), r = px(4) }),
                     BoardUI.hit(stepButton(bd, "plus"), { kind = "light", what = what, delta = 5 }),
                     text(tostring(val), { s = 13, b = true, w = vw, align = "right" }),
                 })
@@ -1580,9 +1582,9 @@ W.light = function(ctx, w, hh)
             return vstack({ w = w, h = hh, pad = pad }, {
                 head(iw, _("Light"), with_label and text(label, { s = 12, col = INK.g4 }) or nil),
                 flex(0),
-                stepper("sun", lt.brightness, "brightness"),
+                stepper("sun", lt.brightness, "brightness", "gold"),
                 rows_n == 2 and space(nil, px(5)) or false,
-                rows_n == 2 and stepper("thermometer-sun", lt.warmth, "warmth") or false,
+                rows_n == 2 and stepper("thermometer-sun", lt.warmth, "warmth", "orange") or false,
             })
         end
     end
@@ -1602,7 +1604,7 @@ W.forecast = function(ctx, w, hh)
         for _i, long in ipairs({ true, false }) do
             table.insert(variants, function()
                 return vstack({ w = w, h = hh, pad = pad }, {
-                    head(iw, long and _("Finish forecast") or _("Finish"), icon("hourglass", px(16), { sw = 2.25 })),
+                    head(iw, long and _("Finish forecast") or _("Finish"), icon("hourglass", px(16), BoardColour.icon(ctx, 2.25))),
                     space(nil, px(6)),
                     text(long and _("Read a little on this device and a finish date shows up here.") or _("Read a little"), { s = 13, col = INK.g4, lines = 3, w = iw }),
                 })
@@ -1619,7 +1621,7 @@ W.forecast = function(ctx, w, hh)
             local is_end, is_today = i == n, i == 1
             local t = d.now + (i - 1) * 86400
             table.insert(cells, vstack({ w = cw, align = "center" }, {
-                rect(cw, px(8), is_end and INK.black or (is_today and INK.g6 or INK.gc), px(4)),
+                rect(cw, px(8), is_end and BoardColour.ink(ctx, INK.black) or (is_today and BoardColour.mid(ctx, INK.g6) or BoardColour.track(ctx, INK.gc)), px(4)),
                 space(nil, px(3)),
                 text(BoardData.shortWeekday(t):sub(1, 1), { s = 11, b = is_end or is_today, col = (is_end or is_today) and INK.black or INK.g4, w = cw, align = "center" }),
             }))
@@ -1665,7 +1667,7 @@ W.forecast = function(ctx, w, hh)
                 local cover_w = math.floor(cover_h * 2 / 3 + 0.5)
                 local tw = iw - cover_w - px(12)
                 return vstack({ w = w, h = hh, pad = pad }, {
-                    head(iw, cfg.label, icon("hourglass", px(16), { sw = 2.25 })),
+                    head(iw, cfg.label, icon("hourglass", px(16), BoardColour.icon(ctx, 2.25))),
                     space(nil, px(8)),
                     hstack({ gap = px(12), valign = "bottom" }, {
                         cover(ctx, f.book, cover_w, cover_h),
@@ -1678,7 +1680,7 @@ W.forecast = function(ctx, w, hh)
                 })
             end
             return vstack({ w = w, h = hh, pad = pad }, {
-                head(iw, cfg.label, icon("hourglass", px(16), { sw = 2.25 })),
+                head(iw, cfg.label, icon("hourglass", px(16), BoardColour.icon(ctx, 2.25))),
                 flex(0),
                 dayEl(cfg.day, iw),
                 cfg.strip and space(nil, px(8)) or false, cfg.strip and strip(iw) or false,
@@ -1712,7 +1714,7 @@ W.word = function(ctx, w, hh)
     local wd = ctx.d.word
     local pad = px(12)
     local iw = w - 2 * pad
-    local word_icon = icon("whole-word", px(17), { sw = 2.25 })
+    local word_icon = icon("whole-word", px(17), BoardColour.icon(ctx, 2.25))
     if not wd then
         local variants = {}
         for _i, long in ipairs({ true, false }) do
@@ -1733,7 +1735,7 @@ W.word = function(ctx, w, hh)
             local items = {
                 head(iw, _("Word of the day"), word_icon),
                 space(nil, px(cfg.big and 10 or 4)),
-                text(wd.word, { s = cfg.ws, b = true, serif = true, w = iw, data = true }),
+                text(wd.word, { s = cfg.ws, b = true, serif = true, w = iw, data = true, col = BoardColour.ink(ctx, INK.black) }),
             }
             if cfg.ctx_lines > 0 then
                 table.insert(items, space(nil, px(4)))
@@ -1768,7 +1770,7 @@ W.yearago = function(ctx, w, hh)
     local y = ctx.d.year_ago
     local pad = px(12)
     local iw, ih = w - 2 * pad, hh - 2 * pad
-    local cal = icon("calendar-clock", px(17), { sw = 2.25 })
+    local cal = icon("calendar-clock", px(17), BoardColour.icon(ctx, 2.25))
     if not y then
         local variants = {}
         for _i, long in ipairs({ true, false }) do
@@ -1862,7 +1864,8 @@ end
 -- the outline never costs the content any room.
 function BoardWidgets.tile(ctx, item, w, h)
     local fn = W[item.type]
-    local ch = BoardWidgets.chrome(ctx.tiles, item.chrome)
+    ctx.tile_key = BoardColour.keyFor(item.type, item.props)
+    local ch = BoardColour.chrome(ctx, item.chrome, ctx.tile_key, BoardWidgets.chrome(ctx.tiles, item.chrome), math.max(1, px(1)), math.max(1, px(1.5)))
     local content
     if fn then
         BoardUI.debug_widget = item.type .. " " .. w .. "x" .. h

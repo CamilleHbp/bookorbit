@@ -24,6 +24,7 @@ local logger = require("logger")
 local T = require("ffi/util").template
 local _ = require("gettext")
 
+local BoardColour = require("bookorbit_board_colour")
 local BoardData = require("bookorbit_board_data")
 local BoardEdit = require("bookorbit_board_edit")
 local BoardLayout = require("bookorbit_board_layout")
@@ -367,7 +368,7 @@ function CatalogBoard:boardPreview(ctx, entry, box_w, box_h, g)
     local item = { type = entry.type, cw = cw, rh = rh, chrome = entry.chrome or "line", props = entry.props }
     local key = "preview:" .. entry.type .. ":" .. tostring(entry.props and (entry.props.source or entry.props.link or entry.props.animal) or "") .. ":" .. pw .. "x" .. ph .. ":" .. sw
     local shot = BoardUI.snapshot(key, pw, ph, sw, sh, function()
-        return BoardWidgets.tile({ d = ctx.d, tiles = "outline", menu = self }, item, pw, ph)
+        return BoardWidgets.tile({ d = ctx.d, tiles = "outline", colour = ctx.colour, menu = self }, item, pw, ph)
     end)
     return BoardUI.box({ w = box_w, h = box_h, radius = px(12), bg = INK.ge }, hstack({ w = box_w, h = box_h }, { flex(0), shot, flex(0) }))
 end
@@ -734,7 +735,7 @@ function CatalogBoard:updateDashboardItems(select_number, no_recalculate_dimen)
     local page = self:boardPage()
     local d = BoardData.build(self, context, os.time())
     local state = BoardStore.read(self.settings)
-    local ctx = { d = d, tiles = state.tiles, menu = self, tap_resumes = self.settings.catalog_dashboard_tap_resumes ~= false }
+    local ctx = { d = d, tiles = state.tiles, colour = state.colour, menu = self, tap_resumes = self.settings.catalog_dashboard_tap_resumes ~= false }
     self._board_ctx = ctx
     self._board_geometry = g
     local t_data = PROFILE and os.clock()
@@ -782,11 +783,18 @@ function CatalogBoard:updateDashboardItems(select_number, no_recalculate_dimen)
     self:boardRefreshPets()
 end
 
--- The pets are colour pictures. A colour screen shows them in full colour only
--- through a dithered refresh (on Kaleido, its colour waveform), and the
--- board's own "ui" refresh is not one, so each pet tile gets its own.
+-- A colour screen shows colour only through a dithered refresh (on Kaleido,
+-- its colour waveform), and the board's own "ui" refresh is not one. With the
+-- Colour setting on, the whole board gets one; with it off, only the pets,
+-- which are colour pictures, get their own.
 function CatalogBoard:boardRefreshPets()
     if not Screen:isColorEnabled() then return end
+    if BoardColour.on(self._board_ctx) then
+        UIManager:setDirty(nil, function()
+            if self.dimen and self.dimen.x then return "partial", self.dimen, true end
+        end)
+        return
+    end
     for _i, entry in ipairs(self._board_tiles or {}) do
         if entry.item.type == "buddy" then
             local tile = entry.tile
@@ -798,9 +806,16 @@ function CatalogBoard:boardRefreshPets()
 end
 
 -- Repaints one tile in place: rebuilds its content and refreshes only its
--- rectangle, so a stepper or a hero page does not flash the whole board.
+-- rectangle, so a stepper or a hero page does not flash the whole board. A
+-- coloured board's tiles keep their colours through the dithered refresh.
 function CatalogBoard:boardRefreshTile(entry, mode, dither)
     if not entry or not self._board_ctx then return end
+    -- The digital clock is black and white unless tiles are tinted, so its
+    -- minute stays on the fast refresh.
+    local plain_clock = entry.item.type == "clock" and not BoardColour.tinted(self._board_ctx)
+    if BoardColour.on(self._board_ctx) and not plain_clock and (mode == nil or mode == "ui" or mode == "fast") then
+        mode, dither = "partial", true
+    end
     self._board_ctx.d = BoardData.build(self, self.current_context or {}, os.time())
     local fresh = self:boardBuildTile(self._board_ctx, entry.item, entry.w, entry.h)
     entry.tile[1] = fresh[1]

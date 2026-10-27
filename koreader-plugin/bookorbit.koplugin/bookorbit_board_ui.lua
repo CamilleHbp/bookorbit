@@ -42,6 +42,35 @@ local BoardUI = {}
 BoardUI.INK = INK
 BoardUI.px = px
 
+-- KOReader's plain painters turn an RGB colour into its gray; RGB colours
+-- (the board's colour schemes) go through the RGB32 painters instead.
+local Blitbuffer = package.loaded["ffi/blitbuffer"] or select(2, pcall(require, "ffi/blitbuffer"))
+if type(Blitbuffer) ~= "table" then Blitbuffer = {} end
+
+-- A truthiness test, never == nil: LuaJIT hands a colour's comparison with
+-- nil to its __eq, which indexes the other side.
+local function isRGB(c)
+    if not c or not Blitbuffer.isColor8 then return false end
+    return not Blitbuffer.isColor8(c)
+end
+BoardUI.isRGB = isRGB
+
+local function paintBorder(bb, x, y, w, h, bw, c, r)
+    if isRGB(c) and bb.paintBorderRGB32 then
+        bb:paintBorderRGB32(x, y, w, h, bw, c, r)
+    else
+        bb:paintBorder(x, y, w, h, bw, c, r)
+    end
+end
+
+local function paintRoundedRect(bb, x, y, w, h, c, r)
+    if isRGB(c) and bb.paintRoundedRectRGB32 then
+        bb:paintRoundedRectRGB32(x, y, w, h, c, r)
+    else
+        bb:paintRoundedRect(x, y, w, h, c, r)
+    end
+end
+
 -- ------------------------------------------------------------- fit checks
 local fit_stack = {}
 
@@ -128,6 +157,41 @@ local function faceKind(o)
     return o.i and "sans_italic" or "sans"
 end
 
+-- One line of text in an RGB colour. TextWidget paints glyphs in gray only,
+-- so the line is set white on black once, which is its coverage mask, and
+-- blitted in the colour. (Blitbuffer:invert only flips a flag that the C
+-- blitter ignores when both buffers carry it, as a night-mode screen does.)
+local ColourLine = Widget:extend{ line = nil, color = nil }
+
+function ColourLine:getSize()
+    return self.line:getSize()
+end
+
+function ColourLine:isTruncated()
+    return self.line:isTruncated()
+end
+
+function ColourLine:paintTo(bb, x, y)
+    local size = self.line:getSize()
+    self.dimen = Geom:new{ x = x, y = y, w = size.w, h = size.h }
+    if not self.mask then
+        local canvas = Blitbuffer.new(size.w, size.h, Blitbuffer.TYPE_BB8)
+        canvas:fill(Blitbuffer.COLOR_BLACK)
+        self.line:paintTo(canvas, 0, 0)
+        self.mask = canvas
+    end
+    if bb.colorblitFromRGB32 then
+        bb:colorblitFromRGB32(self.mask, x, y, 0, 0, size.w, size.h, self.color)
+    else
+        bb:colorblitFrom(self.mask, x, y, 0, 0, size.w, size.h, self.color)
+    end
+end
+
+function ColourLine:free()
+    if self.mask then self.mask:free(); self.mask = nil end
+    if self.line and self.line.free then self.line:free() end
+end
+
 -- A single line, or o.lines lines when o.lines > 1. o: s (nominal size),
 -- b, i, serif, col, w (box width), align, lines, data.
 function BoardUI.text(str, o)
@@ -160,15 +224,17 @@ function BoardUI.text(str, o)
         if tb.line_with_ellipsis and not o.data then problem("clamped", str) end
         return tb
     end
+    local rgb = isRGB(o.col) and Blitbuffer.TYPE_BB8 ~= nil
     local tw = TextWidget:new{
         text = str,
         padding = 0,
         face = face,
         bold = o.b == true,
-        fgcolor = o.col or INK.black,
+        fgcolor = rgb and INK.white or (o.col or INK.black),
         max_width = o.w,
     }
     if o.w and tw:isTruncated() and not o.data then problem("ellipsis", str .. " w=" .. o.w .. " need=" .. tw:getSize().w) end
+    if rgb then tw = ColourLine:new{ line = tw, color = o.col } end
     if not o.w then return tw end
     local dimen = Geom:new{ w = o.w, h = tw:getSize().h }
     if o.align == "center" then return CenterContainer:new{ dimen = dimen, tw } end
@@ -433,10 +499,31 @@ function BoardUI.spread(w, left, right, h)
 end
 
 -- ----------------------------------------------------------------- frames
+-- An RGB border painted over a frame of the same size.
+local ColourRing = Widget:extend{ bw = 1, color = nil, radius = 0 }
+
+function ColourRing:getSize()
+    return self.dimen
+end
+
+function ColourRing:paintTo(bb, x, y)
+    self.dimen.x, self.dimen.y = x, y
+    paintBorder(bb, x, y, self.dimen.w, self.dimen.h, self.bw, self.color, self.radius)
+end
+
 -- A fixed box with an optional fill, radius and inner border.
 function BoardUI.box(o, child)
     local border = o.border or 0
     local inner_w, inner_h = o.w - 2 * border, o.h - 2 * border
+    if border > 0 and isRGB(o.border_col) then
+        local plain = {}
+        for k, v in pairs(o) do plain[k] = v end
+        plain.border_col = INK.white
+        return BoardUI.overlay(o.w, o.h, {
+            { widget = BoardUI.box(plain, child) },
+            { widget = ColourRing:new{ dimen = Geom:new{ w = o.w, h = o.h }, bw = border, color = o.border_col, radius = o.radius or 0 } },
+        })
+    end
     return FrameContainer:new{
         margin = 0,
         padding = 0,
@@ -683,7 +770,7 @@ function BoardCover:paintTo(bb, x, y)
         bb:blitFrom(img.bb, px_, py_, 0, 0, img.w, img.h)
         if self.dim then bb:lightenRect(x, y, w, h, 0.55) end
         if Screen.night_mode then bb:invertRect(px_, py_, img.w, img.h) end
-        if self.border > 0 then bb:paintBorder(px_, py_, img.w, img.h, self.border, self.border_col or INK.gb) end
+        if self.border > 0 then paintBorder(bb, px_, py_, img.w, img.h, self.border, self.border_col or INK.gb) end
         return
     end
     local dx, dy, dw, dh
@@ -708,7 +795,7 @@ function BoardCover:paintTo(bb, x, y)
         bb:invertRect(dx, dy, dw, dh)
     end
     if self.border > 0 then
-        bb:paintBorder(dx, dy, dw, dh, self.border, self.border_col or INK.gb)
+        paintBorder(bb, dx, dy, dw, dh, self.border, self.border_col or INK.gb)
     end
 end
 
@@ -769,7 +856,7 @@ function BoardUI.cover(book, w, h, o)
     -- too small for one line stays an empty frame.
     local lines = math.min(4, math.floor((h - 2 * frame_b - 2 * pad) / BoardMetrics.lh(s)))
     if o.loading ~= true and w > px(48) and lines >= 1 then
-        inner = { BoardUI.flex(0), BoardUI.text(title, { s = s, b = true, serif = true, lines = lines, w = tw, align = "center", data = true }), BoardUI.flex(0) }
+        inner = { BoardUI.flex(0), BoardUI.text(title, { s = s, b = true, serif = true, lines = lines, w = tw, align = "center", data = true, bg = INK.ge }), BoardUI.flex(0) }
     end
     return BoardUI.box({ w = w, h = h, border = frame_b, border_col = INK.black, bg = INK.ge },
         BoardUI.vstack({ w = w - 2 * frame_b, h = h - 2 * frame_b, pad = pad, align = "center" }, inner))
@@ -798,10 +885,12 @@ function CellGrid:paintTo(bb, x, y)
             bb:paintRoundedRect(x + cell.x - ring, y + cell.y - ring, s + 2 * ring, s + 2 * ring, INK.black, r + ring)
             bb:paintRoundedRect(x + cell.x - gap, y + cell.y - gap, s + 2 * gap, s + 2 * gap, INK.white, r + gap)
         end
-        if cell.border then
+        if cell.border and isRGB(cell.col) and bb.paintBorderRGB32 then
+            bb:paintBorderRGB32(x + cell.x, y + cell.y, s, s, cell.border, cell.col, r, true)
+        elseif cell.border then
             bb:paintBorder(x + cell.x, y + cell.y, s, s, cell.border, cell.col, r, true)
         else
-            bb:paintRoundedRect(x + cell.x, y + cell.y, s, s, cell.col, r)
+            paintRoundedRect(bb, x + cell.x, y + cell.y, s, s, cell.col, r)
         end
     end
 end

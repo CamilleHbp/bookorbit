@@ -456,6 +456,12 @@ function BoardEdit:boardSetTiles(tiles)
     if self:dashboardMode() then self:updateItems(nil, true) end
 end
 
+function BoardEdit:boardSetColour(colour)
+    self:persistSetting(BoardStore.SETTING_KEY, BoardStore.withColour(self.settings, colour))
+    require("bookorbit_board_ui").clearSnapshots()
+    if self:dashboardMode() then self:updateItems(nil, true) end
+end
+
 function BoardEdit.install(Catalog)
     for name, fn in pairs(BoardEdit) do
         if name ~= "install" and type(fn) == "function" and name:match("^board") then

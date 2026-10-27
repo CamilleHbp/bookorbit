@@ -33,6 +33,7 @@ local STRATEGY = { SILENT = 2, PROMPT = 1, DISABLE = 3 }
 local STRATEGY_ORDER = { STRATEGY.SILENT, STRATEGY.PROMPT, STRATEGY.DISABLE }
 local PRESETS = { "reader", "stats", "library" }
 local TILES = { "outline", "soft", "ink" }
+local COLOURS = BoardStore.COLOURS
 
 local function scaleLabel(value)
     return string.format("%.2f", value):gsub("0$", "") .. "x"
@@ -297,19 +298,54 @@ local function homeBody(page, w, embedded)
     })
     local preset_labels = { _("Reader"), _("Stats"), _("Library") }
     local tile_labels = { _("Outline"), _("Soft"), _("Ink") }
+    -- Colour only on a screen that shows it.
+    local colour_labels = Device.screen:isColorEnabled() and { _("Accents"), _("Tinted"), _("Off") } or nil
+    local function colourRow(rw, tight)
+        local row = segRow(rw, _("Colour"), nil, colour_labels, indexOf(COLOURS, state.colour, 1),
+            function(index) return { kind = "colour", value = COLOURS[index] } end, tight)
+        row._no_icon = true
+        return row
+    end
+    -- Colour sits beside Tile style when half a row holds both controls'
+    -- labels, so the page keeps the height it has on a black-and-white screen.
+    local function pairsWithTiles(half)
+        local seg = math.floor((half - 2 * math.max(1, px(1.5))) / 3) - px(8)
+        for _i, list in ipairs({ tile_labels, colour_labels }) do
+            for _j, label in ipairs(list) do
+                local t = text(label, { s = 14, b = true })
+                local wide = t:getSize().w > seg
+                t:free()
+                if wide then return false end
+            end
+        end
+        return true
+    end
     local scale_labels = {}
     for index, scale in ipairs(BoardMetrics.UI_SCALES) do
         scale_labels[index] = scaleLabel(scale)
     end
     local a = segRow(iw, _("Starting layout"), _("Replaces your pages with a starter set"), preset_labels, indexOf(PRESETS, state.preset, 1),
         function(index) return { kind = "preset", value = PRESETS[index] } end)
-    local b = segRow(iw, _("Tile style"), nil, tile_labels, indexOf(TILES, state.tiles, 1),
+    local look_gap = px(16)
+    local look_half = math.floor((iw - look_gap) / 2)
+    local pair_colour = colour_labels ~= nil and not page.compact and pairsWithTiles(look_half)
+    local b = segRow(pair_colour and look_half or iw, _("Tile style"), nil, tile_labels, indexOf(TILES, state.tiles, 1),
         function(index) return { kind = "tiles", value = TILES[index] } end)
     local c = segRow(iw, _("Interface size"), _("Text and controls across BookOrbit"), scale_labels,
         indexOf(BoardMetrics.UI_SCALES, BoardMetrics.normalizeUserScale(settings.ui_scale), 1),
         function(index) return { kind = "ui-scale", value = BoardMetrics.UI_SCALES[index] } end)
     a._no_icon, b._no_icon, c._no_icon = true, true, true
-    local look = MenuUI.group(w, { a, b, c }, { inset = 0 })
+    local look
+    if pair_colour then
+        local pair = hstack({ w = iw, gap = look_gap, valign = "top" }, { b, colourRow(iw - look_half - look_gap) })
+        pair._no_icon = true
+        look = MenuUI.group(w, { a, pair, c }, { inset = 0 })
+    else
+        look = MenuUI.group(w, { a, b, c }, { inset = 0 })
+    end
+    -- Too narrow to share Tile style's row: Colour is a card of its own after
+    -- the first, which a two-column page can set beside Look.
+    local colour_card = colour_labels and not pair_colour and MenuUI.group(w, { colourRow(iw, page.compact ~= nil) }, { inset = 0 }) or nil
     -- On a short, wide screen whose columns cannot hold the full card
     -- (page.compact, set by build): without the notes, and at level 1 the
     -- layout and tile style sharing a row when each half has room.
@@ -341,6 +377,8 @@ local function homeBody(page, w, embedded)
         embedded and text(_("Home"), { s = 18, b = true, w = w }) or false,
         embedded and space(nil, px(12)) or false,
         top,
+        colour_card and space(nil, px(16)) or false,
+        colour_card or false,
         space(nil, px(16)),
         MenuUI.section(w, _("Look"), look),
         space(nil, px(16)),
@@ -817,6 +855,9 @@ local function onAction(page, action)
         end)
     elseif kind == "tiles" then
         plugin:applyBoardTiles(catalog, action.value)
+        page:refresh()
+    elseif kind == "colour" then
+        plugin:applyBoardColour(catalog, action.value)
         page:refresh()
     elseif kind == "ui-scale" then
         if settings.ui_scale == action.value then return true end

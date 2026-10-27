@@ -564,6 +564,15 @@ function MainMenu:applyBoardTiles(catalog, tiles)
     end
 end
 
+function MainMenu:applyBoardColour(catalog, colour)
+    if catalog and catalog.boardSetColour then
+        catalog:boardSetColour(colour)
+    else
+        self.settings[BoardStore.SETTING_KEY] = BoardStore.withColour(self.settings, colour)
+        G_reader_settings:flush()
+    end
+end
+
 function MainMenu:chooseDownloadFolder(catalog, on_done)
     if catalog and catalog.chooseDownloadDir then
         catalog:chooseDownloadDir(on_done)
