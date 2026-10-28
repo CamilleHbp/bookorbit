@@ -13065,6 +13065,8 @@
     "period": {
       "year": "Year",
       "allTime": "All time",
+      "newerYears": "Show newer years",
+      "olderYears": "Show older years",
       "quarterGroup": "Quarter",
       "quarter": "Q{quarter}",
       "quarterYear": "Q{quarter} {year}"
