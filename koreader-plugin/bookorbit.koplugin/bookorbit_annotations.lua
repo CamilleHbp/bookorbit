@@ -837,7 +837,15 @@ function BookOrbitAnnotations.exchangeBook(opts)
         if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
         local chunk = {}
         while cursor <= #delta and #chunk < UPLOAD_CHUNK do
-            table.insert(chunk, delta[cursor])
+            local change = delta[cursor]
+            if not anchors_supported and change.sourceAnchor then
+                local legacy = {}
+                for key, value in pairs(change) do
+                    if key ~= "sourceAnchor" then legacy[key] = value end
+                end
+                change = legacy
+            end
+            table.insert(chunk, change)
             cursor = cursor + 1
         end
         local body, err = opts.client:exchangeAnnotations({
