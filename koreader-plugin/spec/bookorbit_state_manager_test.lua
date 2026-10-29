@@ -43,7 +43,7 @@ package.loaded["dump"] = function()
     return "{}"
 end
 package.loaded["ffi/util"] = {
-    fsyncOpenedFile = function() end,
+    fsyncOpenedFile = function() return true end,
     fsyncDirectory = function() end,
 }
 

@@ -36,6 +36,7 @@ local ACTIONABLE_ERRORS = {
     network = true,
     unsupported_server = true,
     partial_failure = true,
+    annotation_restoration_pending = true,
 }
 
 local function numberValue(value)

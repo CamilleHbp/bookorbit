@@ -11,6 +11,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
+import { BookRevisionService } from '../book-revision/book-revision.service';
 import {
   audiobookProgress,
   authors,
@@ -42,7 +43,10 @@ const CLAIM_LOOKUP_BATCH_SIZE = 1000;
 
 @Injectable()
 export class ScannerRepository {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    private readonly revisions: BookRevisionService,
+  ) {}
 
   // ── Scan Jobs ──────────────────────────────────────────────────────────────
 
@@ -357,6 +361,9 @@ export class ScannerRepository {
   }
 
   async updateBookFile(id: number, data: Partial<typeof bookFiles.$inferInsert>) {
+    if (data.ino !== undefined || data.sizeBytes !== undefined || data.mtime !== undefined || data.absolutePath !== undefined) {
+      return this.revisions.observeFile(id, data);
+    }
     return this.db.transaction(async (tx) => {
       let previousBookId: number | null = null;
       if (data.fileHash || data.bookId !== undefined) {

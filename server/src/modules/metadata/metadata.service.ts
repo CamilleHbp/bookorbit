@@ -3,7 +3,7 @@ import { decideRegexFields, mergeRegexMetadata } from './regex/merge-regex-metad
 import { stat } from 'fs/promises';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
-import { and, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import sharp from 'sharp';
 
@@ -46,6 +46,7 @@ import { chaptersReachLastFile, mergeAudioChapters, type AudioChapterSource } fr
 import { probeAudioChapters, probeAudioFile, type AudioChapterProbe, type AudioFileProbe } from './extractors/audio.extractor';
 import type { FormatExtractOptions, ParsedBookData } from './extractors/format-extractor.interface';
 import { METADATA_AUDIO_FORMATS, MetadataExtractionService } from './metadata-extraction.service';
+import { ManagedTagService, type ManagedTagSource } from './managed-tag.service';
 import { MetadataEventsService, METADATA_AUTHORS_REPLACED } from './metadata-events.service';
 import { BookCoverStore } from '../book-cover-store/book-cover-store.service';
 import type { BookCoverOrigin } from '../book-cover-store/book-cover-store.repository';
@@ -108,6 +109,7 @@ export class MetadataService {
     private readonly coverStore: BookCoverStore,
     private readonly audiobookChapters: AudiobookChaptersService,
     @Inject(audioToolsConfig.KEY) private readonly audioTools: ConfigType<typeof audioToolsConfig>,
+    private readonly managedTags: ManagedTagService,
     @Optional() private readonly embedder: BookEmbedderService,
     @Optional() private readonly metadataEvents?: MetadataEventsService,
     @Optional() private readonly seriesIdentity?: SeriesIdentityService,
@@ -117,11 +119,11 @@ export class MetadataService {
 
   // ── Public API ───────────────────────────────────────────────────────────────
 
-  async extractAndSave(bookId: number, absolutePath: string, format: string): Promise<void> {
-    await this.extractAndSaveIfAvailable(bookId, absolutePath, format);
+  async extractAndSave(bookId: number, absolutePath: string, format: string, tagSource?: ManagedTagSource): Promise<void> {
+    await this.extractAndSaveIfAvailable(bookId, absolutePath, format, tagSource);
   }
 
-  async extractAndSaveIfAvailable(bookId: number, absolutePath: string, format: string): Promise<boolean> {
+  async extractAndSaveIfAvailable(bookId: number, absolutePath: string, format: string, tagSource?: ManagedTagSource): Promise<boolean> {
     const event = 'metadata.extract_and_save';
     const startedAt = Date.now();
     this.logger.debug(`[${event}] [start] bookId=${bookId} format=${format} - metadata extraction started`);
@@ -143,7 +145,7 @@ export class MetadataService {
       }
 
       await Promise.all([
-        this.persistMetadata(bookId, data, format),
+        this.persistMetadata(bookId, data, format, false, tagSource),
         data.cover ? this.persistSourceCover(bookId, format, data.cover) : Promise.resolve(),
         this.persistFixedLayout(bookId, absolutePath, data.isFixedLayout),
       ]);
@@ -966,8 +968,11 @@ export class MetadataService {
   }
 
   private async replaceTagsInExecutor(executor: RelationMutationExecutor, bookId: number, uniqueTags: string[]): Promise<void> {
-    await executor.delete(bookTags).where(eq(bookTags.bookId, bookId));
-    if (uniqueTags.length === 0) return;
+    await executor.execute(sql`select ${bookMetadata.bookId} from ${bookMetadata} where ${bookMetadata.bookId} = ${bookId} for update`);
+    if (uniqueTags.length === 0) {
+      await executor.delete(bookTags).where(eq(bookTags.bookId, bookId));
+      return;
+    }
 
     const tagByName = new Map<string, { id: number }>();
     const insertedTags = await executor
@@ -993,18 +998,31 @@ export class MetadataService {
       return [{ bookId, tagId: match.id }];
     });
 
-    if (links.length > 0) {
-      await executor.insert(bookTags).values(links).onConflictDoNothing();
-    }
+    await executor.delete(bookTags).where(
+      and(
+        eq(bookTags.bookId, bookId),
+        notInArray(
+          bookTags.tagId,
+          links.map((link) => link.tagId),
+        ),
+      ),
+    );
+    if (links.length > 0) await executor.insert(bookTags).values(links).onConflictDoNothing();
   }
 
   // ── Persistence ──────────────────────────────────────────────────────────────
 
-  private async persistMetadata(bookId: number, data: ParsedBookData, format: string, preserveAbsentRelations = false): Promise<void> {
+  private async persistMetadata(
+    bookId: number,
+    data: ParsedBookData,
+    format: string,
+    preserveAbsentRelations = false,
+    tagSource?: ManagedTagSource,
+  ): Promise<void> {
     if (isAudioFormat(format)) {
       await this.persistAudioMetadata(bookId, data, preserveAbsentRelations);
     } else {
-      await this.persistBookMetadata(bookId, data, format, preserveAbsentRelations);
+      await this.persistBookMetadata(bookId, data, format, preserveAbsentRelations, tagSource);
     }
     this.embedder?.embedBook(bookId).catch((error: Error) => {
       this.logger.warn(
@@ -1086,7 +1104,13 @@ export class MetadataService {
     this.logger.debug(`[metadata.persist_audio] [end] bookId=${bookId} title="${sanitizeLogValue(data.title ?? '')}" - audio metadata persisted`);
   }
 
-  private async persistBookMetadata(bookId: number, data: ParsedBookData, format: string, preserveAbsentRelations = false): Promise<void> {
+  private async persistBookMetadata(
+    bookId: number,
+    data: ParsedBookData,
+    format: string,
+    preserveAbsentRelations = false,
+    tagSource?: ManagedTagSource,
+  ): Promise<void> {
     const { dto: filtered } = await this.bookMetadataLockService.filterAutomatedBookUpdate(bookId, {
       title: data.title,
       subtitle: data.subtitle,
@@ -1178,7 +1202,8 @@ export class MetadataService {
       await this.replaceGenres(bookId, filtered.genres);
     }
     if (filtered.tags !== undefined) {
-      await this.replaceTags(bookId, filtered.tags);
+      if (tagSource) await this.db.transaction((tx) => this.managedTags.sync(tx, bookId, tagSource, filtered.tags!));
+      else await this.replaceTags(bookId, filtered.tags);
     }
 
     if (filtered.comicMetadata) {

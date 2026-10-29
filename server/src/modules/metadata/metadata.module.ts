@@ -12,6 +12,8 @@ import { ComicMetadataRepository } from './comic-metadata.repository';
 import { CoverSlotReconciler } from './cover-slot-reconciler.service';
 import { MetadataExtractionService } from './metadata-extraction.service';
 import { MetadataEventsService } from './metadata-events.service';
+import { ManagedMetadataService } from './managed-metadata.service';
+import { ManagedTagService } from './managed-tag.service';
 import { MetadataService } from './metadata.service';
 
 @Module({
@@ -24,7 +26,25 @@ import { MetadataService } from './metadata.service';
     NarratorModule,
     DjvuDocumentModule,
   ],
-  providers: [RegexMetadataService, MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository, CoverSlotReconciler],
-  exports: [RegexMetadataService, MetadataService, MetadataExtractionService, MetadataEventsService, ComicMetadataRepository, CoverSlotReconciler],
+  providers: [
+    ManagedMetadataService,
+    ManagedTagService,
+    RegexMetadataService,
+    MetadataService,
+    MetadataExtractionService,
+    MetadataEventsService,
+    ComicMetadataRepository,
+    CoverSlotReconciler,
+  ],
+  exports: [
+    ManagedMetadataService,
+    ManagedTagService,
+    RegexMetadataService,
+    MetadataService,
+    MetadataExtractionService,
+    MetadataEventsService,
+    ComicMetadataRepository,
+    CoverSlotReconciler,
+  ],
 })
 export class MetadataModule {}

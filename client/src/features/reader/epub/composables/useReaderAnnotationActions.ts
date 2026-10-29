@@ -1,14 +1,12 @@
 import { ref, type Ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { i18n } from '@/i18n'
+import type { EpubAnnotationInput, ReadingAnchor } from '@bookorbit/types'
 import type { Annotation, AnnotationPatch } from './useAnnotations'
 
 interface ReaderAnnotations {
   annotations: Ref<Annotation[]>
-  create: (
-    bookId: number,
-    data: { cfi: string; bookFileId?: number; text: string; color: string; style: string; note?: string | null; chapterTitle?: string | null },
-  ) => Promise<Annotation | null>
+  create: (bookId: number, data: EpubAnnotationInput) => Promise<Annotation | null>
   update: (bookId: number, id: number, data: AnnotationPatch) => Promise<Annotation | null>
   remove: (bookId: number, id: number) => Promise<boolean>
 }
@@ -29,7 +27,8 @@ interface ReaderAnnotationActionsOptions {
   chapterTitle: Ref<string | null | undefined>
   annotations: ReaderAnnotations
   selection: ReaderSelection
-  addAnnotation: (cfi: string, color: string, style: string) => void
+  addAnnotation: (cfi: string, color: string, style: string, text?: string) => void
+  captureAnnotationAnchor?: (cfi: string, text: string) => ReadingAnchor | null
   redrawAnnotation: (cfi: string, color: string, style: string) => void
   deleteAnnotation: (cfi: string) => void
 }
@@ -48,6 +47,7 @@ export function useReaderAnnotationActions({
   addAnnotation,
   redrawAnnotation,
   deleteAnnotation,
+  captureAnnotationAnchor,
 }: ReaderAnnotationActionsOptions) {
   const isSaving = ref(false)
 
@@ -79,8 +79,10 @@ export function useReaderAnnotationActions({
     const annotationCfi = selection.cfi.value
     if (!selection.text.value || !annotationCfi) return 'nothing'
 
+    const sourceAnchor = captureAnnotationAnchor?.(annotationCfi, selection.text.value)
     const created = await annotations.create(bookId, {
       cfi: annotationCfi,
+      ...(sourceAnchor && { sourceAnchor }),
       bookFileId: fileId,
       text: selection.text.value,
       color,
@@ -90,7 +92,7 @@ export function useReaderAnnotationActions({
     })
     if (!created) return 'failed'
     if (created.cfi) {
-      addAnnotation(created.cfi, created.color, created.style)
+      addAnnotation(created.cfi, created.color, created.style, created.text)
     }
     return 'saved'
   }

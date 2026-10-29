@@ -21,6 +21,7 @@ Apply modes:
 ]]
 
 local DocSettings = require("docsettings")
+local AnnotationGuard = require("bookorbit_annotation_guard")
 local Event = require("ui/event")
 local UIManager = require("ui/uimanager")
 local T = require("ffi/util").template
@@ -307,6 +308,7 @@ Returns a result table { uploaded, applied, deleted, failed, had_errors } or
 nil, err for auth/network level failures.
 ]]
 function BookOrbitBookmarks.exchangeBook(opts)
+    if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
     local book = opts.state:getBook(opts.digest)
     if not book then return nil, "unmatched" end
     if book.positionIncompatible then return incompatibleResult() end
@@ -328,6 +330,7 @@ function BookOrbitBookmarks.exchangeBook(opts)
     local cursor = 1
 
     repeat
+        if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
         local chunk = {}
         while cursor <= #bookmarks and #chunk < UPLOAD_CHUNK do
             table.insert(chunk, bookmarks[cursor])
@@ -342,6 +345,7 @@ function BookOrbitBookmarks.exchangeBook(opts)
                 changes = chunk,
             },
         })
+        if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
         if not body then
             if err == 401 or err == 403 then return nil, "auth" end
             if err == 404 then return nil, "unsupported_server" end
@@ -391,6 +395,7 @@ function BookOrbitBookmarks.exchangeBook(opts)
     local rounds = 0
     local pull_complete = true
     while response and hasPending(response.toApply) do
+        if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
         if rounds >= MAX_PULL_ROUNDS then
             pull_complete = false
             break

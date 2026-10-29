@@ -59,7 +59,7 @@ describe('FileRenameRepository', () => {
         }),
     };
 
-    const repo = new FileRenameRepository(db as never);
+    const repo = new FileRenameRepository(db as never, { updatePaths: vi.fn(), assertMergeSafe: vi.fn() } as never);
 
     await expect(repo.findBookRenameData(7)).resolves.toEqual({
       file: {
@@ -104,7 +104,7 @@ describe('FileRenameRepository', () => {
       })),
     };
 
-    const repo = new FileRenameRepository(db as never);
+    const repo = new FileRenameRepository(db as never, { updatePaths: vi.fn(), assertMergeSafe: vi.fn() } as never);
 
     await repo.updateBookFilePath(10, '/library/new-folder/Dune.epub', 'new-folder/Dune.epub');
 
@@ -123,7 +123,7 @@ describe('FileRenameRepository', () => {
       })),
     };
 
-    const repo = new FileRenameRepository(db as never);
+    const repo = new FileRenameRepository(db as never, { updatePaths: vi.fn(), assertMergeSafe: vi.fn() } as never);
 
     await repo.updateBookFolderPath(5, '/library/new-folder');
 
@@ -145,7 +145,7 @@ describe('FileRenameRepository', () => {
       transaction: vi.fn().mockImplementation(async (callback: (value: unknown) => Promise<unknown>) => callback(tx)),
     };
 
-    const repo = new FileRenameRepository(db as never);
+    const repo = new FileRenameRepository(db as never, { updatePaths: vi.fn(), assertMergeSafe: vi.fn() } as never);
 
     await repo.applyFolderRename(
       5,
@@ -207,7 +207,7 @@ describe('FileRenameRepository', () => {
       }),
     };
 
-    const repo = new FileRenameRepository(db as never);
+    const repo = new FileRenameRepository(db as never, { updatePaths: vi.fn(), assertMergeSafe: vi.fn() } as never);
 
     await expect(repo.findFolderOwners(3, ['/library/Frank Herbert/Dune'])).resolves.toEqual(new Map());
     expect(db.select).toHaveBeenCalledTimes(1);
@@ -222,7 +222,7 @@ describe('FileRenameRepository', () => {
         .mockReturnValueOnce(chain([])),
     };
 
-    const repo = new FileRenameRepository(db as never);
+    const repo = new FileRenameRepository(db as never, { updatePaths: vi.fn(), assertMergeSafe: vi.fn() } as never);
 
     await expect(repo.checkPathTakenByOtherBook('/library/Dune.epub', 5)).resolves.toBe(true);
     await expect(repo.checkPathTakenByOtherBook('/library/Dune.epub', 5)).resolves.toBe(false);

@@ -78,6 +78,9 @@ beforeEach(async () => {
     registry,
     coverStore as never,
     { absorbDuplicate: vi.fn().mockResolvedValue(false) } as never,
+    {
+      withRelocation: vi.fn(async (_ids: number[], run: () => Promise<unknown>) => run()),
+    } as never,
   );
 });
 

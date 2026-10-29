@@ -1,4 +1,16 @@
+import { KoreaderDeliverySettingsService } from './koreader-delivery-settings.service';
+import { KoreaderDeliverySettingsController } from './koreader-delivery-settings.controller';
+import { KoreaderCopyService } from './koreader-copy.service';
+import { KoreaderDeliveryService } from './koreader-delivery.service';
+import { KoreaderDeliverySchedulerService } from './koreader-delivery-scheduler.service';
+import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
+import { KoreaderDeliveryAccessService } from './koreader-delivery-access.service';
+import { KoreaderDeliveryController, KoreaderPluginDeliveryController } from './koreader-delivery.controller';
+import { KoreaderCopiesController, KoreaderPluginCopiesController } from './koreader-copy.controller';
 import { Module } from '@nestjs/common';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
+import { KoreaderReadingController } from './koreader-reading.controller';
+import { KoreaderReadingService } from './koreader-reading.service';
 
 import { CommonModule } from '../../common/common.module';
 import { AchievementModule } from '../achievement/achievement.module';
@@ -32,8 +44,6 @@ import { KoreaderPluginController } from './koreader-plugin.controller';
 import { KoreaderPluginRepository } from './koreader-plugin.repository';
 import { KoreaderPluginService } from './koreader-plugin.service';
 import { KoreaderRepository } from './koreader.repository';
-import { KoreaderDeliveryService } from './koreader-delivery.service';
-import { KoreaderDeliveryController } from './koreader-delivery.controller';
 import { KoreaderService } from './koreader.service';
 import { KoreaderStatsService } from './koreader-stats.service';
 import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cleanup.service';
@@ -49,6 +59,7 @@ import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cle
     AnnotationModule,
     AuthorsModule,
     BookModule,
+    BookRevisionModule,
     BookmarkModule,
     BrowseCountsModule,
     DashboardModule,
@@ -57,10 +68,26 @@ import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cle
     ReadingSessionModule,
     RecommendationModule,
   ],
-  controllers: [KoreaderDeliveryController, KoreaderController, KoreaderPluginController, KoreaderCatalogController],
+  controllers: [
+    KoreaderDeliverySettingsController,
+    KoreaderDeliveryController,
+    KoreaderPluginDeliveryController,
+    KoreaderCopiesController,
+    KoreaderPluginCopiesController,
+    KoreaderController,
+    KoreaderPluginController,
+    KoreaderCatalogController,
+    KoreaderReadingController,
+  ],
   providers: [
+    KoreaderDeliverySettingsService,
+    KoreaderDeliverySchedulerService,
     KoreaderDeliveryService,
+    KoreaderDeliveryExecutionService,
+    KoreaderDeliveryAccessService,
+    KoreaderCopyService,
     KoreaderService,
+    KoreaderReadingService,
     KoreaderHashLinkService,
     KoreaderRepository,
     KoreaderAuthGuard,

@@ -1,7 +1,7 @@
 import { isContentBookFile, type BookDetail } from '@bookorbit/types'
 import { hasReadAlong } from './file-capabilities'
 
-export const BOOK_DETAIL_TABS = ['details', 'edit', 'files', 'chapters', 'reading-log', 'highlights'] as const
+export const BOOK_DETAIL_TABS = ['details', 'edit', 'files', 'chapters', 'reading-log', 'highlights', 'story-updates'] as const
 
 export type BookDetailTab = (typeof BOOK_DETAIL_TABS)[number]
 

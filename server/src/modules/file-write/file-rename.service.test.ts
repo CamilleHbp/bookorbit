@@ -132,6 +132,7 @@ describe('FileRenameService', () => {
       selfWriteRegistry,
       coverStore as never,
       consolidation as never,
+      { withRelocation: vi.fn(async (_ids: number[], run: () => Promise<unknown>) => run()) } as never,
       covers.coverReconciler as never,
     );
 

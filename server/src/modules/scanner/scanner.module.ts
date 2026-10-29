@@ -17,6 +17,7 @@ import { ScanJobStore } from './scan-job-store.service';
 import { ScannerController } from './scanner.controller';
 import { ScannerRepository } from './scanner.repository';
 import { ScannerService } from './scanner.service';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
 
 @Module({
   imports: [
@@ -29,6 +30,14 @@ import { ScannerService } from './scanner.service';
     forwardRef(() => NotificationModule),
     forwardRef(() => BookMetadataFetchModule),
     BookConsolidationModule,
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.getOrThrow<string>('auth.jwtSecret'),
+        signOptions: { expiresIn: config.getOrThrow<StringValue | number>('auth.jwtExpiresIn') },
+      }),
+    }),
+    BookRevisionModule,
   ],
   controllers: [ScannerController],
   providers: [

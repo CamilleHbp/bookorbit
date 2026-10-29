@@ -1,7 +1,10 @@
+import { FanfictionLocationModule } from '../fanfiction/fanfiction-location.module';
 import { Module, forwardRef } from '@nestjs/common';
 
 import { CommonModule } from '../../common/common.module';
 import { AudiobookChaptersModule } from '../audiobook-chapters/audiobook-chapters.module';
+import { KoboFileStateModule } from '../kobo/kobo-file-state.module';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
 import { SelfWriteRegistryModule } from '../../common/self-write-registry.module';
 import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { BookConsolidationModule } from '../book-consolidation/book-consolidation.module';
@@ -9,6 +12,7 @@ import { BookCoverStoreModule } from '../book-cover-store/book-cover-store.modul
 import { MetadataModule } from '../metadata/metadata.module';
 import { NotificationModule } from '../notification/notification.module';
 import { BulkRenameRepository } from './bulk-rename.repository';
+import { FileLockModule } from '../../common/file-lock.module';
 import { FileRenameRepository } from './file-rename.repository';
 import { FileRenameService } from './file-rename.service';
 import { FileWriteRepository } from './file-write.repository';
@@ -28,12 +32,16 @@ import { FORMAT_WRITERS } from './interfaces/format-writer.interface';
   imports: [
     CommonModule,
     AudiobookChaptersModule,
+    FanfictionLocationModule,
+    KoboFileStateModule,
+    BookRevisionModule,
     forwardRef(() => NotificationModule),
     AppSettingsModule,
     BookCoverStoreModule,
     BookConsolidationModule,
     MetadataModule,
     SelfWriteRegistryModule,
+    FileLockModule,
   ],
   providers: [
     FileWriteService,
@@ -87,6 +95,6 @@ import { FORMAT_WRITERS } from './interfaces/format-writer.interface';
     },
     FormatWriterRegistry,
   ],
-  exports: [FileWriteService, FileWriteRepository, FileRenameService, FileRenameRepository, BulkRenameRepository, CommonModule],
+  exports: [FileWriteService, FileWriteRepository, FileRenameService, FileRenameRepository, BulkRenameRepository, CommonModule, FileLockModule],
 })
 export class FileWriteModule {}

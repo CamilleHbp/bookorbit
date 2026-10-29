@@ -25,6 +25,7 @@ const CONVERTED = '/app-data/.kepub-cache/11/converted.kepub.epub';
 const STRIPPED = `${TEMP_DIR}/book.epub`;
 const SOURCE_FILE = {
   id: 22,
+  bookId: 11,
   format: 'epub',
   absolutePath: SOURCE,
   fileHash: ORIGINAL_HASH,
@@ -170,11 +171,24 @@ describe('KoboDownloadService', () => {
     expect(deps.repository.registerDeliveredHash).not.toHaveBeenCalledWith(22, ORIGINAL_HASH);
   });
 
+  it.each(['revoked', 'moved'] as const)('refuses a download when access is %s during conversion', async (change) => {
+    deps.conversion.getKepubPath.mockImplementation(() => {
+      if (change === 'revoked') deps.access.assertBookAccessible.mockRejectedValue(new ForbiddenException('Access revoked'));
+      else deps.repository.findPrimaryFile.mockResolvedValue(null as never);
+      return Promise.resolve(CONVERTED);
+    });
+    await expect(service.streamBook(7, 11, reply as never)).rejects.toBeInstanceOf(change === 'revoked' ? ForbiddenException : NotFoundException);
+    expect(reply.send).not.toHaveBeenCalled();
+    expect(openMock).not.toHaveBeenCalled();
+  });
+
   it('registers each cached delivery, including a different authorized user', async () => {
     await service.streamBook(7, 11, reply as never);
     await service.streamBook(8, 11, makeReply() as never);
     expect(deps.access.assertBookAccessible.mock.calls).toEqual([
       [7, 11],
+      [7, 11],
+      [8, 11],
       [8, 11],
     ]);
     expect(openMock.mock.calls).toEqual([

@@ -31,6 +31,12 @@ export const NotificationType = {
   ReadAloudNeedsReview: "read_aloud_needs_review",
   ReadAloudFailed: "read_aloud_failed",
   ReadAloudReviewExpiring: "read_aloud_review_expiring",
+  FanfictionImported: "fanfiction_imported",
+  FanfictionUpdated: "fanfiction_updated",
+  FanfictionRolledBack: "fanfiction_rolled_back",
+  FanfictionAttention: "fanfiction_attention",
+  FanfictionFailed: "fanfiction_failed",
+  FanfictionBatchCompleted: "fanfiction_batch_completed",
 } as const;
 
 export type NotificationType = (typeof NotificationType)[keyof typeof NotificationType];
@@ -61,6 +67,7 @@ export const NOTIFICATION_CATEGORY_IDS = [
   "bulkRename",
   "achievements",
   "readAloud",
+  "fanfiction",
 ] as const;
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORY_IDS)[number];
@@ -108,6 +115,12 @@ export const NOTIFICATION_TYPE_META: Record<NotificationType, NotificationTypeMe
   [NotificationType.ReadAloudNeedsReview]: { category: "readAloud", severity: "warning" },
   [NotificationType.ReadAloudFailed]: { category: "readAloud", severity: "error" },
   [NotificationType.ReadAloudReviewExpiring]: { category: "readAloud", severity: "warning" },
+  [NotificationType.FanfictionImported]: { category: "fanfiction", severity: "success" },
+  [NotificationType.FanfictionUpdated]: { category: "fanfiction", severity: "success" },
+  [NotificationType.FanfictionRolledBack]: { category: "fanfiction", severity: "success" },
+  [NotificationType.FanfictionAttention]: { category: "fanfiction", severity: "warning" },
+  [NotificationType.FanfictionFailed]: { category: "fanfiction", severity: "error" },
+  [NotificationType.FanfictionBatchCompleted]: { category: "fanfiction", severity: "success" },
 };
 
 export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, readonly NotificationType[]> = NOTIFICATION_CATEGORY_IDS.reduce(

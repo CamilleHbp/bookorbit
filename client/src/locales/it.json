@@ -13423,6 +13423,7 @@
       "stop": "Interrompe la narrazione",
       "error": "Errore di riproduzione della narrazione"
     },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved.",
     "bookmarkEdit": {
       "title": "Modifica segnalibro",
       "titleLabel": "Titolo",

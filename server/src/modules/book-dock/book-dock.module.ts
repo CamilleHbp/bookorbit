@@ -1,4 +1,12 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { storageConfig } from '../../config/config';
+import { RevisionFileModule } from '../book-revision/revision-file.module';
+import { BookDockManagedUploadService } from './book-dock-managed-upload.service';
+import { BookDockManagedService } from './book-dock-managed.service';
+import { ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
+import type { StringValue } from 'ms';
 
 import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { AuthModule } from '../auth/auth.module';
@@ -24,6 +32,8 @@ import { BookDockRepository } from './book-dock.repository';
 
 @Module({
   imports: [
+    ConfigModule.forFeature(storageConfig),
+    RevisionFileModule,
     UploadModule,
     AuthModule,
     BookModule,
@@ -37,6 +47,8 @@ import { BookDockRepository } from './book-dock.repository';
   ],
   controllers: [BookDockController],
   providers: [
+    BookDockManagedService,
+    BookDockManagedUploadService,
     BookDockService,
     BookDockRepository,
     BookDockEventsService,
@@ -48,6 +60,14 @@ import { BookDockRepository } from './book-dock.repository';
     BookDockWatcherService,
     BookDockGateway,
   ],
-  exports: [BookDockService, BookDockRepository, BookDockEventsService, BookDockFinalizeService, BookDockIngestService],
+  exports: [
+    BookDockService,
+    BookDockRepository,
+    BookDockEventsService,
+    BookDockFinalizeService,
+    BookDockIngestService,
+    BookDockManagedService,
+    BookDockManagedUploadService,
+  ],
 })
 export class BookDockModule {}

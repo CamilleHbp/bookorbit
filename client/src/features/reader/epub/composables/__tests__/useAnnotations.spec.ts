@@ -40,6 +40,50 @@ function response(ok: boolean, payload: unknown = null): ApiResponse {
 }
 
 describe('useAnnotations', () => {
+  it('keeps projected highlights and links after a metadata edit while preserving the source', async () => {
+    const store = useAnnotations()
+    const original = makeAnnotation(1)
+    original.sourceAnchor = { revision: 'old', bookId: 9, bookFileId: 33, chapterIndex: 0, chapterFraction: 0, bookFraction: 0, quote: original.text }
+    store.annotations.value = [original]
+    await store.projectForFile(33, async () => ({ cfi: 'mapped', positionStatus: 'repaired' }))
+    expect(store.projectedTarget(original.cfi!)).toBe('mapped')
+    apiMock.mockResolvedValueOnce(response(true, { ...original, note: 'Edited note' }))
+    const edited = await store.update(9, 1, { note: 'Edited note' })
+    expect(edited).toMatchObject({ cfi: 'mapped', positionStatus: 'repaired', note: 'Edited note', sourceAnchor: original.sourceAnchor })
+    expect(JSON.parse(apiMock.mock.calls.at(-1)![1]!.body as string)).toEqual({ note: 'Edited note' })
+  })
+
+  it('bounds annotation resolution work and disables unresolved old links', async () => {
+    const store = useAnnotations()
+    store.annotations.value = Array.from({ length: 105 }, (_, i) => ({
+      ...makeAnnotation(i + 1),
+      sourceAnchor: { revision: 'old', chapterIndex: 0, chapterFraction: 0, bookFraction: 0 },
+    }))
+    let calls = 0
+    await store.projectForFile(33, async () => {
+      calls++
+      return { cfi: 'mapped', positionStatus: 'repaired' }
+    })
+    expect(calls).toBeLessThanOrEqual(100)
+    expect(store.annotations.value[104]).toMatchObject({ cfi: null, positionStatus: 'pending' })
+    expect(store.projectedTarget('epubcfi(/6/105)')).toBeNull()
+  })
+
+  it('draws only verified locations belonging to the open file and keeps unresolved notes available', () => {
+    const store = useAnnotations()
+    store.annotations.value = [
+      makeAnnotation(1),
+      { ...makeAnnotation(2), jumpFileId: 44 },
+      { ...makeAnnotation(3), positionStatus: 'pending' },
+      { ...makeAnnotation(4), positionStatus: 'failed' },
+      { ...makeAnnotation(5), jumpFileId: null },
+    ]
+    expect(store.drawableForFile(33).map((annotation) => annotation.id)).toEqual([1, 5])
+    expect(store.hasUnverifiedForFile(33)).toBe(true)
+    expect(store.hasUnverifiedForFile(44)).toBe(false)
+    expect(store.annotations.value).toHaveLength(5)
+  })
+
   beforeEach(() => {
     apiMock.mockReset()
   })

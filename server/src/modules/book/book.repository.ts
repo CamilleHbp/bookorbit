@@ -1,4 +1,5 @@
 import { recordBookFileHashHistory, deleteBookFilesWithHashInvalidation, deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
+import { resetCanonicalReadingEvents } from '../book-revision/canonical-reading.service';
 import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
 import { SQL, and, asc, count, eq, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { SUPPORTED_BOOK_FORMATS } from '../upload/upload-validator.service';
@@ -1757,6 +1758,31 @@ export class BookRepository {
     return !!row;
   }
 
+  async findAccessibleFiles(fileIds: number[], user: import('../../common/types/request-user').RequestUser) {
+    if (fileIds.length > 100) throw new BadRequestException('File access batches are limited to 100');
+    if (!fileIds.length || !user.active) return [];
+    const access = user.isSuperuser
+      ? []
+      : [
+          sql`exists (select 1 from ${schema.userLibraryAccess} access where access.user_id = ${user.id} and access.library_id = ${books.libraryId})`,
+          ...(user.contentFilters ? buildContentFilterClauses(user.contentFilters, this.db) : []),
+        ];
+    return this.db
+      .select({
+        id: bookFiles.id,
+        bookId: bookFiles.bookId,
+        libraryId: books.libraryId,
+        format: bookFiles.format,
+        currentRevisionId: bookFiles.currentRevisionId,
+        sha256: bookFiles.sha256,
+        sizeBytes: bookFiles.sizeBytes,
+      })
+      .from(bookFiles)
+      .innerJoin(books, eq(books.id, bookFiles.bookId))
+      .where(and(inArray(bookFiles.id, fileIds), ...access))
+      .limit(100);
+  }
+
   async findFileById(fileId: number) {
     const [file] = await this.db
       .select({
@@ -1770,6 +1796,8 @@ export class BookRepository {
         libraryFolderPath: libraryFolders.path,
         fileHash: bookFiles.fileHash,
         updatedAt: bookFiles.updatedAt,
+        currentRevisionId: bookFiles.currentRevisionId,
+        sha256: bookFiles.sha256,
         sizeBytes: bookFiles.sizeBytes,
         durationSeconds: bookFiles.durationSeconds,
         mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,
@@ -2290,9 +2318,7 @@ export class BookRepository {
     return row ?? null;
   }
 
-  async findPrimaryFilesByBookIds(
-    bookIds: number[],
-  ): Promise<{ bookId: number; absolutePath: string; format: string | null; sizeBytes: number | null; mediaOverlayAvailable: boolean }[]> {
+  async findPrimaryFilesByBookIds(bookIds: number[]) {
     if (bookIds.length === 0) return [];
     return this.db
       .select({
@@ -2301,6 +2327,7 @@ export class BookRepository {
         format: bookFiles.format,
         sizeBytes: bookFiles.sizeBytes,
         mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,
+        currentRevisionId: bookFiles.currentRevisionId,
       })
       .from(books)
       .innerJoin(bookFiles, eq(bookFiles.id, books.primaryFileId))
@@ -2336,16 +2363,7 @@ export class BookRepository {
       .orderBy(asc(books.id));
   }
 
-  async findAllFilesByBookIds(bookIds: number[]): Promise<
-    {
-      bookId: number;
-      absolutePath: string;
-      format: string | null;
-      sizeBytes: number | null;
-      sortOrder: number | null;
-      mediaOverlayAvailable: boolean;
-    }[]
-  > {
+  async findAllFilesByBookIds(bookIds: number[]) {
     if (bookIds.length === 0) return [];
     return this.db
       .select({
@@ -3024,6 +3042,7 @@ export class BookRepository {
    */
   private async clearExternalDeviceProgress(tx: BookRepositoryTx, userId: number, fileIds: number[]): Promise<void> {
     if (fileIds.length === 0) return;
+    await resetCanonicalReadingEvents(tx, userId, fileIds);
     await tx
       .delete(koreaderDeviceProgress)
       .where(

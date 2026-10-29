@@ -20,7 +20,8 @@ import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { BookCoverStore } from '../book-cover-store/book-cover-store.service';
 import { NotificationService } from '../notification/notification.service';
 import { probeAudioChapters } from '../metadata/extractors/audio.extractor';
-import { computeFileHash } from '../scanner/lib/hash';
+import { RevisionFileService } from '../book-revision/revision-file.service';
+import { RevisionMetadataService } from '../book-revision/revision-metadata.service';
 import {
   resolveBookFileWriteStatus,
   resolveChapterWriteStatus,
@@ -110,6 +111,8 @@ export class FileWriteService implements OnModuleDestroy {
     private readonly selfWriteRegistry: SelfWriteRegistry,
     private readonly coverStore: BookCoverStore,
     private readonly audiobookChapters: AudiobookChaptersService,
+    private readonly revisionFiles: RevisionFileService,
+    private readonly metadataRevisions: RevisionMetadataService,
   ) {
     this.debounceMs = resolvePositiveInteger(this.config.get('fileWrite.debounceMs'), DEFAULT_WRITE_DEBOUNCE_MS);
     this.maxConcurrentWrites = resolvePositiveInteger(this.config.get('fileWrite.maxConcurrentWrites'), DEFAULT_MAX_CONCURRENT_WRITES);
@@ -572,11 +575,13 @@ export class FileWriteService implements OnModuleDestroy {
       await this.fileWriteRepo.recordHashHistory(file.id, file.fileHash, 'file_write');
     }
 
+    const journaled = format === 'epub' && !dryRun;
     let result: WriteResult;
     try {
-      result = await this.lockService.withLock(file.absolutePath, () =>
-        writer.write(file.absolutePath, payload, { fieldMask: createBookWriteFieldMask(), dryRun, ...audioTrackContext }),
-      );
+      const write = (path: string) => writer.write(path, payload, { fieldMask: createBookWriteFieldMask(), dryRun, ...audioTrackContext });
+      result = journaled
+        ? await this.metadataRevisions.rewriteWithinBookOperation(bookId, file, write)
+        : await this.lockService.withLock(file.absolutePath, () => write(file.absolutePath));
     } catch (error) {
       const reason = describeWriteFailure(error, file.absolutePath);
       result = { status: 'failed', fieldsWritten: [], durationMs: 0, reason };
@@ -590,7 +595,7 @@ export class FileWriteService implements OnModuleDestroy {
       result = { ...result, reason: describeWriteFailure(result.reason, file.absolutePath) };
     }
 
-    if (result.status === 'success') {
+    if (result.status === 'success' && !journaled) {
       const stateRefreshed = await this.updateTargetFileState(bookId, file);
       if (!stateRefreshed) {
         const reason = 'post-write file state refresh failed';
@@ -660,22 +665,16 @@ export class FileWriteService implements OnModuleDestroy {
   }
 
   private async updateTargetFileState(bookId: number, file: FileWriteTarget): Promise<boolean> {
-    const newHash = await computeFileHash(file.absolutePath).catch((err: unknown) => {
-      this.logger.warn(
-        `[file_write.hash_update] [fail] bookId=${bookId} bookFileId=${file.id} errorClass=${err instanceof Error ? err.constructor.name : 'Unknown'} error="${sanitizeErrorMessage(err instanceof Error ? err.message : String(err))}" - post-write hash recompute failed`,
-      );
-      return null;
-    });
-
     let lastError: unknown;
     for (let attempt = 1; attempt <= FILE_STATE_REFRESH_ATTEMPTS; attempt++) {
       try {
-        const stats = await stat(file.absolutePath, { bigint: true });
+        const inspected = await this.revisionFiles.require(file.absolutePath);
+        await this.revisionFiles.verifyUnchanged(file.absolutePath, inspected);
         await this.fileWriteRepo.updateFileStateAfterMetadataWrite(bookId, file.id, file.fileHash ?? null, {
-          ...(newHash ? { fileHash: newHash } : {}),
-          mtime: stats.mtime,
-          sizeBytes: Number(stats.size),
-          ino: stats.ino,
+          fileHash: inspected.fileHash,
+          mtime: inspected.mtime,
+          sizeBytes: inspected.sizeBytes,
+          ino: inspected.ino,
         });
         return true;
       } catch (err) {

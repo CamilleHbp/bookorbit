@@ -177,4 +177,11 @@ assertEqual(saved_annotations, sidecar_annotations, "sidecar redelivery saves an
 assertEqual(marked_external, true, "sidecar redelivery marks external modification")
 assertEqual(flushed, true, "sidecar redelivery flushes settings")
 
+applied, deleted, touched = BookOrbitAnnotations.applySidecar("closed.epub", {
+    add = { { serverId = 99, version = 1, posFormat = "xpointer", sourceAnchor = { revision = "original" }, pos0 = "/old", pos1 = "/old.end" } },
+})
+assertEqual(applied[1].status, "failed", "anchored sidecar additions wait for native first-open verification")
+assertEqual(touched, 0, "unverified source anchors cannot install stale sidecar ranges")
+assertEqual(#sidecar_annotations, 1, "pending anchored addition leaves the existing notes intact")
+
 print("bookorbit_annotations_idempotency_test.lua: ok")
