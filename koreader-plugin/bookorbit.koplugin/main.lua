@@ -1477,13 +1477,13 @@ function BookOrbit:onBookOrbitToggleAutoSync(toggle, from_menu, quiet)
 end
 
 function BookOrbit:registerEvents()
-    self.onCloseDocument = self._onCloseDocument
-    self.onSuspend = self._onSuspend
     if not self.in_reader then
         -- No book here, but closes queued while offline still go out when Wi-Fi returns.
         self.onNetworkConnected = self.settings.auto_sync and self._onNetworkConnected or nil
         return
     end
+    self.onCloseDocument = self._onCloseDocument
+    self.onSuspend = self._onSuspend
     self.onPageUpdate = self._onPageUpdate
     if self.settings.auto_sync then
         self.onResume = self._onResume

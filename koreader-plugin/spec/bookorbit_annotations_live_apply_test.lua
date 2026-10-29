@@ -125,6 +125,7 @@ local entry = {
     posFormat = "xpointer", pos0 = "/old", pos1 = "/old.end",
 }
 ui.document.isXPointerInDocument = function(_, xp) return xp ~= "/old" end
+local count_before_ambiguous = #ui.annotation.annotations
 ui.document.findAllText = function()
     return { { start = "/first", ["end"] = "/first.end" }, { start = "/second", ["end"] = "/second.end" } }
 end
@@ -207,6 +208,7 @@ applied = BookOrbitAnnotations.applyLive(ui, {
 assertEqual(applied[1].status, 'failed', 'an existing identity still needs range verification')
 assertEqual(existing.note, previous_note, 'a failed redelivery preserves the applied annotation')
 
+local count_before_ambiguous = #ui.annotation.annotations
 ui.document.findAllText = function()
     return {
         { start = '/body/DocFragment[1]/p[1]/text().0', ['end'] = '/body/DocFragment[1]/p[1]/text().9' },
@@ -218,4 +220,4 @@ applied = BookOrbitAnnotations.applyLive(ui, {
         text = 'repeated text', pos0 = '/invalid', pos1 = '/invalid' }},
 })
 assertEqual(applied[1].status, 'failed', 'repeated text without a trustworthy location stays pending')
-assertEqual(#ui.annotation.annotations, 1, 'ambiguous repair never draws a guessed passage')
+assertEqual(#ui.annotation.annotations, count_before_ambiguous, 'ambiguous repair never draws a guessed passage')
