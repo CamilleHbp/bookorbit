@@ -1,14 +1,18 @@
+import { realignAudioTrackOrder } from '../../db/audio-track-order';
+import { recordBookFileHashHistory, deleteBookFilesWithHashInvalidation, deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import { BookRevisionService } from '../book-revision/book-revision.service';
 import {
+  audiobookProgress,
   authors,
   bookAuthors,
   bookFiles,
+  bookmarks,
   bookGenres,
   bookMetadata,
   books,
@@ -110,6 +114,7 @@ export class ScannerRepository {
         allowedFormats: libraries.allowedFormats,
         formatPriority: libraries.formatPriority,
         metadataPrecedence: libraries.metadataPrecedence,
+        regexMetadata: libraries.regexMetadata,
         excludePatterns: libraries.excludePatterns,
         organizationMode: libraries.organizationMode,
         addedAtSource: libraries.addedAtSource,
@@ -127,6 +132,15 @@ export class ScannerRepository {
   async findLibraryName(libraryId: number): Promise<string | null> {
     const [row] = await this.db.select({ name: libraries.name }).from(libraries).where(eq(libraries.id, libraryId)).limit(1);
     return row?.name ?? null;
+  }
+
+  async hasLibraryAccess(userId: number, libraryId: number): Promise<boolean> {
+    const [row] = await this.db
+      .select({ userId: userLibraryAccess.userId })
+      .from(userLibraryAccess)
+      .where(and(eq(userLibraryAccess.userId, userId), eq(userLibraryAccess.libraryId, libraryId)))
+      .limit(1);
+    return row !== undefined;
   }
 
   async findLibraryAccessibleUserIds(libraryId: number): Promise<number[]> {
@@ -153,6 +167,38 @@ export class ScannerRepository {
       })
       .from(books)
       .where(eq(books.libraryFolderId, libraryFolderId));
+  }
+
+  /** Books filed under a library folder but located at `folderPath`, with their content files. */
+  async findBooksAtFolderPath(libraryFolderId: number, folderPath: string) {
+    const rows = await this.db
+      .select({ id: books.id, libraryId: books.libraryId, primaryFileId: books.primaryFileId })
+      .from(books)
+      .where(and(eq(books.libraryFolderId, libraryFolderId), eq(books.folderPath, folderPath)));
+    if (rows.length === 0) return [];
+    const files = await this.db
+      .select({ id: bookFiles.id, bookId: bookFiles.bookId, absolutePath: bookFiles.absolutePath })
+      .from(bookFiles)
+      .where(
+        and(
+          inArray(
+            bookFiles.bookId,
+            rows.map((row) => row.id),
+          ),
+          eq(bookFiles.role, 'content'),
+        ),
+      )
+      .orderBy(asc(bookFiles.sortOrder), asc(bookFiles.id));
+    return rows.map((row) => ({ ...row, contentFiles: files.filter((file) => file.bookId === row.id) }));
+  }
+
+  async bookExistsAtFolderPath(libraryId: number, folderPath: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: books.id })
+      .from(books)
+      .where(and(eq(books.libraryId, libraryId), eq(books.folderPath, folderPath)))
+      .limit(1);
+    return !!row;
   }
 
   async findPrimaryBookFilesByLibrary(libraryId: number) {
@@ -250,6 +296,7 @@ export class ScannerRepository {
         mtime: bookFiles.mtime,
         fileHash: bookFiles.fileHash,
         format: bookFiles.format,
+        role: bookFiles.role,
         sortOrder: bookFiles.sortOrder,
         durationSeconds: bookFiles.durationSeconds,
         mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,
@@ -284,12 +331,41 @@ export class ScannerRepository {
     if (data.ino !== undefined || data.sizeBytes !== undefined || data.mtime !== undefined || data.absolutePath !== undefined) {
       return this.revisions.observeFile(id, data);
     }
-    const [file] = await this.db
-      .update(bookFiles)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(bookFiles.id, id))
-      .returning();
-    return file;
+    return this.db.transaction(async (tx) => {
+      if (data.fileHash) {
+        const [previous] = await tx.select({ fileHash: bookFiles.fileHash }).from(bookFiles).where(eq(bookFiles.id, id)).for('update');
+        if (previous?.fileHash && previous.fileHash !== data.fileHash) {
+          await recordBookFileHashHistory(tx, id, previous.fileHash, 'rescan');
+          // Positions from the replaced bytes cannot be interpreted in the new DOM.
+          await tx
+            .update(schema.readingProgress)
+            .set({
+              cfi: null,
+              koreaderProgress: null,
+              pageNumber: null,
+              positionSeconds: null,
+              mediaOverlayFragment: null,
+              mediaOverlaySectionIndex: null,
+              updatedAt: sql`${schema.readingProgress.updatedAt}`,
+            })
+            .where(eq(schema.readingProgress.bookFileId, id));
+          await tx
+            .update(koreaderDeviceProgress)
+            .set({
+              progress: null,
+              chapterIndex: null,
+              updatedAt: sql`${koreaderDeviceProgress.updatedAt}`,
+            })
+            .where(eq(koreaderDeviceProgress.bookFileId, id));
+        }
+      }
+      const [file] = await tx
+        .update(bookFiles)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(bookFiles.id, id))
+        .returning();
+      return file;
+    });
   }
 
   async findBookFileByAbsolutePath(absolutePath: string, libraryId?: number) {
@@ -395,6 +471,64 @@ export class ScannerRepository {
     return this.db.select().from(bookFiles).where(eq(bookFiles.bookId, bookId));
   }
 
+  async findBookFileFormats(bookId: number): Promise<Array<{ id: number; format: string | null }>> {
+    return this.db.select({ id: bookFiles.id, format: bookFiles.format }).from(bookFiles).where(eq(bookFiles.bookId, bookId));
+  }
+
+  /**
+   * Rewrites a book's stored audio positions after its track order changed: every user's audio
+   * bookmarks, which hold a position from the start of the book, and the progress percentage, which
+   * follows from it. Rows are locked so none is read under one order and written under the other.
+   */
+  async remapAudioPositions(
+    bookId: number,
+    remapPosition: (positionSeconds: number) => number | null,
+    percentageAt: (fileId: number, offsetSeconds: number) => number | null,
+  ): Promise<{ bookmarks: number; progress: number }> {
+    return this.db.transaction(async (tx) => {
+      let bookmarksUpdated = 0;
+      const bookmarkRows = await tx
+        .select({ id: bookmarks.id, positionSeconds: bookmarks.positionSeconds })
+        .from(bookmarks)
+        .where(and(eq(bookmarks.bookId, bookId), isNull(bookmarks.cfi), isNotNull(bookmarks.positionSeconds)))
+        .for('update');
+      for (const row of bookmarkRows) {
+        const positionSeconds = remapPosition(row.positionSeconds!);
+        if (positionSeconds === null || positionSeconds === row.positionSeconds) continue;
+        await tx.update(bookmarks).set({ positionSeconds }).where(eq(bookmarks.id, row.id));
+        bookmarksUpdated++;
+      }
+
+      let progressUpdated = 0;
+      const progressRows = await tx
+        .select({
+          userId: audiobookProgress.userId,
+          currentFileId: audiobookProgress.currentFileId,
+          positionSeconds: audiobookProgress.positionSeconds,
+          percentage: audiobookProgress.percentage,
+        })
+        .from(audiobookProgress)
+        .where(eq(audiobookProgress.bookId, bookId))
+        .for('update');
+      for (const row of progressRows) {
+        // A finished book stays finished: its last position was the end of the old order.
+        if (row.percentage >= 100) continue;
+        const percentage = percentageAt(row.currentFileId, row.positionSeconds);
+        if (percentage === null || percentage === row.percentage) continue;
+        await tx
+          .update(audiobookProgress)
+          .set({ percentage })
+          .where(and(eq(audiobookProgress.userId, row.userId), eq(audiobookProgress.bookId, bookId)));
+        progressUpdated++;
+      }
+      return { bookmarks: bookmarksUpdated, progress: progressUpdated };
+    });
+  }
+
+  realignAudioTrackOrder(bookId: number): Promise<number> {
+    return this.db.transaction((tx) => realignAudioTrackOrder(tx, bookId));
+  }
+
   async findBookFilesByBookIds(bookIds: number[]): Promise<(typeof bookFiles.$inferSelect)[]> {
     if (bookIds.length === 0) return [];
     return this.db.select().from(bookFiles).where(inArray(bookFiles.bookId, bookIds));
@@ -408,7 +542,7 @@ export class ScannerRepository {
         .set({ orphaned: true, orphanedHash: file.fileHash })
         .where(and(eq(koreaderDeviceProgress.bookFileId, id), eq(koreaderDeviceProgress.orphaned, false)));
     }
-    await this.db.delete(bookFiles).where(eq(bookFiles.id, id));
+    await deleteBookFilesWithHashInvalidation(this.db, eq(bookFiles.id, id));
   }
 
   async findBookFileWithContextByIno(ino: bigint, libraryId?: number) {
@@ -510,7 +644,7 @@ export class ScannerRepository {
         .limit(1);
       if (!duplicate || duplicate.bookId === input.sourceBookId) return null;
 
-      await tx.delete(books).where(eq(books.id, input.duplicateBookId));
+      await deleteBooksWithHashInvalidation(tx, eq(books.id, input.duplicateBookId));
       await tx
         .update(books)
         .set({
@@ -576,6 +710,24 @@ export class ScannerRepository {
     return row ?? null;
   }
 
+  /** Present books of a library, counted once up front so a re-apply job reports a stable total. */
+  async getRuleReapplyBounds(libraryId: number): Promise<{ total: number; maxId: number }> {
+    const [row] = await this.db
+      .select({ total: sql<number>`count(*)::int`, maxId: sql<number>`coalesce(max(${books.id}), 0)::int` })
+      .from(books)
+      .where(and(eq(books.libraryId, libraryId), eq(books.status, 'present')));
+    return { total: row?.total ?? 0, maxId: row?.maxId ?? 0 };
+  }
+
+  async findRuleReapplyBookBatch(libraryId: number, afterId: number, maxId: number, limit: number) {
+    return this.db
+      .select({ id: books.id, primaryFileId: books.primaryFileId })
+      .from(books)
+      .where(and(eq(books.libraryId, libraryId), eq(books.status, 'present'), gt(books.id, afterId), lte(books.id, maxId)))
+      .orderBy(asc(books.id))
+      .limit(limit);
+  }
+
   async findBooksByIds(bookIds: number[]) {
     if (bookIds.length === 0) return [];
     return this.db
@@ -595,6 +747,7 @@ export class ScannerRepository {
       this.db
         .select({
           id: books.id,
+          libraryId: books.libraryId,
           status: books.status,
           coverAspectRatio: libraries.coverAspectRatio,
           formatPriority: libraries.formatPriority,

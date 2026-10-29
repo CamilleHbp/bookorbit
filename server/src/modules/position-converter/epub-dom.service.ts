@@ -20,6 +20,7 @@ const SPINE_CACHE_MAX = 24;
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
+  removeNSPrefix: true,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
 });
@@ -57,7 +58,18 @@ function resolveHref(href: string, basePath: string): string {
 }
 
 function findInZip(files: unzipper.File[], path: string): unzipper.File | undefined {
-  const clean = normalizeZipPath(path);
+  const entry = matchZipEntry(files, normalizeZipPath(path));
+  if (entry || !path.includes('%')) return entry;
+  // Manifest hrefs are URLs, so a chapter stored as `My Chapter.xhtml` is listed as `My%20Chapter.xhtml`.
+  try {
+    const decoded = decodeURIComponent(path);
+    return decoded === path ? undefined : matchZipEntry(files, normalizeZipPath(decoded));
+  } catch {
+    return undefined;
+  }
+}
+
+function matchZipEntry(files: unzipper.File[], clean: string): unzipper.File | undefined {
   const cleanLower = clean.toLowerCase();
   let ciMatch: unzipper.File | undefined;
   for (const file of files) {
@@ -106,15 +118,16 @@ export async function readEpubSpine(zip: unzipper.CentralDirectory): Promise<Epu
   return { hrefs };
 }
 
-export async function loadChapterFromZip(zip: unzipper.CentralDirectory, href: string): Promise<ChapterDocument | null> {
+export async function loadChapterFromZip(zip: unzipper.CentralDirectory, href: string, canonicalKepub = false): Promise<ChapterDocument | null> {
   const entry = findInZip(zip.files, href);
   if (!entry) return null;
   const xhtml = (await readConversionResource(entry, 2 * 1024 * 1024)).toString('utf-8');
-  return parseChapterDocument(xhtml);
+  return parseChapterDocument(xhtml, canonicalKepub);
 }
 
 interface SpineCacheEntry {
   absolutePath: string;
+  format: string;
   identity: string;
   spine: EpubSpine;
 }
@@ -153,7 +166,7 @@ export class EpubDomService {
 
     try {
       const zip = await openConversionArchive(entry.absolutePath);
-      const doc = await loadChapterFromZip(zip, href);
+      const doc = await loadChapterFromZip(zip, href, entry.format === 'kepub');
       if (!doc || (await this.currentIdentity(bookFileId))?.identity !== entry.identity) return null;
       this.chapterCache.set(cacheKey, doc);
       while (this.chapterCache.size > CHAPTER_CACHE_MAX) {
@@ -167,7 +180,7 @@ export class EpubDomService {
     }
   }
 
-  private async currentIdentity(bookFileId: number): Promise<{ absolutePath: string; identity: string } | null> {
+  private async currentIdentity(bookFileId: number): Promise<{ absolutePath: string; format: string; identity: string } | null> {
     const [file] = await this.db
       .select({
         absolutePath: bookFiles.absolutePath,
@@ -180,10 +193,10 @@ export class EpubDomService {
       .from(bookFiles)
       .where(eq(bookFiles.id, bookFileId))
       .limit(1);
-    if (!file || file.format !== 'epub') return null;
+    if (!file || (file.format !== 'epub' && file.format !== 'kepub')) return null;
     const signature = await fileCacheIdentity(file.absolutePath);
     if (!signature) return null;
-    return { absolutePath: file.absolutePath, identity: JSON.stringify([file, signature]) };
+    return { absolutePath: file.absolutePath, format: file.format, identity: JSON.stringify([file, signature]) };
   }
 
   private async getSpineEntry(bookFileId: number): Promise<SpineCacheEntry | null> {

@@ -1,3 +1,4 @@
+import { createUuid } from '@/lib/uuid'
 import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import {
   Permission,
@@ -122,7 +123,7 @@ export function useKoreaderDelivery(copy: MaybeRefOrGetter<KoreaderInstalledCopy
   async function requestDelivery() {
     if (!canRequest.value) return
     const revisionId = toValue(copy).currentRevisionId!
-    if (requestIdentity?.revisionId !== revisionId) requestIdentity = { revisionId, key: crypto.randomUUID() }
+    if (requestIdentity?.revisionId !== revisionId) requestIdentity = { revisionId, key: createUuid() }
     const body: RequestKoreaderDelivery = { idempotencyKey: requestIdentity.key, expectedRevisionId: revisionId }
     await perform(async (id) => {
       const result = await request<KoreaderDeliveryJob>(`/api/v1/koreader/deliveries/copies/${toValue(copy).id}`, body)

@@ -1,1 +1,1 @@
-export { FileLockService, bookOperationLockKey } from '../../common/file-lock.service';
+export { FileLockService, bookOperationLockKey } from '../../common/services/file-lock.service';

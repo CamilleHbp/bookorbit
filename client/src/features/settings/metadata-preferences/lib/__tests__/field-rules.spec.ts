@@ -8,6 +8,7 @@ import {
   fieldRuleLabelKey,
   fieldsMatching,
   isProviderUsable,
+  providerHasOtherShape,
   providerRank,
   providerUsageCount,
   resolvedProviders,
@@ -36,6 +37,54 @@ function makeFields(overrides: Partial<Record<MetadataField, Partial<FieldPrefer
   )
 }
 
+describe('what a provider can supply for a field', () => {
+  const audible = status('audible', true, true)
+
+  it('counts a provider that never fills the field as skipped for it, and only for it', () => {
+    expect(skipReasonFor(audible, 'narrators')).toBeNull()
+    expect(skipReasonFor(audible, 'isbn')).toBe('neverSupplies')
+    expect(skipReasonFor(STATUSES[0], 'narrators')).toBe('neverSupplies')
+    expect(skipReasonFor(audible)).toBeNull()
+  })
+
+  it('still says disabled before it says the provider never supplies the field', () => {
+    expect(skipReasonFor(status('audible', false, true), 'isbn')).toBe('disabled')
+  })
+
+  it('gives no rank to a provider that never fills the field', () => {
+    const statuses = [...STATUSES, audible]
+    const order = [key('goodreads'), key('audible'), key('google')]
+    expect(resolvedProviders(order, statuses, 'narrators')).toEqual([key('audible')])
+    expect(skippedProviders(order, statuses, 'narrators')).toEqual([key('goodreads'), key('google')])
+    expect(providerRank(order, 1, statuses, 'narrators')).toBe(1)
+    expect(providerRank(order, 0, statuses, 'narrators')).toBeNull()
+    expect(isProviderUsable(key('goodreads'), statuses, 'title')).toBe(true)
+  })
+
+  it('keeps a cover provider of the other shape in use, with a note rather than a skip', () => {
+    expect(providerHasOtherShape(key('audible'), 'cover')).toBe(true)
+    expect(providerHasOtherShape(key('goodreads'), 'audioCover')).toBe(true)
+    expect(providerHasOtherShape(key('audible'), 'audioCover')).toBe(false)
+    expect(skipReasonFor(audible, 'cover')).toBeNull()
+    expect(isProviderUsable(key('audible'), [audible], 'cover')).toBe(true)
+  })
+
+  it('ranks cover art of the other shape after every provider whose art can fit, as the server tries it', () => {
+    const statuses = [...STATUSES, audible, status('itunes', true, true)]
+    const order = [key('goodreads'), key('audible'), key('itunes')]
+    expect(resolvedProviders(order, statuses, 'audioCover')).toEqual([key('audible'), key('itunes'), key('goodreads')])
+    expect(providerRank(order, 0, statuses, 'audioCover')).toBe(3)
+    expect(providerRank(order, 1, statuses, 'audioCover')).toBe(1)
+    expect(providerRank(order, 2, statuses, 'audioCover')).toBe(2)
+  })
+
+  it('says a provider never supplies the field even before its status has loaded', () => {
+    expect(skipReasonFor(undefined, 'narrators', key('goodreads'))).toBe('neverSupplies')
+    expect(skipReasonFor(undefined, 'title', key('goodreads'))).toBeNull()
+    expect(isProviderUsable(key('goodreads'), [], 'narrators')).toBe(false)
+  })
+})
+
 describe('skipReasonFor', () => {
   it('reports disabled ahead of unconfigured', () => {
     expect(skipReasonFor(status('kobo', false, false))).toBe('disabled')
@@ -51,8 +100,22 @@ describe('skipReasonFor', () => {
 })
 
 describe('isProviderUsable', () => {
-  it('treats a provider with no status entry as usable so it stays removable', () => {
-    expect(isProviderUsable(key('unknownProvider'), STATUSES)).toBe(true)
+  it('treats a built-in with no status entry as usable, since that is stale data', () => {
+    expect(isProviderUsable(key('openLibrary'), [])).toBe(true)
+  })
+
+  it('treats a removed external provider as skipped, the way the server does', () => {
+    expect(isProviderUsable(key('fantlab'), STATUSES)).toBe(false)
+    expect(skippedProviders([key('fantlab')], STATUSES)).toEqual(['fantlab'])
+  })
+
+  it("reads an external provider's own declared fields", () => {
+    const statuses = [
+      ...STATUSES,
+      { key: key('fantlab'), label: 'FantLab', enabled: true, configured: true, source: 'external' as const, supportedFields: ['title' as const] },
+    ]
+    expect(isProviderUsable(key('fantlab'), statuses, 'title')).toBe(true)
+    expect(isProviderUsable(key('fantlab'), statuses, 'narrators')).toBe(false)
   })
 
   it('rejects a disabled or unconfigured provider', () => {

@@ -30,6 +30,11 @@ const SERVER_CAPABILITIES: readonly KoreaderPluginCapability[] = [
   'catalogBulkManifest',
   'catalogDashboardSections',
   'bookmarkSync',
+  'readAloudDeliveryVariants',
+  'readAloudDeliverySettings',
+  'catalogListsV2',
+  'sidecarState',
+  'annotationPendingBooks',
   'annotationAnchorsV1',
 ];
 

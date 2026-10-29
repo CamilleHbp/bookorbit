@@ -1,3 +1,4 @@
+import { createUuid } from '@/lib/uuid'
 import type { ReadingEventIdentity } from '@bookorbit/types'
 
 let fallbackDevice: string | undefined
@@ -5,7 +6,7 @@ let fallbackSequence = 0
 function storedDeviceIdentity() {
   let id = localStorage.getItem('bookorbit-reading-device')
   if (!id) {
-    id = crypto.randomUUID()
+    id = createUuid()
     localStorage.setItem('bookorbit-reading-device', id)
   }
   return id
@@ -18,7 +19,7 @@ export async function readingDeviceIdentity() {
       /* Storage can be unavailable in private browsing. */
     }
   }
-  fallbackDevice ??= crypto.randomUUID()
+  fallbackDevice ??= createUuid()
   return fallbackDevice
 }
 export async function readingEventIdentity(resetGeneration: number, occurredAt: string): Promise<ReadingEventIdentity> {
@@ -27,7 +28,7 @@ export async function readingEventIdentity(resetGeneration: number, occurredAt: 
     const stored = Number(localStorage.getItem('bookorbit-reading-sequence') ?? 0)
     const deviceSequence = Number.isSafeInteger(stored) && stored >= 0 ? stored + 1 : 1
     localStorage.setItem('bookorbit-reading-sequence', String(deviceSequence))
-    return { id: crypto.randomUUID(), deviceId, deviceSequence, occurredAt, resetGeneration }
+    return { id: createUuid(), deviceId, deviceSequence, occurredAt, resetGeneration }
   }
   if (navigator.locks) {
     try {
@@ -36,8 +37,8 @@ export async function readingEventIdentity(resetGeneration: number, occurredAt: 
       /* Restricted browser storage uses a unique session identity. */
     }
   }
-  fallbackDevice ??= crypto.randomUUID()
-  return { id: crypto.randomUUID(), deviceId: fallbackDevice, deviceSequence: ++fallbackSequence, occurredAt, resetGeneration }
+  fallbackDevice ??= createUuid()
+  return { id: createUuid(), deviceId: fallbackDevice, deviceSequence: ++fallbackSequence, occurredAt, resetGeneration }
 }
 
 export function readingCopyIdentity() {
@@ -45,11 +46,11 @@ export function readingCopyIdentity() {
   try {
     let id = sessionStorage.getItem(key)
     if (!id) {
-      id = crypto.randomUUID()
+      id = createUuid()
       sessionStorage.setItem(key, id)
     }
     return id
   } catch {
-    return crypto.randomUUID()
+    return createUuid()
   }
 }

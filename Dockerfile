@@ -1,7 +1,7 @@
-ARG NODE_IMAGE=node:26.8.1-alpine3.23@sha256:871eb674ad6e692c91330a8959f1ce2f80ba3f445cdc54e306869d2ea265e42d
+ARG NODE_IMAGE=node:26.12.1-alpine3.23@sha256:bc2b334006f15c7167bbeb2f08f28c2df883f7594a0470e04454ebe7560cfe68
 
 FROM ${NODE_IMAGE} AS base
-RUN npm install -g pnpm@11.22.0
+RUN npm install -g pnpm@11.28.9
 
 # Stage 1: Build client
 FROM base AS client-builder
@@ -60,7 +60,7 @@ COPY server/requirements/fanficfare.txt /tmp/fanficfare-requirements.txt
 # pip is build-only here. Leaving it installed also leaves pip/_vendor/vendor.txt,
 # which Trivy reads as installed msgpack and setuptools and fails the image scan on.
 RUN apk upgrade --no-cache && \
-    apk add --no-cache poppler-utils su-exec ffmpeg python3 py3-pip tini tzdata && \
+    apk add --no-cache 'libexpat>=2.9.0-r0' poppler-utils djvulibre util-linux su-exec ffmpeg python3 py3-pip tini tzdata && \
     python3 -m venv /opt/bookorbit-python && \
     /opt/bookorbit-python/bin/python -m pip install --no-cache-dir -r /tmp/kobo-cloudscraper-requirements.txt -r /tmp/fanficfare-requirements.txt && \
     /opt/bookorbit-python/bin/python -m pip uninstall -y pip && \

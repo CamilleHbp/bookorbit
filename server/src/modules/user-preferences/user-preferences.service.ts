@@ -1,5 +1,8 @@
 import {
   ACCENT_IDS,
+  ANNOTATION_COLOR_NAME_MAX_ENTRIES,
+  ANNOTATION_COLOR_NAME_MAX_LENGTH,
+  ANNOTATION_COLOR_NAME_PREFERENCES_DEFAULTS,
   AUTHOR_COVER_SHAPES,
   PODCAST_PLAYLIST_MAX_SAVED,
   PODCAST_PLAYLIST_MAX_SHOWS,
@@ -15,25 +18,33 @@ import {
   COVER_SEARCH_DEFAULT_PROVIDERS,
   COVER_SIZE_SCOPES,
   DEFAULT_BOOK_REQUEST_PREFERENCES,
+  DEFAULT_READ_ALOUD_PREFERENCES,
   RETIRED_BOOK_REQUEST_PREFERENCE_FIELDS,
   DEFAULT_COVER_SEARCH_PROVIDER,
   FONT_FAMILY_NAME_MAX_LENGTH,
+  GLOW_REACH_MAX,
+  GLOW_REACH_MIN,
   GRID_CARD_LABEL_FIELDS,
   MAX_SERVER_FONTS,
+  PLACEHOLDER_COVER_STYLES,
   RADIUS_IDS,
   REQUEST_LANGUAGE_CODES,
   SERIES_CARD_COVER_MODES,
+  STYLE_IDS,
   SUPPORTED_LOCALES,
   SURFACE_OPACITY_MAX,
   SURFACE_OPACITY_MIN,
+  SURFACE_PALETTE_IDS,
   TABLE_DENSITIES,
   THEME_IDS,
+  type AnnotationColorNamePreferences,
   type BookRequestPreferences,
   type DisplayPreferences,
   type CoverSearchPreferences,
   type LocalePreferences,
   type PodcastPlaybackPreferences,
   type PodcastPlaylistPreferences,
+  type ReadAloudPreferences,
   type ServerFontPreferences,
   type ThemePreferences,
   type WhatsNewPreferences,
@@ -52,6 +63,9 @@ const THEME_PREFERENCES_SCHEMA = z
     background: z.enum(BACKGROUND_IDS),
     brightness: z.number().int().min(0).max(100),
     surfaceOpacity: z.number().int().min(SURFACE_OPACITY_MIN).max(SURFACE_OPACITY_MAX).optional(),
+    style: z.enum(STYLE_IDS).optional(),
+    surfacePalette: z.enum(SURFACE_PALETTE_IDS).optional(),
+    glowReach: z.number().int().min(GLOW_REACH_MIN).max(GLOW_REACH_MAX).optional(),
   })
   .strict();
 
@@ -84,6 +98,7 @@ const DISPLAY_PREFERENCES_SCHEMA = z
     gridCardSecondaryLabel: z.enum(GRID_CARD_LABEL_FIELDS).default('hidden'),
     cardInfoMode: z.enum(CARD_INFO_MODES).default('hover-overlay'),
     thumbnailClickAction: z.enum(BOOK_THUMBNAIL_CLICK_ACTION).default('reader'),
+    placeholderCoverStyle: z.enum(PLACEHOLDER_COVER_STYLES).default('bauhaus'),
   })
   .strict()
   .superRefine((data, ctx) => {
@@ -139,6 +154,20 @@ const BOOK_REQUEST_PREFERENCES_SCHEMA = z.preprocess(
     .strict(),
 );
 
+/**
+ * Any well-formed language subtag, not only the current speech model's: the model's language list
+ * can grow, and the dialog ignores a stored language it cannot offer.
+ */
+const READ_ALOUD_PREFERENCES_SCHEMA = z
+  .object({
+    defaultLanguage: z
+      .string()
+      .regex(/^[a-z]{2,3}$/, 'must be a lowercase language subtag')
+      .nullable()
+      .default(null),
+  })
+  .strict() satisfies z.ZodType<ReadAloudPreferences>;
+
 const LOCALE_PREFERENCES_SCHEMA = z
   .object({
     locale: z.enum(SUPPORTED_LOCALES),
@@ -177,6 +206,36 @@ const SERVER_FONT_PREFERENCES_SCHEMA = z
     hiddenFamilies: z.array(z.string().min(1).max(FONT_FAMILY_NAME_MAX_LENGTH)).max(MAX_SERVER_FONTS),
   })
   .strict();
+
+const ANNOTATION_COLOR_KEY = /^#[0-9a-fA-F]{6}$/;
+
+/**
+ * Keys normalise to uppercase so `#facc15` and `#FACC15` name one colour, and a blank label drops
+ * its entry, which is how a client clears a name. The cap applies to what is actually stored.
+ */
+const ANNOTATION_COLOR_NAME_PREFERENCES_SCHEMA = z
+  .object({
+    names: z
+      .record(z.string().regex(ANNOTATION_COLOR_KEY, 'must be a #RRGGBB colour'), z.string().trim().max(ANNOTATION_COLOR_NAME_MAX_LENGTH))
+      .transform((names, ctx) => {
+        const normalized: Record<string, string> = {};
+        for (const [key, label] of Object.entries(names)) {
+          if (label === '') continue;
+          const color = key.toUpperCase();
+          if (Object.hasOwn(normalized, color)) {
+            ctx.addIssue({ code: 'custom', path: [key], message: 'names the same colour as another key' });
+            return z.NEVER;
+          }
+          normalized[color] = label;
+        }
+        if (Object.keys(normalized).length > ANNOTATION_COLOR_NAME_MAX_ENTRIES) {
+          ctx.addIssue({ code: 'custom', message: `must name at most ${ANNOTATION_COLOR_NAME_MAX_ENTRIES} colours` });
+          return z.NEVER;
+        }
+        return normalized;
+      }),
+  })
+  .strict() satisfies z.ZodType<AnnotationColorNamePreferences>;
 
 const PODCAST_PLAYLIST_RULES_SCHEMA = z
   .object({
@@ -316,6 +375,42 @@ export class UserPreferencesService {
     }
   }
 
+  async getAnnotationColorNamePreferences(userId: number): Promise<AnnotationColorNamePreferences> {
+    const row = await this.repo.findByCategory(userId, 'annotation-colors');
+    if (!row) return { names: { ...ANNOTATION_COLOR_NAME_PREFERENCES_DEFAULTS.names } };
+    const stored = ANNOTATION_COLOR_NAME_PREFERENCES_SCHEMA.safeParse(row.data);
+    return stored.success ? stored.data : { names: { ...ANNOTATION_COLOR_NAME_PREFERENCES_DEFAULTS.names } };
+  }
+
+  async upsertAnnotationColorNamePreferences(userId: number, data: Record<string, unknown>): Promise<void> {
+    const start = Date.now();
+    this.logger.log(`[user_preferences.upsert_annotation_colors] [start] userId=${userId} - upsert annotation colour names started`);
+
+    const result = ANNOTATION_COLOR_NAME_PREFERENCES_SCHEMA.safeParse(data);
+    if (!result.success) {
+      const firstIssue = result.error.issues[0];
+      const issuePath = firstIssue?.path.length ? firstIssue.path.join('.') : 'settings';
+      const issueMessage = firstIssue?.message ?? 'Invalid settings payload';
+      throw new BadRequestException(`Invalid annotation colour preferences at "${issuePath}": ${issueMessage}`);
+    }
+
+    try {
+      await this.repo.upsert(userId, 'annotation-colors', { names: result.data.names });
+      const durationMs = Date.now() - start;
+      this.logger.log(
+        `[user_preferences.upsert_annotation_colors] [end] userId=${userId} durationMs=${durationMs} namedCount=${Object.keys(result.data.names).length} - upsert annotation colour names completed`,
+      );
+    } catch (err) {
+      const durationMs = Date.now() - start;
+      const errorClass = err instanceof Error ? err.constructor.name : 'UnknownError';
+      const error = sanitizeLogValue(err instanceof Error ? err.message : String(err));
+      this.logger.error(
+        `[user_preferences.upsert_annotation_colors] [fail] userId=${userId} durationMs=${durationMs} errorClass=${errorClass} error="${error}" - upsert annotation colour names failed`,
+      );
+      throw err;
+    }
+  }
+
   async getLocalePreferences(userId: number): Promise<LocalePreferences | null> {
     const row = await this.repo.findByCategory(userId, 'locale');
     return row ? (row.data as LocalePreferences) : null;
@@ -392,6 +487,24 @@ export class UserPreferencesService {
     }
 
     await this.repo.upsert(userId, 'book-requests', result.data);
+  }
+
+  async getReadAloudPreferences(userId: number): Promise<ReadAloudPreferences> {
+    const row = await this.repo.findByCategory(userId, 'read-aloud');
+    const result = READ_ALOUD_PREFERENCES_SCHEMA.safeParse(row?.data);
+    return result.success ? result.data : { ...DEFAULT_READ_ALOUD_PREFERENCES };
+  }
+
+  async upsertReadAloudPreferences(userId: number, data: Record<string, unknown>): Promise<void> {
+    const result = READ_ALOUD_PREFERENCES_SCHEMA.safeParse(data);
+    if (!result.success) {
+      const firstIssue = result.error.issues[0];
+      const issuePath = firstIssue?.path.length ? firstIssue.path.join('.') : 'settings';
+      const issueMessage = firstIssue?.message ?? 'Invalid settings payload';
+      throw new BadRequestException(`Invalid read-aloud preferences at "${issuePath}": ${issueMessage}`);
+    }
+
+    await this.repo.upsert(userId, 'read-aloud', result.data);
   }
 
   async upsertThemePreferences(userId: number, data: Record<string, unknown>): Promise<void> {

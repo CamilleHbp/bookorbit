@@ -87,7 +87,7 @@ export class RevisionDownloadService {
       .where(and(eq(schema.bookFiles.id, fileId), eq(schema.books.libraryId, libraryId)))
       .limit(1);
     if (!file) throw new NotFoundException('Revision not found in this library');
-    if (!['epub', 'kepub'].includes(file.format)) throw new ConflictException('Revision download requires an EPUB file');
+    if (!['epub', 'kepub'].includes(file.format ?? '')) throw new ConflictException('Revision download requires an EPUB file');
     if (file.currentRevisionId !== revisionId) throw new ConflictException('The expected revision is no longer current');
     return file;
   }

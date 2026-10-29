@@ -1,3 +1,5 @@
+import { retainFinishedReads } from '../../db/reading-attempt-retention';
+import { deleteLibraryFoldersWithHashInvalidation } from '../../db/book-file-hash-history';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, exists, getTableColumns, gt, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -65,7 +67,11 @@ export class LibraryRepository {
         icon: libraries.icon,
         displayOrder: libraries.displayOrder,
         coverAspectRatio: libraries.coverAspectRatio,
+        watch: libraries.watch,
+        autoScanCronExpression: libraries.autoScanCronExpression,
+        organizationMode: libraries.organizationMode,
         scanMode: libraries.scanMode,
+        fileWriteEnabled: libraries.fileWriteEnabled,
         fileRenameEnabled: libraries.fileRenameEnabled,
         createdAt: libraries.createdAt,
         updatedAt: libraries.updatedAt,
@@ -92,11 +98,16 @@ export class LibraryRepository {
       .orderBy(libraries.id);
   }
 
-  findAccessibleIdsForUser(userId: number) {
+  findAccessibleIdsForUser(userId: number, accessLevels?: readonly AccessLevel[]) {
+    const accessJoin = and(
+      eq(schema.userLibraryAccess.libraryId, libraries.id),
+      eq(schema.userLibraryAccess.userId, userId),
+      accessLevels ? inArray(schema.userLibraryAccess.accessLevel, [...accessLevels]) : undefined,
+    );
     return this.db
       .select({ id: libraries.id })
       .from(libraries)
-      .innerJoin(schema.userLibraryAccess, and(eq(schema.userLibraryAccess.libraryId, libraries.id), eq(schema.userLibraryAccess.userId, userId)))
+      .innerJoin(schema.userLibraryAccess, accessJoin)
       .where(visibleLibraryCondition)
       .orderBy(libraries.displayOrder, libraries.name);
   }
@@ -291,16 +302,20 @@ export class LibraryRepository {
     return this.db.select({ id: books.id }).from(books).where(eq(books.libraryId, libraryId));
   }
 
+  /** The library's books go with it by cascade; their finished reads stay in each reader's history. */
   delete(id: number) {
-    return this.db.delete(libraries).where(eq(libraries.id, id));
+    return this.db.transaction(async (tx) => {
+      await retainFinishedReads(tx, eq(books.libraryId, id));
+      await tx.delete(libraries).where(eq(libraries.id, id));
+    });
   }
 
   deleteFolder(id: number) {
-    return this.db.delete(libraryFolders).where(eq(libraryFolders.id, id));
+    return deleteLibraryFoldersWithHashInvalidation(this.db, eq(libraryFolders.id, id));
   }
 
   deleteFoldersByLibrary(libraryId: number) {
-    return this.db.delete(libraryFolders).where(eq(libraryFolders.libraryId, libraryId));
+    return deleteLibraryFoldersWithHashInvalidation(this.db, eq(libraryFolders.libraryId, libraryId));
   }
 
   async updateDisplayOrders(order: { id: number; displayOrder: number }[]) {

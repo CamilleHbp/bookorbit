@@ -65,6 +65,8 @@ export interface BookDockMetadata {
   ranobedbId?: string | null;
   lubimyczytacId?: string | null;
   aladinId?: string | null;
+  /** Ids from external providers, keyed by provider. Absent on older servers. */
+  externalProviderIds?: Partial<Record<string, string>> | null;
   comicMetadata?: ComicMetadataFields | null;
 }
 
@@ -99,6 +101,11 @@ export interface BookDockFile {
    * single file, which is what `fileName` and `fileSize` already describe.
    */
   unitFiles: BookDockUnitFile[];
+  /**
+   * Whether this EPUB carries synced narration. Only a single file's read that asks for it with
+   * `readAlong=true` answers it, since it means opening the file; every other response leaves it out.
+   */
+  readAlong?: boolean;
 }
 
 export interface BookDockFilesPage {

@@ -1,3 +1,4 @@
+import { createUuid } from '@/lib/uuid'
 import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import type {
   FanfictionJob,
@@ -189,7 +190,7 @@ export function useFanfictionSourceBatch(
         ...(!checkLibrary && action.value === 'policy' ? { updatePolicy: 'safe' } : {}),
       }
       const identity = JSON.stringify(input)
-      if (pending?.input !== identity) pending = { input: identity, key: crypto.randomUUID() }
+      if (pending?.input !== identity) pending = { input: identity, key: createUuid() }
       const result = await request<FanfictionJob>(`${base.value}/source-batches`, { ...input, idempotencyKey: pending.key })
       if (!valid(id)) return
       pending = null

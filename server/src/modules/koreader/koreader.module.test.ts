@@ -1,3 +1,5 @@
+import { KoreaderDeliverySettingsService } from './koreader-delivery-settings.service';
+import { KoreaderDeliverySettingsController } from './koreader-delivery-settings.controller';
 import { describe, expect, it } from 'vitest';
 
 import { KoreaderAnnotationExchangeService } from './koreader-annotation-exchange.service';
@@ -10,11 +12,11 @@ import { KoreaderChapterExtractorService } from './koreader-chapter-extractor.se
 import { KoreaderChapterService } from './koreader-chapter.service';
 import { KoreaderController } from './koreader.controller';
 import { KoreaderHashLinkService } from './koreader-hash-link.service';
+import { KoreaderDeliveryService } from './koreader-delivery.service';
 import { KoreaderModule } from './koreader.module';
 import { KoreaderDeliveryController, KoreaderPluginDeliveryController } from './koreader-delivery.controller';
 import { KoreaderCopiesController, KoreaderPluginCopiesController } from './koreader-copy.controller';
 import { KoreaderCopyService } from './koreader-copy.service';
-import { KoreaderDeliveryService } from './koreader-delivery.service';
 import { KoreaderDeliverySchedulerService } from './koreader-delivery-scheduler.service';
 import { KoreaderDeliveryExecutionService } from './koreader-delivery-execution.service';
 import { KoreaderDeliveryAccessService } from './koreader-delivery-access.service';
@@ -33,6 +35,7 @@ import { KoreaderSyncEstimateCleanupService } from './koreader-sync-estimate-cle
 describe('KoreaderModule', () => {
   it('registers expected controllers, providers, and exports', () => {
     expect(Reflect.getMetadata('controllers', KoreaderModule)).toEqual([
+      KoreaderDeliverySettingsController,
       KoreaderDeliveryController,
       KoreaderPluginDeliveryController,
       KoreaderCopiesController,
@@ -43,6 +46,7 @@ describe('KoreaderModule', () => {
       KoreaderReadingController,
     ]);
     expect(Reflect.getMetadata('providers', KoreaderModule)).toEqual([
+      KoreaderDeliverySettingsService,
       KoreaderDeliverySchedulerService,
       KoreaderDeliveryService,
       KoreaderDeliveryExecutionService,

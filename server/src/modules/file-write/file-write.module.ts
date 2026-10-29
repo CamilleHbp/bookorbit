@@ -1,6 +1,8 @@
 import { FanfictionLocationModule } from '../fanfiction/fanfiction-location.module';
 import { Module, forwardRef } from '@nestjs/common';
 
+import { CommonModule } from '../../common/common.module';
+import { AudiobookChaptersModule } from '../audiobook-chapters/audiobook-chapters.module';
 import { KoboFileStateModule } from '../kobo/kobo-file-state.module';
 import { BookRevisionModule } from '../book-revision/book-revision.module';
 import { SelfWriteRegistryModule } from '../../common/self-write-registry.module';
@@ -27,6 +29,8 @@ import { FORMAT_WRITERS } from './interfaces/format-writer.interface';
 
 @Module({
   imports: [
+    CommonModule,
+    AudiobookChaptersModule,
     FanfictionLocationModule,
     KoboFileStateModule,
     BookRevisionModule,
@@ -89,6 +93,6 @@ import { FORMAT_WRITERS } from './interfaces/format-writer.interface';
     },
     FormatWriterRegistry,
   ],
-  exports: [FileWriteService, FileWriteRepository, FileRenameService, FileRenameRepository, BulkRenameRepository, FileLockModule],
+  exports: [FileWriteService, FileWriteRepository, FileRenameService, FileRenameRepository, BulkRenameRepository, CommonModule, FileLockModule],
 })
 export class FileWriteModule {}

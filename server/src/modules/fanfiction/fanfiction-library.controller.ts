@@ -24,7 +24,7 @@ export class FanfictionLibraryController {
   @Patch('preferences')
   @RequirePermission(Permission.ManageLibraries)
   async savePreferences(@Body() dto: FanfictionPreferencesDto, @CurrentUser() user: RequestUser): Promise<FanfictionPreferences> {
-    await this.users.updateMySettings(user.id, { settings: { fanfictionIsAdult: dto.isAdult } });
+    await this.users.updateMySettings(user, { settings: { fanfictionIsAdult: dto.isAdult } });
     return { isAdult: dto.isAdult };
   }
 

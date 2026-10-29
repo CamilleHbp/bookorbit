@@ -1,19 +1,30 @@
+import { createHash } from 'crypto';
 import { execFile } from 'child_process';
-import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rename, rm, stat } from 'fs/promises';
+import { createReadStream } from 'fs';
+import { mkdir, mkdtemp, rename, rm, stat, opendir, lstat, realpath } from 'fs/promises';
 import { join } from 'path';
 import { promisify } from 'util';
 
-import { BadRequestException, HttpException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException, Logger, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
+
 import { storageConfig } from '../../../config/config';
-import { sanitizeLogValue } from '../../../common/utils/log-sanitize.utils';
+
 import { EpubManifestService } from '../../book-revision/epub-manifest.service';
 import { RevisionFileService } from '../../book-revision/revision-file.service';
 import { KepubifyBinaryService } from './kepubify-binary.service';
+import { findDecodableHrefs, restoreEncodedHrefs, writeWithDecodedHrefs, type DecodedHrefs } from './kepub-href-decoding';
 
 const execFileAsync = promisify(execFile);
 const KEPUBIFY_TIMEOUT_MS = 60_000;
+const HREF_DECODING_MEMO_LIMIT = 256;
+const CACHED_DIGEST_SCAN_LIMIT = 16;
+
+async function sha256OfFile(path: string): Promise<string> {
+  const digest = createHash('sha256');
+  for await (const chunk of createReadStream(path)) digest.update(chunk);
+  return digest.digest('hex');
+}
 const MAX_SOURCE_BYTES = 512 * 1024 * 1024;
 
 type SourceIdentity = Awaited<ReturnType<RevisionFileService['require']>>;
@@ -27,14 +38,21 @@ interface KepubConversionInput {
    * its own cache entry to avoid being served in place of a conversion of the full archive.
    */
   audioless?: boolean;
+  sourceRevision?: string;
 }
 
 @Injectable()
 export class KepubConversionService {
   private readonly logger = new Logger(KepubConversionService.name);
   private readonly kepubCachePath: string;
+  private readonly appDataPath: string;
+  private active = 0;
+  private readonly waiters: (() => void)[] = [];
+  private readonly leases = new Map<string, number>();
+  private publication: Promise<void> = Promise.resolve();
+  private readonly conversions = new Map<string, Promise<string>>();
+  private readonly hrefDecodings = new Map<string, Promise<DecodedHrefs>>();
   private readonly sources = new Map<string, SourceIdentity>();
-  private readonly inFlight = new Map<string, Promise<string>>();
 
   constructor(
     @Inject(storageConfig.KEY) storage: ConfigType<typeof storageConfig>,
@@ -42,22 +60,54 @@ export class KepubConversionService {
     private readonly files: RevisionFileService,
     private readonly manifests: EpubManifestService,
   ) {
+    this.appDataPath = storage.appDataPath;
     this.kepubCachePath = join(storage.appDataPath, '.kepub-cache');
   }
 
-  async getKepubPath(input: KepubConversionInput): Promise<string> {
-    const key = JSON.stringify([input.bookId, input.sourcePath, input.hyphenate]);
-    const active = this.inFlight.get(key);
-    if (active) return active;
-    if (this.inFlight.size >= 2) throw new ServiceUnavailableException('Kobo conversion is busy; retry shortly');
-    const pending = this.convert({ ...input })
-      .catch((error: unknown) => {
-        if (error instanceof HttpException) throw error;
-        throw new ServiceUnavailableException('Kobo conversion failed; retry shortly', { cause: error });
-      })
-      .finally(() => this.inFlight.delete(key));
-    this.inFlight.set(key, pending);
-    return pending;
+  async acquireKepub(input: KepubConversionInput): Promise<{ path: string; release: () => Promise<void> }> {
+    return this.lease(await this.getKepubPath(input));
+  }
+
+  /**
+   * Leases a conversion of this book already in the cache by its exact digest, without its source.
+   * A device keeps the copy it downloaded after the book file changes, and positions on it only
+   * make sense against those bytes.
+   */
+  async acquireCachedByDigest(bookId: number, sha256: string): Promise<{ path: string; release: () => Promise<void> } | null> {
+    const cacheDir = join(this.kepubCachePath, String(bookId));
+    try {
+      if (
+        (await realpath(this.kepubCachePath)) !== join(await realpath(this.appDataPath), '.kepub-cache') ||
+        (await lstat(cacheDir)).isSymbolicLink()
+      )
+        return null;
+      let checked = 0;
+      for await (const entry of await opendir(cacheDir)) {
+        if (!entry.isFile() || !entry.name.endsWith('.kepub.epub')) continue;
+        if (++checked > CACHED_DIGEST_SCAN_LIMIT) break;
+        const path = join(cacheDir, entry.name);
+        if ((await sha256OfFile(path)) === sha256) return this.lease(path);
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  private lease(path: string): { path: string; release: () => Promise<void> } {
+    this.leases.set(path, (this.leases.get(path) ?? 0) + 1);
+    let released = false;
+    return {
+      path,
+      release: () => {
+        if (released) return Promise.resolve();
+        released = true;
+        const count = (this.leases.get(path) ?? 1) - 1;
+        if (count) this.leases.set(path, count);
+        else this.leases.delete(path);
+        return Promise.resolve();
+      },
+    };
   }
 
   private async sourceIdentity(path: string): Promise<SourceIdentity> {
@@ -77,49 +127,154 @@ export class KepubConversionService {
     return source;
   }
 
-  private async convert(input: KepubConversionInput): Promise<string> {
+  async getKepubPath(input: KepubConversionInput): Promise<string> {
     const source = await this.sourceIdentity(input.sourcePath);
-    const version = await this.kepubifyBinaryService.getVersion();
     const cacheDir = join(this.kepubCachePath, String(input.bookId));
+    const decodedHrefs = await this.decodableHrefs({ ...input, sourceRevision: source.sha256 });
     const cacheKey = createHash('sha256')
-      .update(JSON.stringify([source.sha256, version, input.hyphenate]))
+      .update(
+        JSON.stringify([source.sha256, await this.kepubifyBinaryService.getVersion(), input.hyphenate, !!input.audioless, decodedHrefs.size > 0]),
+      )
       .digest('hex');
-    const cachedPath = join(cacheDir, `v2-${cacheKey}.kepub.epub`);
-    const cached = await stat(cachedPath).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error;
-      return null;
-    });
-    if (cached?.isFile() && cached.size > 0) {
-      await this.files.verifyUnchanged(input.sourcePath, source);
-      return cachedPath;
-    }
+    const cachedPath = join(cacheDir, `${cacheKey}.kepub.epub`);
+    const pending = this.conversions.get(cachedPath);
+    if (pending) return pending;
 
-    const startedAt = Date.now();
-    let working: string | undefined;
-    this.logger.log(`[kobo.convert] [start] bookId=${input.bookId} hyphenate=${input.hyphenate} - Kobo conversion started`);
     try {
-      await this.manifests.inspect(input.sourcePath);
+      if (input.sourceRevision && ((await lstat(cacheDir)).isSymbolicLink() || (await lstat(cachedPath)).isSymbolicLink()))
+        throw new BadRequestException({ code: 'UNSAFE_DELIVERY_CACHE' });
+      await stat(cachedPath);
       await this.files.verifyUnchanged(input.sourcePath, source);
-      const binaryPath = await this.kepubifyBinaryService.getBinaryPath();
-      await mkdir(cacheDir, { recursive: true });
-      working = await mkdtemp(join(cacheDir, '.conversion-'));
-      const staged = join(working, 'result.kepub.epub');
-      const args = [...(input.hyphenate ? ['--hyphenate'] : []), '--output', staged, input.sourcePath];
-      await execFileAsync(binaryPath, args, { timeout: KEPUBIFY_TIMEOUT_MS, maxBuffer: 64 * 1024 });
-      await this.manifests.inspect(staged);
-      await this.files.sync(staged);
-      await this.files.verifyUnchanged(input.sourcePath, source);
-      await rename(staged, cachedPath);
-      await this.files.sync(cacheDir);
-      this.logger.log(`[kobo.convert] [end] bookId=${input.bookId} durationMs=${Date.now() - startedAt} - Kobo conversion completed`);
       return cachedPath;
     } catch (error) {
-      this.logger.warn(
-        `[kobo.convert] [fail] bookId=${input.bookId} durationMs=${Date.now() - startedAt} errorClass=${error instanceof Error ? error.name : 'Unknown'} error="${sanitizeLogValue(error instanceof Error ? error.message : 'Conversion failed')}" - Kobo conversion failed`,
-      );
-      throw error;
-    } finally {
-      if (working) await rm(working, { recursive: true, force: true });
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
+
+    const concurrent = this.conversions.get(cachedPath);
+    if (concurrent) return concurrent;
+    const conversion = this.convertToCache(input, cacheDir, cachedPath, decodedHrefs).catch((error: unknown) => {
+      if (error instanceof HttpException) throw error;
+      throw new ServiceUnavailableException(error instanceof Error ? error.message : 'Kobo conversion failed', { cause: error });
+    });
+    this.conversions.set(cachedPath, conversion);
+    try {
+      return await conversion;
+    } finally {
+      this.conversions.delete(cachedPath);
+    }
+  }
+
+  private async convertToCache(input: KepubConversionInput, cacheDir: string, cachedPath: string, decodedHrefs: DecodedHrefs): Promise<string> {
+    if (this.active >= 2) {
+      if (this.waiters.length >= 32) throw new BadRequestException({ code: 'DELIVERY_BUSY' });
+      await new Promise<void>((resolve, reject) => {
+        const grant = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        const timer = setTimeout(() => {
+          const index = this.waiters.indexOf(grant);
+          if (index >= 0) this.waiters.splice(index, 1);
+          reject(new BadRequestException({ code: 'DELIVERY_BUSY' }));
+        }, 60_000);
+        this.waiters.push(grant);
+      });
+    } else this.active++;
+    try {
+      const source = await this.sourceIdentity(input.sourcePath);
+      await this.manifests.inspect(input.sourcePath);
+      const binaryPath = await this.kepubifyBinaryService.getBinaryPath();
+      await mkdir(cacheDir, { recursive: true });
+      if (
+        input.sourceRevision &&
+        ((await realpath(this.kepubCachePath)) !== join(await realpath(this.appDataPath), '.kepub-cache') || (await lstat(cacheDir)).isSymbolicLink())
+      )
+        throw new BadRequestException({ code: 'UNSAFE_DELIVERY_CACHE' });
+      const tempDir = await mkdtemp(join(cacheDir, '.conversion-'));
+      const outputPath = join(tempDir, 'book.kepub.epub');
+      try {
+        if (decodedHrefs.size) {
+          const sourcePath = join(tempDir, 'source.epub');
+          const convertedPath = join(tempDir, 'converted.kepub.epub');
+          await writeWithDecodedHrefs(input.sourcePath, sourcePath, decodedHrefs);
+          await this.runKepubify(binaryPath, sourcePath, convertedPath, input.hyphenate);
+          const restored = await restoreEncodedHrefs(convertedPath, outputPath, decodedHrefs);
+          this.logger.log(
+            `[kobo.kepub_href_decoding] [end] bookId=${input.bookId} decoded=${decodedHrefs.size} restored=${restored} - converted chapters kepubify could not find by their encoded href`,
+          );
+        } else {
+          await this.runKepubify(binaryPath, input.sourcePath, outputPath, input.hyphenate);
+        }
+        await this.manifests.inspect(outputPath);
+        await this.files.sync(outputPath);
+        await this.files.verifyUnchanged(input.sourcePath, source);
+        // Readers and the cache recovery pass must never see a partially written conversion.
+        const publication = this.publication.then(async () => {
+          if (input.sourceRevision) await this.evict(cachedPath, (await stat(outputPath)).size);
+          await rename(outputPath, cachedPath);
+          await this.files.sync(cacheDir);
+        });
+        this.publication = publication.catch(() => {});
+        await publication;
+        return cachedPath;
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    } finally {
+      const next = this.waiters.shift();
+      if (next) next();
+      else this.active--;
+    }
+  }
+  private async runKepubify(binaryPath: string, sourcePath: string, outputPath: string, hyphenate: boolean): Promise<void> {
+    const args = hyphenate ? ['--hyphenate', '--output', outputPath, sourcePath] : ['--output', outputPath, sourcePath];
+    await execFileAsync(binaryPath, args, { timeout: KEPUBIFY_TIMEOUT_MS, maxBuffer: 64 * 1024 });
+  }
+
+  private decodableHrefs(input: KepubConversionInput): Promise<DecodedHrefs> {
+    const key = `${input.sourcePath}\0${input.sourceRevision ?? input.fileHash ?? ''}`;
+    let pending = this.hrefDecodings.get(key);
+    if (!pending) {
+      pending = findDecodableHrefs(input.sourcePath).catch(() => new Map<string, string>());
+      if (this.hrefDecodings.size >= HREF_DECODING_MEMO_LIMIT) this.hrefDecodings.delete(this.hrefDecodings.keys().next().value!);
+      this.hrefDecodings.set(key, pending);
+    }
+    return pending;
+  }
+
+  private async evict(publishingPath: string, requiredBytes: number): Promise<void> {
+    let total = requiredBytes;
+    let count = 1;
+    const candidates: { path: string; size: number; mtime: number }[] = [];
+    for await (const directory of await opendir(this.kepubCachePath)) {
+      if (!directory.isDirectory() || !/^[1-9]\d*$/.test(directory.name)) continue;
+      const bookDirectory = join(this.kepubCachePath, directory.name);
+      for await (const entry of await opendir(bookDirectory)) {
+        const path = join(bookDirectory, entry.name);
+        if (entry.isDirectory() && entry.name.startsWith('.conversion-')) {
+          const info = await stat(path);
+          if (Date.now() - info.mtimeMs > 20 * 60_000) await rm(path, { recursive: true, force: true });
+          continue;
+        }
+        if (!entry.isFile() || !/^[a-f0-9]{32,64}(?:-noaudio-v\d+)?(?:-hyph)?(?:-hrefs)?\.kepub\.epub$/.test(entry.name)) continue;
+        const info = await stat(path);
+        total += info.size;
+        count++;
+        if (path === publishingPath || this.leases.has(path) || this.conversions.has(path)) continue;
+        candidates.push({ path, size: info.size, mtime: info.mtimeMs });
+        if (candidates.length > 1000) {
+          candidates.sort((a, b) => a.mtime - b.mtime);
+          candidates.pop();
+        }
+      }
+    }
+    for (const candidate of candidates.sort((a, b) => a.mtime - b.mtime)) {
+      if (total <= 8 * 1024 * 1024 * 1024 && count <= 1000) return;
+      if (this.leases.has(candidate.path) || this.conversions.has(candidate.path)) continue;
+      await rm(candidate.path, { force: true });
+      total -= candidate.size;
+      count--;
+    }
+    if (total > 8 * 1024 * 1024 * 1024 || count > 1000) throw new BadRequestException({ code: 'DELIVERY_CACHE_FULL' });
   }
 }

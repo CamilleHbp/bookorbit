@@ -1,3 +1,4 @@
+import { createUuid } from '@/lib/uuid'
 import { computed, onScopeDispose, ref } from 'vue'
 import type {
   FanfictionDiscoveryComparison,
@@ -138,13 +139,13 @@ export function useDiscoveryReview(libraryId: number) {
   async function submit(body: Record<string, unknown>) {
     if (locked.value) return
     pendingPath = '/discovery/selection'
-    pending.value = { ...body, idempotencyKey: crypto.randomUUID() }
+    pending.value = { ...body, idempotencyKey: createUuid() }
     await submitPending()
   }
   async function scan() {
     if (locked.value) return
     pendingPath = '/discovery'
-    pending.value = { idempotencyKey: crypto.randomUUID() }
+    pending.value = { idempotencyKey: createUuid() }
     await submitPending()
   }
   async function cancel() {

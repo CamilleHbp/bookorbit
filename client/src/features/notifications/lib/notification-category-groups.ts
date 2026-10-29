@@ -1,4 +1,5 @@
 import {
+  AudioLines,
   BookPlus,
   FileCog,
   FolderSync,
@@ -16,7 +17,7 @@ import { APP_FEATURES, type NotificationCategory } from '@bookorbit/types'
 
 export const NOTIFICATION_CATEGORY_GROUPS = [
   { id: 'library', categories: ['scanning', 'metadata', 'authorEnrichment'] },
-  { id: 'files', categories: ['fileWriteBack', 'fileRename', 'bulkRename', 'migration'] },
+  { id: 'files', categories: ['fileWriteBack', 'fileRename', 'bulkRename', 'readAloud', 'migration'] },
   { id: 'integrations', categories: ['bookDock', 'bookRequests', 'fanfiction', 'email', ...(APP_FEATURES.podcasts ? (['podcasts'] as const) : [])] },
   { id: 'personal', categories: ['achievements'] },
 ] as const satisfies ReadonlyArray<{ id: string; categories: readonly NotificationCategory[] }>
@@ -33,6 +34,7 @@ export const NOTIFICATION_CATEGORY_ICONS: Record<NotificationCategory, LucideIco
   bookRequests: BookPlus,
   email: Mail,
   podcasts: Podcast,
+  readAloud: AudioLines,
   achievements: Trophy,
   fanfiction: BookPlus,
 }

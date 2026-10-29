@@ -89,6 +89,114 @@ function BookOrbitAnnotations.advanceWatermark(book, ann_max_datetime, device_no
     end
 end
 
+local function noteHash(note)
+    local hash = 5381
+    for index = 1, #note do
+        hash = (hash * 33 + note:byte(index)) % 4294967296
+    end
+    return hash
+end
+
+-- KOReader stamps datetime_updated only when a save flips an item between
+-- highlight and note, so rewriting an existing note's text moves no timestamp
+-- and the watermark never sees it. Each exchange remembers the notes it saw;
+-- a note that differs from that record was edited since and goes up stamped
+-- with the time its snapshot was taken, which is what the server judges edits
+-- by. A queued snapshot can be older than the last exchange; stamping it with
+-- the upload time would let its stale note overwrite a newer edit.
+function BookOrbitAnnotations.noteEditedSince(book, annotation)
+    local hashes = book.annNoteHashes
+    if type(hashes) ~= "table" or not annotation.note then return false end
+    local remembered = hashes[BookOrbitAnnotations.buildKey(annotation.datetime, annotation.pos0)]
+    return remembered ~= nil and remembered ~= noteHash(annotation.note)
+end
+
+-- Remembers each note in the exchanged set and when. Only notes are kept, and
+-- a book past the key cap keeps none, so the state stays small.
+function BookOrbitAnnotations.rememberNotes(book, normalized, now)
+    if #normalized > MAX_KEYS_PER_BOOK then
+        book.annNoteHashes = nil
+        book.annNotesAt = nil
+        return
+    end
+    local hashes = {}
+    for _, annotation in ipairs(normalized) do
+        if annotation.note then
+            hashes[BookOrbitAnnotations.buildKey(annotation.datetime, annotation.pos0)] = noteHash(annotation.note)
+        end
+    end
+    book.annNoteHashes = hashes
+    book.annNotesAt = now
+end
+
+-- An item the server just applied carries the server's stamp, which is newer
+-- than the upload watermark (read from the list taken before the pull), so the
+-- next exchange would send the server its own copy back. Each applied item's
+-- stamp is kept until the watermark passes it; a local change after the apply
+-- restamps the item (style, color, a note save) or shows in the note record,
+-- and goes up as usual.
+local function appliedEntry(annotation)
+    local pos0 = annotation.pos0
+    if type(pos0) ~= "string" then pos0 = BookOrbitSidecar.serializePos(pos0) end
+    if type(annotation.datetime) ~= "string" or annotation.datetime == "" or not pos0 then return nil end
+    return {
+        key = BookOrbitAnnotations.buildKey(annotation.datetime, pos0),
+        stamp = annotation.datetime_updated or annotation.datetime,
+    }
+end
+
+local function addApplied(stamps, annotation)
+    local entry = appliedEntry(annotation)
+    if entry then table.insert(stamps, entry) end
+end
+
+local function pruneApplied(book)
+    local applied = book.annApplied
+    if type(applied) ~= "table" then return end
+    local watermark = book.annWatermark or ""
+    local kept = 0
+    for key, stamp in pairs(applied) do
+        if stamp <= watermark then applied[key] = nil else kept = kept + 1 end
+    end
+    if kept == 0 then book.annApplied = nil end
+end
+
+function BookOrbitAnnotations.rememberApplied(book, entries)
+    if not entries or #entries == 0 then return end
+    local applied = type(book.annApplied) == "table" and book.annApplied or {}
+    local count = 0
+    for _ in pairs(applied) do count = count + 1 end
+    for _, entry in ipairs(entries) do
+        if applied[entry.key] == nil then count = count + 1 end
+        applied[entry.key] = entry.stamp
+    end
+    -- Past the cap the record is dropped: the cost is one harmless echo per item.
+    book.annApplied = count <= MAX_KEYS_PER_BOOK and applied or nil
+    pruneApplied(book)
+end
+
+function BookOrbitAnnotations.isAppliedCopy(book, annotation, effective)
+    local applied = book.annApplied
+    if type(applied) ~= "table" then return false end
+    return applied[BookOrbitAnnotations.buildKey(annotation.datetime, annotation.pos0)] == effective
+end
+
+-- A note rewritten since the notes were remembered, whose own stamp is no
+-- later than that moment: nothing dated the rewrite. A highlight just received
+-- from the server carries a datetime past the upload watermark, so its first
+-- rewrite would otherwise go up with that older datetime and be dropped.
+local function needsEditStamp(book, annotation, effective, watermark)
+    if not BookOrbitAnnotations.noteEditedSince(book, annotation) then return false end
+    return effective <= (book.annNotesAt or watermark)
+end
+
+local function editedAt(annotation, datetime)
+    local change = {}
+    for field, value in pairs(annotation) do change[field] = value end
+    change.datetimeUpdated = datetime
+    return change
+end
+
 -- Key list for deletion detection, built from normalized entries so the
 -- serialized pos0 matches what the server hashed at upload time.
 function BookOrbitAnnotations.collectKeys(normalized)
@@ -143,6 +251,12 @@ to and the scan order defines which duplicate wins.
 The list is mutated during the same pass, so the index tracks that: an append
 patches in place, anything that shifts positions (an insert elsewhere, a
 removal) marks the index stale and the next lookup rebuilds it.
+
+Every entry of a batch is a different server row, so a local highlight an entry
+was matched to or created for is claimed and never resolves another entry.
+Without that, two highlights made in the same second arriving in one batch (a
+fresh copy re-offered everything) collapse into one: the second matches the
+first by datetime and is moved onto it.
 ]]
 local IdentityIndex = {}
 IdentityIndex.__index = IdentityIndex
@@ -172,9 +286,18 @@ function IdentityIndex:rebuild()
 end
 
 function IdentityIndex.new(annotations)
-    local self = setmetatable({ annotations = annotations or {} }, IdentityIndex)
+    local self = setmetatable({ annotations = annotations or {}, claims = {} }, IdentityIndex)
     self:rebuild()
     return self
+end
+
+function IdentityIndex:claim(annotation, entry)
+    if annotation then self.claims[annotation] = entry end
+end
+
+function IdentityIndex:claimedByOther(annotation, entry)
+    local owner = self.claims[annotation]
+    return owner ~= nil and owner ~= entry
 end
 
 function IdentityIndex:invalidate()
@@ -217,7 +340,7 @@ function IdentityIndex:find(entry)
     local datetime = entry.datetime
     if type(datetime) == "string" and datetime ~= "" then
         local slot = self.by_datetime[datetime]
-        if slot and slot.count == 1 then
+        if slot and slot.count == 1 and not self:claimedByOther(slot.annotation, entry) then
             return slot.index, slot.annotation
         end
     end
@@ -227,13 +350,13 @@ function IdentityIndex:find(entry)
     local slot = self.by_range[key]
     if not slot then return nil end
     if slot.count == 1 then
-        if sameRangeAndText(slot.annotation, entry) then
+        if sameRangeAndText(slot.annotation, entry) and not self:claimedByOther(slot.annotation, entry) then
             return slot.index, slot.annotation
         end
         return nil
     end
     for index, annotation in ipairs(self.annotations) do
-        if sameRangeAndText(annotation, entry) then
+        if sameRangeAndText(annotation, entry) and not self:claimedByOther(annotation, entry) then
             return index, annotation
         end
     end
@@ -274,11 +397,38 @@ end
 local function repairRange(document, entry)
     local needle = type(entry.text) == "string" and util.trim(entry.text) or ""
     if needle == "" or not document.findAllText then return nil end
-    local ok, hits = pcall(document.findAllText, document, needle, true, 0, 2, false)
+
+    local page_hint
+    if type(entry.pos0) == "string" and verifyRange(document, entry.pos0, entry.pos0, "") then
+        local ok, page = pcall(document.getPageFromXPointer, document, entry.pos0)
+        if ok and type(page) == "number" then page_hint = page end
+    end
+
+    local ok, hits = pcall(document.findAllText, document, needle, true, 0, 20, false)
     pcall(document.clearSelection, document)
-    if not ok or type(hits) ~= "table" or #hits ~= 1 then return nil end
-    local hit = hits[1]
-    if verifyRange(document, hit.start, hit["end"], entry.text) then return hit.start, hit["end"] end
+    if not ok or type(hits) ~= "table" or #hits == 0 then return nil end
+    if #hits > 1 and not page_hint then return nil end
+
+    local best = hits[1]
+    if page_hint and #hits > 1 then
+        local best_distance = math.huge
+        local ambiguous = false
+        for _, hit in ipairs(hits) do
+            local okp, page = pcall(document.getPageFromXPointer, document, hit.start)
+            if okp and type(page) == "number" then
+                local distance = math.abs(page - page_hint)
+                if distance < best_distance then
+                    best_distance = distance
+                    best = hit
+                    ambiguous = false
+                elseif distance == best_distance then
+                    ambiguous = true
+                end
+            end
+        end
+        if ambiguous then return nil end
+    end
+    if verifyRange(document, best.start, best["end"], entry.text) then return best.start, best["end"] end
 end
 
 local function resolveSourceAnchor(ui, entry)
@@ -292,6 +442,27 @@ local function resolveSourceAnchor(ui, entry)
     if ok and resolved and verifyRange(ui.document, resolved.pos0, resolved.pos1, entry.text) then
         return resolved.pos0, resolved.pos1
     end
+end
+
+local function updateVerifiedRange(ui, annotation, entry)
+    local pos0, pos1 = entry.pos0 or annotation.pos0, entry.pos1 or annotation.pos1
+    local corrected = false
+    if entry.sourceAnchor then
+        pos0, pos1 = resolveSourceAnchor(ui, entry)
+        if not pos0 or not pos1 then return false end
+        corrected = pos0 ~= annotation.pos0 or pos1 ~= annotation.pos1
+    end
+    if not verifyRange(ui.document, pos0, pos1, entry.text) then
+        pos0, pos1 = repairRange(ui.document, {
+            pos0 = pos0, pos1 = pos1, text = entry.text,
+        })
+        corrected = true
+    end
+    if not pos0 or not pos1 then return false end
+    annotation.page, annotation.pos0, annotation.pos1 = pos0, pos0, pos1
+    annotation.bookorbit_pending_verification = nil
+    if ui.annotation.updateAnnotations then ui.annotation:updateAnnotations(true, true) end
+    return true, corrected
 end
 
 ackApplied = function(entry, opts)
@@ -320,7 +491,7 @@ end
 -- Applies server changes to the OPEN book through ReaderAnnotation, so the
 -- view, footer and bookmark list stay coherent. Returns ack tables.
 function BookOrbitAnnotations.applyLive(ui, to_apply)
-    local applied, deleted = {}, {}
+    local applied, deleted, stamps = {}, {}, {}
     local document = ui.document
     local annotations = ui.annotation.annotations
     local lookup = IdentityIndex.new(annotations)
@@ -329,23 +500,21 @@ function BookOrbitAnnotations.applyLive(ui, to_apply)
 
     for _, entry in ipairs(to_apply.add or {}) do
         local existing_index, existing_annotation = lookup:find(entry)
+        lookup:claim(existing_annotation, entry)
         if existing_index then
-            local pos0, pos1 = existing_annotation.pos0, existing_annotation.pos1
-            if entry.sourceAnchor then pos0, pos1 = resolveSourceAnchor(ui, entry) end
-            if not verifyRange(document, pos0, pos1, entry.text) then
-                table.insert(applied, ackApplied(entry, { failed = true }))
-            else
-                local previous_datetime, previous_range = lookup:identityOf(existing_annotation)
-                local corrected = pos0 ~= existing_annotation.pos0 or pos1 ~= existing_annotation.pos1
-                existing_annotation.pos0, existing_annotation.pos1, existing_annotation.page = pos0, pos1, pos0
-                if corrected then existing_annotation.pageno = document:getPageFromXPointer(pos0) end
+            local verified, corrected = updateVerifiedRange(ui, existing_annotation, entry)
+            if verified then
                 applyIdentityFields(existing_annotation, entry)
-                lookup:noteMutated(existing_annotation, previous_datetime, previous_range)
-                ui:handleEvent(Event:new("AnnotationsModified", { existing_annotation, index_modified = existing_index }))
+                lookup:invalidate()
+                local index = lookup:find(entry)
+                ui:handleEvent(Event:new("AnnotationsModified", { existing_annotation, index_modified = index or existing_index }))
                 touched = touched + 1
-                local acknowledgement = ackExisting(entry, existing_annotation, true)
-                acknowledgement.corrected = corrected
-                table.insert(applied, acknowledgement)
+                addApplied(stamps, existing_annotation)
+                local ack = ackExisting(entry, existing_annotation, true)
+                ack.corrected = corrected
+                table.insert(applied, ack)
+            else
+                table.insert(applied, ackApplied(entry, { failed = true }))
             end
         elseif entry.posFormat ~= "xpointer" or not ui.rolling then
             -- PDF adds from the web are out of scope; never expected here.
@@ -383,6 +552,7 @@ function BookOrbitAnnotations.applyLive(ui, to_apply)
                 }
                 local index = ui.annotation:addItem(item)
                 lookup:noteAppended(item)
+                lookup:claim(item, entry)
                 if ui.view and ui.view.footer and ui.view.footer.maybeUpdateFooter then
                     pcall(ui.view.footer.maybeUpdateFooter, ui.view.footer)
                 end
@@ -392,6 +562,7 @@ function BookOrbitAnnotations.applyLive(ui, to_apply)
                     index_modified = index,
                 }))
                 touched = touched + 1
+                addApplied(stamps, item)
                 table.insert(applied, ackApplied(entry, {
                     verified = true,
                     corrected = corrected,
@@ -405,16 +576,39 @@ function BookOrbitAnnotations.applyLive(ui, to_apply)
 
     for _, entry in ipairs(to_apply.edit or {}) do
         local index, annotation = lookup:find(entry)
+        lookup:claim(annotation, entry)
         if not index then
             logger.dbg("BookOrbit: annotation edit target missing:", entry.serverId)
             table.insert(applied, ackApplied(entry, { failed = true }))
-        else
-            local previous_datetime, previous_range = lookup:identityOf(annotation)
+        elseif type(annotation.pos0) ~= "string" then
+            -- A page-position (PDF) highlight: nothing elsewhere can move it, so only its note,
+            -- color and drawer change, and there is no xpointer range to verify.
             applyEditFields(annotation, entry)
-            lookup:noteMutated(annotation, previous_datetime, previous_range)
-            ui:handleEvent(Event:new("AnnotationsModified", { annotation, index_modified = index }))
+            lookup:invalidate()
+            local updated_index = lookup:find(entry)
+            ui:handleEvent(Event:new("AnnotationsModified", { annotation, index_modified = updated_index or index }))
             touched = touched + 1
-            table.insert(applied, ackApplied(entry, { verified = true }))
+            addApplied(stamps, annotation)
+            table.insert(applied, ackApplied(entry, {
+                verified = true,
+                pos0 = BookOrbitSidecar.serializePos(annotation.pos0),
+                pos1 = BookOrbitSidecar.serializePos(annotation.pos1),
+            }))
+        else
+            local verified, corrected = updateVerifiedRange(ui, annotation, entry)
+            if verified then
+                applyEditFields(annotation, entry)
+                lookup:invalidate()
+                local updated_index = lookup:find(entry)
+                ui:handleEvent(Event:new("AnnotationsModified", { annotation, index_modified = updated_index or index }))
+                touched = touched + 1
+                addApplied(stamps, annotation)
+                local ack = ackExisting(entry, annotation, true)
+                ack.corrected = corrected
+                table.insert(applied, ack)
+            else
+                table.insert(applied, ackApplied(entry, { failed = true }))
+            end
         end
     end
 
@@ -451,13 +645,13 @@ function BookOrbitAnnotations.applyLive(ui, to_apply)
             end
         end
     end
-    return applied, deleted, touched, deleted_touched
+    return applied, deleted, touched, deleted_touched, stamps
 end
 
 -- Merges server changes into the sidecar of a CLOSED book and raises
 -- annotations_externally_modified so KOReader re-validates and sorts on open.
 function BookOrbitAnnotations.applySidecar(file, to_apply)
-    local applied, deleted = {}, {}
+    local applied, deleted, stamps = {}, {}, {}
     local doc_settings = DocSettings:open(file)
     local annotations = doc_settings:readSetting("annotations") or {}
     local lookup = IdentityIndex.new(annotations)
@@ -469,11 +663,14 @@ function BookOrbitAnnotations.applySidecar(file, to_apply)
             table.insert(applied, ackApplied(entry, { failed = true }))
         else
             local existing_index, existing = lookup:find(entry)
+            lookup:claim(existing, entry)
             if existing_index then
                 local previous_datetime, previous_range = lookup:identityOf(existing)
                 applyIdentityFields(existing, entry)
+                existing.bookorbit_pending_verification = true
                 lookup:noteMutated(existing, previous_datetime, previous_range)
                 touched = touched + 1
+                addApplied(stamps, existing)
             else
                 local item = {
                     datetime = entry.datetime,
@@ -487,10 +684,13 @@ function BookOrbitAnnotations.applySidecar(file, to_apply)
                     page = entry.pos0,
                     pos0 = entry.pos0,
                     pos1 = entry.pos1,
+                    bookorbit_pending_verification = true,
                 }
                 table.insert(annotations, item)
                 lookup:noteAppended(item)
+                lookup:claim(item, entry)
                 touched = touched + 1
+                addApplied(stamps, item)
             end
             -- Unverified until the book is opened; the server keeps it pending.
             table.insert(applied, ackExisting(entry, existing or {
@@ -503,14 +703,31 @@ function BookOrbitAnnotations.applySidecar(file, to_apply)
 
     for _, entry in ipairs(to_apply.edit or {}) do
         local index, annotation = lookup:find(entry)
+        lookup:claim(annotation, entry)
         if not index then
             table.insert(applied, ackApplied(entry, { failed = true }))
         else
             local previous_datetime, previous_range = lookup:identityOf(annotation)
             applyEditFields(annotation, entry)
+            -- Page-position (PDF) entries have no xpointer range for the next open to verify.
+            if type(annotation.pos0) == "string" then
+                annotation.bookorbit_pending_verification = true
+            end
+            if entry.pos0 and entry.pos1 then
+                annotation.page, annotation.pos0, annotation.pos1 = entry.pos0, entry.pos0, entry.pos1
+            end
             lookup:noteMutated(annotation, previous_datetime, previous_range)
             touched = touched + 1
-            table.insert(applied, ackApplied(entry, {}))
+            addApplied(stamps, annotation)
+            if type(annotation.pos0) == "string" then
+                table.insert(applied, ackApplied(entry, {}))
+            else
+                table.insert(applied, ackApplied(entry, {
+                    verified = true,
+                    pos0 = BookOrbitSidecar.serializePos(annotation.pos0),
+                    pos1 = BookOrbitSidecar.serializePos(annotation.pos1),
+                }))
+            end
         end
     end
 
@@ -530,11 +747,17 @@ function BookOrbitAnnotations.applySidecar(file, to_apply)
         doc_settings:makeTrue("annotations_externally_modified")
         doc_settings:flush()
     end
-    return applied, deleted, touched, deleted_touched
+    return applied, deleted, touched, deleted_touched, stamps
 end
 
 local function hasPending(to_apply)
     return to_apply and (#(to_apply.add or {}) > 0 or #(to_apply.edit or {}) > 0 or #(to_apply.delete or {}) > 0)
+end
+
+-- The server matches a copy whose bytes differ from the library file but cannot
+-- place its highlights, so nothing is exchanged and nothing failed.
+local function incompatibleResult()
+    return { uploaded = 0, applied = 0, deleted = 0, failed = 0, unverified = 0, had_errors = false, incompatible = 1 }
 end
 
 --[[--
@@ -548,17 +771,21 @@ opts:
 - annotations: normalized annotation list (live or sidecar source)
 - ann_max_datetime: max effective datetime of that list
 - ann_signature: change signal for that list, recorded on a complete exchange
+- captured_at: os.time() the list was read; dates notes rewritten without a timestamp
+- sidecar_state: "known", "new" or nil, from BookOrbitSidecar.sidecarState
 - apply_mode: "live" | "sidecar" | "skip"
 - ui: ReaderUI (required for apply_mode "live")
 - file: book file path (required for apply_mode "sidecar")
 
 Returns a result table { uploaded, applied, deleted, failed, had_errors } or
-nil, err for auth/network level failures.
+nil, err for auth/network level failures. A position-incompatible copy returns
+a result with `incompatible = 1` and exchanges nothing.
 ]]
 function BookOrbitAnnotations.exchangeBook(opts)
     if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
     local book = opts.state:getBook(opts.digest)
     if not book then return nil, "unmatched" end
+    if book.positionIncompatible then return incompatibleResult() end
 
     local has_anchors = false
     for _, annotation in ipairs(opts.annotations) do
@@ -571,25 +798,34 @@ function BookOrbitAnnotations.exchangeBook(opts)
     end
     local anchor_backfill = anchors_supported and (book.annotation_anchor_signature == nil or book.annotation_anchor_signature ~= opts.ann_signature)
 
-    local keys = BookOrbitAnnotations.collectKeys(opts.annotations)
-    local keys_complete = #keys <= MAX_KEYS_PER_BOOK
+    local keys = BookOrbitAnnotations.collectKeys(opts.key_annotations or opts.annotations)
+    local keys_complete = opts.keys_complete ~= false and #keys <= MAX_KEYS_PER_BOOK
+    if opts.file and opts.state.hasOtherCopy and opts.state:hasOtherCopy(opts.digest, opts.file) then
+        keys_complete = false
+    end
+    local sidecar_state
+    sidecar_state, keys_complete = BookOrbitSidecar.resolveExchangeState(opts.client, opts.sidecar_state, keys_complete)
     if not keys_complete then keys = {} end
 
     local device_now = os.date("%Y-%m-%d %H:%M:%S")
     local watermark = BookOrbitAnnotations.readWatermark(book, device_now)
+    local captured_at = type(opts.captured_at) == "number" and os.date("%Y-%m-%d %H:%M:%S", opts.captured_at) or device_now
+    if captured_at > device_now then captured_at = device_now end
+    -- A list read before the notes were last remembered (a queued snapshot, a
+    -- sidecar older than the open book) is older than what the device already
+    -- reported. Its notes are not edits, and must not replace the record.
+    local older_list = book.annNotesAt ~= nil and captured_at < book.annNotesAt
     local delta = {}
     for _, annotation in ipairs(opts.annotations) do
         local effective = annotation.datetimeUpdated or annotation.datetime
-        if effective > watermark or (anchor_backfill and annotation.sourceAnchor) then
-            local fields = {}
-            for key, value in pairs(annotation) do
-                if key ~= "sourceAnchor" or anchors_supported then fields[key] = value end
-            end
-            table.insert(delta, fields)
+        if not older_list and needsEditStamp(book, annotation, effective, watermark) then
+            table.insert(delta, editedAt(annotation, captured_at))
+        elseif (effective > watermark and not BookOrbitAnnotations.isAppliedCopy(book, annotation, effective)) or (anchor_backfill and annotation.sourceAnchor) then
+            table.insert(delta, annotation)
         end
     end
 
-    local result = { uploaded = 0, applied = 0, deleted = 0, failed = 0, had_errors = false }
+    local result = { uploaded = 0, applied = 0, deleted = 0, failed = 0, unverified = 0, had_errors = false }
     local response
     local first_request = true
     local upload_failed = false
@@ -601,7 +837,15 @@ function BookOrbitAnnotations.exchangeBook(opts)
         if not AnnotationGuard.canExchange(opts) then return nil, "annotation_restoration_pending" end
         local chunk = {}
         while cursor <= #delta and #chunk < UPLOAD_CHUNK do
-            table.insert(chunk, delta[cursor])
+            local change = delta[cursor]
+            if not anchors_supported and change.sourceAnchor then
+                local legacy = {}
+                for key, value in pairs(change) do
+                    if key ~= "sourceAnchor" then legacy[key] = value end
+                end
+                change = legacy
+            end
+            table.insert(chunk, change)
             cursor = cursor + 1
         end
         local body, err = opts.client:exchangeAnnotations({
@@ -609,6 +853,7 @@ function BookOrbitAnnotations.exchangeBook(opts)
                 hash = opts.digest,
                 keys = first_request and keys or {},
                 keysComplete = first_request and keys_complete or false,
+                sidecarState = first_request and sidecar_state or nil,
                 changes = chunk,
             },
         })
@@ -628,6 +873,12 @@ function BookOrbitAnnotations.exchangeBook(opts)
                 return nil, "unmatched"
             end
         end
+        for _, hash in ipairs(body.positionIncompatible or {}) do
+            if hash == opts.digest then
+                opts.state:markPositionIncompatible(opts.digest)
+                return incompatibleResult()
+            end
+        end
         response = body.results and body.results[1] or nil
         if type(response) ~= "table" or type(response.toApply) ~= "table"
             or response.hash and response.hash ~= opts.digest then
@@ -640,6 +891,8 @@ function BookOrbitAnnotations.exchangeBook(opts)
 
     if not upload_failed then
         BookOrbitAnnotations.advanceWatermark(book, opts.ann_max_datetime, device_now)
+        pruneApplied(book)
+        if not older_list then BookOrbitAnnotations.rememberNotes(book, opts.annotations, captured_at) end
         if anchors_supported then book.annotation_anchor_signature = opts.ann_signature end
     end
 
@@ -647,7 +900,7 @@ function BookOrbitAnnotations.exchangeBook(opts)
     -- undelivered: the skip rule reads this stamp, so anything the server will
     -- re-send must keep the next exchange mandatory.
     local function rememberComplete()
-        if upload_failed or result.had_errors or result.failed > 0 then return end
+        if upload_failed or result.had_errors or result.failed > 0 or result.unverified > 0 then return end
         if not keys_complete then return end
         BookOrbitAnnotations.rememberExchanged(book, opts.ann_signature)
     end
@@ -673,11 +926,11 @@ function BookOrbitAnnotations.exchangeBook(opts)
             break
         end
         rounds = rounds + 1
-        local applied, deleted, touched, deleted_touched
+        local applied, deleted, touched, deleted_touched, stamps
         if opts.apply_mode == "live" and opts.ui and opts.ui.document then
-            applied, deleted, touched, deleted_touched = BookOrbitAnnotations.applyLive(opts.ui, response.toApply)
+            applied, deleted, touched, deleted_touched, stamps = BookOrbitAnnotations.applyLive(opts.ui, response.toApply)
         elseif opts.apply_mode == "sidecar" and opts.file then
-            applied, deleted, touched, deleted_touched = BookOrbitAnnotations.applySidecar(opts.file, response.toApply)
+            applied, deleted, touched, deleted_touched, stamps = BookOrbitAnnotations.applySidecar(opts.file, response.toApply)
         else
             pull_complete = false
             break
@@ -688,6 +941,7 @@ function BookOrbitAnnotations.exchangeBook(opts)
         result.deleted = result.deleted + deleted_touched
         for _, entry in ipairs(applied) do
             if entry.status == "failed" then result.failed = result.failed + 1 end
+            if entry.status == "applied" and entry.verified == false then result.unverified = result.unverified + 1 end
         end
 
         local ack_body, ack_err = opts.client:exchangeAck({
@@ -698,6 +952,7 @@ function BookOrbitAnnotations.exchangeBook(opts)
             result.had_errors = true
             break
         end
+        BookOrbitAnnotations.rememberApplied(book, stamps)
 
         if not response.more then break end
         local body, err = opts.client:exchangeAnnotations({
@@ -712,6 +967,11 @@ function BookOrbitAnnotations.exchangeBook(opts)
     end
 
     if pull_complete then rememberComplete() end
+    -- Notes the server just applied are the device's notes now; without this
+    -- the next exchange would read them as local edits and send them back.
+    if not upload_failed and result.applied > 0 and opts.apply_mode == "live" and opts.ui and opts.ui.annotation then
+        BookOrbitAnnotations.rememberNotes(book, (BookOrbitSidecar.normalizeAnnotations(opts.ui.annotation.annotations)), os.date("%Y-%m-%d %H:%M:%S"))
+    end
     return result
 end
 
@@ -729,8 +989,10 @@ function BookOrbitAnnotations.exchangeOpenBook(opts)
         annotations = annotations,
         ann_max_datetime = ann_max,
         ann_signature = signature,
+        sidecar_state = opts.sidecar_state,
         apply_mode = "live",
         ui = ui,
+        file = ui.document.file,
     })
 end
 

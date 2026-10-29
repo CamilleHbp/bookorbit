@@ -85,7 +85,7 @@ describe('reader progress across offline close and reopen', () => {
     )
     open()
     await progress.load()
-    expect(mockApi.mock.calls.map(([url]) => url)).toEqual(['/api/v1/libraries/5/files/9/reading-events', '/api/v1/books/files/9/progress'])
+    expect(mockApi.mock.calls.map(([url]) => url)).toEqual(['/api/v1/libraries/5/files/9/reading-events', '/api/v1/reading-progress?fileId=9'])
     expect(JSON.parse(mockApi.mock.calls[0]![1]!.body as string)).toEqual(saved!.request)
     progress.onRelocate(relocate(true))
     await progress.save()
@@ -123,13 +123,11 @@ describe('reader progress across offline close and reopen', () => {
     await vi.waitFor(async () => expect(await readingEventOutbox.pending(7, 9)).toHaveLength(1))
     progress.setMediaOverlayProgress('chapter.xhtml#sentence-4', 0, 12)
     await progress.save()
-    const request = mockApi.mock.calls.find(([url]) => url === '/api/v1/books/files/9/progress')
+    const request = mockApi.mock.calls.find(([url]) => url === '/api/v1/reading-progress')
     expect(request).toBeDefined()
-    expect(JSON.parse(request![1]!.body as string)).toMatchObject({
-      source: 'narration',
-      mediaOverlayFragment: 'chapter.xhtml#sentence-4',
-      mediaOverlaySectionIndex: 0,
-      positionSeconds: 12,
+    expect(JSON.parse(request![1]!.body as string).writes[0]).toMatchObject({
+      kind: 'narration',
+      narration: { fragment: 'chapter.xhtml#sentence-4', sectionIndex: 0, seconds: 12 },
     })
     expect(await readingEventOutbox.pending(7, 9)).toHaveLength(1)
   })
@@ -140,7 +138,7 @@ describe('reader progress across offline close and reopen', () => {
     progress.onRelocate(relocate(true))
     progress.setMediaOverlayProgress('chapter.xhtml#sentence-4', 0, 12)
     await progress.save()
-    expect(mockApi).toHaveBeenCalledWith('/api/v1/books/files/9/progress', expect.objectContaining({ method: 'POST' }))
+    expect(mockApi).toHaveBeenCalledWith('/api/v1/reading-progress', expect.objectContaining({ method: 'PUT' }))
   })
 
   it('does not save narration under another account after capturing a revision anchor', async () => {

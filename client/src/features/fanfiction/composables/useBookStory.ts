@@ -1,3 +1,4 @@
+import { createUuid } from '@/lib/uuid'
 import { computed, onScopeDispose, ref, shallowRef, toValue, watch, type InjectionKey, type MaybeRefOrGetter, type Ref } from 'vue'
 import type {
   BookFileRevisionPage,
@@ -274,7 +275,7 @@ export function useBookStory(
       const identity = `${current.id}:${expectedRevisionId}`
       const keys = replacementKeys.get(file) ?? new Map<string, string>()
       replacementKeys.set(file, keys)
-      const idempotencyKey = keys.get(identity) ?? crypto.randomUUID()
+      const idempotencyKey = keys.get(identity) ?? createUuid()
       keys.set(identity, idempotencyKey)
       const body = new FormData()
       body.append('file', file, file.name)
@@ -345,7 +346,7 @@ export function useBookStory(
       const expectedRevisionId = currentRevisionId.value
       if (kind === 'rollback' && (!expectedRevisionId || !revisionId)) return
       const key = `${current.id}:${kind}:${revisionId ?? ''}:${kind === 'rollback' ? expectedRevisionId : ''}`
-      const idempotencyKey = requests.get(key) ?? crypto.randomUUID()
+      const idempotencyKey = requests.get(key) ?? createUuid()
       requests.set(key, idempotencyKey)
       const result = await request<FanfictionJob>(
         `${base.value}/sources/${current.id}/${kind === 'rollback' ? 'rollback' : 'check'}`,

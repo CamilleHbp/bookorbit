@@ -1,3 +1,4 @@
+import { recordBookFileHashHistory } from '../../db/book-file-hash-history';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, isNull, ne } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -35,6 +36,17 @@ export class FileWriteRepository {
     private readonly koboFiles: KoboFileStateService,
   ) {}
 
+  async recordChapterWriteProvenance(
+    bookId: number,
+    fileId: number,
+    provenance: NonNullable<typeof bookFiles.$inferSelect.chapterWriteProvenance>,
+  ): Promise<void> {
+    await this.db
+      .update(bookFiles)
+      .set({ chapterWriteProvenance: provenance })
+      .where(and(eq(bookFiles.bookId, bookId), eq(bookFiles.id, fileId)));
+  }
+
   async findPrimaryFileForBook(bookId: number) {
     const [row] = await this.db
       .select({
@@ -43,10 +55,24 @@ export class FileWriteRepository {
         format: bookFiles.format,
         sizeBytes: bookFiles.sizeBytes,
         fileHash: bookFiles.fileHash,
+        mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,
         libraryId: books.libraryId,
+        fileWriteAllFiles: libraries.fileWriteAllFiles,
       })
       .from(books)
       .innerJoin(bookFiles, eq(bookFiles.id, books.primaryFileId))
+      .innerJoin(libraries, eq(libraries.id, books.libraryId))
+      .where(eq(books.id, bookId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** The library scope of a book that may have no primary file, which only the all-files mode can still write. */
+  async findFileWriteScopeForBook(bookId: number): Promise<{ libraryId: number; fileWriteAllFiles: boolean } | null> {
+    const [row] = await this.db
+      .select({ libraryId: books.libraryId, fileWriteAllFiles: libraries.fileWriteAllFiles })
+      .from(books)
+      .innerJoin(libraries, eq(libraries.id, books.libraryId))
       .where(eq(books.id, bookId))
       .limit(1);
     return row ?? null;
@@ -82,6 +108,9 @@ export class FileWriteRepository {
         fileWriteKindleMaxFileSizeMb: libraries.fileWriteKindleMaxFileSizeMb,
         fileWriteAudioEnabled: libraries.fileWriteAudioEnabled,
         fileWriteAudioMaxFileSizeMb: libraries.fileWriteAudioMaxFileSizeMb,
+        fileWriteAllFiles: libraries.fileWriteAllFiles,
+        fileWriteReadAlongEnabled: libraries.fileWriteReadAlongEnabled,
+        fileWriteReadAlongMaxFileSizeMb: libraries.fileWriteReadAlongMaxFileSizeMb,
       })
       .from(libraries)
       .where(eq(libraries.id, libraryId))
@@ -97,6 +126,9 @@ export class FileWriteRepository {
         format: bookFiles.format,
         sizeBytes: bookFiles.sizeBytes,
         fileHash: bookFiles.fileHash,
+        role: bookFiles.role,
+        sortOrder: bookFiles.sortOrder,
+        mediaOverlayAvailable: bookFiles.mediaOverlayAvailable,
         libraryId: books.libraryId,
       })
       .from(bookFiles)
@@ -124,7 +156,15 @@ export class FileWriteRepository {
     bookId: number,
     bookFileId: number,
     previousFileHash: string | null,
-    fields: { fileHash?: string; mtime?: Date; sizeBytes?: number; ino?: bigint },
+    fields: {
+      fileHash?: string;
+      mtime?: Date;
+      sizeBytes?: number;
+      ino?: bigint;
+      mediaOverlayAvailable?: boolean;
+      mediaOverlayDurationSeconds?: number | null;
+      mediaOverlayCheckedAt?: Date | null;
+    },
   ): Promise<void> {
     const updateFile = (db: Pick<Db, 'update'>) =>
       db
@@ -144,7 +184,7 @@ export class FileWriteRepository {
   }
 
   async recordHashHistory(bookFileId: number, fileHash: string, reason: string): Promise<void> {
-    await this.db.insert(schema.bookFileHashHistory).values({ bookFileId, fileHash, reason }).onConflictDoNothing();
+    await recordBookFileHashHistory(this.db, bookFileId, fileHash, reason);
   }
 
   async loadPayload(bookId: number) {

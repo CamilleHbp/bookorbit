@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { createUuid } from '@/lib/uuid'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -24,11 +25,11 @@ const locked = computed(() => busy.value || active.value)
 const controller = new AbortController()
 onScopeDispose(() => controller.abort())
 const error = ref('')
-const key = ref(crypto.randomUUID())
+const key = ref(createUuid())
 watch(url, () => {
   preview.value = null
   job.value = null
-  key.value = crypto.randomUUID()
+  key.value = createUuid()
 })
 async function request(path: string, body: unknown) {
   const response = await api(`/api/v1/libraries/${props.libraryId}/fanfiction/discovery${path}`, {
@@ -54,7 +55,7 @@ async function inspect() {
       bookFileId: props.bookFileId,
       url: url.value,
     })
-    key.value = crypto.randomUUID()
+    key.value = createUuid()
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : t('fanfiction.link.failed')
   } finally {

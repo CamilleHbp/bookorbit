@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { FileLockService } from './file-lock.service';
+import { CommonModule } from './common.module';
 
-@Module({ providers: [FileLockService], exports: [FileLockService] })
+@Module({ imports: [CommonModule], exports: [CommonModule] })
 export class FileLockModule {}

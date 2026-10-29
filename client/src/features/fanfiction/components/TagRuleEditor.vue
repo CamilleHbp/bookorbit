@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { createUuid } from '@/lib/uuid'
 import { computed, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { FanfictionTagRule } from '@bookorbit/types'
@@ -13,7 +14,7 @@ const { search } = useTagSearch()
 const id = useId()
 const keys = new WeakMap<FanfictionTagRule, string>()
 function ruleKey(rule: FanfictionTagRule) {
-  if (!keys.has(rule)) keys.set(rule, crypto.randomUUID())
+  if (!keys.has(rule)) keys.set(rule, createUuid())
   return keys.get(rule)!
 }
 const tagInputs = ref<InstanceType<typeof ChipInput>[]>([])

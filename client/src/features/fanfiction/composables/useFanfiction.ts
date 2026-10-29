@@ -1,3 +1,4 @@
+import { createUuid } from '@/lib/uuid'
 import { computed, onScopeDispose, ref } from 'vue'
 import type {
   FanfictionExistingStory,
@@ -383,8 +384,8 @@ export function useFanfiction(
           (url) =>
             prior.get(url) ?? {
               url,
-              previewKey: crypto.randomUUID(),
-              importKey: crypto.randomUUID(),
+              previewKey: createUuid(),
+              importKey: createUuid(),
               selected: true,
               job: null,
               preview: null,
@@ -425,7 +426,7 @@ export function useFanfiction(
       if (candidates.value.length === 1 && onMetadataReview) await onMetadataReview(story.bookId)
       return
     }
-    candidate.updateKey ??= crypto.randomUUID()
+    candidate.updateKey ??= createUuid()
     try {
       const job = await request<FanfictionJob>(`${path}/sources/${story.id}/check`, { kind: 'update', idempotencyKey: candidate.updateKey })
       if (!currentScope(current)) return
@@ -468,7 +469,7 @@ export function useFanfiction(
       })
       return
     }
-    candidate.importKey = crypto.randomUUID()
+    candidate.importKey = createUuid()
     candidate.job = null
     await perform((current, path) => submitImport(candidate, current, path))
   }
@@ -489,8 +490,8 @@ export function useFanfiction(
         (url) =>
           prior.get(url) ?? {
             url,
-            previewKey: crypto.randomUUID(),
-            importKey: crypto.randomUUID(),
+            previewKey: createUuid(),
+            importKey: createUuid(),
             selected: true,
             job: null,
             preview: null,
@@ -559,7 +560,7 @@ export function useFanfiction(
     delete sourceErrors.value[source.id]
     await perform(async (current, path) => {
       const key = `${source.libraryId}:${source.id}:${kind}`
-      const idempotencyKey = pendingChecks.get(key) ?? crypto.randomUUID()
+      const idempotencyKey = pendingChecks.get(key) ?? createUuid()
       pendingChecks.set(key, idempotencyKey)
       try {
         const job = await request<FanfictionJob>(`${path}/sources/${source.id}/check`, { kind, idempotencyKey })

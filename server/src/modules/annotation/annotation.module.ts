@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 
 import { BookModule } from '../book/book.module';
 import { AchievementModule } from '../achievement/achievement.module';
+import { LibraryModule } from '../library/library.module';
 import { PositionConverterModule } from '../position-converter/position-converter.module';
 import { AnnotationController } from './annotation.controller';
 import { AnnotationExportService } from './annotation-export.service';
@@ -18,7 +19,7 @@ import { AnnotationSyncService } from './annotation-sync.service';
 import { DevicePositionRebuilderRegistry } from './device-position-rebuilder';
 
 @Module({
-  imports: [BookModule, AchievementModule, PositionConverterModule, BookRevisionModule],
+  imports: [BookModule, AchievementModule, PositionConverterModule, LibraryModule, BookRevisionModule],
   controllers: [AnnotationController, AnnotationHubController],
   providers: [
     AnnotationAnchorService,
@@ -32,6 +33,6 @@ import { DevicePositionRebuilderRegistry } from './device-position-rebuilder';
     AnnotationHubService,
     DevicePositionRebuilderRegistry,
   ],
-  exports: [AnnotationSyncService, AnnotationHubService, DevicePositionRebuilderRegistry],
+  exports: [AnnotationSyncService, AnnotationHubService, AnnotationConversionService, DevicePositionRebuilderRegistry],
 })
 export class AnnotationModule {}

@@ -58,6 +58,7 @@ import { DownloadClientRegistry } from '../download-clients/download-client-regi
 import { ADD_PATH_MAPPING_HINT } from '../download-clients/path-mapping.service';
 import {
   IndexerSearchException,
+  IndexerRetryExhaustedException,
   type IndexerAdapter,
   type ReleaseCandidate,
   type ReleaseFile,
@@ -264,6 +265,8 @@ export class RequestFulfillmentService {
         automated: user === null,
         releaseTitle: grab.releaseTitle,
         releaseGuid: grab.releaseGuid ?? null,
+        releaseInfoUrl: grab.releaseInfoUrl ?? null,
+        holdForReview: dto.holdForReview === true,
         releaseSizeBytes: grab.releaseSizeBytes,
         releaseSeeders: grab.releaseSeeders ?? null,
         releaseFormat: grab.releaseFormat ?? null,
@@ -320,10 +323,12 @@ export class RequestFulfillmentService {
         `[book_request.grab] [fail] requestId=${requestId} downloadId=${download.id} clientId=${client?.id ?? 'direct'} error="${sanitizeLogValue(message)}" - the download could not be started`,
       );
       // Which half refused decides what another attempt should do: a client that is down refuses
-      // every torrent alike, while a file BookOrbit fetches itself was refused by the source.
+      // every torrent alike, while a file BookOrbit fetches itself was refused by the source. The
+      // client's configured name lets the picker say which one, in the reader's language.
       throw withGrabCode(
         error,
         client === null ? 'GRAB_SOURCE_REFUSED' : isServiceUnavailable(error) ? 'GRAB_CLIENT_UNAVAILABLE' : 'GRAB_CLIENT_REFUSED',
+        client === null ? undefined : { client: client.name },
       );
     }
 
@@ -345,7 +350,9 @@ export class RequestFulfillmentService {
     try {
       return await run();
     } catch (error) {
-      if (!automated || !isTransientGrabFailure(error)) throw error;
+      if (!automated || !isTransientGrabFailure(error) || (error instanceof HttpException && error.cause instanceof IndexerRetryExhaustedException)) {
+        throw error;
+      }
 
       const code = grabFailureCode(error) ?? (phase === 'client' ? 'GRAB_CLIENT_UNAVAILABLE' : 'GRAB_SOURCE_UNAVAILABLE');
       this.logger.warn(
@@ -382,6 +389,7 @@ export class RequestFulfillmentService {
         automated: user === null,
         releaseTitle: release.title.slice(0, 500),
         releaseGuid,
+        releaseInfoUrl: release.infoUrl ?? null,
         releaseSizeBytes: release.sizeBytes,
         releaseSeeders: release.seeders,
         releaseFormat: resolveFormat(release)?.slice(0, 20) ?? null,
@@ -640,6 +648,7 @@ export class RequestFulfillmentService {
       indexerAdapterType: indexer.adapterType,
       releaseGuid: release.guid,
       releaseTitle: release.title.slice(0, 500),
+      releaseInfoUrl: release.infoUrl ?? null,
       releaseSizeBytes: release.sizeBytes,
       releaseSeeders: release.seeders,
       // The resolved format, not the raw field: most indexers state none and it is read off the
@@ -777,7 +786,7 @@ export class RequestFulfillmentService {
     }
 
     const client = await this.clients.findOne(requestedId);
-    if (!client.enabled) throw grabError('GRAB_CLIENT_REFUSED', `Download client "${client.name}" is disabled`);
+    if (!client.enabled) throw grabError('GRAB_CLIENT_REFUSED', `Download client "${client.name}" is disabled`, { client: client.name });
     this.assertClientCanDeliver(client, source);
     this.assertClientCanImport(client);
     return client;
@@ -857,7 +866,10 @@ async function resolveReleaseFile(adapter: IndexerAdapter, release: ReleaseCandi
  */
 function indexerRefusal(error: IndexerSearchException, release: ReleaseCandidate): HttpException {
   if (RETRYABLE_INDEXER_FAILURES.includes(error.failure)) {
-    return grabUnavailable('GRAB_SOURCE_UNAVAILABLE', error.message);
+    return new ServiceUnavailableException(
+      { message: error.message, errorCode: 'GRAB_SOURCE_UNAVAILABLE' satisfies GrabFailureCode, statusCode: HttpStatus.SERVICE_UNAVAILABLE },
+      { cause: error },
+    );
   }
   return grabError(release.vipOnly === true ? 'GRAB_VIP_REQUIRED' : 'GRAB_SOURCE_REFUSED', error.message);
 }
@@ -873,16 +885,16 @@ function errorCodeOf(error: unknown): string {
   return typeof code === 'string' ? code : 'UNKNOWN';
 }
 
-function grabError(errorCode: GrabFailureCode, message: string): BadRequestException {
-  return new BadRequestException({ message, errorCode, statusCode: HttpStatus.BAD_REQUEST });
+function grabError(errorCode: GrabFailureCode, message: string, errorMeta?: BookRequestFailureMeta): BadRequestException {
+  return new BadRequestException({ message, errorCode, ...(errorMeta ? { errorMeta } : {}), statusCode: HttpStatus.BAD_REQUEST });
 }
 
-function grabUnavailable(errorCode: GrabFailureCode, message: string): ServiceUnavailableException {
-  return new ServiceUnavailableException({ message, errorCode, statusCode: HttpStatus.SERVICE_UNAVAILABLE });
+function grabUnavailable(errorCode: GrabFailureCode, message: string, errorMeta?: BookRequestFailureMeta): ServiceUnavailableException {
+  return new ServiceUnavailableException({ message, errorCode, ...(errorMeta ? { errorMeta } : {}), statusCode: HttpStatus.SERVICE_UNAVAILABLE });
 }
 
-function grabConflict(errorCode: GrabFailureCode, message: string): ConflictException {
-  return new ConflictException({ message, errorCode, statusCode: HttpStatus.CONFLICT });
+function grabConflict(errorCode: GrabFailureCode, message: string, errorMeta?: BookRequestFailureMeta): ConflictException {
+  return new ConflictException({ message, errorCode, ...(errorMeta ? { errorMeta } : {}), statusCode: HttpStatus.CONFLICT });
 }
 
 /**
@@ -904,14 +916,14 @@ export class RequestAlreadyClaimedException extends ConflictException {
  * Anything that is not an HTTP failure is handed back untouched: an unexpected error is a fault
  * on our side, and dressing it as a refusal would let the failover route around a real bug.
  */
-function withGrabCode(error: unknown, errorCode: GrabFailureCode): unknown {
+function withGrabCode(error: unknown, errorCode: GrabFailureCode, errorMeta?: BookRequestFailureMeta): unknown {
   if (!(error instanceof HttpException)) return error;
 
   const status = error.getStatus();
-  if (status === (HttpStatus.SERVICE_UNAVAILABLE as number)) return grabUnavailable(errorCode, error.message);
-  if (status === (HttpStatus.CONFLICT as number)) return grabConflict(errorCode, error.message);
-  if (status === (HttpStatus.BAD_REQUEST as number)) return grabError(errorCode, error.message);
-  return new HttpException({ message: error.message, errorCode, statusCode: status }, status);
+  if (status === (HttpStatus.SERVICE_UNAVAILABLE as number)) return grabUnavailable(errorCode, error.message, errorMeta);
+  if (status === (HttpStatus.CONFLICT as number)) return grabConflict(errorCode, error.message, errorMeta);
+  if (status === (HttpStatus.BAD_REQUEST as number)) return grabError(errorCode, error.message, errorMeta);
+  return new HttpException({ message: error.message, errorCode, ...(errorMeta ? { errorMeta } : {}), statusCode: status }, status);
 }
 
 function isServiceUnavailable(error: unknown): boolean {
@@ -953,6 +965,8 @@ interface ResolvedGrab extends ParsedGrab {
   indexerName?: string;
   indexerAdapterType?: string;
   releaseGuid?: string;
+  /** Vetted by the search that produced the release, so it is safe to keep and show. */
+  releaseInfoUrl?: string | null;
   releaseSeeders?: number | null;
   releaseFormat?: string | null;
   freeleech?: boolean;

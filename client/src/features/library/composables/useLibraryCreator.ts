@@ -3,6 +3,7 @@ import { api } from '@/lib/api'
 import {
   DEFAULT_FORMAT_PRIORITY,
   isFiveFieldCronExpression,
+  resolveRegexMetadataConfig,
   withoutImplicitReadAlongFormatPriority,
   withReadAlongFormatPriority,
 } from '@bookorbit/types'
@@ -12,11 +13,12 @@ import { coveringFolderPath, normalizeFolderPath } from './folder-paths'
 
 export { DEFAULT_FORMAT_PRIORITY }
 
-export const DEFAULT_METADATA_PRECEDENCE = ['embedded', 'opfFile']
+export const DEFAULT_METADATA_PRECEDENCE = ['embedded', 'opfFile', 'regex']
 
 export const METADATA_LABELS: Record<string, string> = {
   embedded: 'Embedded metadata',
   opfFile: 'OPF files',
+  regex: 'Regex metadata',
 }
 
 export type LibraryCreatorSectionId = 'details' | 'folders' | 'scanner' | 'metadata' | 'reading' | 'schedule' | 'fileWrite' | 'access'
@@ -41,6 +43,7 @@ function blankForm() {
     watchLocalFolders: true,
     autoScanCronExpression: null as string | null,
     metadataPrecedence: [...DEFAULT_METADATA_PRECEDENCE],
+    regexMetadata: null as Library['regexMetadata'],
     formatPriority: withReadAlongFormatPriority(DEFAULT_FORMAT_PRIORITY),
     allowedFormats: [] as string[],
     organizationMode: 'book_per_folder' as OrganizationMode,
@@ -62,6 +65,9 @@ function blankForm() {
     fileWriteKindleMaxFileSizeMb: 100,
     fileWriteAudioEnabled: true,
     fileWriteAudioMaxFileSizeMb: 500,
+    fileWriteAllFiles: false,
+    fileWriteReadAlongEnabled: false,
+    fileWriteReadAlongMaxFileSizeMb: 1000,
     fileRenameEnabled: false,
   }
 }
@@ -76,6 +82,8 @@ export function useLibraryCreator() {
   const stats = ref<LibraryStats | null>(null)
   const error = ref<string | null>(null)
   const storedAddedAtSource = ref<AddedAtSource | null>(null)
+  /** The path rules the server has, which is what applying them to existing books uses. */
+  const storedRegexMetadata = ref<Library['regexMetadata']>(null)
   const latestCheck = new Map<string, number>()
   let checkSequence = 0
 
@@ -106,6 +114,7 @@ export function useLibraryCreator() {
       form.fileWriteCbxMaxFileSizeMb,
       form.fileWriteKindleMaxFileSizeMb,
       form.fileWriteAudioMaxFileSizeMb,
+      form.fileWriteReadAlongMaxFileSizeMb,
     ]
     if (fileSizes.some((value) => !Number.isInteger(value) || value < FILE_SIZE_MIN_MB || value > FILE_SIZE_MAX_MB)) {
       errors.fileWrite = t('library.creator.errors.fileSizeRange')
@@ -115,6 +124,7 @@ export function useLibraryCreator() {
 
   function initCreate() {
     storedAddedAtSource.value = null
+    storedRegexMetadata.value = null
     Object.assign(form, blankForm())
     mode.value = 'create'
     editingLibraryId.value = null
@@ -143,6 +153,7 @@ export function useLibraryCreator() {
     form.folders = []
     form.localFolders = []
     storedAddedAtSource.value = null
+    storedRegexMetadata.value = null
   }
 
   function applyLibrary(library: Library) {
@@ -157,6 +168,12 @@ export function useLibraryCreator() {
     form.watchLocalFolders = library.watchLocalFolders ?? true
     form.autoScanCronExpression = library.autoScanCronExpression ?? null
     form.metadataPrecedence = [...library.metadataPrecedence]
+    // A preset is shown with its current rules, which are what the server runs for it.
+    const regexMetadata = resolveRegexMetadataConfig(library.regexMetadata)
+    form.regexMetadata = regexMetadata
+      ? { ...(regexMetadata.preset ? { preset: regexMetadata.preset } : {}), rules: regexMetadata.rules.map((rule) => ({ ...rule })) }
+      : null
+    storedRegexMetadata.value = regexMetadata
     const missing = DEFAULT_FORMAT_PRIORITY.filter((f) => !library.formatPriority.includes(f))
     form.formatPriority = withReadAlongFormatPriority([...library.formatPriority, ...missing])
     form.allowedFormats = [...library.allowedFormats]
@@ -180,6 +197,9 @@ export function useLibraryCreator() {
     form.fileWriteKindleMaxFileSizeMb = library.fileWriteKindleMaxFileSizeMb
     form.fileWriteAudioEnabled = library.fileWriteAudioEnabled
     form.fileWriteAudioMaxFileSizeMb = library.fileWriteAudioMaxFileSizeMb
+    form.fileWriteAllFiles = library.fileWriteAllFiles
+    form.fileWriteReadAlongEnabled = library.fileWriteReadAlongEnabled
+    form.fileWriteReadAlongMaxFileSizeMb = library.fileWriteReadAlongMaxFileSizeMb
     form.fileRenameEnabled = library.fileRenameEnabled
   }
 
@@ -294,6 +314,7 @@ export function useLibraryCreator() {
   return {
     form,
     storedAddedAtSource,
+    storedRegexMetadata,
     mode,
     editingLibraryId,
     loading,
