@@ -1,0 +1,2 @@
+CREATE INDEX "fanfiction_jobs_library_kind_created_idx" ON "fanfiction_jobs" USING btree ("library_id","kind","created_at","id");--> statement-breakpoint
+CREATE INDEX "fanfiction_jobs_library_kind_active_idx" ON "fanfiction_jobs" USING btree ("library_id","kind","created_at","id") WHERE "fanfiction_jobs"."state" in ('queued', 'running');

@@ -18,6 +18,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     pool: 'threads',
+    // Integration fixtures share global worker claims in the isolated validation database.
+    fileParallelism: !process.env.REVISION_TEST_DB_CONFIG,
     maxWorkers: process.env.CI ? undefined : localMaxWorkers,
     testTimeout: 15_000,
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],

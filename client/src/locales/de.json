@@ -11822,7 +11822,8 @@
       "hideControls": "Steuerelemente ausblenden",
       "stop": "Stoppen Sie die Erzählung",
       "error": "Fehler bei der Wiedergabe des Kommentars"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "{processed}/{total} Dateien",

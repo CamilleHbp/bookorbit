@@ -11824,7 +11824,8 @@
       "hideControls": "Απόκρυψη στοιχείων ελέγχου",
       "stop": "Διακοπή αφήγησης",
       "error": "Σφάλμα αναπαραγωγής αφήγησης"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "{processed}/{total} αρχεία",

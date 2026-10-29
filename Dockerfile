@@ -1,7 +1,7 @@
 ARG NODE_IMAGE=node:26.12.1-alpine3.23@sha256:bc2b334006f15c7167bbeb2f08f28c2df883f7594a0470e04454ebe7560cfe68
 
 FROM ${NODE_IMAGE} AS base
-RUN npm install -g pnpm@11.22.0
+RUN npm install -g pnpm@11.28.9
 
 # Stage 1: Build client
 FROM base AS client-builder
@@ -51,19 +51,21 @@ WORKDIR /app
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 ENV KOBO_CLOUDSCRAPER_PYTHON=/opt/bookorbit-python/bin/python
+ENV FANFICFARE_PYTHON=/opt/bookorbit-python/bin/python
 ENV KOREADER_PLUGIN_PATH=/app/koreader-plugin/bookorbit.koplugin
 
 COPY server/requirements/kobo-cloudscraper.txt /tmp/kobo-cloudscraper-requirements.txt
+COPY server/requirements/fanficfare.txt /tmp/fanficfare-requirements.txt
 
 # pip is build-only here. Leaving it installed also leaves pip/_vendor/vendor.txt,
 # which Trivy reads as installed msgpack and setuptools and fails the image scan on.
 RUN apk upgrade --no-cache && \
     apk add --no-cache 'libexpat>=2.9.0-r0' poppler-utils djvulibre util-linux su-exec ffmpeg python3 py3-pip tini tzdata && \
     python3 -m venv /opt/bookorbit-python && \
-    /opt/bookorbit-python/bin/python -m pip install --no-cache-dir -r /tmp/kobo-cloudscraper-requirements.txt && \
+    /opt/bookorbit-python/bin/python -m pip install --no-cache-dir -r /tmp/kobo-cloudscraper-requirements.txt -r /tmp/fanficfare-requirements.txt && \
     /opt/bookorbit-python/bin/python -m pip uninstall -y pip && \
     apk del py3-pip && \
-    rm -f /tmp/kobo-cloudscraper-requirements.txt && \
+    rm -f /tmp/kobo-cloudscraper-requirements.txt /tmp/fanficfare-requirements.txt && \
     rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 ENV NODE_ENV=production
@@ -75,6 +77,10 @@ COPY --from=server-builder --chown=node:node /app/server/entrypoint.sh /app/serv
 COPY --chown=node:node LICENSE NOTICE ADDITIONAL_TERMS.md ./
 COPY --chown=node:node server/bin/kepubify/ ./bin/kepubify/
 COPY --chown=node:node koreader-plugin/bookorbit.koplugin/ ./koreader-plugin/bookorbit.koplugin/
+
+RUN echo '{"operation":"health"}' | \
+    /opt/bookorbit-python/bin/python -I /app/dist/modules/fanfiction/runtime/fanficfare_wrapper.py | \
+    /opt/bookorbit-python/bin/python -c 'import json, sys; response = json.load(sys.stdin); assert response["ok"] and response["result"]["ready"], response'
 
 RUN sed -i 's/\r$//' /app/entrypoint.sh /app/file-env.sh && chmod +x /app/entrypoint.sh /app/bin/kepubify/* && mkdir -p /books /data/covers /data/book-bucket /tmp && chown -R node:node /data /tmp
 

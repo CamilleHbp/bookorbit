@@ -11824,7 +11824,8 @@
       "hideControls": "隐藏控制",
       "stop": "停止旁白",
       "error": "旁白播放出错"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "已处理文件：{processed}/{total}",

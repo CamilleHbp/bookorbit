@@ -175,6 +175,7 @@ describe('KoreaderPackageService', () => {
       expect(result.capabilities).toContain('catalogBulkManifest');
       expect(result.capabilities).toContain('bookmarkSync');
       expect(result.capabilities).toContain('catalogListsV2');
+      expect(result.capabilities).toContain('annotationAnchorsV1');
     });
 
     it('returns pluginVersion=unknown when the plugin source dir does not exist', async () => {

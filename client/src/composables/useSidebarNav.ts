@@ -1,7 +1,20 @@
 import { computed, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, type RouteLocationNormalizedLoaded, type RouteLocationRaw } from 'vue-router'
-import { BarChart3, BookPlus, Highlighter, History, LayoutDashboard, Library, ListMusic, PackageOpen, Trophy, Users, Wrench } from '@lucide/vue'
+import {
+  BarChart3,
+  BookOpen,
+  BookPlus,
+  Highlighter,
+  History,
+  LayoutDashboard,
+  Library,
+  ListMusic,
+  PackageOpen,
+  Trophy,
+  Users,
+  Wrench,
+} from '@lucide/vue'
 import { Permission, type BrowseCounts, type LibraryType, type SidebarSectionId } from '@bookorbit/types'
 import { useAuth } from '@/features/auth/composables/useAuth'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
@@ -129,6 +142,16 @@ export const SIDEBAR_NAV_REGISTRY: readonly SidebarNavEntry[] = [
     to: { name: 'achievements' },
     isActive: (route) => route.name === 'achievements',
     visible: (context) => context.achievementsEnabled !== false,
+  },
+  {
+    id: 'fanfiction',
+    labelKey: 'fanfiction.title',
+    modes: ['books'],
+    icon: BookOpen,
+    zone: 'primary',
+    to: { name: 'fanfiction' },
+    isActive: (route) => route.name === 'fanfiction',
+    permission: Permission.ManageLibraries,
   },
   {
     id: 'book-dock',

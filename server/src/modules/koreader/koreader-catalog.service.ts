@@ -639,6 +639,8 @@ export class KoreaderCatalogService {
         sizeBytes: downloadVariant === 'audioless_epub' ? null : file.sizeBytes,
         contentVersion: file.contentVersion.toISOString(),
         fileHash: downloadVariant === 'audioless_epub' ? null : file.fileHash,
+        revisionId: file.revisionId ?? null,
+        sha256: downloadVariant === 'audioless_epub' ? null : (file.sha256 ?? null),
         requestedVariant: variant,
         sourceMediaOverlayAvailable: file.mediaOverlayAvailable,
         narrationPlaybackAvailable: downloadVariant === 'original' && file.mediaOverlayAvailable,

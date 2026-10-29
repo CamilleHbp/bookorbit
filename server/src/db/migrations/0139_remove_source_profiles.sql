@@ -1,0 +1,1 @@
+DROP TABLE "fanfiction_profiles" CASCADE;

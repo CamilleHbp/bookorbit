@@ -81,6 +81,7 @@ export class KoreaderPluginAnnotationService {
 
   private toIncoming(annotation: KoreaderAnnotationDto): IncomingDeviceAnnotation {
     return {
+      ...(annotation.sourceAnchor && { sourceAnchor: annotation.sourceAnchor }),
       datetime: annotation.datetime,
       datetimeUpdated: annotation.datetimeUpdated ?? null,
       drawer: annotation.drawer,

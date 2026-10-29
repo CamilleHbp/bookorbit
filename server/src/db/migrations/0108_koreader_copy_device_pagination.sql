@@ -1,0 +1,1 @@
+CREATE INDEX "koreader_copies_device_page_idx" ON "koreader_installed_copies" USING btree ("user_id","device_id","id");

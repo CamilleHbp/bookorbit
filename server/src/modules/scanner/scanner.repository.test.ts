@@ -1,4 +1,5 @@
 import { ScannerRepository } from './scanner.repository';
+import type { BookRevisionService } from '../book-revision/book-revision.service';
 
 type QueryKind = 'select' | 'insert' | 'update' | 'delete';
 
@@ -64,7 +65,8 @@ function makeDb() {
 
 function makeRepo() {
   const fixture = makeDb();
-  return { ...fixture, repo: new ScannerRepository(fixture.db as any) };
+  const revisions = { observeFile: vi.fn() };
+  return { ...fixture, revisions, repo: new ScannerRepository(fixture.db as any, revisions as unknown as BookRevisionService) };
 }
 
 describe('ScannerRepository', () => {

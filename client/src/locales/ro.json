@@ -11824,7 +11824,8 @@
       "hideControls": "Ascunde comenzile",
       "stop": "Opriți nararea",
       "error": "Eroare de redare"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "{processed}/{total} fișiere",

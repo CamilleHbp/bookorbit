@@ -288,6 +288,8 @@ export interface KoreaderCatalogFile {
   requestedVariant?: "original" | "audioless_epub";
   contentVersion?: string;
   id: number;
+  revisionId?: string | null;
+  sha256?: string | null;
   format: string;
   role: string;
   downloadVariant: "original" | "audioless_epub";
@@ -551,6 +553,8 @@ export interface KoreaderCatalogManifestFile {
   sourceMediaOverlayAvailable?: boolean;
   narrationPlaybackAvailable?: boolean;
   id: number;
+  revisionId?: string | null;
+  sha256?: string | null;
   format: string;
   downloadVariant: "original" | "audioless_epub";
   sizeBytes: number | null;
@@ -592,7 +596,8 @@ export type KoreaderPluginCapability =
   | "readAloudDeliverySettings"
   | "catalogListsV2"
   | "sidecarState"
-  | "annotationPendingBooks";
+  | "annotationPendingBooks"
+  | "annotationAnchorsV1";
 
 export interface KoreaderPluginVersionInfo {
   pluginVersion: string;

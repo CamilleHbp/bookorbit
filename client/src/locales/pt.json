@@ -11824,7 +11824,8 @@
       "hideControls": "Ocultar controles",
       "stop": "Parar narração",
       "error": "Erro de reprodução de Narração"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "{processed}/{total} arquivos",

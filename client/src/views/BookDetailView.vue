@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { computed, defineAsyncComponent, onMounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import type { BookDetail, BookMetadataLockField } from '@bookorbit/types'
+import { Permission, type BookDetail, type BookMetadataLockField } from '@bookorbit/types'
+import { BOOK_STORY_ADMIN_KEY, useBookStory } from '@/features/fanfiction/composables/useBookStory'
 import BookDetailLayout from '@/features/book/components/detail/BookDetailLayout.vue'
 import DetailsTab from '@/features/book/components/detail/tabs/DetailsTab.vue'
 import FilesTab from '@/features/book/components/detail/tabs/FilesTab.vue'
@@ -26,12 +28,16 @@ const loadChaptersTab = () => import('@/features/book/components/detail/tabs/Cha
 const ReadingLogTab = defineAsyncComponent(loadReadingLogTab)
 const HighlightsTab = defineAsyncComponent(loadHighlightsTab)
 const ChaptersTab = defineAsyncComponent(loadChaptersTab)
+const StoryReaderSummary = defineAsyncComponent(() => import('@/features/fanfiction/components/StoryReaderSummary.vue'))
+const storyFile = computed(() => detail.value?.files.find((file) => file.format === 'epub'))
+const StoryUpdatesTab = defineAsyncComponent(() => import('@/features/fanfiction/components/StoryUpdatesTab.vue'))
 
 const KEPT_ALIVE_TABS = ['ReadingLogTab', 'HighlightsTab', 'ChaptersTab']
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const { hasPermission } = usePermissions()
 const { hasLibraryPermission } = useLibraryPermissions()
 const { libraries } = useLibraries()
 
@@ -64,6 +70,13 @@ watch([tab, detail], ([current, book]) => {
     void router.replace({ name: 'book-detail', params: { bookId: book.id }, query: { ...route.query, tab: 'details' } })
   }
 })
+const story = useBookStory(
+  bookId,
+  () => detail.value?.libraryId,
+  () => hasPermission(Permission.ManageLibraries),
+  fetch,
+)
+provide(BOOK_STORY_ADMIN_KEY, story.visible)
 const pageTitle = computed(() => {
   const title = detail.value?.title?.trim()
   const base = title || (Number.isFinite(bookId.value) ? t('views.bookDetail.titleWithId', { id: bookId.value }) : t('views.bookDetail.title'))
@@ -189,7 +202,15 @@ function onChaptersChanged() {
           <ChaptersTab v-else-if="tab === 'chapters' && hasAudio" :book="detail" @changed="onChaptersChanged" />
           <ReadingLogTab v-else-if="tab === 'reading-log'" :book="detail" @saved="onMetadataSaved" @refetch="handleBookRefetch" />
           <HighlightsTab v-else-if="tab === 'highlights'" :book="detail" />
+          <StoryUpdatesTab v-else-if="tab === 'story-updates' && story.visible.value" :state="story" />
         </KeepAlive>
+        <StoryReaderSummary
+          v-if="tab === 'details' && storyFile"
+          :key="`${bookId}-${detail.updatedAt}`"
+          :book-id="bookId"
+          :book-file-id="storyFile.id"
+          :library-id="detail.libraryId"
+        />
       </div>
 
       <div v-else-if="loading" key="loading">

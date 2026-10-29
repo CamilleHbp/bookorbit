@@ -1,3 +1,4 @@
+import { KoboFileStateService } from '../kobo/kobo-file-state.service';
 import { FileWriteRepository } from './file-write.repository';
 
 function extractSqlStrings(value: unknown): string[] {
@@ -35,7 +36,7 @@ describe('FileWriteRepository', () => {
       select: vi.fn().mockReturnValueOnce(c1).mockReturnValueOnce(c2),
     };
 
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
 
     await expect(repo.findPrimaryFileForBook(1)).resolves.toEqual(primary);
     await expect(repo.findPrimaryFileForBook(2)).resolves.toBeNull();
@@ -51,7 +52,7 @@ describe('FileWriteRepository', () => {
       select: vi.fn().mockReturnValue(c),
     };
 
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
 
     await expect(repo.findFilesForBook(1)).resolves.toEqual(rows);
     expect(c.orderBy).toHaveBeenCalledTimes(1);
@@ -77,7 +78,7 @@ describe('FileWriteRepository', () => {
       select: vi.fn().mockReturnValue(c),
     };
 
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
 
     await expect(repo.findLibraryFileWriteConfig(10)).resolves.toEqual(settings);
     expect(db.select).toHaveBeenCalledWith(
@@ -131,7 +132,7 @@ describe('FileWriteRepository', () => {
     const metaChain = chain([]);
     const db = { select: vi.fn().mockReturnValue(metaChain) };
 
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
 
     await expect(repo.loadPayload(11)).resolves.toBeNull();
   });
@@ -252,7 +253,7 @@ describe('FileWriteRepository', () => {
         .mockReturnValueOnce(customMetadataChain),
     };
 
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
 
     await expect(repo.loadPayload(9)).resolves.toEqual({
       ...meta,
@@ -298,7 +299,7 @@ describe('FileWriteRepository', () => {
       insert: vi.fn().mockReturnValue({ values }),
     };
 
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
 
     await repo.insertLog({
       bookId: 1,
@@ -346,7 +347,7 @@ describe('FileWriteRepository', () => {
     };
     const db = { select: vi.fn().mockReturnValue(selectChain) };
 
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
 
     await expect(repo.findWriteLog(99, 1)).resolves.toEqual([
       {
@@ -371,7 +372,7 @@ describe('FileWriteRepository', () => {
       select: vi.fn().mockReturnValueOnce(c1).mockReturnValueOnce(c2),
     };
 
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
 
     await expect(repo.findLibraryWriteSettingsForBook(1)).resolves.toEqual(settings);
     await expect(repo.findLibraryWriteSettingsForBook(2)).resolves.toBeNull();
@@ -387,7 +388,7 @@ describe('FileWriteRepository', () => {
     const db = {
       transaction: vi.fn().mockImplementation(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)),
     };
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
     const mtime = new Date('2026-08-08T00:00:00.000Z');
 
     await repo.updateFileStateAfterMetadataWrite(5, 11, 'oldhash', {
@@ -415,7 +416,7 @@ describe('FileWriteRepository', () => {
     const db = {
       transaction: vi.fn().mockImplementation(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)),
     };
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
 
     await repo.updateFileStateAfterMetadataWrite(5, 11, 'oldhash', { fileHash: 'newhash' });
 
@@ -430,7 +431,7 @@ describe('FileWriteRepository', () => {
       update: vi.fn().mockReturnValue({ set }),
       transaction: vi.fn(),
     };
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
     const mtime = new Date('2026-08-08T00:00:00.000Z');
 
     await repo.updateFileStateAfterMetadataWrite(5, 11, 'oldhash', { mtime, sizeBytes: 57, ino: 99n });
@@ -446,7 +447,7 @@ describe('FileWriteRepository', () => {
       update: vi.fn().mockReturnValue({ set }),
       transaction: vi.fn(),
     };
-    const repo = new FileWriteRepository(db as never);
+    const repo = new FileWriteRepository(db as never, new KoboFileStateService());
     const mtime = new Date('2026-08-08T00:00:00.000Z');
 
     await repo.updateFileStateAfterMetadataWrite(5, 11, 'samehash', { fileHash: 'samehash', mtime, sizeBytes: 57, ino: 99n });

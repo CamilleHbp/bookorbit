@@ -11824,7 +11824,8 @@
       "hideControls": "Bedieningselementen verbergen",
       "stop": "Stop het verhaal",
       "error": "Fout bij het afspelen van gesproken tekst"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "{processed}/{total} bestanden",

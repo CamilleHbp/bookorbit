@@ -11822,7 +11822,8 @@
       "hideControls": "Masquer les commandes",
       "stop": "Arrêter la narration",
       "error": "Erreur de lecture de la narration"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "Fichiers {processed}/{total}",

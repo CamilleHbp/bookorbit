@@ -36,7 +36,7 @@ describe('Kobo delivered file descriptor', () => {
               findBook: vi.fn().mockResolvedValue({ id: 11, primaryFileId: 22 }),
               findPrimaryFile: vi
                 .fn()
-                .mockResolvedValue({ id: 22, format: 'epub', absolutePath: path, sizeBytes: original.length, fileHash: 'b'.repeat(32) }),
+                .mockResolvedValue({ id: 22, bookId: 11, format: 'epub', absolutePath: path, sizeBytes: original.length, fileHash: 'b'.repeat(32) }),
               registerDeliveredHash: register,
             },
           },

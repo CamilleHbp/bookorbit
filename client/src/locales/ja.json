@@ -11810,7 +11810,8 @@
       "hideControls": "コントロールを隠す",
       "stop": "ナレーションを停止",
       "error": "ナレーション再生エラー"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "{processed}/{total} ファイル",

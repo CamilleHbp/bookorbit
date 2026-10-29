@@ -6,6 +6,14 @@
     "deleteOutDir": true,
     "builder": "swc",
     "typeCheck": true,
+    "assets": [
+      "modules/fanfiction/runtime/fanficfare_wrapper.py",
+      "modules/fanfiction/runtime/controlled_config.py",
+      "modules/fanfiction/runtime/safe_transport.py",
+      "modules/fanfiction/runtime/epub_policy.py",
+      "modules/fanfiction/runtime/image_processing.py",
+      "modules/fanfiction/runtime/tag_rules.py"
+    ],
     "plugins": [
       {
         "name": "@nestjs/swagger",

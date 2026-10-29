@@ -11824,7 +11824,8 @@
       "hideControls": "Skrij upravljalnike",
       "stop": "Ustavi napovedovanje",
       "error": "Napaka predvajanja napisov"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "{processed}/{total} datotek",

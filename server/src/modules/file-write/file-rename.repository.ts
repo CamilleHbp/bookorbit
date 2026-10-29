@@ -1,4 +1,5 @@
 import { deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
+import { FanfictionLocationService } from '../fanfiction/fanfiction-location.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -57,7 +58,10 @@ const FOLDER_OWNER_BATCH_SIZE = 500;
 
 @Injectable()
 export class FileRenameRepository {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    private readonly locations: FanfictionLocationService,
+  ) {}
 
   async findBookRenameData(bookId: number): Promise<BookRenameData | null> {
     const [row] = await this.db
@@ -173,6 +177,7 @@ export class FileRenameRepository {
         await tx.update(bookFiles).set({ absolutePath: update.absolutePath, relPath: update.relPath }).where(eq(bookFiles.id, update.id));
       }
       await tx.update(books).set({ folderPath }).where(eq(books.id, bookId));
+      await this.locations.updatePaths(tx, bookId, updates);
     });
   }
 
@@ -223,6 +228,7 @@ export class FileRenameRepository {
     if (input.sourceBookId === input.targetBookId) return;
 
     await this.db.transaction(async (tx) => {
+      await this.locations.assertMergeSafe(tx, input.sourceBookId);
       const now = new Date();
       const [target] = await tx
         .select({ libraryFolderId: books.libraryFolderId, primaryFileId: books.primaryFileId })

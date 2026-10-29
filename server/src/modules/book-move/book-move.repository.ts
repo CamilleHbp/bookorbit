@@ -1,4 +1,5 @@
 import { deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
+import { FanfictionLocationService } from '../fanfiction/fanfiction-location.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -99,7 +100,10 @@ export interface ApplyBookMoveInput {
 
 @Injectable()
 export class BookMoveRepository {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    private readonly locations: FanfictionLocationService,
+  ) {}
 
   async findTargetLibrary(targetLibraryId: number, targetFolderId: number): Promise<MoveTargetLibrary | null> {
     const [row] = await this.db
@@ -374,6 +378,7 @@ export class BookMoveRepository {
           .limit(1);
 
         if (duplicate && duplicate.libraryId === input.targetLibraryId) {
+          await this.locations.assertMergeSafe(tx, duplicate.id);
           await deleteBooksWithHashInvalidation(tx, eq(books.id, duplicate.id));
           mergedBookId = duplicate.id;
         }
@@ -410,6 +415,12 @@ export class BookMoveRepository {
 
       await reselectPrimaryFile(tx, input.bookId, input.targetLibraryId);
 
+      await this.locations.moveBook(tx, input.bookId, current.libraryId, input.targetLibraryId, input.targetFolderId);
+      await this.locations.updatePaths(
+        tx,
+        input.bookId,
+        input.fileUpdates.map((file) => ({ id: file.fileId, relPath: file.relPath })),
+      );
       return { moved: true, mergedBookId };
     });
   }

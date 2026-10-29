@@ -1,3 +1,5 @@
+import type { ReadingAnchor, AnnotationPositionRevision } from '@bookorbit/types';
+import { AnnotationAnchorService } from './annotation-anchor.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 
@@ -32,6 +34,7 @@ const LOST_COPY_MIN_APPLIED = 2;
 export const KOBO_SERVED_CLOCK = 1;
 
 export interface IncomingDeviceAnnotation {
+  sourceAnchor?: ReadingAnchor;
   /**
    * Device-authoritative identity (Kobo annotation UUID). When present it replaces the
    * datetime|pos0 dedup key and disables the datetime-based reconcile heuristics.
@@ -112,6 +115,7 @@ export class AnnotationSyncService {
   constructor(
     private readonly syncRepo: AnnotationSyncRepository,
     private readonly achievementEvents: AchievementEventsService,
+    private readonly anchors: AnnotationAnchorService,
   ) {}
 
   /**
@@ -125,6 +129,8 @@ export class AnnotationSyncService {
     const createdIds: number[] = [];
 
     try {
+      const sourceAnchors = params.annotations.flatMap((annotation) => (annotation.sourceAnchor ? [annotation.sourceAnchor] : []));
+      if (sourceAnchors.length) await this.anchors.validate(params.bookId, params.bookFileId, sourceAnchors);
       await this.syncRepo.transaction(async (tx) => {
         const incomingAll = this.dedupeByKey(params.annotations);
         const present = new Set(params.presentKeys ?? incomingAll.map(keyOf));
@@ -324,6 +330,7 @@ export class AnnotationSyncService {
         userId,
         bookId,
         text: incoming.text ?? '',
+        ...(incoming.sourceAnchor && { sourceAnchor: incoming.sourceAnchor }),
         color: incoming.colorSpace === 'kobo' ? hexFromKoboColor(incoming.color) : hexFromKoreaderColor(incoming.color),
         style: incoming.style ?? styleFromDrawer(incoming.drawer),
         note: normalizeAnnotationNote(incoming.note),
@@ -383,6 +390,9 @@ export class AnnotationSyncService {
     confirmed: AnnotationDeviceContent | null,
     tx: DbTx,
   ): Promise<ContentOutcome> {
+    if (!annotation.sourceAnchor && incoming.sourceAnchor) {
+      await this.syncRepo.attachSourceAnchor(annotation.id, annotation.userId, incoming.sourceAnchor, tx);
+    }
     const storedEffective = annotation.deviceUpdatedAt ?? annotation.deviceCreatedAt ?? '';
     const incomingEffective = incoming.datetimeUpdated ?? incoming.datetime;
     const hasNewEdit = incoming.editedAt
@@ -773,7 +783,14 @@ export class AnnotationSyncService {
     return this.syncRepo.findPendingDeviceBooks(userId, source, pairs, devicePositionFormat, converterVersion);
   }
 
-  async computePushDown(userId: number, source: AnnotationSyncSource, deviceId: string, bookId: number, limit: number): Promise<PushDownSets> {
+  async computePushDown(
+    userId: number,
+    source: AnnotationSyncSource,
+    deviceId: string,
+    bookId: number,
+    limit: number,
+    converterVersion?: number,
+  ): Promise<PushDownSets> {
     const deletesRaw = await this.syncRepo.findDeleteCandidates(userId, source, deviceId, bookId, limit + 1);
     const deletes = deletesRaw.slice(0, limit);
     let remaining = limit - deletes.length;
@@ -783,7 +800,10 @@ export class AnnotationSyncService {
     remaining -= edits.length;
 
     const requiredAddFormats: AnnotationPositionFormat[] | undefined = source === 'koreader' ? ['xpointer', 'cfi'] : undefined;
-    const addsRaw = remaining > 0 ? await this.syncRepo.findAddCandidates(userId, source, deviceId, bookId, remaining + 1, requiredAddFormats) : [];
+    const addsRaw =
+      remaining > 0
+        ? await this.syncRepo.findAddCandidates(userId, source, deviceId, bookId, remaining + 1, requiredAddFormats, converterVersion)
+        : [];
     const adds = addsRaw.slice(0, Math.max(remaining, 0));
 
     const more = deletesRaw.length > deletes.length || editsRaw.length > edits.length || addsRaw.length > adds.length;
@@ -851,6 +871,10 @@ export class AnnotationSyncService {
     return this.syncRepo.findPositionsByAnnotationIds(annotationIds, formats);
   }
 
+  async findPositionFileIdentity(userId: number, bookId: number, bookFileId: number) {
+    return this.syncRepo.findPositionFileIdentity(userId, bookId, bookFileId);
+  }
+
   /**
    * Applies a device's acknowledgment of pushed changes. Only here do
    * lastAppliedVersion and deleteAckedAt advance; corrected positions are stored and
@@ -860,20 +884,22 @@ export class AnnotationSyncService {
     userId: number;
     source: AnnotationSyncSource;
     deviceId: string;
-    bookFileId: number;
     bookId: number;
+    bookFileId: number;
     applied: AckAppliedEntry[];
     deleted: AckDeletedEntry[];
     converterVersion: number;
   }): Promise<{ acked: number }> {
-    const { userId, source, deviceId, bookFileId } = params;
+    const { userId, source, deviceId, bookId, bookFileId } = params;
     let acked = 0;
 
     await this.syncRepo.transaction(async (tx) => {
+      const identity = await this.syncRepo.findPositionFileIdentity(userId, bookId, bookFileId, tx, true);
       for (const entry of params.applied) {
-        const annotation = await this.syncRepo.findAnnotationById(entry.serverId, userId, tx);
-        if (!annotation || annotation.bookId !== params.bookId) continue;
-        if (entry.version !== annotation.version) continue;
+        const annotation = await this.syncRepo.findAnnotationById(entry.serverId, userId, tx, true);
+        if (!annotation || annotation.bookId !== bookId || annotation.deletedAt || annotation.version !== entry.version) continue;
+        const currentPosition =
+          identity != null && (entry.positionSha256 ?? null) === identity.sha256 && (entry.positionRevisionId ?? null) === identity.revisionId;
 
         if (entry.status === 'failed') {
           acked += 1;
@@ -881,7 +907,7 @@ export class AnnotationSyncService {
         }
 
         let versionForState = entry.verified === false ? 0 : entry.version;
-        if (entry.corrected && entry.pos0 && entry.verified !== false) {
+        if (currentPosition && entry.corrected && entry.pos0 && entry.verified !== false) {
           await this.syncRepo.upsertPosition(
             {
               annotationId: annotation.id,
@@ -892,17 +918,22 @@ export class AnnotationSyncService {
               pos1: entry.pos1 ?? null,
               status: entry.verified ? 'repaired' : 'pending',
               converterVersion: params.converterVersion,
-              extras: entry.pageno != null ? { pageno: entry.pageno } : null,
+              extras: { ...identity, ...(entry.pageno != null && { pageno: entry.pageno }) },
             },
             tx,
           );
           versionForState = await this.syncRepo.bumpVersion(annotation.id, tx);
-        } else if (entry.verified && entry.version === annotation.version) {
+        } else if (currentPosition && entry.verified) {
           await this.syncRepo.updatePosition(annotation.id, 'xpointer', { status: 'exact' }, tx);
         }
 
-        const pos0 = entry.pos0 ?? (await this.syncRepo.findDevicePosition(annotation.id, 'xpointer', tx))?.pos0 ?? '';
-        const externalKey = buildAnnotationKey(annotation.deviceCreatedAt ?? '', pos0);
+        const existingState = entry.pos0 ? null : await this.syncRepo.findStateByAnnotationAndDevice(annotation.id, source, deviceId, tx);
+        const pos0 = entry.pos0 ?? (currentPosition ? (await this.syncRepo.findDevicePosition(annotation.id, 'xpointer', tx))?.pos0 : null);
+        const externalKey = existingState?.externalKey ?? (pos0 ? buildAnnotationKey(annotation.deviceCreatedAt ?? '', pos0) : null);
+        if (!externalKey) {
+          acked += 1;
+          continue;
+        }
         await this.syncRepo.insertState(
           {
             annotationId: annotation.id,
@@ -924,6 +955,8 @@ export class AnnotationSyncService {
 
       for (const entry of params.deleted) {
         if (entry.status !== 'applied') continue;
+        const annotation = await this.syncRepo.findAnnotationById(entry.serverId, userId, tx, true);
+        if (!annotation || annotation.bookId !== bookId || !annotation.deletedAt) continue;
         const state = await this.syncRepo.findStateByAnnotationAndDevice(entry.serverId, source, deviceId, tx);
         if (!state || state.userId !== userId) continue;
         await this.syncRepo.setDeleteAcked(state.id, tx);
@@ -962,7 +995,7 @@ export interface PushDownSets {
   more: boolean;
 }
 
-export interface AckAppliedEntry {
+export interface AckAppliedEntry extends AnnotationPositionRevision {
   serverId: number;
   version: number;
   status: 'applied' | 'failed';

@@ -395,6 +395,9 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
     existingDestinations: Map<string, number>,
   ): Promise<BookDockFinalizeFileResult> {
     const row = preparedAnalysis.row;
+    if (row.ingestionMode === 'managed') {
+      return { fileId: row.id, fileName: row.fileName, success: false, message: 'This managed import is finalized by its source job' };
+    }
     try {
       const analysis = await this.classifyDestination(preparedAnalysis, existingDestinations);
       if (analysis.status !== 'ready') return this.analysisToFileResult(analysis);
@@ -1007,7 +1010,7 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
     if (!row) return;
     // Another module put this row here and runs its own checks before filing it. Racing it would
     // either file the wrong book into the right library or file it before those checks ran.
-    if (row.autoFinalizeSuppressed) return;
+    if (row.autoFinalizeSuppressed || row.ingestionMode === 'managed') return;
     if (!shouldAutoFinalize(row, settings.metadataMode, settings.threshold)) return;
 
     const { metadata: autoFinalizeMetadata, lookedUpCoverUrl } = separateLookedUpCover(
@@ -1108,7 +1111,7 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
       if (rows.length === 0) break;
 
       for (const row of rows) {
-        if (row.autoFinalizeSuppressed) continue;
+        if (row.autoFinalizeSuppressed || row.ingestionMode === 'managed') continue;
         if (shouldAutoFinalize(row, settings.metadataMode, settings.threshold) && this.autoFinalizeQueue.enqueue(row.id)) {
           queued++;
         }

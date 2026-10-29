@@ -64,4 +64,4 @@ CREATE INDEX "read_aloud_jobs_book_updated_idx" ON "read_aloud_jobs" USING btree
 CREATE INDEX "read_aloud_jobs_user_updated_idx" ON "read_aloud_jobs" USING btree ("requested_by_user_id","updated_at" desc);--> statement-breakpoint
 CREATE INDEX "read_aloud_jobs_output_file_idx" ON "read_aloud_jobs" USING btree ("output_file_id");--> statement-breakpoint
 CREATE INDEX "read_aloud_jobs_replace_file_idx" ON "read_aloud_jobs" USING btree ("replace_file_id");--> statement-breakpoint
-ALTER TABLE "book_file_hash_history" ADD CONSTRAINT "book_file_hash_history_reason_chk" CHECK ("book_file_hash_history"."reason" in ('file_write', 'external_change', 'rescan', 'kobo_download', 'read_aloud_replace'));
+ALTER TABLE "book_file_hash_history" ADD CONSTRAINT "book_file_hash_history_reason_chk" CHECK ("book_file_hash_history"."reason" in ('file_write', 'external_change', 'rescan', 'kobo_download', 'read_aloud_replace', 'fanficfare', 'rollback', 'replacement'));

@@ -76,10 +76,10 @@ describe('sidebar nav registry', () => {
     expect(allowedIds(makeContext())).toEqual(['dashboard', 'statistics', 'reading-history', 'achievements', 'authors', 'series', 'annotations'])
   })
 
-  it('places Dashboard, Book Dock, Requests, Tools and the podcast Queue in the primary zone, above the entity sections', () => {
+  it('places Dashboard, Fanfiction, Book Dock, Requests, Tools and the podcast Queue in the primary zone, above the entity sections', () => {
     const primary = SIDEBAR_NAV_REGISTRY.filter((candidate) => candidate.zone === 'primary').map((candidate) => candidate.id)
 
-    expect(primary).toEqual(['dashboard', 'book-dock', 'book-requests', 'tools', 'podcast-queue'])
+    expect(primary).toEqual(['dashboard', 'fanfiction', 'book-dock', 'book-requests', 'tools', 'podcast-queue'])
   })
 
   it('groups Statistics, History, Achievements and Annotations in the Reading zone', () => {
@@ -268,6 +268,7 @@ describe('sidebar nav registry', () => {
       'statistics',
       'reading-history',
       'achievements',
+      'fanfiction',
       'book-dock',
       'book-requests',
       'tools',
