@@ -1,5 +1,9 @@
 import { computed, onUnmounted, ref, unref, type MaybeRef, type Ref } from 'vue'
 import { fetchFileProgress, saveReadingProgress } from '@/lib/reading-progress'
+import { api } from '@/lib/api'
+import type { ReadingAnchor, ReadingEventReceipt } from '@bookorbit/types'
+import { useReadingEventSync } from './useReadingEventSync'
+import { readingEventIdentity } from './reading-event-identity'
 import type { FoliateRenderer, RelocateDetail } from '../../epub/composables/useFoliate'
 
 export type FooterDisplayMode = 0 | 1 | 2
@@ -10,6 +14,7 @@ export interface ReaderProgressOptions {
   narrationSeconds?: (fragment: string, sectionIndex: number | null) => Promise<number | null>
   /** Told when a narration save was held back because another device sent the narration well behind it. */
   onNarrationMovedBack?: (position: NewerPosition) => void
+  userId?: MaybeRef<number | null>
 }
 
 /** How far behind the sentence being saved another device must send narration for the save to wait. */
@@ -125,6 +130,47 @@ export function useReaderProgress(
   // holding another marker was written by another device just after this one.
   let knownNarrationFragment: string | null = null
   let adoptingNewerPosition = false
+  let restorationPosition = false
+  let capturedReading: {
+    anchor: ReadingAnchor
+    owner: number | null
+    libraryId: number
+    generation: number
+    occurredAt: string
+    event?: ReadingAnchor
+    persisted?: Promise<boolean>
+  } | null = null
+  let readingResetGeneration = 0
+  let savingReading: Promise<void> | null = null
+  const eventSync =
+    options.userId === undefined
+      ? null
+      : useReadingEventSync(fileId, options.userId, (receipt) => {
+          readingResetGeneration = Math.max(readingResetGeneration, receipt.resetGeneration)
+          if (receipt.outcome === 'reset_required') {
+            capturedReading = null
+            restorationPosition = true
+          }
+        })
+  const synchronizationError = eventSync?.error ?? ref('')
+  const pendingSynchronization = eventSync?.pending ?? ref(false)
+  function persistReading(captured: NonNullable<typeof capturedReading>) {
+    const owner = captured.owner
+    if (!eventSync || !owner) return Promise.resolve(false)
+    captured.persisted ??= (async () => {
+      captured.event ??= { ...captured.anchor, event: await readingEventIdentity(captured.generation, captured.occurredAt) }
+      await eventSync.persist(owner, captured.libraryId, captured.event)
+      return true
+    })().catch(() => {
+      captured.persisted = undefined
+      return false
+    })
+    return captured.persisted
+  }
+  async function retrySynchronization() {
+    if (capturedReading) await persistReading(capturedReading)
+    await eventSync?.retry()
+  }
 
   onUnmounted(() => {
     if (saveTimer) clearTimeout(saveTimer)
@@ -143,6 +189,7 @@ export function useReaderProgress(
 
   async function load() {
     if (!unref(trackingEnabled)) return
+    await eventSync?.flush()
     const data = await fetchFileProgress(fileId)
     if (!data) return
     hadSavedPosition =
@@ -179,6 +226,17 @@ export function useReaderProgress(
   }
 
   function onRelocate(detail: RelocateDetail, source: 'text' | 'narration' = 'text') {
+    restorationPosition = detail?.restoration === true
+    if (!restorationPosition && detail?.readingAnchor && detail.readingLibraryId !== undefined) {
+      capturedReading = {
+        anchor: JSON.parse(JSON.stringify(detail.readingAnchor)) as ReadingAnchor,
+        owner: options.userId === undefined ? null : unref(options.userId),
+        libraryId: detail.readingLibraryId,
+        generation: Math.max(detail.readingResetGeneration ?? 0, readingResetGeneration),
+        occurredAt: new Date().toISOString(),
+      }
+      if (eventSync && unref(trackingEnabled)) void persistReading(capturedReading)
+    }
     cfi.value = normalizeString(detail?.cfi)
     const relocatedFraction = normalizeFraction(detail?.fraction)
     if (relocatedFraction !== null) {
@@ -203,7 +261,7 @@ export function useReaderProgress(
     timeSection.value = detail?.time?.section ?? 0
     timeTotal.value = detail?.time?.total ?? 0
 
-    if (!hasSaveableLocation) {
+    if (!unref(trackingEnabled) || !hasSaveableLocation || restorationPosition) {
       if (saveTimer) clearTimeout(saveTimer)
       return
     }
@@ -221,11 +279,43 @@ export function useReaderProgress(
     mediaOverlaySectionIndex.value = section
     positionSeconds.value = seconds
     pendingSource.value = 'narration'
+    restorationPosition = false
     scheduleSave()
   }
 
-  async function save() {
+  async function save(saveOptions: { deliberate?: boolean } = {}) {
     if (!unref(trackingEnabled)) return
+    if (saveOptions.deliberate) restorationPosition = false
+    if (restorationPosition) return
+    if (capturedReading && options.userId !== undefined && capturedReading.owner !== unref(options.userId)) return
+    if (capturedReading && pendingSource.value !== 'narration') {
+      if (savingReading) return savingReading
+      const captured = capturedReading
+      savingReading = (async () => {
+        if (eventSync) {
+          if (await persistReading(captured)) await eventSync.flush()
+          else if (captured.owner && captured.event) await eventSync.sendUnstored(captured.owner, captured.libraryId, captured.event)
+          return
+        }
+        captured.event ??= { ...captured.anchor, event: await readingEventIdentity(captured.generation, captured.occurredAt) }
+        const response = await api(`/api/v1/libraries/${captured.libraryId}/files/${fileId}/reading-events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ anchor: captured.event }),
+        })
+        if (!response.ok) return
+        const receipt = (await response.json()) as ReadingEventReceipt
+        readingResetGeneration = Math.max(readingResetGeneration, receipt.resetGeneration)
+        if (capturedReading === captured && receipt.outcome === 'reset_required') {
+          capturedReading = null
+          restorationPosition = true
+        }
+      })().finally(() => {
+        savingReading = null
+        if (capturedReading && capturedReading !== captured && !restorationPosition) void save()
+      })
+      return savingReading
+    }
     saving = true
     try {
       if (pendingSource.value === 'narration') {
@@ -495,5 +585,8 @@ export function useReaderProgress(
     save,
     cycleFooterMode,
     updateHeadsFeet,
+    synchronizationError,
+    pendingSynchronization,
+    retrySynchronization,
   }
 }

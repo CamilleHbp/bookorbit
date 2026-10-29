@@ -89,6 +89,7 @@ import BookCoverStack from '@/features/book/components/detail/details/BookCoverS
 import ReadAloudInviteChip from '@/features/read-aloud/components/ReadAloudInviteChip.vue'
 import ReadAloudSparkles from '@/features/read-aloud/components/ReadAloudSparkles.vue'
 import { useReadAloudInvite } from '@/features/read-aloud/composables/useReadAloudInvite'
+import BookDeviceCopies from '@/features/koreader/components/BookDeviceCopies.vue'
 
 type FileProgress = {
   percentage: number
@@ -2267,6 +2268,8 @@ watch(
       <DiscoverRow class="h-full" :book-id="book.id" :series-name="book.seriesName" :author-count="book.authors.length" size="lg" flush />
     </div>
   </div>
+
+  <BookDeviceCopies v-if="canViewKoreader" :files="book.files" />
 
   <AddToCollectionSheet
     :open="addToCollectionOpen"

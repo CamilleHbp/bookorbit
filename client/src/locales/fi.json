@@ -11727,7 +11727,8 @@
       "hideControls": "Piilota ohjaimet",
       "stop": "Lopeta kerronta",
       "error": "Virhe kertoessa soittoa"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "{processed}/{total} tiedostot",

@@ -2,6 +2,40 @@ import { describe, expect, it, vi } from 'vitest'
 import { useFoliateAnnotations } from '../useFoliateAnnotations'
 
 describe('useFoliateAnnotations', () => {
+  it('keeps rejected locators pending without reviving an annotation removed during resolution', async () => {
+    const anns = useFoliateAnnotations()
+    const view = { addAnnotation: vi.fn<(annotation: { value: string }) => Promise<unknown>>().mockRejectedValue(new Error('Missing chapter')) }
+    anns.addAnnotation(view, 'epubcfi(/6/2)', 'yellow', 'highlight', 'Selected text')
+    await Promise.resolve()
+    expect(anns.pendingAnnotationCount.value).toBe(1)
+    anns.deleteAnnotation(null, 'epubcfi(/6/2)')
+    anns.addAnnotation(view, 'epubcfi(/6/4)', 'yellow', 'highlight', 'Selected text')
+    anns.deleteAnnotation(null, 'epubcfi(/6/4)')
+    await Promise.resolve()
+    expect(anns.pendingAnnotationCount.value).toBe(0)
+  })
+
+  it('withholds a reused locator until its installed text is verified, including after restyling', () => {
+    const anns = useFoliateAnnotations()
+    const draw = vi.fn<(drawer: unknown, options: { color: string }) => void>()
+    const document = new DOMParser().parseFromString('<p>Unrelated replacement text</p>', 'text/html')
+    const range = document.createRange()
+    range.selectNodeContents(document.body)
+    const event = () => new CustomEvent('draw-annotation', { detail: { draw, annotation: { value: 'epubcfi(/6/2)' }, range } })
+    anns.addAnnotations(null, [{ cfi: 'epubcfi(/6/2)', color: 'yellow', style: 'highlight', text: 'Original selected passage' }])
+    anns.handleDrawAnnotationEvent(event())
+    expect(draw).not.toHaveBeenCalled()
+    expect(anns.pendingAnnotationCount.value).toBe(1)
+    anns.redrawAnnotation(null, 'epubcfi(/6/2)', 'blue', 'underline')
+    anns.handleDrawAnnotationEvent(event())
+    expect(draw).not.toHaveBeenCalled()
+    document.body.textContent = 'Original selected passage'
+    range.selectNodeContents(document.body)
+    anns.handleDrawAnnotationEvent(event())
+    expect(draw).toHaveBeenCalledOnce()
+    expect(anns.pendingAnnotationCount.value).toBe(0)
+  })
+
   it('stores style metadata and calls view.addAnnotation for single add', () => {
     const view = { addAnnotation: vi.fn<(arg: { value: string }) => void>() }
     const anns = useFoliateAnnotations()

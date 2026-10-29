@@ -1032,13 +1032,14 @@ function CatalogBulkDownload.install(Catalog)
             return
         end
 
-        local ok = self:bulkDownloadFile(ctx, detail, file, local_path, book_id)
+        local ok, outcome = self:bulkDownloadFile(ctx, detail, file, local_path, book_id)
         if not ok then
             self:bulkRecordFailure(ctx, book)
             self:bulkShowStatus(ctx, _("Download failed"), detail, true)
             return
         end
-        ctx.counts.downloaded = ctx.counts.downloaded + 1
+        if outcome == "queued" then ctx.counts.queued = (ctx.counts.queued or 0) + 1
+        else ctx.counts.downloaded = ctx.counts.downloaded + 1 end
         ctx.destination_paths[pathKey(local_path)] = { book_id = book_id, file_id = file.id }
         if file.selection then
             local hashed, digest = pcall(util.partialMD5, local_path)
@@ -1049,7 +1050,7 @@ function CatalogBulkDownload.install(Catalog)
         else
             ctx.completed[tostring(book_id)] = local_path
         end
-        self:bulkShowStatus(ctx, _("Download complete"), detail, true)
+        self:bulkShowStatus(ctx, outcome == "queued" and _("Update queued") or _("Download complete"), detail, true)
     end
 
     function Catalog:bulkChooseFile(detail, validate_present)
@@ -1109,6 +1110,10 @@ function CatalogBulkDownload.install(Catalog)
             is_current = function()
                 return ctx == self.bulk_ctx
             end,
+            replace = function()
+                return require("bookorbit_delivery_catalog").replace(self, local_path, detail, file,
+                    function() return ctx == self.bulk_ctx and not ctx.cancel_requested end)
+            end,
             perform = function(download_opts)
                 download_opts.variant = file.selection and (file.requestedVariant or file.downloadVariant) or nil
                 download_opts.selection = file.selection
@@ -1118,6 +1123,11 @@ function CatalogBulkDownload.install(Catalog)
         if not ok then
             logger.warn("BookOrbit: bulk file download failed", book_id, file.id, err)
             return false
+        end
+        if result and result.queued then
+            ctx.queued_deliveries = ctx.queued_deliveries or {}
+            if result.delivery then table.insert(ctx.queued_deliveries, result.delivery) end
+            return true, "queued"
         end
 
         if file.selection then
@@ -1284,6 +1294,11 @@ function CatalogBulkDownload.install(Catalog)
     end
 
     function Catalog:bulkFinishRun(ctx)
+        if ctx.cancelled or ctx.cancel_requested then
+            for _, job in ipairs(ctx.queued_deliveries or {}) do
+                require("bookorbit_delivery_runner").cancel(self.client, job)
+            end
+        end
         local ok, err = pcall(function()
             self:bulkFlushLinks(ctx, true)
         end)
@@ -1317,6 +1332,7 @@ function CatalogBulkDownload.install(Catalog)
         local function add(label, value)
             if (value or 0) > 0 then table.insert(summary.rows, { label = label, value = value }) end
         end
+        add(_("Updates queued"), counts.queued)
         add(_("Linked for sync"), counts.linked)
         add(_("Already on this device"), counts.skipped_on_device)
         add(_("Already downloaded"), counts.skipped_present)

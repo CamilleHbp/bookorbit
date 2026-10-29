@@ -159,7 +159,7 @@ export const bookFileHashHistory = pgTable(
     index('book_file_hash_history_file_hash_idx').on(t.fileHash),
     check(
       'book_file_hash_history_reason_chk',
-      sql`${t.reason} in ('file_write', 'external_change', 'rescan', 'kobo_download', 'read_aloud_replace')`,
+      sql`${t.reason} in ('file_write', 'external_change', 'rescan', 'kobo_download', 'read_aloud_replace', 'fanficfare', 'rollback', 'replacement')`,
     ),
   ],
 );

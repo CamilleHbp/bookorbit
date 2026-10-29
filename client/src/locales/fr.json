@@ -11881,7 +11881,8 @@
       "titleLabel": "Titre",
       "noteLabel": "Remarque",
       "notePlaceholder": "Remarque facultative"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "Fichiers {processed}/{total}",

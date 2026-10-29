@@ -15,7 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { readdir, rm, stat } from 'fs/promises';
 import { join } from 'path';
 
-import { DEFAULT_FORMAT_PRIORITY, resolveRegexMetadataConfig } from '@bookorbit/types';
+import { DEFAULT_FORMAT_PRIORITY, Permission, resolveRegexMetadataConfig } from '@bookorbit/types';
 import type {
   AccessLevel,
   LibraryFileSyncProgressEvent,
@@ -96,6 +96,26 @@ export class LibraryService {
     if (rank[accessLevel] < rank[required]) throw new ForbiddenException('Insufficient library access level');
   }
 
+  async verifyAdministration(user: RequestUser, libraryId: number): Promise<void> {
+    const [library] = await this.libraryRepo.findById(libraryId);
+    if (!library) throw new NotFoundException('Library not found');
+    if (!user.active) throw new ForbiddenException('Account is inactive');
+    if (user.isSuperuser) return;
+    const access = await this.libraryRepo.findUserAccess(user.id, libraryId);
+    if (!user.permissions.includes(Permission.ManageLibraries) || access?.accessLevel !== 'owner') {
+      throw new ForbiddenException('Library administration permission is required');
+    }
+  }
+
+  async findAdministrable(user: RequestUser, afterId = 0, limit = 50) {
+    if (!user.active || (!user.isSuperuser && !user.permissions.includes(Permission.ManageLibraries)))
+      throw new ForbiddenException('Library administration permission is required');
+    const pageSize = Math.max(1, Math.min(100, limit));
+    const rows = await this.libraryRepo.findAdministrable(user.id, user.isSuperuser, afterId, pageSize + 1);
+    const items = rows.slice(0, pageSize);
+    return { items, nextCursor: rows.length > pageSize ? items[items.length - 1].id : null };
+  }
+
   async findAll(user: RequestUser) {
     const librariesForUser = user.isSuperuser
       ? await this.libraryRepo.findAll()
@@ -161,6 +181,19 @@ export class LibraryService {
   async previewRegexMetadata(dto: RegexMetadataPreviewDto) {
     await this.assertRegexMetadataLibrary(dto.libraryId);
     return this.regexMetadata.preview(dto.config, dto.relativePath);
+  }
+
+  async importDestination(libraryId: number, folderId: number) {
+    const [[library], [folder]] = await Promise.all([this.libraryRepo.findById(libraryId), this.libraryRepo.findFolder(libraryId, folderId)]);
+    if (!library || !folder) throw new NotFoundException('Import folder does not belong to this library');
+    return { library: normalizeLibraryOrganizationMode(library), folder };
+  }
+
+  async folderPage(libraryId: number, afterId = 0, limit = 50) {
+    const size = Math.max(1, Math.min(100, limit));
+    const rows = await this.libraryRepo.findFolderPage(libraryId, afterId, size + 1);
+    const items = rows.slice(0, size);
+    return { items, nextCursor: rows.length > size ? items.at(-1)!.id : null };
   }
 
   async create(dto: CreateLibraryDto) {

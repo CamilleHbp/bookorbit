@@ -2787,10 +2787,9 @@ export class ScannerService implements OnApplicationBootstrap {
       mediaOverlayCheckedAt = mediaOverlayFields.mediaOverlayCheckedAt ?? null;
     }
 
-    const fileHash = !sizeUnchanged || !mtimeUnchanged ? await computeFileHash(fileStat.absolutePath) : byPath.fileHash;
+    let observed = { ...fileStat, fileHash: byPath.fileHash };
     if (!sizeUnchanged || !mtimeUnchanged || !inoUnchanged || !relPathUnchanged || reassigned || !roleUnchanged) {
-      await this.scannerRepo.updateBookFile(byPath.id, {
-        fileHash,
+      const saved = await this.scannerRepo.updateBookFile(byPath.id, {
         ...(reassigned && { bookId }),
         libraryFolderId,
         relPath: fileStat.relPath,
@@ -2802,11 +2801,18 @@ export class ScannerService implements OnApplicationBootstrap {
         sortOrder,
         ...mediaOverlayFields,
       });
+      observed = {
+        ...fileStat,
+        ino: saved.ino,
+        sizeBytes: saved.sizeBytes ?? fileStat.sizeBytes,
+        mtime: saved.mtime ?? fileStat.mtime,
+        fileHash: saved.fileHash,
+      };
       counts.updatedCount++;
     } else {
       await this.scannerRepo.updateBookFile(byPath.id, { sortOrder });
     }
-    if (byPath.ino !== fileStat.ino) {
+    if (byPath.ino !== observed.ino) {
       const previousIno = fileByIno.get(byPath.ino);
       if (previousIno?.id === byPath.id) {
         fileByIno.delete(byPath.ino);
@@ -2816,28 +2822,28 @@ export class ScannerService implements OnApplicationBootstrap {
       id: byPath.id,
       bookId,
       relPath: fileStat.relPath,
-      ino: fileStat.ino,
-      sizeBytes: fileStat.sizeBytes,
-      mtime: fileStat.mtime,
-      fileHash,
+      ino: observed.ino,
+      sizeBytes: observed.sizeBytes,
+      mtime: observed.mtime,
+      fileHash: observed.fileHash,
       sortOrder,
       mediaOverlayAvailable,
       mediaOverlayCheckedAt,
       role,
     });
-    if (fileStat.ino !== 0n) {
-      fileByIno.set(fileStat.ino, {
+    if (observed.ino !== 0n) {
+      fileByIno.set(observed.ino, {
         id: byPath.id,
         bookId,
         absolutePath: fileStat.absolutePath,
-        sizeBytes: fileStat.sizeBytes,
-        mtime: fileStat.mtime,
+        sizeBytes: observed.sizeBytes,
+        mtime: observed.mtime,
       });
     }
     return {
       isNew: false,
       reassigned,
-      changed: !sizeUnchanged || !mtimeUnchanged || !roleUnchanged,
+      changed: !sizeUnchanged || !mtimeUnchanged || !inoUnchanged || reassigned || !roleUnchanged,
       pathChanged: !relPathUnchanged,
       fileId: byPath.id,
       previousBookId,

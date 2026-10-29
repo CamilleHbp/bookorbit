@@ -12938,7 +12938,8 @@
       "titleLabel": "Título",
       "noteLabel": "Nota",
       "notePlaceholder": "Nota opcional"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "readingHistory": {
     "title": "Histórico",

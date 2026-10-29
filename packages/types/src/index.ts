@@ -94,3 +94,7 @@ export * from "./regex-metadata";
 export * from "./delivery";
 export * from "./djvu";
 export * from "./email";
+export * from "./book-revision";
+export * from "./anchor-text";
+export * from "./fanfiction";
+export * from "./koreader-delivery";

@@ -13,6 +13,8 @@ import type {
 import { copyToClipboard } from '@/lib/clipboard'
 import { toast } from 'vue-sonner'
 
+vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
+
 const routerState = vi.hoisted(() => ({
   currentQuery: {} as Record<string, string>,
   replacedQuery: null as Record<string, string> | null,

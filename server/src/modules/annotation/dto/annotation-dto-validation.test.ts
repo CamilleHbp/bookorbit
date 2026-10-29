@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { ValidationPipe } from '@nestjs/common';
 
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -20,6 +21,31 @@ async function errorsFor<T extends object>(cls: new () => T, value: Record<strin
 }
 
 describe('Annotation DTO validation', () => {
+  it('validates nested source anchors through the production boundary', async () => {
+    const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+    const payload = {
+      cfi: 'selection-cfi',
+      text: 'Selected text',
+      bookFileId: 12,
+      sourceAnchor: {
+        schemaVersion: 1,
+        bookId: 5,
+        bookFileId: 12,
+        revision: '0c5ef3ed-6d35-4a0a-9fd7-72c2670e2d22',
+        nativeLocator: { kind: 'cfi', value: 'selection-cfi' },
+        chapterIndex: 0,
+        chapterFraction: 0.2,
+        bookFraction: 0.1,
+        quote: 'Selected text',
+      },
+    };
+    const metadata = { type: 'body' as const, metatype: CreateAnnotationDto };
+    expect(await pipe.transform(payload, metadata)).toMatchObject(payload);
+    await expect(pipe.transform({ ...payload, sourceAnchor: { ...payload.sourceAnchor, unexpected: true } }, metadata)).rejects.toThrow();
+    await expect(pipe.transform({ ...payload, sourceAnchor: { ...payload.sourceAnchor, quote: 'x'.repeat(257) } }, metadata)).rejects.toThrow();
+    await expect(pipe.transform({ ...payload, sourceAnchor: { ...payload.sourceAnchor, chapterFraction: 2 } }, metadata)).rejects.toThrow();
+  });
+
   it('accepts create payload with optional fields and valid style', async () => {
     const errors = await errorsFor(CreateAnnotationDto, {
       cfi: 'epubcfi(/6/4!/4/2/1:0)',

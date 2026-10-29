@@ -3,21 +3,21 @@ import { Test } from '@nestjs/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { KoreaderDeliveryService } from './koreader-delivery.service';
+import { KoreaderDeliverySettingsService } from './koreader-delivery-settings.service';
 import { KoreaderRepository } from './koreader.repository';
 import { UpdateKoreaderDeliverySettingsDto } from './dto/koreader-delivery-settings.dto';
 import { UpdateKoreaderUserDto } from './dto/koreader-user.dto';
 
 describe('KOReader server delivery settings', () => {
   const repo = { findKoreaderUser: vi.fn(), getDeviceDeliverySettings: vi.fn(), setDeviceDeliverySettings: vi.fn() };
-  let service: KoreaderDeliveryService;
+  let service: KoreaderDeliverySettingsService;
   beforeEach(async () => {
     vi.resetAllMocks();
     repo.findKoreaderUser.mockResolvedValue({ readAloudDelivery: null });
     const module = await Test.createTestingModule({
-      providers: [KoreaderDeliveryService, { provide: KoreaderRepository, useValue: repo }],
+      providers: [KoreaderDeliverySettingsService, { provide: KoreaderRepository, useValue: repo }],
     }).compile();
-    service = module.get(KoreaderDeliveryService);
+    service = module.get(KoreaderDeliverySettingsService);
   });
   it('inherits text-only for an existing unconfigured credential', async () => {
     await expect(service.getSettings(7, 'device-a')).resolves.toEqual({

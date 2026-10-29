@@ -18,6 +18,7 @@ import { ScanJobStore } from './scan-job-store.service';
 import { ScannerController } from './scanner.controller';
 import { ScannerRepository } from './scanner.repository';
 import { ScannerService } from './scanner.service';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ScannerService } from './scanner.service';
         signOptions: { expiresIn: config.getOrThrow<StringValue | number>('auth.jwtExpiresIn') },
       }),
     }),
+    BookRevisionModule,
   ],
   controllers: [ScannerController],
   providers: [

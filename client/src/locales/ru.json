@@ -11775,7 +11775,8 @@
       "hideControls": "Скрыть элементы управления",
       "stop": "Остановить повещение",
       "error": "Ошибка воспроизведения описаний"
-    }
+    },
+    "annotationVerificationPending": "Some highlights could not be verified in this version. Your notes remain saved."
   },
   "scanner": {
     "filesProgress": "{processed}/{total} файлы",

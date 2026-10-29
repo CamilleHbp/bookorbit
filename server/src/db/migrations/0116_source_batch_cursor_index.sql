@@ -1,0 +1,1 @@
+CREATE INDEX "fanfiction_sources_batch_idx" ON "fanfiction_sources" USING btree ("library_id","id");
