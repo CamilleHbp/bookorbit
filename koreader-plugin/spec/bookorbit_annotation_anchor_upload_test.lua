@@ -5,7 +5,9 @@ package.loaded["ui/uimanager"] = {}
 package.loaded["logger"] = { dbg = function() end }
 package.loaded["ffi/sha2"] = { md5 = function(value) return value end }
 package.loaded["util"] = { trim = function(value) return value end }
-package.loaded["bookorbit_sidecar"] = {}
+package.loaded["bookorbit_sidecar"] = {
+    resolveExchangeState = function(_, state, complete) return state, complete end,
+}
 local Exchange = require("bookorbit_annotations")
 local calls, support, fail, malformed = {}, true, false, false
 local book = { annotation_watermark = "2026-07-01 00:00:00" }
