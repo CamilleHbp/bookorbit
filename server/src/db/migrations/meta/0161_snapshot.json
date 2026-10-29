@@ -1,6 +1,6 @@
 {
-  "id": "d9051559-0711-4d52-82a1-e55c01da8f7f",
-  "prevId": "8aa979c3-d6ef-4c91-b26e-9bb1cde9e897",
+  "id": "8aa979c3-d6ef-4c91-b26e-9bb1cde9e897",
+  "prevId": "2b637250-9ca6-4fc9-b41b-19e7401cdd71",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3735,6 +3735,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -15296,19 +15303,6 @@
         },
         "freeleech": {
           "name": "freeleech",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "release_info_url": {
-          "name": "release_info_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hold_for_review": {
-          "name": "hold_for_review",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,

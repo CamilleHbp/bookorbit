@@ -12,6 +12,7 @@ const props = defineProps<{
   book: Pick<BookDetail, 'id' | 'title' | 'covers' | 'coverVersion'>
   /** The cover that starts in front: the one the page would show on its own. */
   face: CoverMedium
+  revealed?: boolean
   editable?: boolean
 }>()
 
@@ -38,7 +39,7 @@ const cards = computed(() =>
   MEDIA.map((medium) => ({
     medium,
     isFront: medium === front.value,
-    src: coverUrl(props.book.id, 'cover', props.book.covers[medium]?.updatedAt ?? props.book.coverVersion, medium),
+    src: coverUrl(props.book.id, 'cover', props.book.covers[medium]?.updatedAt ?? props.book.coverVersion, medium, props.revealed),
     label: medium === front.value ? t('book.detail.details.viewCover') : t(`book.detail.details.coverStack.show.${medium}`),
   })),
 )

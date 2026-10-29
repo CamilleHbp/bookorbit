@@ -4,6 +4,7 @@ import { AuthorsModule } from '../authors/authors.module';
 import { FileWriteModule } from '../file-write/file-write.module';
 import { LibraryModule } from '../library/library.module';
 import { MetadataScoreModule } from '../metadata-score/metadata-score.module';
+import { TagsController } from './tags.controller';
 import { EntityManagerController } from './entity-manager.controller';
 import { EntityManagerRepository } from './entity-manager.repository';
 import { EntityManagerService } from './entity-manager.service';
@@ -18,7 +19,7 @@ import { TagStrategy } from './strategies/tag.strategy';
 
 @Module({
   imports: [AuthorsModule, FileWriteModule, LibraryModule, MetadataScoreModule],
-  controllers: [EntityManagerController],
+  controllers: [EntityManagerController, TagsController],
   providers: [
     EntityManagerService,
     EntityManagerRepository,

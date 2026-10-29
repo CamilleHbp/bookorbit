@@ -34,6 +34,7 @@ export type ProvisioningMethod = (typeof ProvisioningMethod)[keyof typeof Provis
 
 export interface UserSettings {
   metadataReminderPreferences?: import("./metadata-reminders").MetadataReminderPreferences;
+  tagGrouping?: import("./tag-grouping").TagGroupingPreferences;
   showBookRequests?: boolean;
   syncReaderPreferences?: boolean;
   syncThemePreferences?: boolean;

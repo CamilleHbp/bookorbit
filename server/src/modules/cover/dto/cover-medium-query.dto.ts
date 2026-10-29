@@ -15,5 +15,10 @@ export class CoverReadQueryDto extends CoverMediumQueryDto {
   strict?: boolean;
 
   @IsOptional()
+  @Transform(({ value }) => (value === 'true' || value === true ? true : value === 'false' || value === false ? false : value))
+  @IsBoolean()
+  hideSensitive?: boolean;
+
+  @IsOptional()
   t?: string;
 }

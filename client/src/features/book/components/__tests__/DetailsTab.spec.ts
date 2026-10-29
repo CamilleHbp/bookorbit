@@ -102,6 +102,7 @@ function makeBook(overrides: Partial<BookDetail> = {}): BookDetail {
     personalNote: null,
     personalNoteUpdatedAt: null,
     communityRatings: [],
+    sensitiveCover: false,
     coverSource: null,
     coverMedia: [],
     covers: { ebook: null, audio: null },

@@ -1,6 +1,6 @@
 {
-  "id": "ed7997d4-e581-4073-b20e-5e0cb61d16ea",
-  "prevId": "e041b915-d96c-4ab4-b16d-9aaa4e7dd59d",
+  "id": "e041b915-d96c-4ab4-b16d-9aaa4e7dd59d",
+  "prevId": "0623f2ea-3b9e-4537-9cba-90bf806e3ebd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2934,6 +2934,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -6534,24 +6541,6 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
-        },
-        "narration_percentage": {
-          "name": "narration_percentage",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "narration_updated_at": {
-          "name": "narration_updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "text_updated_at": {
-          "name": "text_updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -6640,10 +6629,6 @@
         "reading_progress_media_overlay_section_index_nonnegative_chk": {
           "name": "reading_progress_media_overlay_section_index_nonnegative_chk",
           "value": "\"reading_progress\".\"media_overlay_section_index\" is null or \"reading_progress\".\"media_overlay_section_index\" >= 0"
-        },
-        "reading_progress_narration_percentage_range_chk": {
-          "name": "reading_progress_narration_percentage_range_chk",
-          "value": "\"reading_progress\".\"narration_percentage\" is null or (\"reading_progress\".\"narration_percentage\" >= 0 and \"reading_progress\".\"narration_percentage\" <= 100)"
         }
       },
       "isRLSEnabled": false

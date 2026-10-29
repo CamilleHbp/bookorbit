@@ -1,6 +1,6 @@
 {
-  "id": "dba0c5d9-6be1-4de6-94b8-771e99184590",
-  "prevId": "3a2888ab-3bdd-4f8f-8ac4-7c36e1b820d3",
+  "id": "3a2888ab-3bdd-4f8f-8ac4-7c36e1b820d3",
+  "prevId": "4079d419-26c9-441c-a14f-97b88011d07b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3735,6 +3735,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -28044,48 +28051,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.read_aloud_job_reports": {
-      "name": "read_aloud_job_reports",
-      "schema": "",
-      "columns": {
-        "job_id": {
-          "name": "job_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "chapters": {
-          "name": "chapters",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "read_aloud_job_reports_job_id_read_aloud_jobs_id_fk": {
-          "name": "read_aloud_job_reports_job_id_read_aloud_jobs_id_fk",
-          "tableFrom": "read_aloud_job_reports",
-          "tableTo": "read_aloud_jobs",
-          "columnsFrom": ["job_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.read_aloud_jobs": {
       "name": "read_aloud_jobs",
       "schema": "",
@@ -28191,12 +28156,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
-        },
-        "coverage": {
-          "name": "coverage",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "error_code": {
           "name": "error_code",

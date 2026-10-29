@@ -1,6 +1,6 @@
 {
-  "id": "3e38912e-0908-47bc-abb6-caf04a39f348",
-  "prevId": "5a908057-8ea7-4571-b52c-b692177a9fcc",
+  "id": "5a908057-8ea7-4571-b52c-b692177a9fcc",
+  "prevId": "acd3f77e-f219-4e1c-b9cd-a8fc5e253e33",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2964,6 +2964,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -6207,7 +6214,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"bookmarks\".\"position_seconds\" is not null and \"bookmarks\".\"cfi\" is null and \"bookmarks\".\"deleted_at\" is null",
+          "where": "\"bookmarks\".\"position_seconds\" is not null and \"bookmarks\".\"cfi\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}

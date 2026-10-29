@@ -1,6 +1,6 @@
 {
-  "id": "070abc4a-1ab1-4209-9bab-156862efd4dc",
-  "prevId": "7dbd0aa9-fd8f-4586-9ee2-a8430487f6f8",
+  "id": "7dbd0aa9-fd8f-4586-9ee2-a8430487f6f8",
+  "prevId": "82a84f81-6595-480c-81ee-d1e378b5851a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3707,6 +3707,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -6708,13 +6715,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "ignore_cache": {
-          "name": "ignore_cache",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8071,13 +8071,6 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
-        },
-        "ignore_cache": {
-          "name": "ignore_cache",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -26809,183 +26802,6 @@
         "book_journal_entries_position_seconds_nonnegative_chk": {
           "name": "book_journal_entries_position_seconds_nonnegative_chk",
           "value": "\"book_journal_entries\".\"position_seconds\" is null or \"book_journal_entries\".\"position_seconds\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.provider_metadata_cache": {
-      "name": "provider_metadata_cache",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "key_hash": {
-          "name": "key_hash",
-          "type": "char(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "namespace": {
-          "name": "namespace",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "operation": {
-          "name": "operation",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "schema_version": {
-          "name": "schema_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider_version": {
-          "name": "provider_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "config_fingerprint": {
-          "name": "config_fingerprint",
-          "type": "char(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "max_candidates": {
-          "name": "max_candidates",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "covers_validated": {
-          "name": "covers_validated",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "payload": {
-          "name": "payload",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload_bytes": {
-          "name": "payload_bytes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fetched_at": {
-          "name": "fetched_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_accessed_at": {
-          "name": "last_accessed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "upstream_ms": {
-          "name": "upstream_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        }
-      },
-      "indexes": {
-        "provider_metadata_cache_ns_provider_fetched_idx": {
-          "name": "provider_metadata_cache_ns_provider_fetched_idx",
-          "columns": [
-            {
-              "expression": "namespace",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "fetched_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "provider_metadata_cache_last_accessed_idx": {
-          "name": "provider_metadata_cache_last_accessed_idx",
-          "columns": [
-            {
-              "expression": "last_accessed_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "provider_metadata_cache_key_hash_unique": {
-          "name": "provider_metadata_cache_key_hash_unique",
-          "nullsNotDistinct": false,
-          "columns": ["key_hash"]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "provider_metadata_cache_namespace_chk": {
-          "name": "provider_metadata_cache_namespace_chk",
-          "value": "\"provider_metadata_cache\".\"namespace\" in ('book', 'author')"
-        },
-        "provider_metadata_cache_operation_chk": {
-          "name": "provider_metadata_cache_operation_chk",
-          "value": "\"provider_metadata_cache\".\"operation\" in ('search', 'lookup')"
-        },
-        "provider_metadata_cache_status_chk": {
-          "name": "provider_metadata_cache_status_chk",
-          "value": "\"provider_metadata_cache\".\"status\" in ('results', 'empty', 'found', 'not_found')"
-        },
-        "provider_metadata_cache_payload_bytes_nonnegative_chk": {
-          "name": "provider_metadata_cache_payload_bytes_nonnegative_chk",
-          "value": "\"provider_metadata_cache\".\"payload_bytes\" >= 0"
         }
       },
       "isRLSEnabled": false

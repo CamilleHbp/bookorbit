@@ -8,6 +8,7 @@ const { t } = useI18n()
 defineProps<{
   entityName: string
   loading: boolean
+  error?: string
 }>()
 
 const emit = defineEmits<{
@@ -90,6 +91,7 @@ function isValid(): boolean {
           {{ t('tools.entityManager.writeChangesToFiles') }}
         </label>
       </div>
+      <p v-if="error" role="alert" class="px-5 pb-3 text-sm text-destructive">{{ error }}</p>
       <div class="flex justify-end gap-2 px-5 py-3 border-t border-border bg-muted/20">
         <button class="h-9 px-4 rounded-lg text-sm font-medium hover:bg-muted transition-colors" @click="handleCancel">
           {{ t('common.cancel') }}

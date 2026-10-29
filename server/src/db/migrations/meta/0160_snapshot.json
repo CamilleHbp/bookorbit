@@ -1,6 +1,6 @@
 {
-  "id": "8aa979c3-d6ef-4c91-b26e-9bb1cde9e897",
-  "prevId": "2b637250-9ca6-4fc9-b41b-19e7401cdd71",
+  "id": "2b637250-9ca6-4fc9-b41b-19e7401cdd71",
+  "prevId": "e13f6adb-502b-44cb-843e-98d833448624",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3735,6 +3735,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -9131,19 +9138,6 @@
           "notNull": true,
           "default": 0
         },
-        "device_content": {
-          "name": "device_content",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "served_clock": {
-          "name": "served_clock",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "delete_acked_at": {
           "name": "delete_acked_at",
           "type": "timestamp with time zone",
@@ -9405,12 +9399,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "content_updated_at": {
-          "name": "content_updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "starred_at": {
           "name": "starred_at",
@@ -9811,12 +9799,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "book_file_id": {
-          "name": "book_file_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "cfi": {
           "name": "cfi",
           "type": "varchar(2000)",
@@ -10041,15 +10023,6 @@
           "columnsFrom": ["book_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "bookmarks_book_file_id_book_files_id_fk": {
-          "name": "bookmarks_book_file_id_book_files_id_fk",
-          "tableFrom": "bookmarks",
-          "tableTo": "book_files",
-          "columnsFrom": ["book_file_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -27028,112 +27001,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.kobo_annotation_serves": {
-      "name": "kobo_annotation_serves",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "device_id": {
-          "name": "device_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "book_id": {
-          "name": "book_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "etag": {
-          "name": "etag",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "plan": {
-          "name": "plan",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "served_at": {
-          "name": "served_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "kobo_annotation_serves_device_book_uidx": {
-          "name": "kobo_annotation_serves_device_book_uidx",
-          "columns": [
-            {
-              "expression": "device_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "book_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "kobo_annotation_serves_user_id_users_id_fk": {
-          "name": "kobo_annotation_serves_user_id_users_id_fk",
-          "tableFrom": "kobo_annotation_serves",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_annotation_serves_book_id_books_id_fk": {
-          "name": "kobo_annotation_serves_book_id_books_id_fk",
-          "tableFrom": "kobo_annotation_serves",
-          "tableTo": "books",
-          "columnsFrom": ["book_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_annotation_serves_owner_fk": {
-          "name": "kobo_annotation_serves_owner_fk",
-          "tableFrom": "kobo_annotation_serves",
-          "tableTo": "kobo_devices",
-          "columnsFrom": ["device_id", "user_id"],
-          "columnsTo": ["id", "user_id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.kobo_bookmark_links": {
       "name": "kobo_bookmark_links",
       "schema": "",
@@ -27179,12 +27046,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "applied_at": {
-          "name": "applied_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -27619,95 +27480,6 @@
       "compositePrimaryKeys": {
         "kobo_device_reading_states_user_id_device_id_book_id_pk": {
           "name": "kobo_device_reading_states_user_id_device_id_book_id_pk",
-          "columns": ["user_id", "device_id", "book_id"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.kobo_known_positions": {
-      "name": "kobo_known_positions",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "device_id": {
-          "name": "device_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "book_id": {
-          "name": "book_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location_source": {
-          "name": "location_source",
-          "type": "varchar(4096)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location_value": {
-          "name": "location_value",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position_set_at": {
-          "name": "position_set_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "kobo_known_positions_user_id_users_id_fk": {
-          "name": "kobo_known_positions_user_id_users_id_fk",
-          "tableFrom": "kobo_known_positions",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_known_positions_book_id_books_id_fk": {
-          "name": "kobo_known_positions_book_id_books_id_fk",
-          "tableFrom": "kobo_known_positions",
-          "tableTo": "books",
-          "columnsFrom": ["book_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_known_positions_owner_fk": {
-          "name": "kobo_known_positions_owner_fk",
-          "tableFrom": "kobo_known_positions",
-          "tableTo": "kobo_devices",
-          "columnsFrom": ["device_id", "user_id"],
-          "columnsTo": ["id", "user_id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "kobo_known_positions_user_id_device_id_book_id_pk": {
-          "name": "kobo_known_positions_user_id_device_id_book_id_pk",
           "columns": ["user_id", "device_id", "book_id"]
         }
       },

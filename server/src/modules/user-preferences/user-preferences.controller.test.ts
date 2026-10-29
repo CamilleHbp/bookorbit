@@ -54,6 +54,7 @@ const validDisplayPreferences: DisplayPreferences = {
   authorCoverShape: 'circle',
   authorRowDensity: 'comfortable',
   authorCoverFallback: false,
+  hideSensitiveCovers: false,
   tableZebraStriping: false,
   tableDensity: 'comfortable',
   bookSpineOverlay: 'subtle',

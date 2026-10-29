@@ -1,6 +1,6 @@
 {
-  "id": "fd8ce2a7-7f7e-4a42-9a4a-d286ad35f89b",
-  "prevId": "3cd7b325-5dd3-4c54-9823-22901bdf7201",
+  "id": "3cd7b325-5dd3-4c54-9823-22901bdf7201",
+  "prevId": "83654d7f-8cfb-42e4-8a28-774fa4f7a102",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2988,13 +2988,6 @@
           "notNull": true,
           "default": 500
         },
-        "file_write_all_files": {
-          "name": "file_write_all_files",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "file_rename_enabled": {
           "name": "file_rename_enabled",
           "type": "boolean",
@@ -3693,6 +3686,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {

@@ -852,358 +852,365 @@
     {
       "idx": 121,
       "version": "7",
-      "when": 1788994840114,
-      "tag": "0121_fanfiction_reading_experience",
+      "when": 1788971512048,
+      "tag": "0121_sensitive-covers",
       "breakpoints": true
     },
     {
       "idx": 122,
       "version": "7",
-      "when": 1789055692244,
-      "tag": "0122_add_library_added_at_source",
+      "when": 1789020832074,
+      "tag": "0122_fanfiction_reading_experience",
       "breakpoints": true
     },
     {
       "idx": 123,
       "version": "7",
-      "when": 1789098337223,
-      "tag": "0123_audiobook_contract_v2",
+      "when": 1789055692244,
+      "tag": "0123_add_library_added_at_source",
       "breakpoints": true
     },
     {
       "idx": 124,
       "version": "7",
-      "when": 1789273281909,
-      "tag": "0124_add_newznab_nzbget",
+      "when": 1789098337223,
+      "tag": "0124_audiobook_contract_v2",
       "breakpoints": true
     },
     {
       "idx": 125,
       "version": "7",
-      "when": 1789316739511,
-      "tag": "0125_add_indexer_seed_goals",
+      "when": 1789273281909,
+      "tag": "0125_add_newznab_nzbget",
       "breakpoints": true
     },
     {
       "idx": 126,
       "version": "7",
-      "when": 1789366394767,
-      "tag": "0126_add_read_aloud_and_podcasts",
+      "when": 1789316739511,
+      "tag": "0126_add_indexer_seed_goals",
       "breakpoints": true
     },
     {
       "idx": 127,
       "version": "7",
-      "when": 1789366475035,
-      "tag": "0127_narration_progress_columns",
+      "when": 1789366394767,
+      "tag": "0127_add_read_aloud_and_podcasts",
       "breakpoints": true
     },
     {
       "idx": 128,
       "version": "7",
-      "when": 1789366529464,
-      "tag": "0128_add_device_auth_sessions",
+      "when": 1789366475035,
+      "tag": "0128_narration_progress_columns",
       "breakpoints": true
     },
     {
       "idx": 129,
       "version": "7",
-      "when": 1789930465236,
-      "tag": "0129_add_book_duplicate_dismissals_and_sort_keys",
+      "when": 1789366529464,
+      "tag": "0129_add_device_auth_sessions",
       "breakpoints": true
     },
     {
       "idx": 130,
       "version": "7",
-      "when": 1789949424697,
-      "tag": "0130_add_sabnzbd_and_prowlarr_support",
+      "when": 1789930465236,
+      "tag": "0130_add_book_duplicate_dismissals_and_sort_keys",
       "breakpoints": true
     },
     {
       "idx": 131,
       "version": "7",
-      "when": 1790119788880,
-      "tag": "0131_add_android_reading_session_source",
+      "when": 1789949424697,
+      "tag": "0131_add_sabnzbd_and_prowlarr_support",
       "breakpoints": true
     },
     {
       "idx": 132,
       "version": "7",
-      "when": 1790137565077,
-      "tag": "0132_add_book_covers",
+      "when": 1790119788880,
+      "tag": "0132_add_android_reading_session_source",
       "breakpoints": true
     },
     {
       "idx": 133,
       "version": "7",
-      "when": 1790398181669,
-      "tag": "0133_add_subtitle_search_index",
+      "when": 1790137565077,
+      "tag": "0133_add_book_covers",
       "breakpoints": true
     },
     {
       "idx": 134,
       "version": "7",
-      "when": 1790446233976,
-      "tag": "0134_fractional_finished_threshold",
+      "when": 1790398181669,
+      "tag": "0134_add_subtitle_search_index",
       "breakpoints": true
     },
     {
       "idx": 135,
       "version": "7",
-      "when": 1790634252132,
-      "tag": "0135_audio_bookmark_position_ignores_tombstones",
+      "when": 1790446233976,
+      "tag": "0135_fractional_finished_threshold",
       "breakpoints": true
     },
     {
       "idx": 136,
       "version": "7",
-      "when": 1790857451903,
-      "tag": "0136_fanfiction_batch_outcomes",
+      "when": 1790634252132,
+      "tag": "0136_audio_bookmark_position_ignores_tombstones",
       "breakpoints": true
     },
     {
       "idx": 137,
       "version": "7",
-      "when": 1790867880392,
-      "tag": "0137_story_maintenance",
+      "when": 1790858515330,
+      "tag": "0137_fanfiction_batch_outcomes",
       "breakpoints": true
     },
     {
       "idx": 138,
       "version": "7",
-      "when": 1790872320419,
-      "tag": "0138_personal_story_tracking",
+      "when": 1790870487791,
+      "tag": "0138_story_maintenance",
       "breakpoints": true
     },
     {
       "idx": 139,
       "version": "7",
-      "when": 1790872322369,
-      "tag": "0139_remove_source_profiles",
+      "when": 1790874159458,
+      "tag": "0139_personal_story_tracking",
       "breakpoints": true
     },
     {
       "idx": 140,
       "version": "7",
-      "when": 1790876695526,
-      "tag": "0140_refresh_unmeasured_media_overlay_durations",
+      "when": 1790874161471,
+      "tag": "0140_remove_source_profiles",
       "breakpoints": true
     },
     {
       "idx": 141,
       "version": "7",
-      "when": 1791126075111,
-      "tag": "0141_add_book_journal_and_annotation_stars",
+      "when": 1790876695526,
+      "tag": "0141_refresh_unmeasured_media_overlay_durations",
       "breakpoints": true
     },
     {
       "idx": 142,
       "version": "7",
-      "when": 1791330236442,
-      "tag": "0142_fix_kobo_koreader_download_matching",
+      "when": 1791126075111,
+      "tag": "0142_add_book_journal_and_annotation_stars",
       "breakpoints": true
     },
     {
       "idx": 143,
       "version": "7",
-      "when": 1791351760200,
-      "tag": "0143_add_library_file_write_all_files",
+      "when": 1791330236442,
+      "tag": "0143_fix_kobo_koreader_download_matching",
       "breakpoints": true
     },
     {
       "idx": 144,
       "version": "7",
-      "when": 1791388600818,
-      "tag": "0144_add_library_file_write_read_along",
+      "when": 1791351760200,
+      "tag": "0144_add_library_file_write_all_files",
       "breakpoints": true
     },
     {
       "idx": 145,
       "version": "7",
-      "when": 1791429899868,
-      "tag": "0145_add_book_request_pairs",
+      "when": 1791388600818,
+      "tag": "0145_add_library_file_write_read_along",
       "breakpoints": true
     },
     {
       "idx": 146,
       "version": "7",
-      "when": 1791658522588,
-      "tag": "0146_add_provider_metadata_cache",
+      "when": 1791429899868,
+      "tag": "0146_add_book_request_pairs",
       "breakpoints": true
     },
     {
       "idx": 147,
       "version": "7",
-      "when": 1791684796856,
-      "tag": "0147_add_read_aloud_delivery",
+      "when": 1791658522588,
+      "tag": "0147_add_provider_metadata_cache",
       "breakpoints": true
     },
     {
       "idx": 148,
       "version": "7",
-      "when": 1791821546946,
-      "tag": "0148_add_hardcover_match_basis",
+      "when": 1791684796856,
+      "tag": "0148_add_read_aloud_delivery",
       "breakpoints": true
     },
     {
       "idx": 149,
       "version": "7",
-      "when": 1791838145626,
-      "tag": "0149_add_email_provider_test_result",
+      "when": 1791821546946,
+      "tag": "0149_add_hardcover_match_basis",
       "breakpoints": true
     },
     {
       "idx": 150,
       "version": "7",
-      "when": 1791853301183,
-      "tag": "0150_add_koreader_session_tombstones",
+      "when": 1791838145626,
+      "tag": "0150_add_email_provider_test_result",
       "breakpoints": true
     },
     {
       "idx": 151,
       "version": "7",
-      "when": 1791941743914,
-      "tag": "0151_add_server_connection_identity",
+      "when": 1791853301183,
+      "tag": "0151_add_koreader_session_tombstones",
       "breakpoints": true
     },
     {
       "idx": 152,
       "version": "7",
-      "when": 1792002996105,
-      "tag": "0152_add_djvu_email_format",
+      "when": 1791941743914,
+      "tag": "0152_add_server_connection_identity",
       "breakpoints": true
     },
     {
       "idx": 153,
       "version": "7",
-      "when": 1792163623360,
-      "tag": "0153_add_book_metadata_page_count_index",
+      "when": 1792002996105,
+      "tag": "0153_add_djvu_email_format",
       "breakpoints": true
     },
     {
       "idx": 154,
       "version": "7",
-      "when": 1792168359342,
-      "tag": "0154_add_audit_resource_label",
+      "when": 1792163623360,
+      "tag": "0154_add_book_metadata_page_count_index",
       "breakpoints": true
     },
     {
       "idx": 155,
       "version": "7",
-      "when": 1792185442568,
-      "tag": "0155_regex_metadata",
+      "when": 1792168359342,
+      "tag": "0155_add_audit_resource_label",
       "breakpoints": true
     },
     {
       "idx": 156,
       "version": "7",
-      "when": 1792191772317,
-      "tag": "0156_add_reading_session_sync_interval",
+      "when": 1792185442568,
+      "tag": "0156_regex_metadata",
       "breakpoints": true
     },
     {
       "idx": 157,
       "version": "7",
-      "when": 1792201109071,
-      "tag": "0157_add_kobo_bookmark_links",
+      "when": 1792191772317,
+      "tag": "0157_add_reading_session_sync_interval",
       "breakpoints": true
     },
     {
       "idx": 158,
       "version": "7",
-      "when": 1792206724086,
-      "tag": "0158_add_kobo_full_size_covers",
+      "when": 1792201109071,
+      "tag": "0158_add_kobo_bookmark_links",
       "breakpoints": true
     },
     {
       "idx": 159,
       "version": "7",
-      "when": 1792209194389,
-      "tag": "0159_record_kobo_snapshot_cover_ids",
+      "when": 1792206724086,
+      "tag": "0159_add_kobo_full_size_covers",
       "breakpoints": true
     },
     {
       "idx": 160,
       "version": "7",
-      "when": 1792444043652,
-      "tag": "0160_add_device_annotation_sync",
+      "when": 1792209194389,
+      "tag": "0160_record_kobo_snapshot_cover_ids",
       "breakpoints": true
     },
     {
       "idx": 161,
       "version": "7",
-      "when": 1792511452628,
-      "tag": "0161_add_release_info_url_and_review_hold",
+      "when": 1792444043652,
+      "tag": "0161_add_device_annotation_sync",
       "breakpoints": true
     },
     {
       "idx": 162,
       "version": "7",
-      "when": 1792512356419,
-      "tag": "0162_add_koreader_hide_audio_only_books",
+      "when": 1792511452628,
+      "tag": "0162_add_release_info_url_and_review_hold",
       "breakpoints": true
     },
     {
       "idx": 163,
       "version": "7",
-      "when": 1792516862510,
-      "tag": "0163_add_author_metadata_provider_pinned",
+      "when": 1792512356419,
+      "tag": "0163_add_koreader_hide_audio_only_books",
       "breakpoints": true
     },
     {
       "idx": 164,
       "version": "7",
-      "when": 1792562365254,
-      "tag": "0164_add_read_aloud_jobs",
+      "when": 1792516862510,
+      "tag": "0164_add_author_metadata_provider_pinned",
       "breakpoints": true
     },
     {
       "idx": 165,
       "version": "7",
-      "when": 1792562395825,
-      "tag": "0165_add_read_aloud_job_reports",
+      "when": 1792562365254,
+      "tag": "0165_add_read_aloud_jobs",
       "breakpoints": true
     },
     {
       "idx": 166,
       "version": "7",
-      "when": 1792639172417,
-      "tag": "0166_add_audiobook_chapter_editor",
+      "when": 1792562395825,
+      "tag": "0166_add_read_aloud_job_reports",
       "breakpoints": true
     },
     {
       "idx": 167,
       "version": "7",
-      "when": 1792649881231,
-      "tag": "0167_add_reading_history",
+      "when": 1792639172417,
+      "tag": "0167_add_audiobook_chapter_editor",
       "breakpoints": true
     },
     {
       "idx": 168,
       "version": "7",
-      "when": 1792693992005,
-      "tag": "0168_add_external_metadata_providers",
+      "when": 1792649881231,
+      "tag": "0168_add_reading_history",
       "breakpoints": true
     },
     {
       "idx": 169,
       "version": "7",
-      "when": 1792705454131,
-      "tag": "0169_add_metadata_provider_icons",
+      "when": 1792693992005,
+      "tag": "0169_add_external_metadata_providers",
       "breakpoints": true
     },
     {
       "idx": 170,
       "version": "7",
-      "when": 1792810767351,
-      "tag": "0170_restore_metadata_editor_access",
+      "when": 1792705454131,
+      "tag": "0170_add_metadata_provider_icons",
       "breakpoints": true
     },
     {
       "idx": 171,
       "version": "7",
+      "when": 1792810767351,
+      "tag": "0171_restore_metadata_editor_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
       "when": 1793308688103,
-      "tag": "0171_reconcile_upstream_fanfiction",
+      "tag": "0172_reconcile_upstream_fanfiction",
       "breakpoints": true
     }
   ]

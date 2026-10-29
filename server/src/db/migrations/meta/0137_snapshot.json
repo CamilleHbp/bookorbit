@@ -1,6 +1,6 @@
 {
-  "id": "e217bc8a-42c6-4332-9210-392555479c80",
-  "prevId": "8597712d-b1ec-4bb8-a160-fa4e766cb6f6",
+  "id": "83c0dd70-1010-4114-947e-1d23e3d2e5f7",
+  "prevId": "3e38912e-0908-47bc-abb6-caf04a39f348",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3631,6 +3631,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "primary_author_sort_name": {
           "name": "primary_author_sort_name",
@@ -24047,123 +24054,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.fanfiction_connections": {
-      "name": "fanfiction_connections",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "site": {
-          "name": "site",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document": {
-          "name": "document",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "credential_generation": {
-          "name": "credential_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "has_password": {
-          "name": "has_password",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "cookie_count": {
-          "name": "cookie_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_successful_at": {
-          "name": "last_successful_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error_code": {
-          "name": "error_code",
-          "type": "varchar(100)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "fanfiction_connections_user_site_idx": {
-          "name": "fanfiction_connections_user_site_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "site",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fanfiction_connections_user_id_users_id_fk": {
-          "name": "fanfiction_connections_user_id_users_id_fk",
-          "tableFrom": "fanfiction_connections",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.fanfiction_discovery_candidates": {
       "name": "fanfiction_discovery_candidates",
       "schema": "",
@@ -24500,13 +24390,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "access_mode": {
-          "name": "access_mode",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'legacy'"
         },
         "source_id": {
           "name": "source_id",
@@ -25343,32 +25226,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "maintainer_user_id": {
-          "name": "maintainer_user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updates_enabled": {
-          "name": "updates_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "update_policy": {
-          "name": "update_policy",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'review'"
-        },
-        "access_mode": {
-          "name": "access_mode",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'legacy'"
-        },
         "book_id": {
           "name": "book_id",
           "type": "integer",
@@ -25482,13 +25339,6 @@
           "type": "varchar(100)",
           "primaryKey": false,
           "notNull": false
-        },
-        "metadata_review_pending": {
-          "name": "metadata_review_pending",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "import_operation_id": {
           "name": "import_operation_id",
@@ -25682,33 +25532,6 @@
           "method": "btree",
           "with": {}
         },
-        "fanfiction_sources_maintainer_site_idx": {
-          "name": "fanfiction_sources_maintainer_site_idx",
-          "columns": [
-            {
-              "expression": "maintainer_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "site",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "library_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "fanfiction_sources_book_idx": {
           "name": "fanfiction_sources_book_idx",
           "columns": [
@@ -25760,15 +25583,6 @@
           "columnsFrom": ["profile_id"],
           "columnsTo": ["id"],
           "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "fanfiction_sources_maintainer_user_id_users_id_fk": {
-          "name": "fanfiction_sources_maintainer_user_id_users_id_fk",
-          "tableFrom": "fanfiction_sources",
-          "tableTo": "users",
-          "columnsFrom": ["maintainer_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "fanfiction_sources_book_id_books_id_fk": {

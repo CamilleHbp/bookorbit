@@ -1,6 +1,6 @@
 {
-  "id": "2b637250-9ca6-4fc9-b41b-19e7401cdd71",
-  "prevId": "e13f6adb-502b-44cb-843e-98d833448624",
+  "id": "e13f6adb-502b-44cb-843e-98d833448624",
+  "prevId": "630474b7-03ba-44de-a26b-98f1dbc1f744",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3735,6 +3735,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -13270,12 +13277,6 @@
         "metadata_hash": {
           "name": "metadata_hash",
           "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cover_image_id": {
-          "name": "cover_image_id",
-          "type": "varchar(128)",
           "primaryKey": false,
           "notNull": false
         }

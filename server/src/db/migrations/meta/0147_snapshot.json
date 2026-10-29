@@ -1,6 +1,6 @@
 {
-  "id": "4207dfdb-f086-4a57-bba7-95c76e28ded1",
-  "prevId": "070abc4a-1ab1-4209-9bab-156862efd4dc",
+  "id": "070abc4a-1ab1-4209-9bab-156862efd4dc",
+  "prevId": "7dbd0aa9-fd8f-4586-9ee2-a8430487f6f8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3707,6 +3707,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -12437,12 +12444,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "read_aloud_delivery": {
-          "name": "read_aloud_delivery",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "sort_order": {
           "name": "sort_order",
           "type": "opds_sort_order",
@@ -13159,18 +13160,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "delivery_retry_at": {
-          "name": "delivery_retry_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "delivery_failure_code": {
-          "name": "delivery_failure_code",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "synced": {
           "name": "synced",
           "type": "boolean",
@@ -13514,12 +13503,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "read_aloud_delivery": {
-          "name": "read_aloud_delivery",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
         },
         "store_sync": {
           "name": "store_sync",
@@ -16869,12 +16852,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "read_aloud_delivery": {
-          "name": "read_aloud_delivery",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "preferred_format": {
           "name": "preferred_format",
           "type": "varchar(20)",
@@ -17145,60 +17122,6 @@
         "to_name": {
           "name": "to_name",
           "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "delivery_policy": {
-          "name": "delivery_policy",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_revision": {
-          "name": "source_revision",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "artifact_id": {
-          "name": "artifact_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "delivery_metadata": {
-          "name": "delivery_metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actual_variant": {
-          "name": "actual_variant",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "device_type": {
-          "name": "device_type",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "recipient_id": {
-          "name": "recipient_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "failure_code": {
-          "name": "failure_code",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "dispatch_phase": {
-          "name": "dispatch_phase",
-          "type": "varchar(32)",
           "primaryKey": false,
           "notNull": false
         },
@@ -19968,12 +19891,6 @@
           "notNull": true,
           "default": true
         },
-        "read_aloud_delivery": {
-          "name": "read_aloud_delivery",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -20035,12 +19952,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "koreader_users_delivery_chk": {
-          "name": "koreader_users_delivery_chk",
-          "value": "\"koreader_users\".\"read_aloud_delivery\" in ('original', 'audioless_epub')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.achievements": {
@@ -26908,390 +26820,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.kobo_device_deliveries": {
-      "name": "kobo_device_deliveries",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "device_id": {
-          "name": "device_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "book_id": {
-          "name": "book_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_file_id": {
-          "name": "source_file_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "options": {
-          "name": "options",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'offered'"
-        },
-        "previous_id": {
-          "name": "previous_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "current": {
-          "name": "current",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "kobo_device_deliveries_current_idx": {
-          "name": "kobo_device_deliveries_current_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "device_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "book_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kobo_device_deliveries\".\"current\" = true",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "kobo_device_deliveries_device_book_idx": {
-          "name": "kobo_device_deliveries_device_book_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "device_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "book_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "kobo_device_deliveries_user_id_users_id_fk": {
-          "name": "kobo_device_deliveries_user_id_users_id_fk",
-          "tableFrom": "kobo_device_deliveries",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_device_deliveries_book_id_books_id_fk": {
-          "name": "kobo_device_deliveries_book_id_books_id_fk",
-          "tableFrom": "kobo_device_deliveries",
-          "tableTo": "books",
-          "columnsFrom": ["book_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_device_deliveries_source_file_id_book_files_id_fk": {
-          "name": "kobo_device_deliveries_source_file_id_book_files_id_fk",
-          "tableFrom": "kobo_device_deliveries",
-          "tableTo": "book_files",
-          "columnsFrom": ["source_file_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "kobo_device_deliveries_owner_fk": {
-          "name": "kobo_device_deliveries_owner_fk",
-          "tableFrom": "kobo_device_deliveries",
-          "tableTo": "kobo_devices",
-          "columnsFrom": ["device_id", "user_id"],
-          "columnsTo": ["id", "user_id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.kobo_device_reading_states": {
-      "name": "kobo_device_reading_states",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "device_id": {
-          "name": "device_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "book_id": {
-          "name": "book_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entitlement_id": {
-          "name": "entitlement_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "delivery_id": {
-          "name": "delivery_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at_kobo": {
-          "name": "created_at_kobo",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_modified_kobo": {
-          "name": "last_modified_kobo",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "priority_timestamp": {
-          "name": "priority_timestamp",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "current_bookmark": {
-          "name": "current_bookmark",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "statistics": {
-          "name": "statistics",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status_info": {
-          "name": "status_info",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "kobo_device_reading_states_user_id_users_id_fk": {
-          "name": "kobo_device_reading_states_user_id_users_id_fk",
-          "tableFrom": "kobo_device_reading_states",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_device_reading_states_book_id_books_id_fk": {
-          "name": "kobo_device_reading_states_book_id_books_id_fk",
-          "tableFrom": "kobo_device_reading_states",
-          "tableTo": "books",
-          "columnsFrom": ["book_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_device_reading_states_delivery_id_kobo_device_deliveries_id_fk": {
-          "name": "kobo_device_reading_states_delivery_id_kobo_device_deliveries_id_fk",
-          "tableFrom": "kobo_device_reading_states",
-          "tableTo": "kobo_device_deliveries",
-          "columnsFrom": ["delivery_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "kobo_device_reading_states_owner_fk": {
-          "name": "kobo_device_reading_states_owner_fk",
-          "tableFrom": "kobo_device_reading_states",
-          "tableTo": "kobo_devices",
-          "columnsFrom": ["device_id", "user_id"],
-          "columnsTo": ["id", "user_id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "kobo_device_reading_states_user_id_device_id_book_id_pk": {
-          "name": "kobo_device_reading_states_user_id_device_id_book_id_pk",
-          "columns": ["user_id", "device_id", "book_id"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.koreader_device_delivery_settings": {
-      "name": "koreader_device_delivery_settings",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "credential_id": {
-          "name": "credential_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "device_id": {
-          "name": "device_id",
-          "type": "varchar(100)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "read_aloud_delivery": {
-          "name": "read_aloud_delivery",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "koreader_device_delivery_settings_user_id_users_id_fk": {
-          "name": "koreader_device_delivery_settings_user_id_users_id_fk",
-          "tableFrom": "koreader_device_delivery_settings",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "koreader_device_delivery_settings_credential_id_koreader_users_id_fk": {
-          "name": "koreader_device_delivery_settings_credential_id_koreader_users_id_fk",
-          "tableFrom": "koreader_device_delivery_settings",
-          "tableTo": "koreader_users",
-          "columnsFrom": ["credential_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "koreader_device_delivery_settings_user_id_device_id_pk": {
-          "name": "koreader_device_delivery_settings_user_id_device_id_pk",
-          "columns": ["user_id", "device_id"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "koreader_device_delivery_chk": {
-          "name": "koreader_device_delivery_chk",
-          "value": "\"koreader_device_delivery_settings\".\"read_aloud_delivery\" in ('original', 'audioless_epub')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.provider_metadata_cache": {
       "name": "provider_metadata_cache",
       "schema": "",
@@ -27467,157 +26995,6 @@
           "value": "\"provider_metadata_cache\".\"payload_bytes\" >= 0"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.delivery_artifacts": {
-      "name": "delivery_artifacts",
-      "schema": "",
-      "columns": {
-        "selection_id": {
-          "name": "selection_id",
-          "type": "varchar(64)",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "book_file_id": {
-          "name": "book_file_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scope": {
-          "name": "scope",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "delivery_artifacts_owner_file_idx": {
-          "name": "delivery_artifacts_owner_file_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "book_file_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "delivery_artifacts_user_id_users_id_fk": {
-          "name": "delivery_artifacts_user_id_users_id_fk",
-          "tableFrom": "delivery_artifacts",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "delivery_artifacts_book_file_id_book_files_id_fk": {
-          "name": "delivery_artifacts_book_file_id_book_files_id_fk",
-          "tableFrom": "delivery_artifacts",
-          "tableTo": "book_files",
-          "columnsFrom": ["book_file_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.delivery_inspections": {
-      "name": "delivery_inspections",
-      "schema": "",
-      "columns": {
-        "book_file_id": {
-          "name": "book_file_id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "source_revision": {
-          "name": "source_revision",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "detector_version": {
-          "name": "detector_version",
-          "type": "varchar(40)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "varchar(24)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "retry_at": {
-          "name": "retry_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "checked_at": {
-          "name": "checked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "delivery_inspections_book_file_id_book_files_id_fk": {
-          "name": "delivery_inspections_book_file_id_book_files_id_fk",
-          "tableFrom": "delivery_inspections",
-          "tableTo": "book_files",
-          "columnsFrom": ["book_file_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

@@ -1,6 +1,6 @@
 {
-  "id": "92e60858-3377-40ad-81ec-123a296161f5",
-  "prevId": "8bc90ecc-a24c-4196-9768-88efed96af7a",
+  "id": "8bc90ecc-a24c-4196-9768-88efed96af7a",
+  "prevId": "dba0c5d9-6be1-4de6-94b8-771e99184590",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3741,6 +3741,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -10385,7 +10392,7 @@
           "name": "book_id",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "started_on": {
           "name": "started_on",
@@ -10420,48 +10427,6 @@
         "external_id": {
           "name": "external_id",
           "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rating": {
-          "name": "rating",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "book_title_snapshot": {
-          "name": "book_title_snapshot",
-          "type": "varchar(1000)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "book_authors_snapshot": {
-          "name": "book_authors_snapshot",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "book_format_snapshot": {
-          "name": "book_format_snapshot",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "book_page_count_snapshot": {
-          "name": "book_page_count_snapshot",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "book_library_id_snapshot": {
-          "name": "book_library_id_snapshot",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "book_removed_at": {
-          "name": "book_removed_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -10623,7 +10588,7 @@
           "tableTo": "books",
           "columnsFrom": ["book_id"],
           "columnsTo": ["id"],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -10646,10 +10611,6 @@
         "reading_attempts_closed_has_outcome_chk": {
           "name": "reading_attempts_closed_has_outcome_chk",
           "value": "\"reading_attempts\".\"ended_on\" is null or \"reading_attempts\".\"outcome\" is not null"
-        },
-        "reading_attempts_rating_range_chk": {
-          "name": "reading_attempts_rating_range_chk",
-          "value": "\"reading_attempts\".\"rating\" is null or (\"reading_attempts\".\"rating\" >= 1 and \"reading_attempts\".\"rating\" <= 5)"
         }
       },
       "isRLSEnabled": false

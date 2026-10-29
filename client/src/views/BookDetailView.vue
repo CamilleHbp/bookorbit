@@ -164,6 +164,11 @@ function handleBookRefetch() {
   void fetch(bookId.value)
 }
 
+function onSensitiveCoverChanged(sensitiveCover: boolean) {
+  // Preserve unsaved metadata edits while updating this independently saved flag.
+  if (detail.value) detail.value.sensitiveCover = sensitiveCover
+}
+
 // A cover write can change either slot, the summary and the face version, so take the server's view.
 function onCoverChanged() {
   void fetch(bookId.value)
@@ -197,6 +202,7 @@ function onChaptersChanged() {
             @saved="onMetadataSaved"
             @locks-changed="onLocksChanged"
             @cover-changed="onCoverChanged"
+            @sensitive-cover-changed="onSensitiveCoverChanged"
           />
           <FilesTab v-else-if="tab === 'files'" :book="detail" @refetch="fetch(detail.id)" />
           <ChaptersTab v-else-if="tab === 'chapters' && hasAudio" :book="detail" @changed="onChaptersChanged" />

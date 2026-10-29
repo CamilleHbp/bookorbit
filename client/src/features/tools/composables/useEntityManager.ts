@@ -16,8 +16,8 @@ import * as entityManagerApi from '../api/entity-manager'
 
 export type EntityManagerMode = 'duplicates' | 'browse'
 
-export function useEntityManager() {
-  const entityType = ref<EntityType>('author')
+export function useEntityManager(initialType: EntityType = 'author') {
+  const entityType = ref<EntityType>(initialType)
   const mode = ref<EntityManagerMode>('browse')
 
   const isInline = computed(() => (INLINE_ENTITY_TYPES as readonly string[]).includes(entityType.value))
@@ -54,6 +54,10 @@ export function useEntityManager() {
   const browseSortOrder = ref<'asc' | 'desc'>('asc')
   const browseBookCount = ref<BrowseEntityBookCountFilter>('any')
   const browseLoading = ref(false)
+  const browseError = ref(false)
+  const tagSeparator = ref<string>()
+  const tagPrefix = ref<string>()
+  let browseRequest = 0
 
   // Selection state
   const selectedIds = ref<Set<number | string>>(new Set())
@@ -147,6 +151,9 @@ export function useEntityManager() {
   }
 
   function clearBrowse(): void {
+    browseRequest += 1
+    browseLoading.value = false
+    browseError.value = false
     browseItems.value = []
     browseTotal.value = 0
     browsePage.value = 1
@@ -205,7 +212,9 @@ export function useEntityManager() {
   }
 
   async function fetchBrowse(): Promise<void> {
+    const request = ++browseRequest
     browseLoading.value = true
+    browseError.value = false
     try {
       const result = await entityManagerApi.browseEntities(entityType.value, {
         search: browseSearch.value || undefined,
@@ -214,7 +223,10 @@ export function useEntityManager() {
         sortBy: browseSortBy.value,
         sortOrder: browseSortOrder.value,
         bookCount: isInline.value ? 'any' : browseBookCount.value,
+        tagSeparator: entityType.value === 'tag' ? tagSeparator.value : undefined,
+        tagPrefix: entityType.value === 'tag' ? tagPrefix.value : undefined,
       })
+      if (request !== browseRequest) return
       browseItems.value = result.items
       browseTotal.value = result.total
 
@@ -225,10 +237,12 @@ export function useEntityManager() {
         }
       })
     } catch {
+      if (request !== browseRequest) return
+      browseError.value = true
       browseItems.value = []
       browseTotal.value = 0
     } finally {
-      browseLoading.value = false
+      if (request === browseRequest) browseLoading.value = false
     }
   }
 
@@ -287,7 +301,11 @@ export function useEntityManager() {
       const payload = isInline.value
         ? { values: entityIds as string[], mode: 'inline' as const, writeFiles }
         : { entityIds: entityIds as number[], mode: deleteMode, writeFiles }
-      await entityManagerApi.bulkDeleteEntities(entityType.value, payload)
+      const result = await entityManagerApi.bulkDeleteEntities(entityType.value, payload)
+      if (result.errors.length > 0) {
+        await fetchBrowse()
+        throw new Error('Some tags could not be deleted')
+      }
     } catch (err) {
       operationError.value = err instanceof Error ? err.message : 'Bulk delete failed'
       throw err
@@ -467,6 +485,9 @@ export function useEntityManager() {
     browseSortOrder,
     browseBookCount,
     browseLoading,
+    browseError,
+    tagSeparator,
+    tagPrefix,
     browseTotalPages,
     fetchBrowse,
     clearBrowse,

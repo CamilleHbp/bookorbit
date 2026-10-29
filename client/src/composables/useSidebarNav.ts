@@ -12,6 +12,7 @@ import {
   ListMusic,
   PackageOpen,
   Trophy,
+  Tags,
   Users,
   Wrench,
 } from '@lucide/vue'
@@ -188,14 +189,14 @@ export const SIDEBAR_NAV_REGISTRY: readonly SidebarNavEntry[] = [
     zone: 'primary',
     modes: ['books'],
     to: (context) => ({
-      name: context.hasPermission('manage_libraries')
+      name: context.hasPermission('library_edit_metadata')
         ? 'tools-entity-manager'
-        : context.hasPermission('library_delete_books')
-          ? 'tools-duplicate-books'
-          : 'tools-chapter-health',
+        : context.hasPermission('manage_libraries')
+          ? 'tools-bulk-rename'
+          : 'tools-duplicate-books',
     }),
     isActive: (route) => routeNameStartsWith(route, 'tools-'),
-    permission: ['manage_libraries', 'library_delete_books', 'library_edit_metadata'],
+    permission: ['library_edit_metadata', 'manage_libraries', 'library_delete_books'],
   },
   {
     id: 'podcast-queue',
@@ -227,6 +228,15 @@ export const SIDEBAR_NAV_REGISTRY: readonly SidebarNavEntry[] = [
     to: { name: 'series' },
     isActive: (route) => route.name === 'series' || route.name === 'series-detail',
     badge: browseBadge('series'),
+  },
+  {
+    id: 'tags',
+    labelKey: 'tagBrowser.title',
+    icon: Tags,
+    zone: 'browse',
+    modes: ['books'],
+    to: { name: 'tags' },
+    isActive: (route) => route.name === 'tags',
   },
   {
     id: 'annotations',

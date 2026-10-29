@@ -1,6 +1,6 @@
 {
-  "id": "6afd55b0-5e9e-4a90-b4b0-082fa7e83d54",
-  "prevId": "4207dfdb-f086-4a57-bba7-95c76e28ded1",
+  "id": "4207dfdb-f086-4a57-bba7-95c76e28ded1",
+  "prevId": "070abc4a-1ab1-4209-9bab-156862efd4dc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3707,6 +3707,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -20403,12 +20410,6 @@
         "match_method": {
           "name": "match_method",
           "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "match_basis": {
-          "name": "match_basis",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

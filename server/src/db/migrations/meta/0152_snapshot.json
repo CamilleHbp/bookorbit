@@ -1,6 +1,6 @@
 {
-  "id": "c9b006eb-1457-4e6b-bdae-5a00a47e37c3",
-  "prevId": "912dc0d0-ce81-45d4-aa98-cf119e87a6ae",
+  "id": "912dc0d0-ce81-45d4-aa98-cf119e87a6ae",
+  "prevId": "68149e7c-5627-424c-b6ea-dbc600d2f9ec",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3707,6 +3707,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -17000,7 +17007,7 @@
         },
         "email_recipients_preferred_format_chk": {
           "name": "email_recipients_preferred_format_chk",
-          "value": "\"email_recipients\".\"preferred_format\" is null or \"email_recipients\".\"preferred_format\" in ('epub', 'pdf', 'mobi', 'azw3', 'cbz', 'cbr', 'djvu')"
+          "value": "\"email_recipients\".\"preferred_format\" is null or \"email_recipients\".\"preferred_format\" in ('epub', 'pdf', 'mobi', 'azw3', 'cbz', 'cbr')"
         }
       },
       "isRLSEnabled": false

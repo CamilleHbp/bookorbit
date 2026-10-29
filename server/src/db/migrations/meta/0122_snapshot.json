@@ -1,6 +1,6 @@
 {
-  "id": "6e3f296e-0e4d-4d6b-87ef-a9473eeef893",
-  "prevId": "d2dcfb86-c514-4a0a-95dd-723d80bec92b",
+  "id": "f96bfaca-d450-4347-a10c-2e48daf12322",
+  "prevId": "2a74f0a4-3ef9-4d80-8b97-e13cd0fcb80b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2301,13 +2301,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 100
-        },
-        "added_at_source": {
-          "name": "added_at_source",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'imported'"
         }
       },
       "indexes": {
@@ -2375,10 +2368,6 @@
         "libraries_file_write_kindle_max_size_chk": {
           "name": "libraries_file_write_kindle_max_size_chk",
           "value": "\"libraries\".\"file_write_kindle_max_file_size_mb\" >= 1"
-        },
-        "libraries_added_at_source_chk": {
-          "name": "libraries_added_at_source_chk",
-          "value": "\"libraries\".\"added_at_source\" in ('imported', 'file_modified', 'file_created')"
         }
       },
       "isRLSEnabled": false
@@ -2844,6 +2833,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {

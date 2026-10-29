@@ -35,6 +35,7 @@ export const books = pgTable(
     // Annotated because book_files references books back: an inferred return makes the two
     // table types circular, and depending on check order one of them silently becomes any.
     primaryFileId: integer('primary_file_id').references((): AnyPgColumn => bookFiles.id, { onDelete: 'set null' }),
+    sensitiveCover: boolean('sensitive_cover').notNull().default(false),
     primaryAuthorSortName: varchar('primary_author_sort_name', { length: 500 }),
     folderPath: varchar('folder_path', { length: 4096 }).notNull(),
     status: varchar('status', { length: 20 }).notNull().default('present'),

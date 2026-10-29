@@ -19,8 +19,16 @@ import { useCoverSearchPreferences } from '@/features/book/composables/useCoverS
 
 const { t } = useI18n()
 
-const { cardOverlays, bookSpineOverlay, showSpineOnComics, bookShadowStrength, bookCoverDisplayMode, bookDetailCoverTint, placeholderCoverStyle } =
-  useDisplaySettings()
+const {
+  hideSensitiveCovers,
+  cardOverlays,
+  bookSpineOverlay,
+  showSpineOnComics,
+  bookShadowStrength,
+  bookCoverDisplayMode,
+  bookDetailCoverTint,
+  placeholderCoverStyle,
+} = useDisplaySettings()
 const {
   defaultProvider: defaultCoverSearchProvider,
   isLoading: isCoverSearchPreferenceLoading,
@@ -273,6 +281,13 @@ onMounted(async () => {
       {{ t('settings.appearance.bookCovers.title') }}
     </p>
     <div class="settings-card mb-4">
+      <div class="settings-row">
+        <div>
+          <label for="hide-sensitive-covers" class="settings-label">{{ t('settings.appearance.bookCovers.sensitive.label') }}</label>
+          <p class="settings-hint">{{ t('settings.appearance.bookCovers.sensitive.hint') }}</p>
+        </div>
+        <ToggleSwitch id="hide-sensitive-covers" v-model="hideSensitiveCovers" />
+      </div>
       <div class="settings-row">
         <div>
           <label for="default-cover-search-provider" class="settings-label">

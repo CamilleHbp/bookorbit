@@ -1,6 +1,6 @@
 {
-  "id": "630474b7-03ba-44de-a26b-98f1dbc1f744",
-  "prevId": "aa4f307a-a064-41cc-890c-a1c1b71b786b",
+  "id": "aa4f307a-a064-41cc-890c-a1c1b71b786b",
+  "prevId": "c5ec208d-aad0-4c1f-9a5f-42dfa6b20ee5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3735,6 +3735,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -10025,7 +10032,7 @@
       "checkConstraints": {
         "bookmarks_origin_chk": {
           "name": "bookmarks_origin_chk",
-          "value": "\"bookmarks\".\"origin\" in ('web', 'koreader', 'kobo')"
+          "value": "\"bookmarks\".\"origin\" in ('web', 'koreader')"
         }
       },
       "isRLSEnabled": false
@@ -26979,182 +26986,6 @@
           "value": "\"book_journal_entries\".\"position_seconds\" is null or \"book_journal_entries\".\"position_seconds\" >= 0"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.kobo_bookmark_links": {
-      "name": "kobo_bookmark_links",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "bookmark_id": {
-          "name": "bookmark_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "device_id": {
-          "name": "device_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "book_id": {
-          "name": "book_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "external_key": {
-          "name": "external_key",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location": {
-          "name": "location",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "kobo_bookmark_links_bookmark_device_uidx": {
-          "name": "kobo_bookmark_links_bookmark_device_uidx",
-          "columns": [
-            {
-              "expression": "bookmark_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "device_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "kobo_bookmark_links_device_key_uidx": {
-          "name": "kobo_bookmark_links_device_key_uidx",
-          "columns": [
-            {
-              "expression": "device_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "kobo_bookmark_links_user_device_book_idx": {
-          "name": "kobo_bookmark_links_user_device_book_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "device_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "book_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "kobo_bookmark_links_bookmark_id_bookmarks_id_fk": {
-          "name": "kobo_bookmark_links_bookmark_id_bookmarks_id_fk",
-          "tableFrom": "kobo_bookmark_links",
-          "tableTo": "bookmarks",
-          "columnsFrom": ["bookmark_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_bookmark_links_user_id_users_id_fk": {
-          "name": "kobo_bookmark_links_user_id_users_id_fk",
-          "tableFrom": "kobo_bookmark_links",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_bookmark_links_book_id_books_id_fk": {
-          "name": "kobo_bookmark_links_book_id_books_id_fk",
-          "tableFrom": "kobo_bookmark_links",
-          "tableTo": "books",
-          "columnsFrom": ["book_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "kobo_bookmark_links_owner_fk": {
-          "name": "kobo_bookmark_links_owner_fk",
-          "tableFrom": "kobo_bookmark_links",
-          "tableTo": "kobo_devices",
-          "columnsFrom": ["device_id", "user_id"],
-          "columnsTo": ["id", "user_id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.kobo_device_deliveries": {

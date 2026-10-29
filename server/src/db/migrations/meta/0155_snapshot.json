@@ -1,6 +1,6 @@
 {
-  "id": "c5ec208d-aad0-4c1f-9a5f-42dfa6b20ee5",
-  "prevId": "3f2bf40b-122d-4579-858a-909222646c21",
+  "id": "3f2bf40b-122d-4579-858a-909222646c21",
+  "prevId": "873891e8-7c7f-4b3b-9a64-fbdb64df313c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2863,12 +2863,6 @@
           "notNull": true,
           "default": "'[\"folderStructure\",\"embedded\",\"nfoFile\",\"opfFile\",\"sidecar\"]'::jsonb"
         },
-        "regex_metadata": {
-          "name": "regex_metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "format_priority": {
           "name": "format_priority",
           "type": "jsonb",
@@ -3735,6 +3729,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {

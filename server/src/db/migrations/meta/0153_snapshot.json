@@ -1,6 +1,6 @@
 {
-  "id": "873891e8-7c7f-4b3b-9a64-fbdb64df313c",
-  "prevId": "c9b006eb-1457-4e6b-bdae-5a00a47e37c3",
+  "id": "c9b006eb-1457-4e6b-bdae-5a00a47e37c3",
+  "prevId": "912dc0d0-ce81-45d4-aa98-cf119e87a6ae",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3707,6 +3707,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -7870,21 +7877,6 @@
           "columns": [
             {
               "expression": "published_year",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "bm_page_count_idx": {
-          "name": "bm_page_count_idx",
-          "columns": [
-            {
-              "expression": "page_count",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

@@ -1,6 +1,6 @@
 {
-  "id": "aa4f307a-a064-41cc-890c-a1c1b71b786b",
-  "prevId": "c5ec208d-aad0-4c1f-9a5f-42dfa6b20ee5",
+  "id": "c5ec208d-aad0-4c1f-9a5f-42dfa6b20ee5",
+  "prevId": "3f2bf40b-122d-4579-858a-909222646c21",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3735,6 +3735,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -10862,12 +10869,6 @@
         "end_progress": {
           "name": "end_progress",
           "type": "real",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sync_interval_started_at": {
-          "name": "sync_interval_started_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }

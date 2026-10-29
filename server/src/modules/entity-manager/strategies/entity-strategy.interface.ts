@@ -18,6 +18,9 @@ export interface RawCandidatePair {
 }
 
 export interface BrowseParams {
+  usedOnly?: boolean;
+  tagSeparator?: string;
+  tagPrefix?: string;
   libraryIds: number[];
   search?: string;
   page: number;

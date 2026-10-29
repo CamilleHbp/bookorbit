@@ -1,5 +1,5 @@
 {
-  "id": "d2dcfb86-c514-4a0a-95dd-723d80bec92b",
+  "id": "2a74f0a4-3ef9-4d80-8b97-e13cd0fcb80b",
   "prevId": "6caaa5da-657d-4c6f-a774-37a16fdccbd0",
   "version": "7",
   "dialect": "postgresql",
@@ -2833,6 +2833,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -20238,19 +20245,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "categories": {
-          "name": "categories",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tag_policy": {
-          "name": "tag_policy",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'review'"
         }
       },
       "indexes": {
@@ -20504,10 +20498,6 @@
         "fanfiction_sources_chapters_chk": {
           "name": "fanfiction_sources_chapters_chk",
           "value": "\"fanfiction_sources\".\"chapter_count\" >= 0 and (\"fanfiction_sources\".\"word_count\" is null or \"fanfiction_sources\".\"word_count\" >= 0)"
-        },
-        "fanfiction_sources_tag_policy_chk": {
-          "name": "fanfiction_sources_tag_policy_chk",
-          "value": "\"fanfiction_sources\".\"tag_policy\" in ('review', 'automatic')"
         }
       },
       "isRLSEnabled": false

@@ -74,6 +74,7 @@ import KoreaderResetHoldNotice from '@/features/koreader/components/KoreaderRese
 import { RATING_STARS, getRatingStarClass } from '@/features/book/lib/rating-stars'
 import { formatCommunityRatingValue } from '@/features/book/lib/community-rating'
 import BookCoverSurface from '@/features/book/components/BookCoverSurface.vue'
+import { useCoverReveal } from '@/features/book/composables/useCoverReveal'
 import { useDisplaySettings } from '@/composables/useDisplaySettings'
 import HardcoverBookSyncGridItem from '@/features/hardcover/components/HardcoverBookSyncGridItem.vue'
 import StorygraphBookSyncGridItem from '@/features/storygraph/components/StorygraphBookSyncGridItem.vue'
@@ -303,8 +304,12 @@ const hasCover = computed(() => props.book.coverSource !== null)
 // Both slots hold art, so the cover slot shows them as a stack instead of the face alone, at every width.
 const showCoverStack = computed(() => hasCoverPair(props.book))
 const coverLightboxMedium = ref<CoverMedium | undefined>(undefined)
+const { coverRevealed, canRevealCover, toggleCoverReveal } = useCoverReveal(
+  computed(() => props.book.id),
+  computed(() => props.book.sensitiveCover),
+)
 const { coverUrl } = useCoverVersions()
-const coverSrc = computed(() => coverUrl(props.book.id, 'cover', props.book.coverVersion))
+const coverSrc = computed(() => coverUrl(props.book.id, 'cover', props.book.coverVersion, undefined, coverRevealed.value))
 
 watch(coverSrc, () => {
   coverLoaded.value = false
@@ -1292,6 +1297,7 @@ watch(
           >
             <BookCoverStack
               v-if="showCoverStack"
+              :revealed="coverRevealed"
               :book="book"
               :face="isFaceAudio ? 'audio' : 'ebook'"
               :editable="canEditMetadata"
@@ -1347,6 +1353,15 @@ watch(
                 @error="handleCoverError"
               />
             </BookCoverSurface>
+            <button
+              v-if="canRevealCover"
+              type="button"
+              class="mt-2 rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground hover:bg-muted"
+              :aria-pressed="coverRevealed"
+              @click.stop="toggleCoverReveal"
+            >
+              {{ coverRevealed ? t('book.sensitiveCover.hide') : t('book.sensitiveCover.reveal') }}
+            </button>
           </div>
         </div>
 
@@ -2307,7 +2322,13 @@ watch(
     @confirm="handleResetReadingState"
   />
 
-  <BookCoverLightbox :open="coverLightboxOpen" :book="book" :medium="coverLightboxMedium" @update:open="handleCoverLightboxOpenChange" />
+  <BookCoverLightbox
+    :open="coverLightboxOpen"
+    :book="book"
+    :medium="coverLightboxMedium"
+    :revealed="coverRevealed"
+    @update:open="handleCoverLightboxOpenChange"
+  />
 </template>
 
 <style scoped>

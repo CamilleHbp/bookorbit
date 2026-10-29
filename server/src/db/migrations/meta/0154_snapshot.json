@@ -1,6 +1,6 @@
 {
-  "id": "3f2bf40b-122d-4579-858a-909222646c21",
-  "prevId": "873891e8-7c7f-4b3b-9a64-fbdb64df313c",
+  "id": "873891e8-7c7f-4b3b-9a64-fbdb64df313c",
+  "prevId": "c9b006eb-1457-4e6b-bdae-5a00a47e37c3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -41,12 +41,6 @@
         "resource_id": {
           "name": "resource_id",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resource_label": {
-          "name": "resource_label",
-          "type": "varchar(255)",
           "primaryKey": false,
           "notNull": false
         },
@@ -211,22 +205,6 @@
           "columns": [
             {
               "expression": "description",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last",
-              "opclass": "gin_trgm_ops"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "gin",
-          "with": {}
-        },
-        "idx_audit_resource_label_trgm": {
-          "name": "idx_audit_resource_label_trgm",
-          "columns": [
-            {
-              "expression": "resource_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last",
@@ -3729,6 +3707,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {

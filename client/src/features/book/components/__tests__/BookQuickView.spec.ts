@@ -6,6 +6,7 @@ import BookQuickView from '../BookQuickView.vue'
 
 const displaySettings = {
   bookCoverDisplayMode: ref('blurred-fit'),
+  hideSensitiveCovers: ref(false),
 }
 
 const permissionState = {
@@ -91,6 +92,7 @@ function makeDetail(overrides: Partial<BookDetail> = {}): BookDetail {
     personalNote: null,
     personalNoteUpdatedAt: null,
     communityRatings: [],
+    sensitiveCover: false,
     coverSource: null,
     coverMedia: [],
     covers: { ebook: null, audio: null },

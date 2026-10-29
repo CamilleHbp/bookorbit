@@ -7,6 +7,7 @@ import type { BrowseEntityBookCountFilter } from '@bookorbit/types'
 import type { EntityRowDensity } from '../types'
 
 const props = defineProps<{
+  tagsOnly?: boolean
   search: string
   bookCount: BrowseEntityBookCountFilter
   total: number
@@ -98,7 +99,7 @@ function handleClearSelection(): void {
   </div>
 
   <span class="text-xs text-muted-foreground tabular-nums">
-    {{ t('tools.entityManager.browse.resultCount', { count: total }) }}
+    {{ t(tagsOnly ? 'tools.tagManager.resultCount' : 'tools.entityManager.browse.resultCount', { count: total }) }}
   </span>
 
   <div class="ms-auto flex items-center gap-2">

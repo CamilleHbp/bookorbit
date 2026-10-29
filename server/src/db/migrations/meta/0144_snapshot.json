@@ -1,6 +1,6 @@
 {
-  "id": "82a84f81-6595-480c-81ee-d1e378b5851a",
-  "prevId": "fd8ce2a7-7f7e-4a42-9a4a-d286ad35f89b",
+  "id": "fd8ce2a7-7f7e-4a42-9a4a-d286ad35f89b",
+  "prevId": "3cd7b325-5dd3-4c54-9823-22901bdf7201",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2995,20 +2995,6 @@
           "notNull": true,
           "default": false
         },
-        "file_write_read_along_enabled": {
-          "name": "file_write_read_along_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "file_write_read_along_max_file_size_mb": {
-          "name": "file_write_read_along_max_file_size_mb",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1000
-        },
         "file_rename_enabled": {
           "name": "file_rename_enabled",
           "type": "boolean",
@@ -3707,6 +3693,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {

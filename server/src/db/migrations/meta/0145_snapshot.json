@@ -1,6 +1,6 @@
 {
-  "id": "7dbd0aa9-fd8f-4586-9ee2-a8430487f6f8",
-  "prevId": "82a84f81-6595-480c-81ee-d1e378b5851a",
+  "id": "82a84f81-6595-480c-81ee-d1e378b5851a",
+  "prevId": "fd8ce2a7-7f7e-4a42-9a4a-d286ad35f89b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3707,6 +3707,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -14762,18 +14769,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "companion_request_id": {
-          "name": "companion_request_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "target_book_id": {
-          "name": "target_book_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "dedupe_key": {
           "name": "dedupe_key",
           "type": "varchar(500)",
@@ -14905,38 +14900,6 @@
           "method": "btree",
           "with": {}
         },
-        "book_requests_companion_request_id_idx": {
-          "name": "book_requests_companion_request_id_idx",
-          "columns": [
-            {
-              "expression": "companion_request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"book_requests\".\"companion_request_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "book_requests_target_book_id_idx": {
-          "name": "book_requests_target_book_id_idx",
-          "columns": [
-            {
-              "expression": "target_book_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"book_requests\".\"target_book_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "book_requests_self_serve_idx": {
           "name": "book_requests_self_serve_idx",
           "columns": [
@@ -15051,24 +15014,6 @@
           "tableFrom": "book_requests",
           "tableTo": "users",
           "columnsFrom": ["fulfiller_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "book_requests_companion_request_id_book_requests_id_fk": {
-          "name": "book_requests_companion_request_id_book_requests_id_fk",
-          "tableFrom": "book_requests",
-          "tableTo": "book_requests",
-          "columnsFrom": ["companion_request_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "book_requests_target_book_id_books_id_fk": {
-          "name": "book_requests_target_book_id_books_id_fk",
-          "tableFrom": "book_requests",
-          "tableTo": "books",
-          "columnsFrom": ["target_book_id"],
           "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"

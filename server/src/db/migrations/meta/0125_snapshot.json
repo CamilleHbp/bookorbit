@@ -1,6 +1,6 @@
 {
-  "id": "0623f2ea-3b9e-4537-9cba-90bf806e3ebd",
-  "prevId": "8cb05652-9c80-4723-9f42-0c344a24f9c0",
+  "id": "8cb05652-9c80-4723-9f42-0c344a24f9c0",
+  "prevId": "c8f7c2bc-9162-42df-914d-cf85888376a4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2866,6 +2866,13 @@
           "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -18451,25 +18458,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "apply_tracker_seed_goals": {
-          "name": "apply_tracker_seed_goals",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "seed_ratio_goal": {
-          "name": "seed_ratio_goal",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "seed_time_minutes": {
-          "name": "seed_time_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -18512,14 +18500,6 @@
         "request_indexers_adapter_type_chk": {
           "name": "request_indexers_adapter_type_chk",
           "value": "\"request_indexers\".\"adapter_type\" ~ '^[a-z0-9][a-z0-9-]{0,29}$'"
-        },
-        "request_indexers_seed_ratio_goal_chk": {
-          "name": "request_indexers_seed_ratio_goal_chk",
-          "value": "\"request_indexers\".\"seed_ratio_goal\" is null or (\"request_indexers\".\"seed_ratio_goal\" > 0 and \"request_indexers\".\"seed_ratio_goal\" < 'Infinity'::double precision)"
-        },
-        "request_indexers_seed_time_minutes_chk": {
-          "name": "request_indexers_seed_time_minutes_chk",
-          "value": "\"request_indexers\".\"seed_time_minutes\" is null or \"request_indexers\".\"seed_time_minutes\" > 0"
         }
       },
       "isRLSEnabled": false

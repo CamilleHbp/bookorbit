@@ -1,6 +1,6 @@
 {
-  "id": "912dc0d0-ce81-45d4-aa98-cf119e87a6ae",
-  "prevId": "68149e7c-5627-424c-b6ea-dbc600d2f9ec",
+  "id": "68149e7c-5627-424c-b6ea-dbc600d2f9ec",
+  "prevId": "aa0873fc-44ae-4a3a-808a-6fcfda65b34f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3707,6 +3707,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -27771,38 +27778,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.server_identity": {
-      "name": "server_identity",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "default": 1
-        },
-        "instance_id": {
-          "name": "instance_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "server_identity_singleton": {
-          "name": "server_identity_singleton",
-          "value": "\"server_identity\".\"id\" = 1"
-        }
-      },
       "isRLSEnabled": false
     }
   },

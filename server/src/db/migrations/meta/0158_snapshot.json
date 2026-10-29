@@ -1,6 +1,6 @@
 {
-  "id": "e13f6adb-502b-44cb-843e-98d833448624",
-  "prevId": "630474b7-03ba-44de-a26b-98f1dbc1f744",
+  "id": "630474b7-03ba-44de-a26b-98f1dbc1f744",
+  "prevId": "aa4f307a-a064-41cc-890c-a1c1b71b786b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3735,6 +3735,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -13576,13 +13583,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "full_size_covers": {
-          "name": "full_size_covers",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         },
         "created_at": {
           "name": "created_at",

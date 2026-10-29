@@ -73,7 +73,16 @@ describe('sidebar nav registry', () => {
   })
 
   it('shows only ungated destinations to a user with no permissions', () => {
-    expect(allowedIds(makeContext())).toEqual(['dashboard', 'statistics', 'reading-history', 'achievements', 'authors', 'series', 'annotations'])
+    expect(allowedIds(makeContext())).toEqual([
+      'dashboard',
+      'statistics',
+      'reading-history',
+      'achievements',
+      'authors',
+      'series',
+      'tags',
+      'annotations',
+    ])
   })
 
   it('places Dashboard, Fanfiction, Book Dock, Requests, Tools and the podcast Queue in the primary zone, above the entity sections', () => {
@@ -126,32 +135,21 @@ describe('sidebar nav registry', () => {
     expect(allowedIds(makeContext({ permissions: [permission] }))).toContain('tools')
   })
 
-  it('resolves Tools to the entity manager when the user can manage libraries', () => {
+  it('resolves Tools to bulk rename when the user can manage libraries without metadata access', () => {
     const context = makeContext({ permissions: ['manage_libraries'] })
 
     const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
 
+    expect(resolved.to).toEqual({ name: 'tools-bulk-rename' })
+  })
+
+  it('resolves Tools to tags for metadata editors', () => {
+    const resolved = resolveNavEntry(entry('tools'), makeContext({ permissions: ['library_edit_metadata'] }), makeRoute('dashboard'), 'Tools')
     expect(resolved.to).toEqual({ name: 'tools-entity-manager' })
   })
 
   it('resolves Tools to duplicate books when the user can only delete books', () => {
     const context = makeContext({ permissions: ['library_delete_books'] })
-
-    const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
-
-    expect(resolved.to).toEqual({ name: 'tools-duplicate-books' })
-  })
-
-  it('resolves Tools to chapter health when the user can only edit metadata', () => {
-    const context = makeContext({ permissions: ['library_edit_metadata'] })
-
-    const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
-
-    expect(resolved.to).toEqual({ name: 'tools-chapter-health' })
-  })
-
-  it('prefers duplicate books over chapter health when the user can delete books too', () => {
-    const context = makeContext({ permissions: ['library_delete_books', 'library_edit_metadata'] })
 
     const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
 
@@ -225,7 +223,7 @@ describe('sidebar nav registry', () => {
   it('leaves the browse rows unbadged before the counts load and while they are zero', () => {
     const zeroed = makeContext({ browseCounts: { authors: 0, series: 0, annotations: 0 } })
 
-    for (const id of ['authors', 'series', 'annotations']) {
+    for (const id of ['authors', 'series', 'tags', 'annotations']) {
       expect(resolveNavEntry(entry(id), makeContext(), makeRoute('dashboard'), id).badge).toBeNull()
       expect(resolveNavEntry(entry(id), zeroed, makeRoute('dashboard'), id).badge).toBeNull()
     }
@@ -274,6 +272,7 @@ describe('sidebar nav registry', () => {
       'tools',
       'authors',
       'series',
+      'tags',
       'annotations',
     ])
   })

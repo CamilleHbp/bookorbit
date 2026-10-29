@@ -1,6 +1,6 @@
 {
-  "id": "8cb2dc8c-0d24-42fb-b38e-08941cfacf45",
-  "prevId": "e217bc8a-42c6-4332-9210-392555479c80",
+  "id": "2d436987-68c6-4acf-b8a3-210a4cd91fb5",
+  "prevId": "83c0dd70-1010-4114-947e-1d23e3d2e5f7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3631,6 +3631,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "primary_author_sort_name": {
           "name": "primary_author_sort_name",
@@ -24495,6 +24502,19 @@
           "primaryKey": false,
           "notNull": true
         },
+        "profile_id": {
+          "name": "profile_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_mode": {
+          "name": "access_mode",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'legacy'"
+        },
         "source_id": {
           "name": "source_id",
           "type": "uuid",
@@ -24846,6 +24866,21 @@
           "method": "btree",
           "with": {}
         },
+        "fanfiction_jobs_profile_idx": {
+          "name": "fanfiction_jobs_profile_idx",
+          "columns": [
+            {
+              "expression": "profile_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "fanfiction_jobs_active_source_idx": {
           "name": "fanfiction_jobs_active_source_idx",
           "columns": [
@@ -24911,6 +24946,15 @@
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fanfiction_jobs_profile_id_fanfiction_profiles_id_fk": {
+          "name": "fanfiction_jobs_profile_id_fanfiction_profiles_id_fk",
+          "tableFrom": "fanfiction_jobs",
+          "tableTo": "fanfiction_profiles",
+          "columnsFrom": ["profile_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "fanfiction_jobs_source_id_fanfiction_sources_id_fk": {
@@ -25300,6 +25344,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "profile_id": {
+          "name": "profile_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "maintainer_user_id": {
           "name": "maintainer_user_id",
           "type": "integer",
@@ -25310,15 +25360,21 @@
           "name": "updates_enabled",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
-          "default": true
+          "notNull": false
         },
         "update_policy": {
           "name": "update_policy",
           "type": "varchar(20)",
           "primaryKey": false,
           "notNull": true,
-          "default": "'safe'"
+          "default": "'review'"
+        },
+        "access_mode": {
+          "name": "access_mode",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'legacy'"
         },
         "book_id": {
           "name": "book_id",
@@ -25618,6 +25674,21 @@
           "method": "btree",
           "with": {}
         },
+        "fanfiction_sources_profile_idx": {
+          "name": "fanfiction_sources_profile_idx",
+          "columns": [
+            {
+              "expression": "profile_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "fanfiction_sources_maintainer_site_idx": {
           "name": "fanfiction_sources_maintainer_site_idx",
           "columns": [
@@ -25687,6 +25758,15 @@
           "columnsFrom": ["folder_id"],
           "columnsTo": ["id"],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "fanfiction_sources_profile_id_fanfiction_profiles_id_fk": {
+          "name": "fanfiction_sources_profile_id_fanfiction_profiles_id_fk",
+          "tableFrom": "fanfiction_sources",
+          "tableTo": "fanfiction_profiles",
+          "columnsFrom": ["profile_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "fanfiction_sources_maintainer_user_id_users_id_fk": {

@@ -1,6 +1,6 @@
 {
-  "id": "66d8c662-f0af-4048-8e75-a653a7620382",
-  "prevId": "d9051559-0711-4d52-82a1-e55c01da8f7f",
+  "id": "d9051559-0711-4d52-82a1-e55c01da8f7f",
+  "prevId": "8aa979c3-d6ef-4c91-b26e-9bb1cde9e897",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3735,6 +3735,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -20100,13 +20107,6 @@
           "type": "varchar(20)",
           "primaryKey": false,
           "notNull": false
-        },
-        "hide_audio_only_books": {
-          "name": "hide_audio_only_books",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         },
         "created_at": {
           "name": "created_at",

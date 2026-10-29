@@ -1,6 +1,6 @@
 {
-  "id": "1916196a-54ba-4b2c-8bb0-881e72398962",
-  "prevId": "92e60858-3377-40ad-81ec-123a296161f5",
+  "id": "92e60858-3377-40ad-81ec-123a296161f5",
+  "prevId": "8bc90ecc-a24c-4196-9768-88efed96af7a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3741,6 +3741,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -27298,87 +27305,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.book_provider_ids": {
-      "name": "book_provider_ids",
-      "schema": "",
-      "columns": {
-        "book_id": {
-          "name": "book_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "varchar(512)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "varchar(2048)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "book_provider_ids_provider_external_id_idx": {
-          "name": "book_provider_ids_provider_external_id_idx",
-          "columns": [
-            {
-              "expression": "provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "book_provider_ids_book_id_books_id_fk": {
-          "name": "book_provider_ids_book_id_books_id_fk",
-          "tableFrom": "book_provider_ids",
-          "tableTo": "books",
-          "columnsFrom": ["book_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "book_provider_ids_book_id_provider_pk": {
-          "name": "book_provider_ids_book_id_provider_pk",
-          "columns": ["book_id", "provider"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.chapter_lookup_queue": {
       "name": "chapter_lookup_queue",
       "schema": "",
@@ -29409,155 +29335,6 @@
         "provider_metadata_cache_payload_bytes_nonnegative_chk": {
           "name": "provider_metadata_cache_payload_bytes_nonnegative_chk",
           "value": "\"provider_metadata_cache\".\"payload_bytes\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.metadata_http_providers": {
-      "name": "metadata_http_providers",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "key": {
-          "name": "key",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "base_url": {
-          "name": "base_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "authorization_enc": {
-          "name": "authorization_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "allow_private_address": {
-          "name": "allow_private_address",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "timeout_ms": {
-          "name": "timeout_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 10000
-        },
-        "info": {
-          "name": "info",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "info_fetched_at": {
-          "name": "info_fetched_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'ok'"
-        },
-        "consecutive_failures": {
-          "name": "consecutive_failures",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "metadata_http_providers_key_uq": {
-          "name": "metadata_http_providers_key_uq",
-          "columns": [
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "metadata_http_providers_created_by_users_id_fk": {
-          "name": "metadata_http_providers_created_by_users_id_fk",
-          "tableFrom": "metadata_http_providers",
-          "tableTo": "users",
-          "columnsFrom": ["created_by"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "metadata_http_providers_timeout_chk": {
-          "name": "metadata_http_providers_timeout_chk",
-          "value": "\"metadata_http_providers\".\"timeout_ms\" >= 2000 and \"metadata_http_providers\".\"timeout_ms\" <= 30000"
-        },
-        "metadata_http_providers_status_chk": {
-          "name": "metadata_http_providers_status_chk",
-          "value": "\"metadata_http_providers\".\"status\" in ('ok', 'stale', 'unreachable', 'key_changed', 'incompatible')"
-        },
-        "metadata_http_providers_failures_chk": {
-          "name": "metadata_http_providers_failures_chk",
-          "value": "\"metadata_http_providers\".\"consecutive_failures\" >= 0"
         }
       },
       "isRLSEnabled": false

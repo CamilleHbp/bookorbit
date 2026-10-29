@@ -5,7 +5,8 @@ import BookCoverStack from '../BookCoverStack.vue'
 
 vi.mock('@/features/book/composables/useCoverVersions', () => ({
   useCoverVersions: () => ({
-    coverUrl: (id: number, _type: string, _version: unknown, medium?: string) => `/cover/${id}/${medium ?? 'face'}`,
+    coverUrl: (id: number, _type: string, _version: unknown, medium?: string, revealed?: boolean) =>
+      `/cover/${id}/${medium ?? 'face'}${revealed ? '?revealed=true' : ''}`,
   }),
 }))
 
@@ -74,6 +75,16 @@ describe('BookCoverStack', () => {
     const sources = wrapper.findAllComponents({ name: 'BookCoverArtwork' }).map((artwork) => artwork.props('src'))
 
     expect(sources).toEqual(['/cover/7/ebook', '/cover/7/audio'])
+  })
+
+  it('reveals both covers only while explicitly revealed', async () => {
+    const wrapper = mountStack()
+    const sources = () => wrapper.findAllComponents({ name: 'BookCoverArtwork' }).map((artwork) => artwork.props('src'))
+    expect(sources()).toEqual(['/cover/7/ebook', '/cover/7/audio'])
+    await wrapper.setProps({ revealed: true })
+    expect(sources()).toEqual(['/cover/7/ebook?revealed=true', '/cover/7/audio?revealed=true'])
+    await wrapper.setProps({ revealed: false })
+    expect(sources()).toEqual(['/cover/7/ebook', '/cover/7/audio'])
   })
 
   it('offers cover editing only on the front card, and only to someone who can edit', async () => {

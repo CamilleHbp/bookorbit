@@ -1,6 +1,6 @@
 {
-  "id": "11f3aede-b2de-4b2a-91ca-5ee497b8d87d",
-  "prevId": "1916196a-54ba-4b2c-8bb0-881e72398962",
+  "id": "1916196a-54ba-4b2c-8bb0-881e72398962",
+  "prevId": "92e60858-3377-40ad-81ec-123a296161f5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3741,6 +3741,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -29411,66 +29418,6 @@
           "value": "\"provider_metadata_cache\".\"payload_bytes\" >= 0"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.metadata_http_provider_icons": {
-      "name": "metadata_http_provider_icons",
-      "schema": "",
-      "columns": {
-        "provider_id": {
-          "name": "provider_id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_type": {
-          "name": "content_type",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hash": {
-          "name": "hash",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "data": {
-          "name": "data",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "metadata_http_provider_icons_provider_id_metadata_http_providers_id_fk": {
-          "name": "metadata_http_provider_icons_provider_id_metadata_http_providers_id_fk",
-          "tableFrom": "metadata_http_provider_icons",
-          "tableTo": "metadata_http_providers",
-          "columnsFrom": ["provider_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.metadata_http_providers": {

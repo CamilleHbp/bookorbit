@@ -693,6 +693,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { titleRow: true, title: (to) => fallbackById('titles.collection', numericParam(to, 'id')) },
       },
       {
+        path: '/tags',
+        name: 'tags',
+        component: () => import('@/features/tags/views/TagsView.vue'),
+        meta: { title: () => t('tagBrowser.title') },
+      },
+      {
         path: '/authors',
         name: 'authors',
         component: () => import('@/features/author/views/AuthorsView.vue'),
@@ -725,6 +731,13 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/features/tools/views/ToolsView.vue'),
         children: [
           { path: '', redirect: { name: 'tools-entity-manager' } },
+          {
+            path: 'tags',
+            name: 'tools-tags',
+            component: () => import('@/features/tools/entity-manager/views/EntityManagerView.vue'),
+            props: { tagsOnly: true },
+            meta: { title: () => t('tools.header.tags') },
+          },
           {
             path: 'entity-manager',
             name: 'tools-entity-manager',

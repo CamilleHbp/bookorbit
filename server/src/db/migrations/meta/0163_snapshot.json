@@ -1,6 +1,6 @@
 {
-  "id": "4079d419-26c9-441c-a14f-97b88011d07b",
-  "prevId": "66d8c662-f0af-4048-8e75-a653a7620382",
+  "id": "66d8c662-f0af-4048-8e75-a653a7620382",
+  "prevId": "d9051559-0711-4d52-82a1-e55c01da8f7f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3735,6 +3735,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "sensitive_cover": {
+          "name": "sensitive_cover",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -6930,13 +6937,6 @@
           "type": "varchar(128)",
           "primaryKey": false,
           "notNull": false
-        },
-        "metadata_provider_pinned": {
-          "name": "metadata_provider_pinned",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "last_enriched_at": {
           "name": "last_enriched_at",
