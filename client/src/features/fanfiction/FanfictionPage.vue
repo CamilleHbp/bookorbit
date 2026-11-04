@@ -279,6 +279,9 @@ onMounted(() => {
         <h1 class="text-lg font-semibold">{{ t('fanfiction.title') }}</h1>
       </div>
       <div class="flex items-center gap-2">
+        <RouterLink class="text-sm text-primary underline underline-offset-4" :to="{ name: 'tools-tag-matching' }">{{
+          t('tagMatching.title')
+        }}</RouterLink>
         <Button variant="ghost" class="size-11" as-child
           ><RouterLink :to="{ name: 'settings-website-logins' }" :aria-label="t('fanfiction.connections.title')"
             ><Settings aria-hidden="true" /></RouterLink

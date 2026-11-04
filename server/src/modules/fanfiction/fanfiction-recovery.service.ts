@@ -1,3 +1,4 @@
+import { TagMatchingService, storyLabels } from '../tag-matching/tag-matching.service';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { MetadataService } from '../metadata/metadata.service';
 import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
@@ -29,6 +30,7 @@ export class FanfictionRecoveryService {
     private readonly reviews: FanfictionReviewService,
     private readonly covers: MetadataService,
     private readonly catalog: RevisionCatalogService,
+    private readonly matching: TagMatchingService,
   ) {}
 
   @Interval(5000)
@@ -76,7 +78,10 @@ export class FanfictionRecoveryService {
               ownerKey: row.ownerKey!,
               commit: async (tx) => {
                 const job = await this.lockOwner(tx, row.ownerKey!, row.libraryId);
-                if (job?.result?.preparedUpdate) await this.reviews.apply(tx, job, job.result.bookId!);
+                if (job) {
+                  await this.refreshRecoveredPreview(tx, job);
+                  if (job.result?.preparedUpdate) await this.reviews.apply(tx, job, job.result.bookId!);
+                }
               },
               authorize: async (tx) => {
                 await this.requireInterrupted(tx, row.ownerKey!, row.libraryId);
@@ -131,6 +136,35 @@ export class FanfictionRecoveryService {
     return job;
   }
 
+  private async refreshRecoveredPreview(tx: DatabaseTransaction, job: typeof jobs.$inferSelect) {
+    const preview = job.result?.preview;
+    if (!preview || !['update', 'refresh'].includes(job.kind)) return;
+    const binding = await this.matching.binding(tx, job.libraryId);
+    if (!binding) return;
+    const [current] = await tx.select().from(schema.tagRulebooks).where(eq(schema.tagRulebooks.id, binding.id)).for('share');
+    if (preview.labelMappingVersion === current.version) return;
+    const labels = storyLabels(preview);
+    const resolved = await this.matching.resolve(tx, binding.id, preview.site, labels);
+    // The file may already be installed. Reconcile its raw evidence using current
+    // rules, but require another review before applying stale manual choices.
+    job.result = {
+      ...job.result,
+      preview: {
+        ...preview,
+        rawLabels: labels,
+        labelMappingVersion: current.version,
+        pendingLabelCount: resolved.pending.length,
+        tags: resolved.targets.filter((t) => t.field === 'tags').map((t) => resolved.names.get(`tags:${t.id}`)!),
+        genres: resolved.targets.filter((t) => t.field === 'genres').map((t) => resolved.names.get(`genres:${t.id}`)!),
+        categories: undefined,
+      },
+    };
+    delete job.result.preparedUpdate;
+    delete job.result.metadataReview;
+    delete job.result.metadataDeferred;
+    await tx.update(jobs).set({ result: job.result }).where(eq(jobs.id, job.id));
+  }
+
   private async recordPublished(tx: DatabaseTransaction, job: typeof jobs.$inferSelect, revisionId: string, bookFileId: number) {
     if (job.result?.revisionId && job.result.revisionId !== revisionId)
       throw new ConflictException('A later attempt has a different publication receipt');
@@ -141,6 +175,7 @@ export class FanfictionRecoveryService {
           .where(and(eq(sources.id, job.sourceId), eq(sources.libraryId, job.libraryId), eq(sources.bookFileId, bookFileId)))
           .for('update')
       : [];
+    await this.refreshRecoveredPreview(tx, job);
     if (source && job.result?.preparedUpdate) job.result = await this.reviews.apply(tx, job, source.bookId!);
     if (source && !job.result?.revisionId) {
       if (source.version === job.sourceVersion && source.state !== 'unlinked') {
@@ -150,6 +185,13 @@ export class FanfictionRecoveryService {
           const fields = changedStoryMetadata(snapshot.current, preview);
           if (fields.length) job.result = { ...job.result, metadataReview: { ...snapshot, incoming: preview, fields, previousState: 'paused' } };
         }
+        if (preview && source.bookId && ['update', 'refresh'].includes(job.kind))
+          await this.matching.sync(
+            tx,
+            source.bookId,
+            { sourceKey: `fanfiction:${source.id}`, source: preview.site, labels: storyLabels(preview) },
+            { expectedVersion: preview.labelMappingVersion },
+          );
         const replacement = job.kind === 'replacement' ? job.result?.replacement : undefined;
         await tx
           .update(sources)
@@ -164,7 +206,15 @@ export class FanfictionRecoveryService {
               ? { title: replacement.title, authors: replacement.authors, chapterCount: replacement.chapterCount }
               : {}),
             ...(preview && job.kind !== 'rollback'
-              ? { title: preview.title, authors: preview.authors, chapterCount: preview.chapterCount, storyStatus: preview.status }
+              ? {
+                  title: preview.title,
+                  authors: preview.authors,
+                  chapterCount: preview.chapterCount,
+                  storyStatus: preview.status,
+                  rawLabels: storyLabels(preview),
+                  labelMappingVersion: preview.labelMappingVersion ?? null,
+                  categories: preview.categories ?? null,
+                }
               : {}),
           })
           .where(eq(sources.id, source.id));

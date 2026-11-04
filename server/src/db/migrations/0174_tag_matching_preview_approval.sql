@@ -1,0 +1,1 @@
+ALTER TABLE "tag_matching_jobs" ADD COLUMN "approved_at" timestamp with time zone;

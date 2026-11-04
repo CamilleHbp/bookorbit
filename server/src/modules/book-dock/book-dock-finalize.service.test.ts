@@ -55,6 +55,8 @@ function makeService() {
     getBookRequestImportFormats: vi.fn().mockResolvedValue('all'),
   };
   const metadataService = {
+    applyImportedLabels: vi.fn().mockResolvedValue(false),
+    recordManualLabels: vi.fn().mockResolvedValue(undefined),
     downloadAndSaveCover: vi.fn().mockResolvedValue(false),
     saveExtractedCoverBytes: vi.fn().mockResolvedValue(undefined),
     coverSlotIsEmpty: vi.fn().mockResolvedValue(true),

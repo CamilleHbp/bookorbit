@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, eq } from 'drizzle-orm';
-import type { FanfictionPreview, FanfictionMetadataField, FanfictionMetadataValues } from '@bookorbit/types';
+import type { FanfictionPreview, FanfictionMetadataField, FanfictionMetadataValues, FanfictionLabelEdits } from '@bookorbit/types';
 import { createHash } from 'node:crypto';
 import type { DatabaseTransaction } from '../../db/transaction';
 import { authors, bookAuthors, bookMetadata, bookGenres, genres, books, bookTags, bookTagSources, tags } from '../../db/schema';
@@ -8,6 +8,7 @@ import { normalizeMetadataText, normalizeMetadataTextKey } from '../../common/ut
 import { ManagedTagService, type ManagedTagSource } from './managed-tag.service';
 import { BookMetadataLockService } from '../book-metadata-lock/book-metadata-lock.service';
 import { MetadataService } from './metadata.service';
+import { TagMatchingService } from '../tag-matching/tag-matching.service';
 
 @Injectable()
 export class ManagedMetadataService {
@@ -16,6 +17,7 @@ export class ManagedMetadataService {
     private readonly metadata: MetadataService,
     private readonly tags: ManagedTagService,
     private readonly locks: BookMetadataLockService,
+    private readonly matching: TagMatchingService,
   ) {}
 
   async snapshot(tx: DatabaseTransaction, bookId: number, libraryId: number, sourceKey?: string) {
@@ -92,6 +94,7 @@ export class ManagedMetadataService {
     personalTags: string[] = [],
     replaceTags = false,
     reviewedFields: FanfictionMetadataField[] = [],
+    labelEdits?: FanfictionLabelEdits,
   ) {
     if (
       typeof preview.title !== 'string' ||
@@ -157,18 +160,40 @@ export class ManagedMetadataService {
           changed = true;
         }
       }
-      if (filtered.genres !== undefined) {
+      const rulebook = await this.matching.binding(tx, source.libraryId);
+      // Raw story labels are synchronized at source completion. Canonical preview values
+      // must not replace manual labels or become a second imported source here.
+      if (rulebook) {
+        for (const field of ['tags', 'genres'] as const) {
+          const names = filtered[field];
+          if (names === undefined || !reviewedFields.includes(field)) continue;
+          await this.matching.manualSelection(tx, bookId, field, names, source.userId ?? rulebook.userId);
+          if (field === 'tags') await this.metadata.replaceTags(bookId, names, { executor: tx, emitEvent: false });
+          else await this.metadata.replaceGenres(bookId, names, { executor: tx, emitEvent: false });
+          await this.matching.manualSelection(tx, bookId, field, names, source.userId ?? rulebook.userId);
+          changed = true;
+        }
+      }
+      if (!rulebook && filtered.genres !== undefined) {
         await this.metadata.replaceGenres(bookId, filtered.genres, { executor: tx, emitEvent: false });
         changed = true;
       }
-      if (filtered.tags !== undefined) {
+      if (!rulebook && filtered.tags !== undefined) {
         changed = (await this.tags.sync(tx, bookId, source, filtered.tags, { reviewed: reviewedFields.includes('tags') })) || changed;
         if (replaceTags) {
           await this.metadata.replaceTags(bookId, filtered.tags, { executor: tx, emitEvent: false });
           changed = true;
         }
       }
-      if (personalTags.length) await this.tags.keepPersonal(tx, bookId, source, personalTags, { reviewed: reviewedFields.includes('tags') });
+      if (rulebook) {
+        const edits = labelEdits ?? { tags: { added: personalTags, removed: [] } };
+        for (const field of ['tags', 'genres'] as const) {
+          const edit = edits[field];
+          if (filtered[field] === undefined || !edit || (!edit.added.length && !edit.removed.length)) continue;
+          await this.matching.editManualLabels(tx, bookId, field, edit, source.userId ?? rulebook.userId);
+          changed = true;
+        }
+      } else if (personalTags.length) await this.tags.keepPersonal(tx, bookId, source, personalTags, { reviewed: reviewedFields.includes('tags') });
       if (changed) await tx.update(books).set({ updatedAt: new Date() }).where(eq(books.id, bookId));
       this.logger.log(
         `[metadata.managed_story] [end] bookId=${bookId} libraryId=${source.libraryId} durationMs=${Date.now() - startedAt} changed=${changed} - story metadata processed`,

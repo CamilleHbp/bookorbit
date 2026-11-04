@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TagReviewNotice from './TagReviewNotice.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -45,6 +46,7 @@ function handleLater() {
 <template>
   <Button v-if="deferred" @click="resume">{{ t('fanfiction.previewStory') }}</Button>
   <form v-else class="w-full space-y-5" @submit.prevent="handleApply">
+    <TagReviewNotice :count="job.result?.importReview?.preview?.pendingLabelCount" />
     <StoryMetadataFields ref="fields" v-model="values" :disabled="busy || disabled" />
     <details v-if="job.result?.importReview?.preview?.categories" class="border-t border-border pt-3">
       <summary class="min-h-11 cursor-pointer py-2 text-sm text-muted-foreground">{{ t('fanfiction.importInbox.sourceDetails') }}</summary>

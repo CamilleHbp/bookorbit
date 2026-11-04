@@ -1,3 +1,4 @@
+import { TagMatchingModule } from '../tag-matching/tag-matching.module';
 import { RegexMetadataService } from './regex/regex-metadata.service';
 import { Module } from '@nestjs/common';
 import { DjvuDocumentModule } from '../djvu/djvu-document.module';
@@ -18,6 +19,7 @@ import { MetadataService } from './metadata.service';
 
 @Module({
   imports: [
+    TagMatchingModule,
     AudiobookChaptersModule,
     BookMetadataLockModule,
     BookCoverStoreModule,

@@ -44,6 +44,8 @@ function dirent(name: string, kind: 'file' | 'dir') {
 }
 
 describe('LibraryService', () => {
+  const creator = { id: 1, active: true } as never;
+  const tagMatching = { assignNewLibrary: vi.fn().mockResolvedValue(undefined) };
   const libraryRepo = {
     hasUserAccess: vi.fn(),
     findUserAccessLevel: vi.fn(),
@@ -118,6 +120,7 @@ describe('LibraryService', () => {
       scanScheduler as any,
       regexMetadata as any,
       readingEvents,
+      tagMatching as never,
     );
 
     libraryRepo.findPodcastIds.mockResolvedValue([]);
@@ -291,7 +294,7 @@ describe('LibraryService', () => {
     libraryRepo.findByName.mockResolvedValue([]);
     libraryRepo.insert.mockResolvedValue([{ id: 5, type: 'books', name: 'Regex', icon: 'BookOpen' }]);
     libraryRepo.insertFolders.mockResolvedValue([]);
-    await service.create({ name: 'Regex', icon: 'BookOpen', folders: ['/a'], regexMetadata: config, metadataPrecedence });
+    await service.create({ name: 'Regex', icon: 'BookOpen', folders: ['/a'], regexMetadata: config, metadataPrecedence }, creator);
     expect(libraryRepo.insert).toHaveBeenCalledWith(
       expect.objectContaining({
         regexMetadata: config,
@@ -308,7 +311,7 @@ describe('LibraryService', () => {
       { id: 12, path: '/b' },
     ]);
 
-    const result = await service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/a', '/b'] } as any);
+    const result = await service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/a', '/b'] } as any, creator);
 
     expect(libraryRepo.insert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -357,7 +360,7 @@ describe('LibraryService', () => {
     libraryRepo.insert.mockResolvedValue([{ id: 5, type: 'books', name: 'Sci-Fi', icon: 'BookOpen' }]);
     libraryRepo.insertFolders.mockResolvedValue([{ id: 11, path: '/a' }]);
 
-    await service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/a'] } as any);
+    await service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/a'] } as any, creator);
 
     expect(libraryRepo.insert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -384,7 +387,7 @@ describe('LibraryService', () => {
     libraryRepo.insert.mockResolvedValue([{ id: 5, type: 'books', name: 'Mixed', icon: 'BookOpen' }]);
     libraryRepo.insertFolders.mockResolvedValue([{ id: 11, path: '/a' }]);
 
-    await service.create({ name: 'Mixed', icon: 'BookOpen', folders: ['/a'], fileWriteAllFiles: true } as any);
+    await service.create({ name: 'Mixed', icon: 'BookOpen', folders: ['/a'], fileWriteAllFiles: true } as any, creator);
 
     expect(libraryRepo.insert).toHaveBeenCalledWith(expect.objectContaining({ fileWriteAllFiles: true }));
   });
@@ -414,9 +417,11 @@ describe('LibraryService', () => {
       { id: 22, path: '/watch-b' },
     ]);
 
-    await service.create({ name: 'Watched', icon: 'BookOpen', folders: ['/watch-a', '/watch-b'], watch: true } as any);
+    await service.create({ name: 'Watched', icon: 'BookOpen', folders: ['/watch-a', '/watch-b'], watch: true } as any, creator);
 
     expect(fileWatcherService.startWatcher).toHaveBeenCalledWith(6, ['/watch-a', '/watch-b']);
+    expect(tagMatching.assignNewLibrary).toHaveBeenCalledWith(creator, 6);
+    expect(tagMatching.assignNewLibrary.mock.invocationCallOrder[0]).toBeLessThan(fileWatcherService.startWatcher.mock.invocationCallOrder[0]);
     expect(scannerService.startScanAsync).toHaveBeenCalledWith(6);
   });
 
@@ -425,12 +430,15 @@ describe('LibraryService', () => {
     libraryRepo.insert.mockResolvedValue([{ id: 6, name: 'Scheduled', icon: 'BookOpen', watch: false }]);
     libraryRepo.insertFolders.mockResolvedValue([{ id: 21, path: '/scheduled' }]);
 
-    await service.create({
-      name: 'Scheduled',
-      icon: 'BookOpen',
-      folders: ['/scheduled'],
-      autoScanCronExpression: '0 4 * * *',
-    } as any);
+    await service.create(
+      {
+        name: 'Scheduled',
+        icon: 'BookOpen',
+        folders: ['/scheduled'],
+        autoScanCronExpression: '0 4 * * *',
+      } as any,
+      creator,
+    );
 
     expect(scanScheduler.syncSchedule).toHaveBeenCalledWith(6, '0 4 * * *');
   });
@@ -440,7 +448,7 @@ describe('LibraryService', () => {
     libraryRepo.insert.mockResolvedValue([{ id: 7, type: 'podcasts', name: 'Podcasts', icon: 'Podcast', watch: false, watchLocalFolders: true }]);
     libraryRepo.insertFolders.mockResolvedValue([{ id: 23, path: '/podcasts', role: 'downloads' }]);
 
-    await service.create({ type: 'podcasts', name: 'Podcasts', icon: 'Podcast', folders: ['/podcasts'] } as any);
+    await service.create({ type: 'podcasts', name: 'Podcasts', icon: 'Podcast', folders: ['/podcasts'] } as any, creator);
 
     expect(libraryRepo.insertPodcastSettings).toHaveBeenCalledWith(7);
     expect(libraryRepo.insert).toHaveBeenCalledWith(
@@ -452,14 +460,17 @@ describe('LibraryService', () => {
 
   it('create rejects book-only settings for podcast libraries', async () => {
     await expect(
-      service.create({ type: 'podcasts', name: 'Podcasts', icon: 'Podcast', folders: ['/podcasts'], autoScanCronExpression: '0 * * * *' } as any),
+      service.create(
+        { type: 'podcasts', name: 'Podcasts', icon: 'Podcast', folders: ['/podcasts'], autoScanCronExpression: '0 * * * *' } as any,
+        creator,
+      ),
     ).rejects.toThrow('autoScanCronExpression is only supported for book libraries');
 
     expect(libraryRepo.insert).not.toHaveBeenCalled();
   });
 
   it('create rejects podcast-only watcher settings for book libraries', async () => {
-    await expect(service.create({ name: 'Books', icon: 'BookOpen', folders: ['/books'], watchLocalFolders: true } as any)).rejects.toThrow(
+    await expect(service.create({ name: 'Books', icon: 'BookOpen', folders: ['/books'], watchLocalFolders: true } as any, creator)).rejects.toThrow(
       'watchLocalFolders is only supported for podcast libraries',
     );
 
@@ -470,7 +481,7 @@ describe('LibraryService', () => {
     libraryRepo.findByName.mockResolvedValue([]);
 
     await expect(
-      service.create({ type: 'podcasts', name: 'Podcasts', icon: 'Podcast', folders: ['/podcasts-a', '/podcasts-b'] } as any),
+      service.create({ type: 'podcasts', name: 'Podcasts', icon: 'Podcast', folders: ['/podcasts-a', '/podcasts-b'] } as any, creator),
     ).rejects.toThrow('Podcast libraries require exactly one storage folder');
 
     expect(libraryRepo.insert).not.toHaveBeenCalled();
@@ -484,7 +495,7 @@ describe('LibraryService', () => {
       { id: 24, path: '/archive', role: 'local' },
     ]);
 
-    await service.create({ type: 'podcasts', name: 'Podcasts', icon: 'Podcast', folders: ['/podcasts'], localFolders: ['/archive'] } as any);
+    await service.create({ type: 'podcasts', name: 'Podcasts', icon: 'Podcast', folders: ['/podcasts'], localFolders: ['/archive'] } as any, creator);
 
     expect(libraryRepo.insertFolders).toHaveBeenCalledWith([
       { libraryId: 7, path: '/podcasts', role: 'downloads' },
@@ -497,13 +508,16 @@ describe('LibraryService', () => {
     libraryRepo.insert.mockResolvedValue([{ id: 7, type: 'podcasts', name: 'Podcasts', icon: 'Podcast', watchLocalFolders: false }]);
     libraryRepo.insertFolders.mockResolvedValue([{ id: 23, path: '/podcasts', role: 'downloads' }]);
 
-    await service.create({
-      type: 'podcasts',
-      name: 'Podcasts',
-      icon: 'Podcast',
-      folders: ['/podcasts'],
-      watchLocalFolders: false,
-    } as any);
+    await service.create(
+      {
+        type: 'podcasts',
+        name: 'Podcasts',
+        icon: 'Podcast',
+        folders: ['/podcasts'],
+        watchLocalFolders: false,
+      } as any,
+      creator,
+    );
 
     expect(libraryRepo.insert).toHaveBeenCalledWith(expect.objectContaining({ watchLocalFolders: false }));
   });
@@ -511,14 +525,16 @@ describe('LibraryService', () => {
   it('create rejects duplicate library names', async () => {
     libraryRepo.findByName.mockResolvedValue([{ id: 9 }]);
 
-    await expect(service.create({ name: 'Dup', icon: 'BookOpen', folders: ['/x'] } as any)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.create({ name: 'Dup', icon: 'BookOpen', folders: ['/x'] } as any, creator)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('create rejects folders outside the configured browse root before inserting the library', async () => {
     libraryRepo.findByName.mockResolvedValue([]);
     pathPolicy.assertWithinBrowseRoot.mockRejectedValue(new ForbiddenException('outside root'));
 
-    await expect(service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/outside'] } as any)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/outside'] } as any, creator)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
 
     expect(libraryRepo.insert).not.toHaveBeenCalled();
     expect(libraryRepo.insertFolders).not.toHaveBeenCalled();
@@ -527,7 +543,7 @@ describe('LibraryService', () => {
   it('create rejects missing icons', async () => {
     libraryRepo.findByName.mockResolvedValue([]);
 
-    await expect(service.create({ name: 'Sci-Fi', folders: ['/a'] } as any)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.create({ name: 'Sci-Fi', folders: ['/a'] } as any, creator)).rejects.toBeInstanceOf(BadRequestException);
     expect(libraryRepo.insert).not.toHaveBeenCalled();
   });
 

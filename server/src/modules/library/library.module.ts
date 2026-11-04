@@ -1,3 +1,4 @@
+import { TagMatchingModule } from '../tag-matching/tag-matching.module';
 import { MetadataModule } from '../metadata/metadata.module';
 import { ReadingAttemptEventsModule } from '../user-book-status/reading-attempt-events.module';
 import { Module, forwardRef } from '@nestjs/common';
@@ -18,6 +19,7 @@ import { LibraryAddedAtService } from './library-added-at.service';
 
 @Module({
   imports: [
+    TagMatchingModule,
     ReadingAttemptEventsModule,
     ScannerModule,
     MetadataModule,

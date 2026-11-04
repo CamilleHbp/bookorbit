@@ -726,6 +726,12 @@ export const routes: RouteRecordRaw[] = [
         children: [
           { path: '', redirect: { name: 'tools-entity-manager' } },
           {
+            path: 'tag-matching',
+            name: 'tools-tag-matching',
+            component: () => import('@/features/tag-matching/TagMatchingPanel.vue'),
+            meta: { title: () => t('tagMatching.title') },
+          },
+          {
             path: 'entity-manager',
             name: 'tools-entity-manager',
             component: () => import('@/features/tools/entity-manager/views/EntityManagerView.vue'),

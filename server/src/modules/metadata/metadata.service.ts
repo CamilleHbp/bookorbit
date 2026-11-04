@@ -1,3 +1,4 @@
+import { TagMatchingService, type LabelImport } from '../tag-matching/tag-matching.service';
 import type { RegexMetadataFields } from '@bookorbit/types';
 import { decideRegexFields, mergeRegexMetadata } from './regex/merge-regex-metadata';
 import { stat } from 'fs/promises';
@@ -106,6 +107,7 @@ export class MetadataService {
     private readonly coverStore: BookCoverStore,
     private readonly audiobookChapters: AudiobookChaptersService,
     private readonly managedTags: ManagedTagService,
+    private readonly tagMatching: TagMatchingService,
     @Optional() private readonly embedder: BookEmbedderService,
     @Optional() private readonly metadataEvents?: MetadataEventsService,
     @Optional() private readonly seriesIdentity?: SeriesIdentityService,
@@ -1005,6 +1007,22 @@ export class MetadataService {
     });
   }
 
+  async recordManualLabels(
+    bookId: number,
+    field: 'tags' | 'genres',
+    names: string[],
+    userId: number,
+    tx: import('../../db/transaction').DatabaseTransaction,
+  ) {
+    await this.tagMatching.manualSelection(tx, bookId, field, names, userId);
+  }
+
+  async applyImportedLabels(bookId: number, input: LabelImport, executor?: import('../../db/transaction').DatabaseTransaction): Promise<boolean> {
+    return !!(executor
+      ? await this.tagMatching.sync(executor, bookId, input)
+      : await this.db.transaction((tx) => this.tagMatching.sync(tx, bookId, input)));
+  }
+
   private async persistAudioMetadata(bookId: number, data: ParsedBookData, preserveAbsentRelations = false): Promise<void> {
     const { dto: filtered } = await this.bookMetadataLockService.filterAutomatedBookUpdate(bookId, {
       title: data.title,
@@ -1063,9 +1081,13 @@ export class MetadataService {
     if (filtered.authors !== undefined) {
       await this.replaceAuthors(bookId, data.authors);
     }
-    if (filtered.genres !== undefined) {
-      await this.replaceGenres(bookId, filtered.genres);
-    }
+    const matched = await this.applyImportedLabels(bookId, {
+      sourceKey: 'file:metadata',
+      source: 'file',
+      preserveFields: ['tags', ...(preserveAbsentRelations && !data.genres.length ? ['genres' as const] : [])],
+      labels: data.genres.map((value) => ({ field: 'genres', value })),
+    });
+    if (!matched && filtered.genres !== undefined) await this.replaceGenres(bookId, filtered.genres);
 
     if (filtered.audioMetadata?.narrators !== undefined) {
       await this.narratorService.replaceForBook(bookId, filtered.audioMetadata.narrators);
@@ -1172,10 +1194,22 @@ export class MetadataService {
     if (filtered.authors !== undefined) {
       await this.replaceAuthors(bookId, data.authors);
     }
-    if (filtered.genres !== undefined) {
+    const matched = await this.applyImportedLabels(bookId, {
+      sourceKey: tagSource?.key ?? 'file:metadata',
+      source: 'file',
+      preserveFields: [
+        ...(data.tags === undefined ? ['tags' as const] : []),
+        ...(preserveAbsentRelations && !data.genres.length ? ['genres' as const] : []),
+      ],
+      labels: [
+        ...data.genres.map((value) => ({ field: 'genres' as const, value })),
+        ...(data.tags ?? []).map((value) => ({ field: 'tags' as const, value })),
+      ],
+    });
+    if (!matched && filtered.genres !== undefined) {
       await this.replaceGenres(bookId, filtered.genres);
     }
-    if (filtered.tags !== undefined) {
+    if (!matched && filtered.tags !== undefined) {
       if (tagSource) await this.db.transaction((tx) => this.managedTags.sync(tx, bookId, tagSource, filtered.tags!));
       else await this.replaceTags(bookId, filtered.tags);
     }

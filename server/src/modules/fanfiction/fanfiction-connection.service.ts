@@ -1,3 +1,4 @@
+import { TagMatchingService } from '../tag-matching/tag-matching.service';
 import { personalAccessIssueFilter } from './fanfiction-source-filters';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, eq, sql } from 'drizzle-orm';
@@ -29,6 +30,7 @@ export class FanfictionConnectionService {
     private readonly vault: FanfictionVaultService,
     private readonly runtime: FanficfareRuntimeService,
     private readonly access: FanfictionAccessService,
+    private readonly matching: TagMatchingService,
   ) {}
 
   async websites(): Promise<FanfictionWebsite[]> {
@@ -76,8 +78,7 @@ export class FanfictionConnectionService {
     const website = await this.website(dto.site);
     if (website.access !== 'login' && (dto.username !== undefined || dto.password !== undefined))
       throw new BadRequestException('This website uses browser cookies instead of a saved password');
-    const tagKeys = (dto.tagRules ?? []).map((rule) => rule.remoteTag.trim().toLowerCase());
-    if (new Set(tagKeys).size !== tagKeys.length) throw new BadRequestException('Use each remote tag only once');
+    if (dto.tagRules?.length) throw new BadRequestException('Edit tag matches in Manage tags');
     this.logger.log(`[fanfiction.connection] [start] userId=${user.id} - saving website login`);
     try {
       return await this.db.transaction(async (tx) => {
@@ -177,7 +178,25 @@ export class FanfictionConnectionService {
       .where(and(eq(connections.site, site), eq(connections.userId, user.id)))
       .limit(1);
     if (!row) return { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined, connection: null };
-    const original = JSON.parse(await this.vault.decrypt(`user:${user.id}`, row.id, row.document)) as FanfictionConnectionDocument;
+    let original = JSON.parse(await this.vault.decrypt(`user:${user.id}`, row.id, row.document)) as FanfictionConnectionDocument;
+    if (original.tagRules?.length) {
+      original = await this.db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(connections)
+          .where(and(eq(connections.id, row.id), eq(connections.userId, user.id)))
+          .for('update');
+        if (!current) throw new ConflictException('Website login was removed');
+        const document = JSON.parse(await this.vault.decrypt(`user:${user.id}`, row.id, current.document)) as FanfictionConnectionDocument;
+        await this.matching.importLegacyRules(tx, user, recognized.site, document.tagRules ?? []);
+        const migrated = { ...document, tagRules: [] };
+        await tx
+          .update(connections)
+          .set({ document: await this.vault.encrypt(`user:${user.id}`, row.id, JSON.stringify(migrated), false) })
+          .where(eq(connections.id, row.id));
+        return migrated;
+      });
+    }
     const saveCookies: FanfictionCookieSink = async (incoming) => {
       const cookies = validateRuntimeCookies(incoming);
       await this.db.transaction(async (tx) => {

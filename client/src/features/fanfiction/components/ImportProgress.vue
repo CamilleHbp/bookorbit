@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TagReviewNotice from './TagReviewNotice.vue'
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -77,6 +78,7 @@ const lastStage = computed(() =>
         ><span v-if="percentage !== undefined">{{ percentage }}%</span>
       </div>
     </template>
+    <TagReviewNotice :count="job.result?.preview?.pendingLabelCount ?? job.result?.importReview?.preview?.pendingLabelCount" />
     <StoryUpdateOutcome :job="job" />
     <p v-if="lastStage" class="text-muted-foreground text-xs">{{ lastStage }}</p>
     <p v-if="errorText" role="alert" class="text-destructive text-sm">{{ errorText }}</p>
