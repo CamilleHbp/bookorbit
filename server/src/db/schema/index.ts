@@ -51,3 +51,4 @@ export * from './delivery';
 export * from './server-identity';
 export * from './fanfiction';
 export * from './koreader-delivery';
+export * from './tag-matching';

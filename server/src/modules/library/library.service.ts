@@ -1,3 +1,4 @@
+import { TagMatchingService } from '../tag-matching/tag-matching.service';
 import { isDeepStrictEqual } from 'node:util';
 import { RegexMetadataService } from '../metadata/regex/regex-metadata.service';
 import { RegexMetadataPreviewDto, RegexMetadataValidationDto } from './dto/regex-metadata.dto';
@@ -78,6 +79,7 @@ export class LibraryService {
     private readonly scanScheduler: LibraryScanSchedulerService,
     private readonly regexMetadata: RegexMetadataService,
     private readonly readingAttemptEvents: ReadingAttemptEventsService,
+    private readonly tagMatching: TagMatchingService,
   ) {
     this.appDataPath = this.config.get<string>('storage.appDataPath')!;
   }
@@ -196,7 +198,7 @@ export class LibraryService {
     return { items, nextCursor: rows.length > size ? items.at(-1)!.id : null };
   }
 
-  async create(dto: CreateLibraryDto) {
+  async create(dto: CreateLibraryDto, user: RequestUser) {
     const regexMetadata = resolveRegexMetadataConfig(dto.regexMetadata);
     await this.regexMetadata.validate(regexMetadata);
     await this.assertNameAvailable(dto.name);
@@ -242,6 +244,8 @@ export class LibraryService {
       fileWriteReadAlongMaxFileSizeMb: dto.fileWriteReadAlongMaxFileSizeMb ?? 1000,
       fileRenameEnabled: dto.fileRenameEnabled ?? false,
     });
+
+    await this.tagMatching.assignNewLibrary(user, library.id);
 
     const folders = await this.libraryRepo.insertFolders(folderPaths.map((path) => ({ libraryId: library.id, path })));
 

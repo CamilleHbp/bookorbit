@@ -2043,12 +2043,30 @@ export class BookService {
       }
       this.throwIfMetadataUpdateFailpoint('afterNarratorsReplace');
 
-      if (dto.genres !== undefined) {
+      const labelsMatched =
+        options.chaptersSource === 'provider' && (dto.genres !== undefined || dto.tags !== undefined)
+          ? await this.metadataService.applyImportedLabels(
+              id,
+              {
+                sourceKey: 'provider:metadata',
+                source: 'provider',
+                preserveFields: [...(dto.tags === undefined ? ['tags' as const] : []), ...(dto.genres === undefined ? ['genres' as const] : [])],
+                labels: [
+                  ...(dto.genres ?? []).map((value) => ({ field: 'genres' as const, value })),
+                  ...(dto.tags ?? []).map((value) => ({ field: 'tags' as const, value })),
+                ],
+              },
+              tx,
+            )
+          : false;
+      if (!labelsMatched && dto.genres !== undefined) {
+        if (options.chaptersSource !== 'provider') await this.metadataService.recordManualLabels(id, 'genres', dto.genres, user.id, tx);
         await this.metadataService.replaceGenres(id, dto.genres, { executor: tx });
       }
       this.throwIfMetadataUpdateFailpoint('afterGenresReplace');
 
-      if (dto.tags !== undefined) {
+      if (!labelsMatched && dto.tags !== undefined) {
+        if (options.chaptersSource !== 'provider') await this.metadataService.recordManualLabels(id, 'tags', dto.tags, user.id, tx);
         await this.metadataService.replaceTags(id, dto.tags, { executor: tx });
       }
       this.throwIfMetadataUpdateFailpoint('afterTagsReplace');
@@ -2772,10 +2790,12 @@ export class BookService {
               continue;
             }
             if (field === 'genres') {
+              await this.metadataService.recordManualLabels(bookId, 'genres', names, user.id, tx);
               await this.metadataService.replaceGenres(bookId, names, { executor: tx });
               continue;
             }
             if (field === 'tags') {
+              await this.metadataService.recordManualLabels(bookId, 'tags', names, user.id, tx);
               await this.metadataService.replaceTags(bookId, names, { executor: tx });
               continue;
             }
@@ -2798,6 +2818,7 @@ export class BookService {
     await this.bookRepo.withTransaction(async (tx) => {
       if (mode === 'replace') {
         for (const bookId of bookIds) {
+          await this.metadataService.recordManualLabels(bookId, 'tags', tags, user.id, tx);
           await this.metadataService.replaceTags(bookId, tags, { executor: tx });
         }
         return;
@@ -2807,6 +2828,7 @@ export class BookService {
       for (const bookId of bookIds) {
         const current = currentTagsMap.get(bookId) ?? [];
         const next = mode === 'add' ? [...new Set([...current, ...tags])] : current.filter((t) => !tags.includes(t));
+        await this.metadataService.recordManualLabels(bookId, 'tags', next, user.id, tx);
         await this.metadataService.replaceTags(bookId, next, { executor: tx });
       }
     });
@@ -2938,6 +2960,7 @@ export class BookService {
             const names = this.normalizeListValues(fields.genres.values);
             if (fields.genres.mode === 'replace') {
               for (const bookId of ids) {
+                await this.metadataService.recordManualLabels(bookId, 'genres', names, user.id, tx);
                 await this.metadataService.replaceGenres(bookId, names, { executor: tx });
               }
             } else {
@@ -2945,6 +2968,7 @@ export class BookService {
               for (const bookId of ids) {
                 const current = currentMap.get(bookId) ?? [];
                 const merged = fields.genres!.mode === 'add' ? [...new Set([...current, ...names])] : current.filter((n) => !names.includes(n));
+                await this.metadataService.recordManualLabels(bookId, 'genres', merged, user.id, tx);
                 await this.metadataService.replaceGenres(bookId, merged, { executor: tx });
               }
             }
@@ -2958,6 +2982,7 @@ export class BookService {
             const names = this.normalizeListValues(fields.tags.values);
             if (fields.tags.mode === 'replace') {
               for (const bookId of ids) {
+                await this.metadataService.recordManualLabels(bookId, 'tags', names, user.id, tx);
                 await this.metadataService.replaceTags(bookId, names, { executor: tx });
               }
             } else {
@@ -2965,6 +2990,7 @@ export class BookService {
               for (const bookId of ids) {
                 const current = currentMap.get(bookId) ?? [];
                 const merged = fields.tags!.mode === 'add' ? [...new Set([...current, ...names])] : current.filter((n) => !names.includes(n));
+                await this.metadataService.recordManualLabels(bookId, 'tags', merged, user.id, tx);
                 await this.metadataService.replaceTags(bookId, merged, { executor: tx });
               }
             }

@@ -195,6 +195,8 @@ function makeService(
     buildOrderBy: vi.fn(),
   };
   const metadataService = {
+    applyImportedLabels: vi.fn().mockResolvedValue(false),
+    recordManualLabels: vi.fn().mockResolvedValue(undefined),
     replaceAuthors: vi.fn().mockResolvedValue([]),
     replaceGenres: vi.fn().mockResolvedValue(undefined),
     replaceTags: vi.fn().mockResolvedValue(undefined),

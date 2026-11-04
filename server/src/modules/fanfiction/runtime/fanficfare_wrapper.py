@@ -3,6 +3,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from tag_matching import install as install_tag_matching, matched_preview
+
+
 import importlib.metadata
 import json
 import logging
@@ -11,7 +14,6 @@ import resource
 import time
 import traceback
 
-from tag_rules import apply_tag_rules
 from controlled_config import make_configuration, merge_configuration, validate_ini
 from epub_policy import validate_epub
 from image_processing import install_image_processing
@@ -148,8 +150,8 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     login_scribblehub(adapter)
     # FanFicFare caches metadata, so the writer cannot fetch a skipped cover later.
     story = adapter.getStoryMetadataOnly(get_cover=operation in ('download', 'update', 'refresh'))
-    apply_tag_rules(story, request.get('tagRules', []))
-    preview = story_preview(adapter, story)
+    install_tag_matching(story, adapter.getConfigSection(), request.get('tagMatching') or {'version': 0, 'rules': []})
+    preview = matched_preview(story, story_preview(adapter, story))
     canonical = preview['canonicalUrl']
     chapter_count = preview['chapterCount']
     if operation == 'preview':
@@ -179,7 +181,7 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
         os.fsync(output.fileno())
     report_progress({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
     validate_epub('output.epub')
-    return finish({'preview': story_preview(adapter, adapter.story), 'output': 'output.epub'})
+    return finish({'preview': matched_preview(adapter.story, story_preview(adapter, adapter.story)), 'output': 'output.epub'})
 
 
 def execute_request(request, report_progress=lambda progress: None):

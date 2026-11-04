@@ -244,7 +244,7 @@ export class FanfictionReviewService {
       await this.metadata.apply(
         tx,
         bookId,
-        { key: `fanfiction:${job.sourceId}`, libraryId: job.libraryId },
+        { key: `fanfiction:${job.sourceId}`, libraryId: job.libraryId, userId: job.userId },
         plan.values,
         plan.fields,
         plan.personalTags,
