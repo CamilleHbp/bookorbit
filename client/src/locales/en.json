@@ -16349,7 +16349,7 @@
   },
   "tagMatching": {
     "openBook": "Open book",
-    "decisionsSaved": "Saved {count} decision. | Saved {count} decisions.",
+    "decisionsSaved": "Saved {count, plural, one {# decision} other {# decisions}}.",
     "missingFandom": "Missing fandom: {title}",
     "missingFandomHelp": "Choose fandom labels for these books, or ignore the missing fandom. This does not create a shared match.",
     "pendingNotice": "{count} labels need matching",
@@ -16375,7 +16375,7 @@
     "save": "Save match",
     "ignore": "Ignore",
     "count": "{count} labels",
-    "books": "{count} book | {count} books",
+    "books": "{count, plural, one {# book} other {# books}}",
     "editCount": "Edit labels ({count})",
     "select": "Select {name}",
     "pagination": "Label pages",
