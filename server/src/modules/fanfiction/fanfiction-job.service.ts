@@ -264,6 +264,21 @@ export class FanfictionJobService {
       .where(
         and(
           eq(jobs.libraryId, libraryId),
+          dto.pendingImportsOnly
+            ? and(
+                eq(jobs.kind, 'import'),
+                eq(jobs.userId, user.id),
+                inArray(jobs.state, ['queued', 'running', 'review_required', 'failed', 'configuration_blocked']),
+                sql`not exists (
+                  select 1 from ${jobs} as newer
+                  where newer.library_id = ${jobs.libraryId} and newer.user_id = ${jobs.userId}
+                    and newer.kind = 'import'
+                    and (newer.source_id = ${jobs.sourceId} or newer.url = ${jobs.url})
+                    and (newer.created_at, newer.id) > (${jobs.createdAt}, ${jobs.id})
+                    and newer.result->>'existingImportId' is null
+                )`,
+              )
+            : undefined,
           dto.kind ? eq(jobs.kind, dto.kind) : undefined,
           dto.kind === 'source_batch' && !user.isSuperuser ? eq(jobs.userId, user.id) : undefined,
           dto.sourceId ? eq(jobs.sourceId, dto.sourceId) : undefined,
