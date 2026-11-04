@@ -196,7 +196,16 @@ export class FanficfareRuntimeService {
   ): Promise<unknown> {
     if (!control && this.active >= this.config.maxWorkers) throw new ServiceUnavailableException('FanFicFare runtime is busy');
     if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
-    const input = JSON.stringify(request);
+    const browserDownload =
+      this.config.flaresolverrUrl &&
+      request.url?.startsWith('https://www.scribblehub.com/') &&
+      ['download', 'update', 'refresh'].includes(request.operation);
+    const timeoutMs = control ? Math.min(this.config.timeoutMs, 5000) : browserDownload ? 7_200_000 : this.config.timeoutMs;
+    const input = JSON.stringify({
+      ...request,
+      timeoutSeconds: Math.ceil(timeoutMs / 1000),
+      ...(this.config.flaresolverrUrl ? { flaresolverrUrl: this.config.flaresolverrUrl } : {}),
+    });
     if (Buffer.byteLength(input) > 512 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
     if (!control) this.active++;
     const startedAt = Date.now();
@@ -217,13 +226,10 @@ export class FanficfareRuntimeService {
           failed = true;
           child.kill('SIGKILL');
         };
-        const timer = setTimeout(
-          () => {
-            timedOut = true;
-            stop();
-          },
-          control ? Math.min(this.config.timeoutMs, 5000) : this.config.timeoutMs,
-        );
+        const timer = setTimeout(() => {
+          timedOut = true;
+          stop();
+        }, timeoutMs);
         signal?.addEventListener('abort', stop, { once: true });
         child.stdout.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
