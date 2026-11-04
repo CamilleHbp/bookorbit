@@ -13,7 +13,7 @@ FORM = '''<form method="post" action="/login/">
 <input type="text" name="log"><input type="password" name="pwd">
 <input type="hidden" name="nonce" value="csrf-token">
 <input type="submit" name="wp-submit" value="Login">
-</form>'''
+</form><script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script>'''
 STORY_URL = 'https://www.scribblehub.com/series/123/story/'
 
 
@@ -106,7 +106,7 @@ class ScribbleHubLoginTest(unittest.TestCase):
             self.assertEqual(network.call_count, 1)
 
     def test_verification_pages_are_not_reported_as_bad_passwords(self):
-        for status, html in [(403, b'Forbidden'), (200, b'<script src="/cdn-cgi/challenge-platform/test"></script>')]:
+        for status, html in [(403, b'Forbidden'), (200, b'<title>Just a moment...</title><script src="/cdn-cgi/challenge-platform/test"></script>'), (200, b'<script>window._cf_chl_opt = {};</script>')]:
             with self.subTest(status=status):
                 with patch.object(self.transport, 'request', return_value=(status, html, LOGIN_URL)) as network:
                     with self.assertRaises(Exception) as failure:

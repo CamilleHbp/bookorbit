@@ -33,9 +33,11 @@ def login_scribblehub(adapter):
             cookies.clear(cookie.domain, cookie.path, cookie.name)
 
     def page(data):
-        if 'challenge-platform' in data or 'cf-chl-' in data:
+        soup = adapter.make_soup(data)
+        if ('window._cf_chl_opt' in data
+                or (soup.title and 'Just a moment' in soup.title.get_text() and 'challenge-platform' in data)):
             raise exceptions.AccessDenied('ScribbleHub requires browser verification')
-        return adapter.make_soup(data)
+        return soup
 
     soup = page(adapter.get_request(LOGIN_URL, usecache=False))
     password_field = soup.select_one('form input[type="password"][name]')
