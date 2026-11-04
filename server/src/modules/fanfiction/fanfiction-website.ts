@@ -2,6 +2,7 @@ import type { FanficfareSite, FanfictionWebsite } from '@bookorbit/types';
 
 const websites: Record<string, { name: string; access: FanfictionWebsite['access'] }> = {
   'archiveofourown.org': { name: 'Archive of Our Own', access: 'login' },
+  'www.scribblehub.com': { name: 'ScribbleHub', access: 'login' },
   'storiesonline.net': { name: 'StoriesOnline', access: 'login' },
   'fiction.live': { name: 'Fiction.live', access: 'cookies' },
   'www.royalroad.com': { name: 'Royal Road', access: 'cookies' },
