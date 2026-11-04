@@ -17,8 +17,10 @@ vi.mock('node:child_process', async () => {
         stderr: new PassThrough(),
         kill: vi.fn(),
       });
+      const chunks: Buffer[] = [];
+      child.stdin.on('data', (chunk: Buffer) => chunks.push(chunk));
       child.stdin.once('finish', () => {
-        output.request = JSON.parse(child.stdin.read().toString()) as Record<string, unknown>;
+        output.request = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
         child.stdout.write(JSON.stringify(output.response));
         child.emit('close', 0);
       });
@@ -43,6 +45,17 @@ describe('private FanFicFare runtime session output', () => {
     }).compile();
     service = module.get(FanficfareRuntimeService);
     output.response = { ok: true, result: { title: 'Public preview' }, cookies: [cookie] };
+  });
+  it('accepts a large personal rulebook while keeping input bounded', async () => {
+    const rules = Array.from({ length: 6000 }, (_, index) => ({
+      source: null,
+      field: 'tags',
+      value: `Source label ${index}`,
+      targets: [{ field: 'tags', name: 'Approved canonical tag' }],
+    }));
+    await service.execute({ operation: 'preview', tagMatching: { version: 1, rules } }, '/unused');
+    expect(output.request.tagMatching).toMatchObject({ version: 1, rules: expect.any(Array) });
+    await expect(service.execute({ operation: 'validate', configuration: 'x'.repeat(8 * 1024 * 1024) }, '/unused')).rejects.toThrow('input limit');
   });
   it('passes the operator solver endpoint and allows browser download deadlines while retaining the direct request timeout', async () => {
     runtimeConfig.flaresolverrUrl = 'http://solver:8191/v1';

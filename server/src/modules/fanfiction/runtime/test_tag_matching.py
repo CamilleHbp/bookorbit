@@ -10,6 +10,14 @@ class MatchingTests(unittest.TestCase):
             {'source': None, 'field': 'fandoms', 'value': 'B', 'targets': [{'field': 'tags', 'name': 'fandom.b'}]},
         ]
 
+    def test_original_work_fandom_needs_no_review(self):
+        labels = [{'field': 'fandoms', 'value': ' Original Work '}, {'field': 'characters', 'value': 'Original Character'}]
+        result = resolve('ao3', labels, self.rules)
+        self.assertEqual(result['pendingLabelCount'], 0)
+        self.assertEqual(result['tags'], [])
+        approved = {'source': None, 'field': 'fandoms', 'value': 'Original Work', 'targets': [{'field': 'tags', 'name': 'original'}]}
+        self.assertEqual(resolve('ao3', labels, self.rules + [approved])['tags'], ['original'])
+
     def test_matching_and_unknowns(self):
         result = resolve('ao3', [{'field': 'tags', 'value': ' OLD '}, {'field': 'genres', 'value': 'old'}], self.rules)
         self.assertEqual(result['tags'], ['canonical'])

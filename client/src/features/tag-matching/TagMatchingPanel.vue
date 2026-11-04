@@ -22,6 +22,7 @@ const tabs = ['matches', 'review', 'ignored'] as const
 const fields = ['tags', 'genres', 'fandoms', 'relationships', 'warnings', 'rating'] as const
 const inputClass =
   'min-h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+const hasMissingFandom = computed(() => matching.draft?.some((row) => row.bookId))
 const singleDraft = computed(() => (matching.draft?.length === 1 ? matching.draft[0] : null))
 const emptyText = computed(() => t(matching.view === 'review' ? 'tagMatching.reviewEmpty' : 'tagMatching.rulesEmpty'))
 function initialize() {
@@ -61,23 +62,35 @@ onMounted(initialize)
       </div>
       <form v-if="matching.draft" class="min-h-0 flex-1 space-y-4 overflow-y-auto pe-1" @submit.prevent="matching.saveMatch">
         <h2 class="text-base font-semibold">{{ t('tagMatching.editCount', { count: matching.draft.length }) }}</h2>
+        <p v-if="hasMissingFandom" class="text-sm text-muted-foreground">{{ t('tagMatching.missingFandomHelp') }}</p>
+        <RouterLink
+          v-if="singleDraft?.bookId"
+          :to="{ name: 'book-detail', params: { bookId: singleDraft.bookId } }"
+          class="inline-block text-sm text-primary underline underline-offset-4"
+          >{{ t('tagMatching.openBook') }}</RouterLink
+        >
         <div v-if="singleDraft" class="grid gap-3 sm:grid-cols-2">
           <label class="space-y-1 text-sm sm:col-span-2"
             ><span>{{ t('tagMatching.incoming') }}</span
             ><input
               v-model="singleDraft.value"
               required
-              maxlength="500"
+              :maxlength="singleDraft.bookId ? undefined : 500"
               :readonly="matching.view === 'review' && !!singleDraft.value && singleDraft.bookCount > 0"
               :class="inputClass"
           /></label>
           <label class="space-y-1 text-sm"
             ><span>{{ t('tagMatching.source') }}</span
-            ><input v-model="singleDraft.source" maxlength="200" :class="inputClass" :placeholder="t('tagMatching.allSources')"
+            ><input
+              v-model="singleDraft.source"
+              :readonly="!!singleDraft.bookId"
+              maxlength="200"
+              :class="inputClass"
+              :placeholder="t('tagMatching.allSources')"
           /></label>
           <label class="space-y-1 text-sm"
             ><span>{{ t('tagMatching.field') }}</span
-            ><select v-model="singleDraft.field" :class="inputClass">
+            ><select v-model="singleDraft.field" :disabled="!!singleDraft.bookId" :class="inputClass">
               <option v-for="item in fields" :key="item" :value="item">{{ t(`tagMatching.fields.${item}`) }}</option>
             </select></label
           >
@@ -190,7 +203,9 @@ onMounted(initialize)
                 class="min-w-0 flex-1 rounded-sm text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 @click="matching.edit(row)"
               >
-                <span class="block break-words text-sm font-medium">{{ row.value }}</span
+                <span class="block break-words text-sm font-medium">{{
+                  row.bookId ? t('tagMatching.missingFandom', { title: row.value }) : row.value
+                }}</span
                 ><span class="mt-1 block text-xs text-muted-foreground"
                   >{{ row.source || t('tagMatching.allSources') }} · {{ t(`tagMatching.fields.${row.field}`) }} ·
                   {{ t('tagMatching.books', { count: row.bookCount }) }}</span

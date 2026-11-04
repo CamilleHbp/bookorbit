@@ -136,6 +136,90 @@ describe.skipIf(!configPath)('persistent tag matching', () => {
     expect((await tags()).map((row) => row.tagId)).toEqual([tagId]);
     await expect(jobs.items({ ...user, id: user.id + 100000 }, preview.id, 1, 25)).rejects.toThrow('not available');
   });
+  it('does not request fandom review for an explicitly original work', async () => {
+    await save('tags', 'Original Work', []);
+    await sync(
+      [
+        { field: 'characters', value: 'Named character' },
+        { field: 'tags', value: ' Original   Work ' },
+      ],
+      'fanfiction:test',
+    );
+    expect((await management.review(user, new MatchingPageDto())).total).toBe(0);
+    const jobs = module.get(TagMatchingJobsService);
+    const preview = await jobs.create(user, []);
+    await jobs.advance(user, preview.id);
+    expect((await jobs.items(user, preview.id, 1, 25)).items[0].change.unresolved).toBe(0);
+  });
+  it('reviews missing fandoms per book without creating character aliases', async () => {
+    await sync([{ field: 'characters', value: 'Named character' }], 'fanfiction:test');
+    const own = (await management.own(user))!;
+    const review = await management.review(user, new MatchingPageDto());
+    expect(review.items).toHaveLength(1);
+    expect(review.items[0]).toMatchObject({ bookId, sourceKey: 'fanfiction:test', field: 'fandoms' });
+    await management.save(user, {
+      version: own.version,
+      bookId,
+      sourceKey: 'fanfiction:test',
+      source: 'file',
+      field: 'fandoms',
+      value: 'Missing fandom',
+      action: 'match',
+      targets: [{ field: 'tags', id: tagId }],
+    });
+    expect((await tags()).map((row) => row.tagId)).toEqual([tagId]);
+    expect((await tags())[0].managedOnly).toBe(false);
+    expect((await management.review(user, new MatchingPageDto())).total).toBe(0);
+    expect((await management.list(user, new MatchingPageDto())).total).toBe(0);
+    await sync([{ field: 'characters', value: 'Another character' }], 'fanfiction:test');
+    expect((await tags()).map((row) => row.tagId)).toEqual([tagId]);
+    expect((await management.review(user, new MatchingPageDto())).total).toBe(0);
+  });
+  it('keeps locked fandom assignments and denies another account a book-specific decision', async () => {
+    await sync([{ field: 'characters', value: 'Named character' }], 'fanfiction:test');
+    await db
+      .update(s.bookMetadata)
+      .set({ lockedFields: ['tags'] })
+      .where(eq(s.bookMetadata.bookId, bookId));
+    const own = (await management.own(user))!;
+    const decision = {
+      version: own.version,
+      bookId,
+      sourceKey: 'fanfiction:test',
+      source: 'file',
+      field: 'fandoms' as const,
+      value: 'Missing fandom',
+      action: 'match' as const,
+      targets: [{ field: 'tags' as const, id: tagId }],
+    };
+    await expect(management.save(user, decision)).rejects.toThrow('Unlock');
+    await expect(management.save({ ...user, id: user.id + 100000 }, decision)).rejects.toThrow('not available');
+    expect(await tags()).toEqual([]);
+    expect((await management.review(user, new MatchingPageDto())).total).toBe(1);
+    await management.save(user, { ...decision, action: 'ignore', targets: [] });
+    await sync([{ field: 'characters', value: 'Named character' }], 'fanfiction:test');
+    expect((await management.review(user, new MatchingPageDto())).total).toBe(0);
+  });
+  it('skips reapplication when library editing access is revoked after preview', async () => {
+    await sync([{ field: 'tags', value: 'remote' }]);
+    await save('tags', 'remote', [{ field: 'tags', id: tagId }]);
+    await db.insert(s.userLibraryAccess).values({ userId: user.id, libraryId, accessLevel: 'editor' });
+    const editor = {
+      ...user,
+      isSuperuser: false,
+      contentFilters: { includeTagIds: [], excludeTagIds: [], includeGenreIds: [], excludeGenreIds: [] },
+    };
+    const jobs = module.get(TagMatchingJobsService);
+    const preview = await jobs.create(editor, []);
+    await jobs.advance(editor, preview.id);
+    expect((await jobs.items(editor, preview.id, 1, 25)).items).toHaveLength(1);
+    await db.update(s.userLibraryAccess).set({ accessLevel: 'viewer' }).where(eq(s.userLibraryAccess.userId, user.id));
+    await jobs.apply(editor, preview.id);
+    expect(await jobs.advance(editor, preview.id)).toMatchObject({ state: 'completed', skipped: 1, changed: 0 });
+    expect(await tags()).toEqual([]);
+    const unavailable = await jobs.create(editor, []);
+    expect((await jobs.items(editor, unavailable.id, 1, 25)).total).toBe(0);
+  });
   it('resumes bounded batches and never treats a failed preview as approval', async () => {
     await sync([{ field: 'tags', value: 'remote' }]);
     const [first] = await db.select().from(s.books).where(eq(s.books.id, bookId));

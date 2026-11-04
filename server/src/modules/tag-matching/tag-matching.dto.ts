@@ -19,6 +19,8 @@ export class MatchingNewTargetDto {
   @IsString() @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value)) @MinLength(1) @MaxLength(200) name!: string;
 }
 export class SaveMatchingRuleDto {
+  @IsOptional() @IsInt() @Min(1) bookId?: number;
+  @IsOptional() @IsString() @MaxLength(100) sourceKey?: string;
   @IsOptional() @IsUUID() id?: string;
   @IsInt() @Min(1) version!: number;
   @IsString() @MaxLength(200) source = '';

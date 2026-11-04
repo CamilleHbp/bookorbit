@@ -206,7 +206,7 @@ export class FanficfareRuntimeService {
       ...(browserDownload ? { browserTimeoutSeconds: 7200 } : {}),
       ...(this.config.flaresolverrUrl ? { flaresolverrUrl: this.config.flaresolverrUrl } : {}),
     });
-    if (Buffer.byteLength(input) > 512 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
+    if (Buffer.byteLength(input) > 8 * 1024 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
     if (!control) this.active++;
     const startedAt = Date.now();
     const progress = new FanfictionRuntimeProgress(reportProgress);

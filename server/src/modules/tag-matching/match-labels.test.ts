@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchLabels, type LabelRule } from './match-labels';
+import { matchLabels, needsFandomReview, type LabelRule } from './match-labels';
 const rules: LabelRule[] = [
   { source: null, field: 'tags', value: 'Old label', targets: [{ field: 'tags', id: 1 }] },
   { source: 'ao3', field: 'tags', value: 'Old label', targets: [{ field: 'tags', id: 2 }] },
@@ -7,6 +7,20 @@ const rules: LabelRule[] = [
   { source: null, field: 'fandoms', value: 'Fandom B', targets: [{ field: 'tags', id: 4 }] },
 ];
 describe('approved label matching', () => {
+  it('does not request fandom decisions for original works or confuse original characters with original works', () => {
+    const labels = [
+      { field: 'fandoms' as const, value: ' Original Work ' },
+      { field: 'characters' as const, value: 'An original character' },
+    ];
+    const result = matchLabels('ao3', labels, []);
+    expect(result.pending).toEqual([]);
+    expect(result.targets).toEqual([]);
+    expect(needsFandomReview(labels, result.suppressed)).toBe(false);
+    expect(needsFandomReview([{ field: 'characters', value: 'Original Character' }], result.suppressed)).toBe(true);
+    expect(
+      matchLabels('ao3', labels, [{ source: null, field: 'fandoms', value: 'Original Work', targets: [{ field: 'tags', id: 7 }] }]).targets,
+    ).toEqual([{ field: 'tags', id: 7 }]);
+  });
   it('normalizes whitespace and case and prefers source-specific aliases', () => {
     expect(matchLabels('ao3', [{ field: 'tags', value: ' OLD  label ' }], rules).targets).toEqual([{ field: 'tags', id: 2 }]);
     expect(matchLabels('file', [{ field: 'tags', value: 'Old label' }], rules).targets).toEqual([{ field: 'tags', id: 1 }]);

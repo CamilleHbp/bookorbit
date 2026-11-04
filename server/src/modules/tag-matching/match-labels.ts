@@ -4,6 +4,18 @@ import { labelKey } from '../../common/utils/label-key';
 export { labelKey } from '../../common/utils/label-key';
 const broadRelationships = new Set(['m/m', 'f/f', 'f/m', 'm/f', 'male/male', 'female/female', 'female/male', 'male/female', 'gen', 'multi', 'other']);
 
+export const originalWorkLabels = ['original work', 'original works', 'original fiction', 'original-work', 'original-fiction'];
+export function needsFandomReview(labels: IncomingLabel[], suppressed: IncomingLabel[]): boolean {
+  return (
+    suppressed.length > 0 &&
+    !labels.some(
+      (label) =>
+        (label.field === 'fandoms' && !!labelKey(label.value)) ||
+        (['tags', 'genres'].includes(label.field) && originalWorkLabels.includes(labelKey(label.value))),
+    )
+  );
+}
+
 /** Resolve only approved aliases. Raw labels never become canonical entities here. */
 export function matchLabels(source: string, labels: IncomingLabel[], rules: LabelRule[]): LabelResolution {
   const general = new Map<string, LabelRule>();
@@ -35,6 +47,10 @@ export function matchLabels(source: string, labels: IncomingLabel[], rules: Labe
     }
     const key = JSON.stringify([label.field, value]);
     const rule = specific.get(key) ?? general.get(key);
+    if (!rule && label.field === 'fandoms' && originalWorkLabels.includes(value)) {
+      ignored.push(label);
+      continue;
+    }
     if (!rule) {
       pending.set(key, label);
       continue;

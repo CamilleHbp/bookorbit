@@ -6,6 +6,9 @@ def key(value):
     return ' '.join(unicodedata.normalize('NFC', value).split()).lower()
 
 
+ORIGINAL_WORK = {'original work', 'original works', 'original fiction', 'original-work', 'original-fiction'}
+
+
 BROAD = {'m/m', 'f/f', 'f/m', 'm/f', 'male/male', 'female/female',
          'female/male', 'male/female', 'gen', 'multi', 'other'}
 
@@ -28,6 +31,8 @@ def resolve(source, labels, rules):
         if field == 'characters' or (field == 'relationships' and value not in BROAD) or (field in ('tags', 'genres') and value in blocked):
             continue
         rule = specific.get((field, value), general.get((field, value)))
+        if (rule is None or rule.get('unresolved')) and field == 'fandoms' and value in ORIGINAL_WORK:
+            continue
         if rule is None or rule.get('unresolved'):
             pending.add((field, value))
             continue

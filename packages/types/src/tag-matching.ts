@@ -34,6 +34,8 @@ export interface TagMatchingPage<T> {
   version: number;
 }
 export interface TagMatchingReviewItem {
+  bookId?: number | null;
+  sourceKey?: string | null;
   source: string;
   field: LabelField;
   value: string;

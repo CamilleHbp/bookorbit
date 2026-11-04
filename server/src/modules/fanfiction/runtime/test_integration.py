@@ -240,6 +240,19 @@ class ConfigurationTest(unittest.TestCase):
         with self.assertRaises(ConfigurationError):
             validate_ini('invalid configuration')
 
+    def test_large_rulebook_input_is_supported_and_bounded(self):
+        import json
+        import subprocess
+        import sys
+        rules = [{'source': None, 'field': 'tags', 'value': f'Label {i}', 'targets': [{'field': 'tags', 'name': 'Canonical tag'}]} for i in range(6000)]
+        request = {'operation': 'validate', 'configuration': '', 'tagMatching': {'version': 1, 'rules': rules}}
+        encoded = json.dumps(request)
+        self.assertGreater(len(encoded), 512 * 1024)
+        response = subprocess.run([sys.executable, '-I', str(Path(__file__).with_name('fanficfare_wrapper.py'))], input=encoded, text=True, capture_output=True, check=True)
+        self.assertTrue(json.loads(response.stdout)['ok'])
+        response = subprocess.run([sys.executable, '-I', str(Path(__file__).with_name('fanficfare_wrapper.py'))], input='x' * (8 * 1024 * 1024 + 1), text=True, capture_output=True, check=True)
+        self.assertFalse(json.loads(response.stdout)['ok'])
+
     def test_failure_protocol_keeps_diagnostics_without_exposing_configuration(self):
         import json
         import subprocess
