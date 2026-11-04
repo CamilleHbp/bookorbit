@@ -314,7 +314,7 @@ export class TagMatchingManagementService {
         const table = field === 'tags' ? s.tags : s.genres;
         const rows = ids.length ? await tx.select({ id: table.id, name: table.name }).from(table).where(inArray(table.id, ids)) : [];
         if (rows.length !== ids.length) throw new BadRequestException('A selected label no longer exists');
-        for (const row of rows) canonical.set(labelKey(row.name), { ...row, field });
+        for (const row of rows) canonical.set(`${field}:${labelKey(row.name)}`, { ...row, field });
       }
       if (dto.bookId !== undefined) {
         if (dto.id || dto.field !== 'fandoms' || !dto.sourceKey) throw new BadRequestException('Invalid book fandom decision');
@@ -390,24 +390,31 @@ export class TagMatchingManagementService {
           .insert(s.tagMatchingTargets)
           .values(unique.map((t) => ({ ruleId: rule.id, ...(t.field === 'tags' ? { tagId: t.id } : { genreId: t.id }) })));
       // EPUB subjects arrive as genres. Remember each approved destination without replacing an explicit file rule.
-      for (const [key, target] of canonical) {
-        const [identity] = await tx
-          .insert(s.tagMatchingRules)
-          .values({
-            rulebookId: own.id,
-            source: 'file',
-            field: 'genres',
-            value: target.name,
-            key,
-            action: 'match',
-          })
-          .onConflictDoNothing()
-          .returning({ id: s.tagMatchingRules.id });
-        if (identity)
-          await tx.insert(s.tagMatchingTargets).values({
-            ruleId: identity.id,
-            ...(target.field === 'tags' ? { tagId: target.id } : { genreId: target.id }),
-          });
+      const createdIdentities = new Map<string, string>();
+      for (const target of canonical.values()) {
+        const key = labelKey(target.name);
+        let identityId = createdIdentities.get(key);
+        if (!identityId) {
+          const [identity] = await tx
+            .insert(s.tagMatchingRules)
+            .values({
+              rulebookId: own.id,
+              source: 'file',
+              field: 'genres',
+              value: target.name,
+              key,
+              action: 'match',
+            })
+            .onConflictDoNothing()
+            .returning({ id: s.tagMatchingRules.id });
+          if (!identity) continue;
+          identityId = identity.id;
+          createdIdentities.set(key, identityId);
+        }
+        await tx.insert(s.tagMatchingTargets).values({
+          ruleId: identityId,
+          ...(target.field === 'tags' ? { tagId: target.id } : { genreId: target.id }),
+        });
       }
       await tx
         .update(s.tagRulebooks)
