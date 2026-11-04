@@ -19,6 +19,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { DB } from '../src/db';
+import { installPostgresExtensions } from '../src/scripts/postgres-extensions';
 import * as schema from '../src/db/schema';
 import { storageConfig } from '../src/config/config';
 import { BookDockManagedService, type ManagedDockImport } from '../src/modules/book-dock/book-dock-managed.service';
@@ -28,6 +29,7 @@ import { EpubManifestService } from '../src/modules/book-revision/epub-manifest.
 import { LibraryService } from '../src/modules/library/library.service';
 import { MetadataService } from '../src/modules/metadata/metadata.service';
 import { UploadProcessorService } from '../src/modules/upload/upload-processor.service';
+import { BookCoverStore } from '../src/modules/book-cover-store/book-cover-store.service';
 import { UploadValidatorService } from '../src/modules/upload/upload-validator.service';
 import { BookRevisionService } from '../src/modules/book-revision/book-revision.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
@@ -37,7 +39,6 @@ import { ManagedTagService } from '../src/modules/metadata/managed-tag.service';
 import { FanfictionSourceService } from '../src/modules/fanfiction/fanfiction-source.service';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
-import { FanfictionProfileService } from '../src/modules/fanfiction/fanfiction-profile.service';
 import { FanficfareRuntimeService } from '../src/modules/fanfiction/fanficfare-runtime.service';
 import { AppSettingsService } from '../src/modules/app-settings/app-settings.service';
 import type { RequestUser } from '../src/common/types/request-user';
@@ -88,6 +89,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     )
       throw new Error('An isolated validation database is required');
     pool = new Pool(config);
+    await installPostgresExtensions(pool);
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
     directory = await realpath(await mkdtemp(join(tmpdir(), 'bookorbit-managed-test-')));
@@ -113,6 +115,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
         RevisionFileService,
         EpubManifestService,
         UploadProcessorService,
+        { provide: BookCoverStore, useValue: { removeCoverDirectory: vi.fn().mockResolvedValue(undefined) } },
         UploadValidatorService,
         BookRevisionService,
         RevisionCoordinationService,
@@ -128,7 +131,6 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
         { provide: BookMetadataLockService, useValue: { filterAutomatedBookUpdate: (_id: number, dto: unknown) => Promise.resolve({ dto }) } },
         FanfictionJobService,
         { provide: FanfictionAccessService, useValue: { administer: async () => {} } },
-        { provide: FanfictionProfileService, useValue: { document: () => Promise.resolve({ document: { configuration: '', cookies: [] } }) } },
         { provide: FanficfareRuntimeService, useValue: runtime },
         {
           provide: AppSettingsService,
@@ -318,6 +320,35 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     await module.get(FanfictionReviewService).importDecision(libraryId, job.id, { action: 'apply', values }, requestUser);
     return (await jobs.claim())!;
   }
+
+  it('preserves approved metadata across a failed download and a retry from a later session', async () => {
+    await sources.create(libraryId, { url: 'https://example.org/story/2099', folderId, idempotencyKey: randomUUID() }, requestUser);
+    const first = await approveImport();
+    runtime.download.mockRejectedValueOnce(new Error('Download interrupted'));
+    await expect(imports.run(first, requestUser, { configuration: '', cookies: [] }, authorize, new AbortController().signal)).rejects.toThrow(
+      'Download interrupted',
+    );
+    await jobs.finish(first, 'failed', null, 'import_failed');
+    const saved = await jobs.get(libraryId, first.id, { ...requestUser });
+    expect(saved.result?.importReview).toEqual(first.result?.importReview);
+    expect(saved.result?.importReview?.values.tags).toEqual(['Reviewed tag']);
+    await jobs.retry(libraryId, saved.id, { ...requestUser });
+    const resumed = (await jobs.claim())!;
+    expect(resumed.id).toBe(first.id);
+    expect(resumed.result?.importReview).toEqual(first.result?.importReview);
+    const previewCalls = runtime.preview.mock.calls.length;
+    const result = await imports.run(resumed, requestUser, { configuration: '', cookies: [] }, authorize, new AbortController().signal);
+    expect(runtime.preview).toHaveBeenCalledTimes(previewCalls);
+    expect(result?.bookId).toBeGreaterThan(0);
+    expect((await db.select().from(schema.bookMetadata).where(eq(schema.bookMetadata.bookId, result!.bookId!)))[0].title).toBe('Reviewed title');
+    const tags = await db
+      .select({ name: schema.tags.name })
+      .from(schema.bookTags)
+      .innerJoin(schema.tags, eq(schema.tags.id, schema.bookTags.tagId))
+      .where(eq(schema.bookTags.bookId, result!.bookId!));
+    expect(tags).toEqual([{ name: 'Reviewed tag' }]);
+    await jobs.finish(resumed, 'succeeded', result);
+  });
 
   it('connects the durable source job to Book Dock and an initial revision, including a lost completion response', async () => {
     await sources.create(libraryId, { url: 'https://example.org/story/2001', folderId, idempotencyKey: randomUUID() }, requestUser);

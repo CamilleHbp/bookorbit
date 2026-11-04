@@ -16145,6 +16145,7 @@
       "username": "Username or email",
       "password": "Password",
       "cookies": "Browser cookies",
+      "proxyHelp": "To use FlareSolverr for this website, add the setting below. Use false to turn it off. ScribbleHub uses it by default.",
       "cookieHelp": "Copy a login cookie from this website in your browser. Enter one cookie at a time.",
       "cookieName": "Cookie name",
       "cookieValue": "Cookie value",

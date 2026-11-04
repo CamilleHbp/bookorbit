@@ -2,10 +2,10 @@ import configparser
 import io
 from pathlib import Path
 
-from safe_transport import ConfigurationError, PolicyError
+from safe_transport import ConfigurationError, PolicyError, validate_url
 
 SAFE_OPTIONS = frozenset('''
-username password is_adult user_agent include_images include_titlepage include_tocpage
+use_flaresolverr_proxy username password is_adult user_agent include_images include_titlepage include_tocpage
 include_subject_tags extratags extra_valid_entries extra_titlepage_entries titlepage_entries
 replace_metadata add_to_replace_metadata add_to_extra_valid_entries add_to_extra_titlepage_entries
 add_to_extratags add_to_include_subject_tags keep_summary_html keep_html_attrs keep_empty_tags
@@ -73,6 +73,8 @@ def validate_ini(text):
         for option, value in parser.items(section, raw=True):
             if option not in SAFE_OPTIONS or len(value) > 16384:
                 raise ConfigurationError('Unsupported advanced configuration option: ' + option)
+            if option == 'use_flaresolverr_proxy' and value.lower() not in ('true', 'false'):
+                raise ConfigurationError('use_flaresolverr_proxy must be true or false')
     return text
 
 
@@ -114,12 +116,14 @@ def make_configuration(url, ini, transport):
     with (Path(fanficfare.__file__).parent / 'defaults.ini').open(encoding='utf-8') as defaults:
         configuration.read_file(defaults)
     configuration.read_file(io.StringIO('[defaults]\ninclude_images: true\n[fiction.live]\ndedup_img_files: true\ninclude_appendices: true\nlegend_spoilers: true\nshow_nsfw_cover_images: true\n'))
+    if hasattr(transport, 'enable_for') and validate_url(url)[1].removeprefix('www.') == 'scribblehub.com':
+        configuration.read_file(io.StringIO('[defaults]\nuse_flaresolverr_proxy: true\n'))
     configuration.read_file(io.StringIO(validate_ini(ini)))
     if not configuration.has_section('overrides'):
         configuration.add_section('overrides')
     overrides = {
         'force_https': 'true', 'use_browser_cache': 'false', 'use_basic_cache': 'false',
-        'use_flaresolverr_proxy': 'false', 'use_nsapa_proxy': 'false', 'use_cloudscraper': 'false',
+        'use_nsapa_proxy': 'false', 'use_cloudscraper': 'false',
         'zip_output': 'false', 'make_directories': 'false', 'continue_on_chapter_error': 'false',
         'do_update_hook': 'false', 'pre_process_cmd': '', 'post_process_cmd': '',
         'output_filename': 'output.epub', 'always_overwrite': 'true',

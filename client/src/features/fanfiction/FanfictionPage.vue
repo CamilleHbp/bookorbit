@@ -644,7 +644,7 @@ onMounted(() => {
               v-else-if="
                 !job.result?.contentReview &&
                 !job.result?.metadataReview &&
-                !job.result?.importReview &&
+                (!job.result?.importReview || job.result.importReview.approved) &&
                 ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)
               "
               variant="outline"

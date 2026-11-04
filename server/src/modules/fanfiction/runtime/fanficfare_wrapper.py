@@ -17,8 +17,9 @@ import traceback
 from controlled_config import make_configuration, merge_configuration, validate_ini
 from epub_policy import validate_epub
 from image_processing import install_image_processing
-from safe_transport import PolicyError, SafeTransport, install_network_guard, validate_url
+from safe_transport import ConfigurationError, PolicyError, SafeTransport, install_network_guard, validate_url
 from scribblehub_login import login_scribblehub
+from flaresolverr_transport import FlareSolverrTransport
 
 VERSION = '4.61.0'
 TEST_SITES = {'test1.com', 'test2.com'}
@@ -138,13 +139,28 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
         return {'valid': True}
     url = request.get('url')
     validate_url(url)
-    transport = SafeTransport()
+    timeout = min(7200, max(1, request.get('timeoutSeconds', 1800)))
+    transport = FlareSolverrTransport(request['flaresolverrUrl'], timeout=timeout) if request.get('flaresolverrUrl') else SafeTransport(timeout=timeout)
     transport.load_cookies(request.get('cookies', []))
+    try:
+        return run_story(request, transport, operation, url, ini, save_cookies, report_progress)
+    finally:
+        if isinstance(transport, FlareSolverrTransport):
+            transport.close()
+
+
+def run_story(request, transport, operation, url, ini, save_cookies, report_progress):
+    from fanficfare import adapters, writers
     def finish(result):
         if save_cookies is not None:
             save_cookies(transport.export_cookies())
         return result
     configuration = make_configuration(url, ini, transport)
+    if configuration.getConfig('use_flaresolverr_proxy', False):
+        if not isinstance(transport, FlareSolverrTransport):
+            raise ConfigurationError('FlareSolverr is not configured on this server')
+        transport.enable_for(url)
+        transport.deadline = time.monotonic() + min(7200, max(1, request.get('browserTimeoutSeconds', request.get('timeoutSeconds', 1800))))
     adapter = adapters.getAdapter(configuration, url)
     report_progress({'stage': 'metadata'})
     login_scribblehub(adapter)
