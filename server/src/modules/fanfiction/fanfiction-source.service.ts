@@ -231,15 +231,29 @@ export class FanfictionSourceService {
     return this.jobs.updateStory(await this.find(libraryId, id), 'rollback', dto.idempotencyKey, user, false, dto);
   }
 
+  async resetStaleUpdate(job: Job) {
+    await this.db.transaction(async (tx) => {
+      await this.assertUpdatable(job, tx, false);
+      const [publication] = await tx
+        .select({ id: schema.revisionPublications.id })
+        .from(schema.revisionPublications)
+        .where(and(eq(schema.revisionPublications.ownerKey, job.id), sql`${schema.revisionPublications.state} <> 'failed'`))
+        .limit(1);
+      if (publication) throw new ConflictException('The previous publication must be settled before refreshing matches');
+      await tx.update(schema.fanfictionJobs).set({ result: null }).where(eq(schema.fanfictionJobs.id, job.id));
+    });
+    job.result = null;
+  }
+
   async updateContext(job: Job) {
-    const source = await this.db.transaction((tx) => this.assertUpdatable(job, tx));
+    const source = await this.db.transaction((tx) => this.assertUpdatable(job, tx, false));
     return {
       ...source,
       updatePolicy: source.updatePolicy === 'safe' ? ('safe' as const) : await this.access.defaultUpdatePolicy(job.userId),
     };
   }
 
-  async assertUpdatable(job: Job, tx: DatabaseTransaction) {
+  async assertUpdatable(job: Job, tx: DatabaseTransaction, checkMappings = true) {
     await this.jobs.assertOwnership(job, tx);
     if (!job.sourceId) throw new BadRequestException('Update has no managed story source');
     const [source] = await tx
@@ -258,7 +272,7 @@ export class FanfictionSourceService {
       (job.scheduled && source.state !== 'active')
     )
       throw new ConflictException({ message: 'Story source settings changed before publication', errorCode: 'configuration_blocked' });
-    if (['update', 'refresh'].includes(job.kind) && job.result?.preview)
+    if (checkMappings && ['update', 'refresh'].includes(job.kind) && job.result?.preview)
       await this.tagMatching.assertCurrentVersion(tx, job.libraryId, job.result.preview.labelMappingVersion);
     return source;
   }
@@ -601,6 +615,9 @@ export class FanfictionSourceService {
           chapterCount: preview.chapterCount,
           wordCount: preview.wordCount ?? null,
           storyStatus: String(preview.status ?? '').slice(0, 100),
+          categories: preview.categories ?? null,
+          rawLabels: storyLabels(preview),
+          labelMappingVersion: preview.labelMappingVersion ?? null,
           intervalMinutes: job.input!.intervalMinutes === undefined ? 1440 : job.input!.intervalMinutes,
           importOperationId: randomUUID(),
           relativePath,
@@ -617,7 +634,7 @@ export class FanfictionSourceService {
     });
   }
 
-  async assertImportable(job: Job, sourceId: string, transaction: DatabaseTransaction) {
+  async assertImportable(job: Job, sourceId: string, transaction: DatabaseTransaction, checkMappings = true) {
     await this.jobs.assertOwnership(job, transaction);
     const [source] = await transaction
       .select()
@@ -625,9 +642,69 @@ export class FanfictionSourceService {
       .where(and(eq(sources.id, sourceId), eq(sources.libraryId, job.libraryId)))
       .for('update');
     if (!source || source.state !== 'pending') throw new ConflictException('Story import was paused or unlinked');
-    await this.tagMatching.assertCurrentVersion(transaction, job.libraryId, source.labelMappingVersion);
-    await this.tagMatching.assertCurrentVersion(transaction, job.libraryId, job.result?.importReview?.preview.labelMappingVersion);
+    if (checkMappings) {
+      await this.tagMatching.assertCurrentVersion(transaction, job.libraryId, source.labelMappingVersion);
+      await this.tagMatching.assertCurrentVersion(transaction, job.libraryId, job.result?.importReview?.preview.labelMappingVersion);
+    }
     return source;
+  }
+
+  async rematchImportPreview(libraryId: number, preview: FanfictionPreview): Promise<FanfictionPreview> {
+    const rawLabels = storyLabels(preview);
+    const matched = await this.tagMatching.preview(libraryId, { sourceKey: 'preview', source: preview.site, labels: rawLabels });
+    return matched
+      ? {
+          ...preview,
+          rawLabels,
+          tags: matched.tags,
+          genres: matched.genres,
+          labelMappingVersion: matched.version,
+          pendingLabelCount: matched.pending.length,
+          categories: undefined,
+        }
+      : preview;
+  }
+
+  async refreshImportPreview(job: Job, sourceId: string, incoming: FanfictionPreview, user: RequestUser, stagedChecked = false) {
+    const preview = validateFanfictionPreview(incoming);
+    await this.access.administer(user, job.libraryId);
+    await this.db.transaction(async (tx) => {
+      await this.jobs.assertOwnership(job, tx);
+      const [source] = await tx
+        .select()
+        .from(sources)
+        .where(and(eq(sources.id, sourceId), eq(sources.libraryId, job.libraryId)))
+        .for('update');
+      if (!source || source.state !== 'pending' || source.bookId || source.canonicalUrl !== this.canonicalUrl(preview.canonicalUrl))
+        throw new ConflictException('The story reservation changed. Open a new preview.');
+      const [staged] = await tx
+        .select({ id: schema.bookDockManagedImports.id })
+        .from(schema.bookDockManagedImports)
+        .where(eq(schema.bookDockManagedImports.id, source.importOperationId))
+        .limit(1);
+      if (staged && !stagedChecked)
+        throw new ConflictException({
+          message: 'Tag matches changed after this import was staged. The staged import must be reviewed before continuing.',
+          errorCode: 'tag_matches_changed',
+        });
+      await this.tagMatching.assertCurrentVersion(tx, job.libraryId, preview.labelMappingVersion);
+      await tx
+        .update(sources)
+        .set({
+          rawLabels: storyLabels(preview),
+          labelMappingVersion: preview.labelMappingVersion ?? null,
+          categories: preview.categories ?? null,
+          title: preview.title,
+          authors: preview.authors,
+          chapterCount: preview.chapterCount,
+          wordCount: preview.wordCount ?? null,
+          storyStatus: preview.status,
+          updatedAt: new Date(),
+        })
+        .where(eq(sources.id, sourceId));
+      await tx.update(schema.fanfictionJobs).set({ result: null }).where(eq(schema.fanfictionJobs.id, job.id));
+    });
+    job.result = null;
   }
 
   async recordImportMetadata(job: Job, sourceId: string, value: FanfictionPreview, user: RequestUser) {

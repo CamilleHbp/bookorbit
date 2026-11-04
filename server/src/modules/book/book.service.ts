@@ -1,3 +1,4 @@
+import type { LabelImport } from '../tag-matching/tag-matching.service';
 import { ReadingAttemptEventsService } from '../user-book-status/reading-attempt-events.service';
 import {
   BadRequestException,
@@ -1849,7 +1850,7 @@ export class BookService {
     id: number,
     dto: UpdateBookMetadataDto,
     user: RequestUser,
-    options: { postSaveMode?: PostMetadataSaveMode; chaptersSource?: AudiobookChapterSource } = {},
+    options: { postSaveMode?: PostMetadataSaveMode; chaptersSource?: AudiobookChapterSource; importedLabels?: LabelImport } = {},
   ): Promise<MetadataSaveResult> {
     const event = 'book.update_metadata';
     const startedAt = Date.now();
@@ -1860,6 +1861,7 @@ export class BookService {
       const { detail, scalarFieldCount, write, libraryAutoWriteEnabled } = await this.persistMetadataUpdate(id, dto, user, {
         postSaveMode: options.postSaveMode ?? 'schedule',
         chaptersSource: options.chaptersSource,
+        importedLabels: options.importedLabels,
       });
       this.logger.log(
         `[${event}] [end] bookId=${id} durationMs=${Date.now() - startedAt} scalarFields=${scalarFieldCount} authorsUpdated=${dto.authors !== undefined} narratorsUpdated=${dto.audioMetadata?.narrators !== undefined} genresUpdated=${dto.genres !== undefined} tagsUpdated=${dto.tags !== undefined} audioMetadataUpdated=${dto.audioMetadata !== undefined} comicMetadataUpdated=${dto.comicMetadata !== undefined} customMetadataUpdated=${dto.customMetadata !== undefined} - metadata update completed`,
@@ -1929,7 +1931,12 @@ export class BookService {
     id: number,
     dto: UpdateBookMetadataDto,
     user: RequestUser,
-    options: { lockedFields?: readonly string[]; postSaveMode?: PostMetadataSaveMode; chaptersSource?: AudiobookChapterSource } = {},
+    options: {
+      lockedFields?: readonly string[];
+      postSaveMode?: PostMetadataSaveMode;
+      chaptersSource?: AudiobookChapterSource;
+      importedLabels?: LabelImport;
+    } = {},
   ): Promise<{
     detail: BookDetailDto;
     scalarFieldCount: number;
@@ -2044,10 +2051,10 @@ export class BookService {
       this.throwIfMetadataUpdateFailpoint('afterNarratorsReplace');
 
       const labelsMatched =
-        options.chaptersSource === 'provider' && (dto.genres !== undefined || dto.tags !== undefined)
+        options.chaptersSource === 'provider' && (options.importedLabels || dto.genres !== undefined || dto.tags !== undefined)
           ? await this.metadataService.applyImportedLabels(
               id,
-              {
+              options.importedLabels ?? {
                 sourceKey: 'provider:metadata',
                 source: 'provider',
                 preserveFields: [...(dto.tags === undefined ? ['tags' as const] : []), ...(dto.genres === undefined ? ['genres' as const] : [])],
@@ -3192,6 +3199,7 @@ export class BookService {
 
       const {
         resolved,
+        sources: fieldSources,
         providerIds: resolvedProviderIds,
         diagnostics,
         cache,
@@ -3244,10 +3252,22 @@ export class BookService {
       if (r.comicMetadata !== undefined) dto.comicMetadata = r.comicMetadata as UpdateBookMetadataDto['comicMetadata'];
       this.applyResolvedProviderIds(dto, filteredProviderIds);
 
+      const importedLabels: LabelImport | undefined = Array.isArray(resolved.genres)
+        ? {
+            sourceKey: 'provider:metadata',
+            source: fieldSources?.genres ?? 'provider',
+            preserveFields: ['tags'],
+            labels: resolved.genres.map((value) => ({ field: 'genres', value })),
+          }
+        : undefined;
       const updatedFields = Object.keys(dto).length;
       let detail: BookDetailDto | undefined;
-      if (updatedFields > 0) {
-        const saveResult = await this.updateMetadata(id, dto, user, { postSaveMode: 'schedule', chaptersSource: 'provider' });
+      if (updatedFields > 0 || importedLabels) {
+        const saveResult = await this.updateMetadata(id, dto, user, {
+          postSaveMode: 'schedule',
+          chaptersSource: 'provider',
+          ...(importedLabels ? { importedLabels } : {}),
+        });
         detail = saveResult.book;
       }
 
