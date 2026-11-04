@@ -154,6 +154,11 @@ export class TagMatchingService {
     });
   }
 
+  async isCurrent(libraryId: number, version: number | null | undefined): Promise<boolean> {
+    const binding = await this.binding(this.db, libraryId);
+    return !binding || binding.version === version;
+  }
+
   async assertCurrentVersion(tx: DatabaseTransaction, libraryId: number, version: number | null | undefined): Promise<void> {
     const binding = await this.binding(tx, libraryId);
     if (!binding) return;
@@ -442,6 +447,57 @@ export class TagMatchingService {
           ),
         ),
       );
+    }
+  }
+
+  async editManualLabels(
+    tx: DatabaseTransaction,
+    bookId: number,
+    field: 'tags' | 'genres',
+    edits: { added: string[]; removed: string[] },
+    userId: number,
+  ) {
+    const added = [...new Set(edits.added.map((name) => name.trim()).filter(Boolean))];
+    const removed = [...new Set(edits.removed.map((name) => name.trim()).filter(Boolean))];
+    if (added.length + removed.length > 2000 || [...added, ...removed].some((name) => name.length > 200))
+      throw new BadRequestException('Too many or oversized manual labels');
+    const table = field === 'tags' ? s.tags : s.genres;
+    if (added.length)
+      await tx
+        .insert(table)
+        .values(added.map((name) => ({ name })))
+        .onConflictDoNothing();
+    const selected = added.length ? await tx.select({ id: table.id }).from(table).where(inArray(table.name, added)) : [];
+    const excluded = removed.length ? await tx.select({ id: table.id }).from(table).where(inArray(table.name, removed)) : [];
+    if (selected.length) {
+      const ids = selected.map((row) => row.id);
+      if (field === 'tags')
+        await tx
+          .insert(s.bookTags)
+          .values(ids.map((tagId) => ({ bookId, tagId, managedOnly: false })))
+          .onConflictDoUpdate({ target: [s.bookTags.bookId, s.bookTags.tagId], set: { managedOnly: false } });
+      else
+        await tx
+          .insert(s.bookGenres)
+          .values(ids.map((genreId) => ({ bookId, genreId, managedOnly: false })))
+          .onConflictDoUpdate({ target: [s.bookGenres.bookId, s.bookGenres.genreId], set: { managedOnly: false } });
+      await tx
+        .delete(s.tagMatchingExclusions)
+        .where(
+          and(
+            eq(s.tagMatchingExclusions.bookId, bookId),
+            inArray(field === 'tags' ? s.tagMatchingExclusions.tagId : s.tagMatchingExclusions.genreId, ids),
+          ),
+        );
+    }
+    if (excluded.length) {
+      const ids = excluded.map((row) => row.id);
+      await tx
+        .insert(s.tagMatchingExclusions)
+        .values(ids.map((id) => ({ bookId, userId, ...(field === 'tags' ? { tagId: id } : { genreId: id }) })))
+        .onConflictDoNothing();
+      if (field === 'tags') await tx.delete(s.bookTags).where(and(eq(s.bookTags.bookId, bookId), inArray(s.bookTags.tagId, ids)));
+      else await tx.delete(s.bookGenres).where(and(eq(s.bookGenres.bookId, bookId), inArray(s.bookGenres.genreId, ids)));
     }
   }
 

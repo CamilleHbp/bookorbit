@@ -302,10 +302,10 @@ describe('BookMetadataFetchOrchestratorService', () => {
     const { service, bookMetadataLockService, metadataService } = makeService();
     bookMetadataLockService.filterResolvedMetadata.mockResolvedValue({ resolved: {}, providerIds: {}, skippedFields: ['genres'] });
     metadataService.applyImportedLabels.mockResolvedValue(true);
-    await service['persistResolved'](88, { genres: ['Unknown provider genre'] }, {}, [], [{ name: 'Manual genre' }], []);
+    await service['persistResolved'](88, { genres: ['Unknown provider genre'] }, {}, [], [{ name: 'Manual genre' }], [], 'google');
     expect(metadataService.applyImportedLabels).toHaveBeenCalledWith(88, {
       sourceKey: 'provider:metadata',
-      source: 'provider',
+      source: 'google',
       preserveFields: ['tags'],
       labels: [{ field: 'genres', value: 'Unknown provider genre' }],
     });

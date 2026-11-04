@@ -17,6 +17,48 @@ import { FanfictionSourceBatchService } from './fanfiction-source-batch.service'
 import { UserService } from '../user/user.service';
 
 describe('Fanfiction queued execution', () => {
+  it.each([true, false])('loads a fresh policy and login only when approved update matching changed: current=%s', async (current) => {
+    const job = {
+      id: 'job',
+      kind: 'update',
+      libraryId: 5,
+      userId: 7,
+      tokenVersion: 1,
+      attempts: 1,
+      url: 'https://example.org/story',
+      result: { preparedUpdate: { approved: true }, preview: { labelMappingVersion: 1 } },
+    };
+    const jobs = { claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null), finish: vi.fn().mockResolvedValue(true) };
+    const policy = { version: 2, rules: [] };
+    const matching = { isCurrent: vi.fn().mockResolvedValue(current), runtimePolicy: vi.fn().mockResolvedValue(policy) };
+    const connections = { session: vi.fn().mockResolvedValue({ document: { configuration: 'private fixture', cookies: [] } }) };
+    const updates = { run: vi.fn().mockResolvedValue({ revisionId: 'installed' }) };
+    const module = await Test.createTestingModule({
+      providers: [
+        FanfictionWorkerService,
+        { provide: TagMatchingService, useValue: matching },
+        { provide: FanfictionJobService, useValue: jobs },
+        { provide: FanfictionConnectionService, useValue: connections },
+        { provide: FanfictionUpdateService, useValue: updates },
+        { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
+        { provide: UserService, useValue: { findByIdWithPermissions: vi.fn().mockResolvedValue({ id: 7, tokenVersion: 1 }) } },
+      ],
+    })
+      .useMocker(() => ({}))
+      .compile();
+    try {
+      await module.get(FanfictionWorkerService).tick();
+      await vi.waitFor(() => expect(jobs.finish).toHaveBeenCalled());
+      expect(matching.isCurrent).toHaveBeenCalledWith(5, 1);
+      if (current) expect(connections.session).not.toHaveBeenCalled();
+      else {
+        expect(connections.session).toHaveBeenCalled();
+        expect(updates.run.mock.calls[0][1]).toMatchObject({ tagMatching: policy });
+      }
+    } finally {
+      await module.close();
+    }
+  });
   it('checks import access repeatedly without renewing a row locked by publication', async () => {
     const job = {
       id: 'job',
@@ -47,7 +89,10 @@ describe('Fanfiction queued execution', () => {
     };
     const module = await Test.createTestingModule({
       providers: [
-        { provide: TagMatchingService, useValue: { runtimePolicy: vi.fn().mockResolvedValue(undefined) } },
+        {
+          provide: TagMatchingService,
+          useValue: { runtimePolicy: vi.fn().mockResolvedValue(undefined), isCurrent: vi.fn().mockResolvedValue(true) },
+        },
 
         FanfictionWorkerService,
         { provide: FanfictionConnectionService, useValue: connections },
@@ -103,7 +148,10 @@ describe('Fanfiction queued execution', () => {
       const rollback = { run: vi.fn().mockResolvedValue(result) };
       const module = await Test.createTestingModule({
         providers: [
-          { provide: TagMatchingService, useValue: { runtimePolicy: vi.fn().mockResolvedValue(undefined) } },
+          {
+            provide: TagMatchingService,
+            useValue: { runtimePolicy: vi.fn().mockResolvedValue(undefined), isCurrent: vi.fn().mockResolvedValue(true) },
+          },
 
           FanfictionWorkerService,
           { provide: FanfictionConnectionService, useValue: connections },
@@ -158,7 +206,10 @@ describe('Fanfiction queued execution', () => {
     const jobs = { claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null), finish: vi.fn().mockResolvedValue(true) };
     const module = await Test.createTestingModule({
       providers: [
-        { provide: TagMatchingService, useValue: { runtimePolicy: vi.fn().mockResolvedValue(undefined) } },
+        {
+          provide: TagMatchingService,
+          useValue: { runtimePolicy: vi.fn().mockResolvedValue(undefined), isCurrent: vi.fn().mockResolvedValue(true) },
+        },
 
         FanfictionWorkerService,
         {

@@ -506,3 +506,8 @@ export interface FanfictionChapterChanges {
   changed: number;
   metadataChanged: boolean;
 }
+
+export interface FanfictionLabelEdits {
+  tags?: { added: string[]; removed: string[] };
+  genres?: { added: string[]; removed: string[] };
+}

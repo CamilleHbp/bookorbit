@@ -1,3 +1,5 @@
+import { TagMatchingService } from '../src/modules/tag-matching/tag-matching.service';
+import { AudiobookChaptersService } from '../src/modules/audiobook-chapters/audiobook-chapters.service';
 import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
 import { BookService } from '../src/modules/book/book.service';
 import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
@@ -136,7 +138,8 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     if (
       !/^bookorbit_revision_validation(?:_[a-z0-9]+)?$/.test(String(config.database)) &&
       !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? '') &&
-      !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? '')
+      !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? '') &&
+      !/^bookorbit_tagmatch_test_[0-9]+$/.test(config.database ?? '')
     )
       throw new Error('Isolated validation database required');
     pool = new Pool(config);
@@ -157,6 +160,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         RevisionFileService,
         FanfictionRollbackService,
         FanfictionRecoveryService,
+        TagMatchingService,
         RevisionInterruptionService,
         RevisionRetentionService,
         FanfictionSourceService,
@@ -169,6 +173,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         MetadataService,
         ...[
           BookCoverStore,
+          AudiobookChaptersService,
           BookEmbedderService,
           MetadataEventsService,
           SeriesIdentityService,
@@ -192,13 +197,20 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         FileLockService,
         { provide: DB, useValue: db },
         { provide: storageConfig.KEY, useValue: storage },
-        { provide: FanfictionAccessService, useValue: { administer: () => Promise.resolve() } },
+        { provide: FanfictionAccessService, useValue: { administer: () => Promise.resolve(), defaultUpdatePolicy: () => Promise.resolve('review') } },
         { provide: FanficfareRuntimeService, useValue: runtime },
         { provide: UserService, useValue: { findByIdWithPermissions: () => Promise.resolve(user) } },
         { provide: NotificationGateway, useValue: { emitNew: vi.fn() } },
-        { provide: LibraryService, useValue: {} },
-        { provide: AppSettingsService, useValue: {} },
-        { provide: UploadValidatorService, useValue: {} },
+        {
+          provide: LibraryService,
+          useValue: {
+            importDestination: async (id: number) => ({
+              library: { ...(await db.select().from(schema.libraries).where(eq(schema.libraries.id, id)))[0], fileNamingPattern: '{title}' },
+            }),
+          },
+        },
+        { provide: AppSettingsService, useValue: { isCrossPlatformPathSanitizationEnabled: () => Promise.resolve(true) } },
+        { provide: UploadValidatorService, useValue: { sanitizeFilename: (name: string) => name } },
       ],
     }).compile();
     updates = module.get(FanfictionUpdateService);
@@ -784,6 +796,142 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       ).map((tag) => tag.name),
     ).toEqual(['Reviewed legacy tag']);
   }, 180_000);
+
+  it('retains the matching version when reserving an initial import', async () => {
+    const [rulebook] = await db
+      .insert(schema.tagRulebooks)
+      .values({ userId: user.id })
+      .onConflictDoUpdate({ target: schema.tagRulebooks.userId, set: { version: 1 } })
+      .returning();
+    await db.insert(schema.libraryTagRulebooks).values({ libraryId, rulebookId: rulebook.id });
+    const incoming: FanfictionPreview = {
+      ...preview,
+      canonicalUrl: 'https://example.org/story/another',
+      tags: [],
+      labelMappingVersion: 1,
+      rawLabels: [{ field: 'tags', value: 'unknown import label' }],
+    };
+    const key = randomUUID();
+    await db.insert(schema.fanfictionJobs).values({
+      libraryId,
+      userId: user.id,
+      tokenVersion: user.tokenVersion,
+      kind: 'import',
+      state: 'queued',
+      url: incoming.canonicalUrl,
+      site: incoming.site,
+      idempotencyKey: key,
+      input: { url: incoming.canonicalUrl, folderId: source.folderId!, idempotencyKey: key },
+      result: { importReview: { preview: incoming, values: incoming, approved: true } },
+    });
+    const job = (await jobs.claim())!;
+    const reservation = await sources.reserve(job, incoming, user);
+    expect(reservation.owned).toBe(true);
+    expect(reservation.source).toMatchObject({ labelMappingVersion: 1, rawLabels: incoming.rawLabels });
+    await sources.recordImportMetadata(job, reservation.source.id, incoming, user);
+    await expect(db.transaction((tx) => sources.assertImportable(job, reservation.source.id, tx))).resolves.toMatchObject({ labelMappingVersion: 1 });
+    await db.update(schema.tagRulebooks).set({ version: 2 }).where(eq(schema.tagRulebooks.id, rulebook.id));
+    await sources.refreshImportPreview(job, reservation.source.id, { ...incoming, labelMappingVersion: 2 }, user);
+    expect(job.result).toBeNull();
+    const [refreshed] = await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.id, reservation.source.id));
+    expect(refreshed.labelMappingVersion).toBe(2);
+  }, 60000);
+
+  it('discards stale prepared bytes and asks for a fresh metadata review before publishing', async () => {
+    const [rulebook] = await db
+      .insert(schema.tagRulebooks)
+      .values({ userId: user.id })
+      .onConflictDoUpdate({ target: schema.tagRulebooks.userId, set: { version: 1 } })
+      .returning();
+    await db.insert(schema.libraryTagRulebooks).values({ libraryId, rulebookId: rulebook.id });
+    const [oldTag, nextTag] = await db
+      .insert(schema.tags)
+      .values([{ name: `old-match-${randomUUID()}` }, { name: `new-match-${randomUUID()}` }])
+      .returning();
+    const [rule] = await db
+      .insert(schema.tagMatchingRules)
+      .values({ rulebookId: rulebook.id, source: '', field: 'tags', key: 'staging-remote', value: 'staging-remote', action: 'match' })
+      .returning();
+    await db.insert(schema.tagMatchingTargets).values({ ruleId: rule.id, tagId: oldTag.id });
+    const incoming: FanfictionPreview = {
+      ...preview,
+      tags: [oldTag.name],
+      labelMappingVersion: 1,
+      rawLabels: [{ field: 'tags', value: 'staging-remote' }],
+    };
+    runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) => consume(output, incoming));
+    const original = await readFile(target);
+    const job = await claim();
+    const proposal = await run(job);
+    await jobs.finish(job, 'review_required', proposal, 'metadata_review_required');
+    const review = (await sources.metadataReview(libraryId, source.id, user))!;
+    await sources.resolveMetadata(
+      libraryId,
+      source.id,
+      {
+        jobId: job.id,
+        fingerprint: review.review.fingerprint,
+        title: 'keep',
+        description: 'keep',
+        authors: 'keep',
+        tags: 'select',
+        selectedTags: [oldTag.name],
+      },
+      user,
+    );
+    await db.update(schema.tagMatchingTargets).set({ tagId: nextTag.id }).where(eq(schema.tagMatchingTargets.ruleId, rule.id));
+    await db.update(schema.tagRulebooks).set({ version: 2 }).where(eq(schema.tagRulebooks.id, rulebook.id));
+    const approved = (await jobs.claim())!;
+    runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) =>
+      consume(output, { ...incoming, tags: [nextTag.name], labelMappingVersion: 2 }),
+    );
+    const refreshed = await updates.run(approved, { ...document, tagMatching: { version: 2, rules: [] } }, authorize, new AbortController().signal);
+    expect(refreshed?.preview?.tags).toEqual([nextTag.name]);
+    expect(refreshed?.preparedUpdate?.approved).toBe(false);
+    expect(refreshed?.metadataReview?.incoming.tags).toEqual([nextTag.name]);
+    expect(await readFile(target)).toEqual(original);
+    expect(runtime.update).toHaveBeenCalledTimes(2);
+    const stale = await db.select().from(schema.revisionPublications).where(eq(schema.revisionPublications.ownerKey, job.id));
+    expect(stale.some((p) => p.state === 'failed')).toBe(true);
+    expect(stale.some((p) => p.state === 'prepared')).toBe(true);
+  }, 60000);
+
+  it('revalidates raw labels when recovering an already installed update after matches change', async () => {
+    const [rulebook] = await db
+      .insert(schema.tagRulebooks)
+      .values({ userId: user.id })
+      .onConflictDoUpdate({ target: schema.tagRulebooks.userId, set: { version: 1 } })
+      .returning();
+    await db.insert(schema.libraryTagRulebooks).values({ libraryId, rulebookId: rulebook.id });
+    const [oldTag] = await db.select().from(schema.tags).where(eq(schema.tags.name, 'Source tag'));
+    const [nextTag] = await db
+      .insert(schema.tags)
+      .values({ name: `current-match-${randomUUID()}` })
+      .returning();
+    const [rule] = await db
+      .insert(schema.tagMatchingRules)
+      .values({ rulebookId: rulebook.id, source: '', field: 'tags', key: 'remote', value: 'remote', action: 'match' })
+      .returning();
+    await db.insert(schema.tagMatchingTargets).values({ ruleId: rule.id, tagId: oldTag.id });
+    const incoming: FanfictionPreview = { ...preview, labelMappingVersion: 1, rawLabels: [{ field: 'tags', value: 'remote' }] };
+    runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) => consume(output, incoming));
+    const job = await claim();
+    vi.spyOn(sources, 'completeUpdate').mockRejectedValueOnce(new ConflictException('Completion interrupted'));
+    await expect(run(job)).rejects.toThrow('Completion interrupted');
+    expect(await readFile(target)).toEqual(await readFile(output));
+    await jobs.finish(job, 'cancelled');
+    await db.update(schema.tagMatchingTargets).set({ tagId: nextTag.id }).where(eq(schema.tagMatchingTargets.ruleId, rule.id));
+    await db.update(schema.tagRulebooks).set({ version: 2 }).where(eq(schema.tagRulebooks.id, rulebook.id));
+    await module.get(FanfictionRecoveryService).recover();
+    const recovered = await jobs.get(libraryId, job.id, user);
+    expect(recovered.state).toBe('succeeded');
+    expect(recovered.result?.preview).toMatchObject({ tags: [nextTag.name], labelMappingVersion: 2 });
+    const assigned = await db.select({ tagId: schema.bookTags.tagId }).from(schema.bookTags).where(eq(schema.bookTags.bookId, source.bookId!));
+    expect(assigned).toEqual([{ tagId: nextTag.id }]);
+    const [saved] = await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.id, source.id));
+    expect(saved).toMatchObject({ rawLabels: incoming.rawLabels, labelMappingVersion: 2 });
+    expect(runtime.update).toHaveBeenCalledTimes(1);
+  }, 60000);
 
   it('recovers an approved update without losing the chosen tags or creating another review', async () => {
     const incoming = { ...preview, tags: ['Approved tag'] };

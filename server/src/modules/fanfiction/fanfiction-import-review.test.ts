@@ -12,7 +12,12 @@ import { BookRevisionService } from '../book-revision/book-revision.service';
 import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 
 describe('review before importing a story', () => {
-  it.each([false, true])('requires approval before downloading or ingesting and uses approved edits: approved=%s', async (approved) => {
+  it.each([
+    [false, false, false],
+    [true, false, false],
+    [true, true, false],
+    [true, true, true],
+  ])('requires current approval before ingesting: approved=%s stale=%s', async (approved, stale, published) => {
     const preview: FanfictionPreview = {
       canonicalUrl: 'https://example.org/story',
       site: 'example.org',
@@ -22,6 +27,7 @@ describe('review before importing a story', () => {
       tags: ['Source tag'],
       chapterCount: 2,
       status: 'In-Progress',
+      labelMappingVersion: 1,
     };
     const values = { title: 'My title', authors: ['Author'], description: 'My description', tags: ['My tag'] };
     const source = { id: 'source', libraryId: 1, folderId: 2, createdBy: 3, canonicalUrl: preview.canonicalUrl, chapterCount: 2, profileId: null };
@@ -30,10 +36,18 @@ describe('review before importing a story', () => {
       assertImportable: vi.fn(),
       recordImportMetadata: vi.fn(),
       completeImport: vi.fn(),
+      rematchImportPreview: vi.fn().mockResolvedValue({ ...preview, labelMappingVersion: 2 }),
+      refreshImportPreview: vi.fn().mockImplementation((job) => {
+        job.result = null;
+      }),
     };
-    const dock = { ingest: vi.fn().mockResolvedValue({ bookId: 4, bookFileId: 5 }), isPrepared: vi.fn().mockResolvedValue(false) };
+    const dock = {
+      resetPrepared: vi.fn().mockResolvedValue({ published }),
+      ingest: vi.fn().mockResolvedValue({ bookId: 4, bookFileId: 5 }),
+      isPrepared: vi.fn().mockResolvedValue(false),
+    };
     const runtime = {
-      preview: vi.fn().mockResolvedValue(preview),
+      preview: vi.fn().mockResolvedValue({ ...preview, labelMappingVersion: stale ? 2 : 1 }),
       download: vi.fn().mockImplementation((_url, _document, consume) => consume('/staged/story.epub', preview)),
     };
     const collections = { verifyWriteAccess: vi.fn(), addBooks: vi.fn() };
@@ -58,11 +72,22 @@ describe('review before importing a story', () => {
       } as typeof schema.fanfictionJobs.$inferSelect;
       const result = await module
         .get(FanfictionImportService)
-        .run(job, {} as RequestUser, { configuration: '', cookies: [] }, async () => {}, new AbortController().signal);
+        .run(
+          job,
+          {} as RequestUser,
+          { configuration: '', cookies: [], tagMatching: { version: stale ? 2 : 1, rules: [] } },
+          async () => {},
+          new AbortController().signal,
+        );
       expect(collections.verifyWriteAccess).toHaveBeenCalledWith(8, {});
-      if (!approved) {
+      if (!approved || stale) {
         expect(collections.addBooks).not.toHaveBeenCalled();
         expect(result?.importReview?.approved).toBe(false);
+        if (stale) {
+          expect(sources.refreshImportPreview).toHaveBeenCalled();
+          if (published) expect(runtime.preview).not.toHaveBeenCalled();
+          expect(result?.importReview?.preview.labelMappingVersion).toBe(2);
+        }
         expect(runtime.download).not.toHaveBeenCalled();
         expect(dock.ingest).not.toHaveBeenCalled();
         expect(sources.completeImport).not.toHaveBeenCalled();
@@ -70,7 +95,13 @@ describe('review before importing a story', () => {
         expect(dock.ingest).toHaveBeenCalledWith(expect.objectContaining({ finalMetadata: values }), expect.any(Function));
         expect(result?.bookId).toBe(4);
         expect(collections.addBooks).toHaveBeenCalledWith(8, { bookIds: [4] }, {});
-        expect(dock.ingest).toHaveBeenCalledWith(expect.objectContaining({ personalTags: ['My tag'] }), expect.any(Function));
+        expect(dock.ingest).toHaveBeenCalledWith(
+          expect.objectContaining({
+            personalTags: ['My tag'],
+            labelEdits: { tags: { added: ['My tag'], removed: ['Source tag'] }, genres: { added: [], removed: [] } },
+          }),
+          expect.any(Function),
+        );
         expect(result?.importReview).toBeUndefined();
       }
     } finally {

@@ -104,8 +104,11 @@ export class FanfictionWorkerService implements OnModuleDestroy {
         if (controller.signal.aborted || !(await this.jobs.renew(job))) throw new ForbiddenException('Queued operation lease was lost');
         return current;
       };
+      const stalePrepared =
+        !!job.result?.preparedUpdate?.approved && !(await this.tagMatching.isCurrent(job.libraryId, job.result.preview?.labelMappingVersion));
       const downloads =
-        !job.result?.preparedUpdate?.approved && !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind);
+        (!job.result?.preparedUpdate?.approved || stalePrepared) &&
+        !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind);
       // Resolve at execution time so already queued stories use a repaired website login.
       const session = downloads ? await this.connections.session(job.url, user, authorizeCookies) : null;
       connection = session?.connection ?? null;
@@ -193,7 +196,14 @@ export class FanfictionWorkerService implements OnModuleDestroy {
               ].includes(code)
             ? 'review_required'
             : job.attempts < 3 &&
-                !['download_limit', 'response_too_large', 'source_policy_blocked', 'invalid_epub', 'source_not_found'].includes(code)
+                ![
+                  'download_limit',
+                  'response_too_large',
+                  'source_policy_blocked',
+                  'invalid_epub',
+                  'source_not_found',
+                  'tag_matches_changed_after_publication',
+                ].includes(code)
               ? 'queued'
               : 'failed',
         null,

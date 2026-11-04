@@ -47,6 +47,23 @@ export class FanfictionUpdateService {
       if (signal.aborted) throw new ConflictException('Story update was cancelled');
       await authorize();
     };
+    if (job.result?.preview && document.tagMatching && job.result.preview.labelMappingVersion !== document.tagMatching.version) {
+      const staleAuthority: RevisionPublicationAuthority = {
+        ownerKey: job.id,
+        authorize: async (tx) => {
+          await access();
+          await this.sources.assertUpdatable(job, tx, false);
+        },
+      };
+      const stale = await this.publications.ownedPublication(fileId, source.libraryId, staleAuthority);
+      if (stale && stale.state !== 'prepared')
+        throw new ConflictException({
+          message: 'The installed update needs to finish recovery with current tag matches.',
+          errorCode: 'tag_matches_changed_after_publication',
+        });
+      if (stale) await this.publications.cancel(stale.id, source.libraryId, staleAuthority);
+      await this.sources.resetStaleUpdate(job);
+    }
     const authority: RevisionPublicationAuthority = {
       ownerKey: job.id,
       authorize: async (tx) => {

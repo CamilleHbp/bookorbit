@@ -1,4 +1,4 @@
-import type { FanfictionMetadataValues } from '@bookorbit/types';
+import type { FanfictionMetadataValues, FanfictionLabelEdits } from '@bookorbit/types';
 import { ManagedMetadataService } from '../metadata/managed-metadata.service';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
@@ -28,6 +28,7 @@ export interface ManagedDockImport {
   metadataSourceKey?: string;
   finalMetadata?: FanfictionMetadataValues;
   personalTags?: string[];
+  labelEdits?: FanfictionLabelEdits;
 }
 
 export type AuthorizeManagedImport = (transaction: DatabaseTransaction) => Promise<void>;
@@ -71,6 +72,52 @@ export class BookDockManagedService {
     } catch (error) {
       this.logger.warn(
         `[book_dock.managed_import] [fail] operationId=${input.operationId} libraryId=${input.libraryId} durationMs=${Date.now() - startedAt} errorClass=${error instanceof Error ? error.name : 'Error'} error="${sanitizeLogValue(error instanceof Error ? error.message : 'Import failed')}" - managed import remains recoverable`,
+      );
+      throw error;
+    }
+  }
+
+  async resetPrepared(input: ManagedDockImport, authorize: AuthorizeManagedImport): Promise<{ published: boolean }> {
+    const startedAt = Date.now();
+    this.logger.log(
+      `[book_dock.rematch] [start] operationId=${input.operationId} libraryId=${input.libraryId} userId=${input.userId} - checking staged import`,
+    );
+    try {
+      const result = await this.db.transaction(async (tx) => {
+        await authorize(tx);
+        const [row] = await tx.select().from(schema.bookDockManagedImports).where(this.scope(input)).for('update');
+        if (!row) return { published: false };
+        await this.verifyDestination(row);
+        const destination = await lstat(row.destinationPath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+          return null;
+        });
+        if (destination || !['reserved', 'prepared'].includes(row.state)) {
+          if (row.state !== 'cleanup_complete') await this.verifyPublication(row);
+          else await this.files.require(row.destinationPath, row.sha256);
+          return { published: true };
+        }
+        await this.verifyParents(this.storage.bookDockPath, dirname(row.dockPath));
+        await this.verifyParents(row.libraryRoot, dirname(this.stagePath(row)));
+        const dock = await this.files.inspect(row.dockPath);
+        if (dock.status !== 'missing' && (dock.status !== 'stable' || dock.file.sha256 !== row.sha256))
+          throw new ConflictException('The staged import changed before matching could restart');
+        await rm(row.dockPath, { force: true });
+        await rm(this.stagePath(row), { force: true });
+        for (const directory of [dirname(row.dockPath), dirname(this.stagePath(row))])
+          await this.files.sync(directory).catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'ENOENT') throw error;
+          });
+        await tx.update(schema.bookDockManagedImports).set({ state: 'reserved' }).where(this.scope(input));
+        return { published: false };
+      });
+      this.logger.log(
+        `[book_dock.rematch] [end] operationId=${input.operationId} libraryId=${input.libraryId} durationMs=${Date.now() - startedAt} published=${result.published} - staged import checked`,
+      );
+      return result;
+    } catch (error) {
+      this.logger.warn(
+        `[book_dock.rematch] [fail] operationId=${input.operationId} libraryId=${input.libraryId} durationMs=${Date.now() - startedAt} errorClass=ImportRematchError error="${sanitizeLogValue(error instanceof Error ? error.message : 'Unknown failure')}" - staged import retained`,
       );
       throw error;
     }
@@ -250,10 +297,13 @@ export class BookDockManagedService {
           await this.managedMetadata.apply(
             tx,
             row.bookId,
-            { key: row.metadataSourceKey, libraryId: row.libraryId },
+            { key: row.metadataSourceKey, libraryId: row.libraryId, userId: input.userId },
             input.finalMetadata,
             undefined,
             input.personalTags,
+            false,
+            [],
+            input.labelEdits,
           );
         state = 'metadata_committed';
       } else if (state === 'metadata_committed') {

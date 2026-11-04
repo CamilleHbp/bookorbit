@@ -1,8 +1,7 @@
 import type { IncomingLabel, LabelTarget, LabelRule, LabelResolution } from '@bookorbit/types';
 export type { IncomingLabel, LabelTarget, LabelRule, LabelResolution } from '@bookorbit/types';
-export function labelKey(value: string): string {
-  return value.normalize('NFC').replace(/\s+/gu, ' ').trim().toLowerCase();
-}
+import { labelKey } from '../../common/utils/label-key';
+export { labelKey } from '../../common/utils/label-key';
 const broadRelationships = new Set(['m/m', 'f/f', 'f/m', 'm/f', 'male/male', 'female/female', 'female/male', 'male/female', 'gen', 'multi', 'other']);
 
 /** Resolve only approved aliases. Raw labels never become canonical entities here. */
