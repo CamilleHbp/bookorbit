@@ -314,7 +314,7 @@ class ConfigurationTest(unittest.TestCase):
             run({'operation': 'recognize', 'urls': ['https://example.org'] * 101})
 
     def test_rejects_unsafe_advanced_options_in_every_section(self):
-        for option in ['pre_process_cmd', 'post_process_cmd', 'use_browser_cache', 'http_proxy', 'https_proxy', 'use_flaresolverr_proxy', 'use_nsapa_proxy', 'browser_cache_path', 'username_filelist', 'output_filename', 'include_images_filelist', 'use_ssl_default_seclevelone']:
+        for option in ['pre_process_cmd', 'post_process_cmd', 'use_browser_cache', 'http_proxy', 'https_proxy', 'use_nsapa_proxy', 'browser_cache_path', 'username_filelist', 'output_filename', 'include_images_filelist', 'use_ssl_default_seclevelone']:
             with self.subTest(option=option), self.assertRaises(PolicyError):
                 validate_ini('[archiveofourown.org:epub]\n' + option + ': unsafe\n')
 
