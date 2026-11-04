@@ -22,6 +22,7 @@ class SolverConnection(http.client.HTTPConnection):
 class FlareSolverrTransport(SafeTransport):
     def __init__(self, endpoint, **kwargs):
         super().__init__(**kwargs)
+        self.hosts = set()
         self.session = None
         self.endpoint = urlsplit(endpoint)
         if (self.endpoint.scheme != 'http' or not self.endpoint.hostname
@@ -29,13 +30,17 @@ class FlareSolverrTransport(SafeTransport):
                 or self.endpoint.path != '/v1' or self.endpoint.query or self.endpoint.fragment):
             raise PolicyError('Invalid administrator-configured solver endpoint')
 
+    def enable_for(self, url):
+        hostname = validate_url(url)[1]
+        domain = hostname.removeprefix('www.')
+        self.hosts = {domain, 'www.' + domain}
+
     def _request(self, method, url, parameters=None, headers=None):
-        parsed, hostname = validate_url(url)
-        # Browser responses cannot carry binary images. Keep those and other sites
-        # on the existing DNS-pinned transport.
-        if hostname != 'www.scribblehub.com' or not (
-                parsed.path.startswith(('/series/', '/read/'))
-                or parsed.path in ('/login/', '/wp-admin/admin-ajax.php')):
+        _, hostname = validate_url(url)
+        # FanFicFare marks binary image fetches explicitly, including extensionless URLs.
+        image = any(key.lower() == 'accept' and value.startswith('image/')
+                    for key, value in (headers or {}).items())
+        if hostname not in self.hosts or image:
             return super()._request(method, url, parameters, headers)
         if method not in ('GET', 'POST'):
             raise PolicyError('Unsupported request method')
@@ -50,7 +55,7 @@ class FlareSolverrTransport(SafeTransport):
         self.cookies.add_cookie_header(request)
         selected = {tuple(part.strip().split('=', 1)) for part in request.get_header('Cookie', '').split(';')}
         cookies = [{'name': c.name, 'value': c.value, 'domain': c.domain, 'path': c.path}
-                   for c in self.cookies if (c.name, c.value) in selected and c.domain.lstrip('.') in ('scribblehub.com', hostname)]
+                   for c in self.cookies if (c.name, c.value) in selected and c.domain.lstrip('.') in self.hosts]
         if self.session is None:
             session = 'bookorbit-' + str(int(time.time())) + '-' + uuid.uuid4().hex
             self.call_solver({'cmd': 'sessions.create', 'session': session}, min(30, remaining))
@@ -77,7 +82,7 @@ class FlareSolverrTransport(SafeTransport):
                 raise ValueError()
         except (ValueError, KeyError, TypeError) as error:
             raise SourceResponseError('Browser service could not complete the request') from error
-        if validate_url(redirected)[1] != hostname:
+        if validate_url(redirected)[1] not in self.hosts:
             raise PolicyError('Browser response left the requested website')
         content = text.encode('utf-8')
         self.remaining_bytes -= len(content)
@@ -91,7 +96,7 @@ class FlareSolverrTransport(SafeTransport):
             if not isinstance(cookie, dict):
                 raise PolicyError('Invalid browser cookie')
             domain = cookie.get('domain', '')
-            if not isinstance(domain, str) or domain.lstrip('.') not in ('scribblehub.com', hostname):
+            if not isinstance(domain, str) or domain.lstrip('.') not in self.hosts:
                 continue
             expiry = cookie.get('expiry', cookie.get('expires'))
             self.load_cookies([{'name': cookie.get('name'), 'value': cookie.get('value'), 'domain': domain,

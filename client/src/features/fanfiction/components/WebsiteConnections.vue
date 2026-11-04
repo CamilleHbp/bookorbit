@@ -173,7 +173,7 @@ function date(value: string) {
             class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
         /></label>
       </details>
-      <details v-if="!repairsOnly" :key="site" class="space-y-3" @toggle="toggleSettings">
+      <details :key="site" class="space-y-3" @toggle="toggleSettings">
         <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">{{ t('fanfiction.advanced') }}</summary>
         <p v-if="settingsLoading" role="status" class="text-sm text-muted-foreground">{{ t('common.loading') }}</p>
         <template v-if="settingsLoaded">
@@ -188,6 +188,10 @@ function date(value: string) {
               class="border-input bg-background block w-full rounded-md border p-3 font-mono text-sm"
             />
           </label>
+          <p class="text-sm text-muted-foreground">{{ t('fanfiction.connections.proxyHelp') }}</p>
+          <pre class="overflow-x-auto rounded-md bg-muted p-3 text-sm">
+[defaults]
+use_flaresolverr_proxy: true</pre>
           <fieldset class="space-y-3">
             <legend class="text-sm font-medium">{{ t('fanfiction.tagRules') }}</legend>
             <div v-for="(rule, index) in tagRules" :key="index" class="flex flex-col gap-2 sm:flex-row sm:items-end">

@@ -57,3 +57,33 @@ it('focuses a requested repair after the delayed website catalog makes the form 
     wrapper.unmount()
   }
 })
+
+it('loads and saves advanced FanFicFare settings from the login repair form', async () => {
+  const website = { id: 'scribblehub.com', name: 'ScribbleHub', access: 'login', examples: [] }
+  const login = { id: 'connection', website, hasPassword: true, version: 3 }
+  const configuration = '[www.scribblehub.com]\nusername: ********\npassword: ********\nuse_flaresolverr_proxy: true'
+  vi.mocked(api).mockImplementation((url, options) => {
+    if (String(url).endsWith('/websites')) return Promise.resolve(response([website]))
+    if (String(url).endsWith('/settings')) return Promise.resolve(response({ configuration, tagRules: [] }))
+    if (options?.method === 'POST') return Promise.resolve(response({ ...login, version: 4 }))
+    return Promise.resolve(response([login]))
+  })
+  const wrapper = mount(WebsiteConnections, { props: { focusSite: website.id, repairsOnly: true } })
+  try {
+    await flushPromises()
+    const advanced = wrapper.findAll('details')[1]!
+    ;(advanced.element as HTMLDetailsElement).open = true
+    await advanced.trigger('toggle')
+    await flushPromises()
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe(configuration)
+    const edited = configuration.replace('proxy: true', 'proxy: false')
+    await wrapper.get('textarea').setValue(edited)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const request = vi.mocked(api).mock.calls.find(([, options]) => options?.method === 'POST')!
+    expect(JSON.parse(request[1]!.body as string)).toEqual({ site: website.id, version: 3, configuration: edited, tagRules: [] })
+    expect(wrapper.emitted('saved')).toHaveLength(1)
+  } finally {
+    wrapper.unmount()
+  }
+})

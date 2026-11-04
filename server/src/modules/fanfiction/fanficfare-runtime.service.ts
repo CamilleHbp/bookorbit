@@ -196,14 +196,12 @@ export class FanficfareRuntimeService {
   ): Promise<unknown> {
     if (!control && this.active >= this.config.maxWorkers) throw new ServiceUnavailableException('FanFicFare runtime is busy');
     if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
-    const browserDownload =
-      this.config.flaresolverrUrl &&
-      request.url?.startsWith('https://www.scribblehub.com/') &&
-      ['download', 'update', 'refresh'].includes(request.operation);
+    const browserDownload = this.config.flaresolverrUrl && ['download', 'update', 'refresh'].includes(request.operation);
     const timeoutMs = control ? Math.min(this.config.timeoutMs, 5000) : browserDownload ? 7_200_000 : this.config.timeoutMs;
     const input = JSON.stringify({
       ...request,
-      timeoutSeconds: Math.ceil(timeoutMs / 1000),
+      timeoutSeconds: Math.ceil((control ? timeoutMs : this.config.timeoutMs) / 1000),
+      ...(browserDownload ? { browserTimeoutSeconds: 7200 } : {}),
       ...(this.config.flaresolverrUrl ? { flaresolverrUrl: this.config.flaresolverrUrl } : {}),
     });
     if (Buffer.byteLength(input) > 512 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
