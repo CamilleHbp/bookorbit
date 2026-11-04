@@ -83,6 +83,7 @@ def make_configuration(url, ini, transport):
     from fanficfare import adapters, exceptions
     from fanficfare.configurable import Configuration
     from fanficfare.fetchers.base_fetcher import Fetcher, FetcherResponse
+    from fanficfare.fetchers import SleepDecorator
 
     class ControlledFetcher(Fetcher):
         def get_cookiejar(self, filename=None, mozilla=False):
@@ -115,6 +116,9 @@ def make_configuration(url, ini, transport):
         def get_fetcher(self, make_new=False):
             if self.fetcher is None:
                 self.fetcher = ControlledFetcher(self.getConfig, self.getConfigList)
+                if validate_url(url)[1].removeprefix('www.') == 'royalroad.com':
+                    self.sleeper = SleepDecorator()
+                    self.sleeper.decorate_fetcher(self.fetcher)
             return self.fetcher
 
         def _read_file_opener(self, _filename):

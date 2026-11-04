@@ -45,7 +45,7 @@ export class FanficfareRuntimeService {
   async health(): Promise<FanficfareRuntimeHealth> {
     try {
       const result = (await this.temporary({ operation: 'health' })) as FanficfareRuntimeHealth;
-      if (result.version !== '4.61.0' || result.protocolVersion !== 1 || result.ready !== true) throw new ServiceUnavailableException();
+      if (result.version !== '4.63.0' || result.protocolVersion !== 1 || result.ready !== true) throw new ServiceUnavailableException();
       return result;
     } catch {
       return { version: null, protocolVersion: 1, ready: false, errorCode: 'runtime_unavailable' };
@@ -196,7 +196,9 @@ export class FanficfareRuntimeService {
   ): Promise<unknown> {
     if (!control && this.active >= this.config.maxWorkers) throw new ServiceUnavailableException('FanFicFare runtime is busy');
     if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
-    const browserDownload = this.config.flaresolverrUrl && ['download', 'update', 'refresh'].includes(request.operation);
+    const browserDownload =
+      ['download', 'update', 'refresh'].includes(request.operation) &&
+      (this.config.flaresolverrUrl || /^https:\/\/(?:www\.)?royalroad\.com\//.test(request.url ?? ''));
     const timeoutMs = control ? Math.min(this.config.timeoutMs, 5000) : browserDownload ? 7_200_000 : this.config.timeoutMs;
     const input = JSON.stringify({
       ...request,

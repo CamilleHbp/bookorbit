@@ -20,7 +20,7 @@ from safe_transport import ConfigurationError, PolicyError, SafeTransport, insta
 from scribblehub_login import login_scribblehub
 from flaresolverr_transport import FlareSolverrTransport
 
-VERSION = '4.61.0'
+VERSION = '4.63.0'
 TEST_SITES = {'test1.com', 'test2.com'}
 
 
@@ -119,7 +119,7 @@ class ProgressReporter:
 
 def run(request, save_cookies=None, report_progress=lambda progress: None):
     actual = importlib.metadata.version('FanFicFare')
-    if actual != VERSION:
+    if actual != VERSION or importlib.metadata.version('curl_cffi') != '0.17.0':
         raise PolicyError('Pinned FanFicFare runtime version does not match')
     install_image_processing()
     from fanficfare import adapters, writers
@@ -138,13 +138,14 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     url = request.get('url')
     validate_url(url)
     timeout = min(7200, max(1, request.get('timeoutSeconds', 1800)))
+    if validate_url(url)[1].removeprefix('www.') == 'royalroad.com' and operation in ('download', 'update', 'refresh'):
+        timeout = min(7200, max(1, request.get('browserTimeoutSeconds', timeout)))
     transport = FlareSolverrTransport(request['flaresolverrUrl'], timeout=timeout) if request.get('flaresolverrUrl') else SafeTransport(timeout=timeout)
     transport.load_cookies(request.get('cookies', []))
     try:
         return run_story(request, transport, operation, url, ini, save_cookies, report_progress)
     finally:
-        if isinstance(transport, FlareSolverrTransport):
-            transport.close()
+        transport.close()
 
 
 def run_story(request, transport, operation, url, ini, save_cookies, report_progress):
