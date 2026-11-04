@@ -4,6 +4,7 @@ import type { FanfictionJob, FanfictionMetadataValues } from '@bookorbit/types'
 import { api } from '@/lib/api'
 import RichDescriptionEditor from '@/features/book/components/detail/tabs/RichDescriptionEditor.vue'
 import StoryImportReview from './StoryImportReview.vue'
+vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
 vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 function makeJob(values: FanfictionMetadataValues): FanfictionJob {
   const url = 'https://archiveofourown.org/works/123'

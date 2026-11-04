@@ -29,6 +29,7 @@ const sections = computed<ToolSection[]>(() => {
   }
 
   if (hasPermission('library_edit_metadata')) {
+    result.push({ label: t('tagMatching.title'), routeName: 'tools-tag-matching' })
     result.push({ label: t('tools.header.chapterHealth'), routeName: 'tools-chapter-health' })
   }
 

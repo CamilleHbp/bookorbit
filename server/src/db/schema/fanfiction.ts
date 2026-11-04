@@ -65,6 +65,8 @@ export const fanfictionSources = pgTable(
     wordCount: integer('word_count'),
     storyStatus: varchar('story_status', { length: 100 }).notNull().default(''),
     categories: jsonb('categories').$type<FanfictionCategories>(),
+    rawLabels: jsonb('raw_labels').$type<import('@bookorbit/types').IncomingLabel[]>(),
+    labelMappingVersion: integer('label_mapping_version'),
     tagPolicy: varchar('tag_policy', { length: 20 }).$type<'review' | 'automatic'>().notNull().default('review'),
     intervalMinutes: integer('interval_minutes').default(1440),
     nextCheckAt: timestamp('next_check_at', { withTimezone: true }),

@@ -12,6 +12,42 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_matching_survives_download_update_and_refresh(self):
+        import xml.etree.ElementTree as ET
+        from fanficfare.adapters.adapter_test1 import TestSiteAdapter
+        extract = TestSiteAdapter.doExtractChapterUrlsAndMetadata
+
+        def metadata(adapter, get_cover=True):
+            extract(adapter, get_cover=get_cover)
+            adapter.story.addToList('category', 'Approved fandom')
+            adapter.story.addToList('characters', 'Private Character')
+            adapter.story.addToList('ships', 'Private Character/Someone')
+
+        policy = {'version': 7, 'rules': [
+            {'source': None, 'field': 'fandoms', 'value': 'Approved fandom',
+             'targets': [{'field': 'tags', 'name': 'fandom.approved'}]},
+        ]}
+        original = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory, patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'), patch.object(TestSiteAdapter, 'doExtractChapterUrlsAndMetadata', metadata):
+            try:
+                os.chdir(directory)
+                for operation in ['download', 'update', 'refresh']:
+                    with self.subTest(operation=operation):
+                        result = run({'operation': operation, 'url': 'https://test1.com/?sid=1', 'configuration': '', 'tagMatching': policy})
+                        preview = result['preview']
+                        self.assertEqual(preview['tags'], ['fandom.approved'])
+                        self.assertEqual(preview['labelMappingVersion'], 7)
+                        self.assertEqual(preview['categories']['characters'], [])
+                        self.assertEqual(preview['categories']['relationships'], [])
+                        self.assertTrue(any(label['value'] == 'Private Character' for label in preview['rawLabels']))
+                        with ZipFile('output.epub') as archive:
+                            opf = next(name for name in archive.namelist() if name.endswith('.opf'))
+                            subjects = [node.text for node in ET.fromstring(archive.read(opf)).iter('{http://purl.org/dc/elements/1.1/}subject')]
+                            self.assertEqual(subjects, ['fandom.approved'])
+                        Path('output.epub').replace('input.epub')
+            finally:
+                os.chdir(original)
+
     def test_webp_chapter_images_survive_download_update_and_refresh(self):
         from io import BytesIO
         import posixpath
@@ -204,6 +240,19 @@ class ConfigurationTest(unittest.TestCase):
         with self.assertRaises(ConfigurationError):
             validate_ini('invalid configuration')
 
+    def test_large_rulebook_input_is_supported_and_bounded(self):
+        import json
+        import subprocess
+        import sys
+        rules = [{'source': None, 'field': 'tags', 'value': f'Label {i}', 'targets': [{'field': 'tags', 'name': 'Canonical tag'}]} for i in range(6000)]
+        request = {'operation': 'validate', 'configuration': '', 'tagMatching': {'version': 1, 'rules': rules}}
+        encoded = json.dumps(request)
+        self.assertGreater(len(encoded), 512 * 1024)
+        response = subprocess.run([sys.executable, '-I', str(Path(__file__).with_name('fanficfare_wrapper.py'))], input=encoded, text=True, capture_output=True, check=True)
+        self.assertTrue(json.loads(response.stdout)['ok'])
+        response = subprocess.run([sys.executable, '-I', str(Path(__file__).with_name('fanficfare_wrapper.py'))], input='x' * (8 * 1024 * 1024 + 1), text=True, capture_output=True, check=True)
+        self.assertFalse(json.loads(response.stdout)['ok'])
+
     def test_failure_protocol_keeps_diagnostics_without_exposing_configuration(self):
         import json
         import subprocess
@@ -313,7 +362,7 @@ class ConfigurationTest(unittest.TestCase):
             try:
                 os.chdir(directory)
                 Path('personal.ini').write_text('[defaults]\npre_process_cmd: invalid\noutput_filename: outside.epub\n')
-                request = {'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\nextratags: Remote tag\n', 'tagRules': [{'remoteTag': 'Remote tag', 'targetTag': 'Mapped tag'}]}
+                request = {'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': '[defaults]\ninclude_images: false\nextratags: Remote tag\n', 'tagMatching': {'version': 1, 'rules': [{'source': None, 'field': 'tags', 'value': 'Remote tag', 'targets': [{'field': 'tags', 'name': 'Mapped tag'}]}]}}
                 progress = []
                 result = run(request, report_progress=progress.append)
                 self.assertEqual(progress[0], {'stage': 'metadata'})

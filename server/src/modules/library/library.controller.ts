@@ -102,8 +102,8 @@ export class LibraryController {
     getResourceId: (_, res: unknown) => (res as { id?: number })?.id,
     description: (_, res: unknown) => `Created library '${(res as { name?: string })?.name ?? 'unknown'}'`,
   })
-  create(@Body() dto: CreateLibraryDto) {
-    return this.libraryService.create(dto);
+  create(@Body() dto: CreateLibraryDto, @CurrentUser() user: RequestUser) {
+    return this.libraryService.create(dto, user);
   }
 
   @Patch(':id')

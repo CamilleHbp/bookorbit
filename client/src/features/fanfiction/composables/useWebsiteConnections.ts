@@ -4,7 +4,6 @@ import type {
   FanfictionConnectionIssue,
   FanfictionConnectionRequest,
   FanfictionConnectionSettings,
-  FanfictionTagRule,
   FanfictionJob,
   FanfictionSource,
   FanfictionWebsite,
@@ -21,7 +20,6 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
   const cookieName = ref('')
   const cookieValue = ref('')
   const configuration = ref('')
-  const tagRules = ref<FanfictionTagRule[]>([])
   const settingsLoaded = ref(false)
   const settingsLoading = ref(false)
   const error = ref('')
@@ -87,7 +85,6 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
     saved.value = false
     settingsLoaded.value = false
     configuration.value = ''
-    tagRules.value = []
   })
   async function loadSettings() {
     if (settingsLoaded.value || settingsLoading.value) return
@@ -101,7 +98,6 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
         : { configuration: '', tagRules: [] }
       if (disposed || current !== generation || selectedSite !== site.value) return
       configuration.value = settings.configuration
-      tagRules.value = settings.tagRules
       settingsLoaded.value = true
     } catch (failure) {
       if (!disposed && current === generation && selectedSite === site.value)
@@ -109,12 +105,6 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
     } finally {
       settingsLoading.value = false
     }
-  }
-  function addTagRule() {
-    if (tagRules.value.length < 100) tagRules.value.push({ remoteTag: '', targetTag: '' })
-  }
-  function removeTagRule(index: number) {
-    tagRules.value.splice(index, 1)
   }
   async function save(source?: FanfictionSource): Promise<{ connection: FanfictionConnection; job?: FanfictionJob } | undefined> {
     if (busy.value || !website.value) return
@@ -127,7 +117,7 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
       if (!!cookieName.value !== !!cookieValue.value) throw new Error('Enter both the cookie name and value')
       const body: FanfictionConnectionRequest = {
         site: site.value,
-        ...(settingsLoaded.value ? { configuration: configuration.value, tagRules: tagRules.value } : {}),
+        ...(settingsLoaded.value ? { configuration: configuration.value } : {}),
         version: connection.value?.version,
         ...(username.value ? { username: username.value } : {}),
         ...(password.value ? { password: password.value } : {}),
@@ -181,12 +171,9 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
   })
   return {
     configuration,
-    tagRules,
     settingsLoaded,
     settingsLoading,
     loadSettings,
-    addTagRule,
-    removeTagRule,
     websites,
     connections,
     issues,

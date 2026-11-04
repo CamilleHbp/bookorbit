@@ -1,3 +1,6 @@
+import { BookCoverStore } from '../src/modules/book-cover-store/book-cover-store.service';
+import { AudiobookChaptersService } from '../src/modules/audiobook-chapters/audiobook-chapters.service';
+import { TagMatchingService } from '../src/modules/tag-matching/tag-matching.service';
 import { ManagedMetadataService } from '../src/modules/metadata/managed-metadata.service';
 import { BookMetadataLockRepository } from '../src/modules/book-metadata-lock/book-metadata-lock.repository';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
@@ -43,7 +46,10 @@ describe.skipIf(!configPath)('managed story metadata with PostgreSQL', () => {
       .orderBy(asc(schema.tags.name));
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (config.database !== 'bookorbit_revision_validation' && !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? ''))
+    if (
+      config.database !== 'bookorbit_revision_validation' &&
+      !/^bookorbit_(?:ux_(fresh|upgrade)_20260910|tagmatch_test_[0-9]+)$/.test(config.database ?? '')
+    )
       throw new Error('An isolated validation database is required');
     pool = new Pool({ ...config, application_name: 'bookorbit_managed_tags_test', statement_timeout: 10_000 });
     db = drizzle(pool, { schema });
@@ -52,6 +58,7 @@ describe.skipIf(!configPath)('managed story metadata with PostgreSQL', () => {
       providers: [
         ManagedTagService,
         ManagedMetadataService,
+        TagMatchingService,
         BookMetadataLockService,
         BookMetadataLockRepository,
         RevisionCatalogService,
@@ -59,10 +66,12 @@ describe.skipIf(!configPath)('managed story metadata with PostgreSQL', () => {
         MetadataService,
         { provide: DB, useValue: db },
         { provide: ConfigService, useValue: { get: () => '/unused-managed-tags-test' } },
-        ...[MetadataExtractionService, MetadataScoreService, NarratorService, ComicMetadataRepository].map((provide) => ({
-          provide,
-          useValue: {},
-        })),
+        ...[MetadataExtractionService, MetadataScoreService, NarratorService, ComicMetadataRepository, BookCoverStore, AudiobookChaptersService].map(
+          (provide) => ({
+            provide,
+            useValue: {},
+          }),
+        ),
       ],
     }).compile();
     service = module.get(ManagedTagService);
@@ -91,6 +100,69 @@ describe.skipIf(!configPath)('managed story metadata with PostgreSQL', () => {
   afterAll(async () => {
     await module?.close();
     await pool?.end();
+  });
+
+  it('preserves manual labels during automatic review and remembers explicit removals', async () => {
+    const [user] = await db
+      .insert(schema.users)
+      .values({ username: `matching-${randomUUID()}`, name: 'Test', passwordHash: 'unused' })
+      .returning();
+    try {
+      const [rulebook] = await db.insert(schema.tagRulebooks).values({ userId: user.id }).returning();
+      await db.insert(schema.libraryTagRulebooks).values({ libraryId, rulebookId: rulebook.id });
+      await metadata.replaceGenres(bookId, ['Manual genre']);
+      await metadata.replaceTags(bookId, ['Manual tag']);
+      const [genre] = await db
+        .insert(schema.genres)
+        .values({ name: `imported-${randomUUID()}` })
+        .returning();
+      const [rule] = await db
+        .insert(schema.tagMatchingRules)
+        .values({ rulebookId: rulebook.id, source: '', field: 'genres', value: 'remote', key: 'remote', action: 'match' })
+        .returning();
+      await db.insert(schema.tagMatchingTargets).values({ ruleId: rule.id, genreId: genre.id });
+      const matching = module.get(TagMatchingService);
+      const incoming = { source: 'example.test', sourceKey: source().key, labels: [{ field: 'genres' as const, value: 'remote' }] };
+      await db.transaction((tx) => matching.sync(tx, bookId, incoming));
+      const managed = module.get(ManagedMetadataService);
+      const preview = { title: 'Story', description: '', authors: [], tags: [], genres: [] };
+      await db.transaction((tx) => managed.apply(tx, bookId, { ...source(), userId: user.id }, preview, ['tags', 'genres']));
+      const snapshot = await db.transaction((tx) => managed.snapshot(tx, bookId, libraryId, source().key));
+      expect(snapshot.current.tags).toEqual(['Manual tag']);
+      expect(snapshot.current.genres).toEqual(expect.arrayContaining(['Manual genre', genre.name]));
+      await db.transaction((tx) =>
+        managed.apply(tx, bookId, { ...source(), userId: user.id }, { ...preview, genres: ['Manual genre'] }, ['genres'], [], false, ['genres']),
+      );
+      await db.transaction((tx) => matching.sync(tx, bookId, incoming));
+      expect((await db.transaction((tx) => managed.snapshot(tx, bookId, libraryId))).current.genres).toEqual(['Manual genre']);
+      expect(await db.select().from(schema.tagMatchingExclusions).where(eq(schema.tagMatchingExclusions.bookId, bookId))).toEqual([
+        expect.objectContaining({ genreId: genre.id, userId: user.id }),
+      ]);
+      const personalTag = `personal-${randomUUID()}`,
+        personalGenre = `personal-genre-${randomUUID()}`;
+      await db.transaction((tx) =>
+        managed.apply(
+          tx,
+          bookId,
+          { ...source(), userId: user.id },
+          { ...preview, tags: [personalTag], genres: [personalGenre] },
+          ['tags', 'genres'],
+          [],
+          false,
+          [],
+          { tags: { added: [personalTag], removed: ['Manual tag'] }, genres: { added: [personalGenre], removed: ['Manual genre'] } },
+        ),
+      );
+      await db.transaction((tx) => matching.sync(tx, bookId, incoming));
+      const final = await db.transaction((tx) => managed.snapshot(tx, bookId, libraryId));
+      expect(final.current.tags).toEqual([personalTag]);
+      expect(final.current.genres).toEqual([personalGenre]);
+      expect(await links()).toEqual([{ name: personalTag, managedOnly: false }]);
+      expect((await db.select().from(schema.bookGenres).where(eq(schema.bookGenres.bookId, bookId)))[0].managedOnly).toBe(false);
+    } finally {
+      await db.delete(schema.libraryTagRulebooks).where(eq(schema.libraryTagRulebooks.libraryId, libraryId));
+      await db.delete(schema.users).where(eq(schema.users.id, user.id));
+    }
   });
 
   it('refreshes unlocked metadata without changing custom covers or unrelated fields', async () => {
