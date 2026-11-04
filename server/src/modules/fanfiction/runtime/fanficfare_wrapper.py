@@ -17,6 +17,7 @@ from epub_policy import validate_epub
 from image_processing import install_image_processing
 from safe_transport import PolicyError, SafeTransport, install_network_guard, validate_url
 from scribblehub_login import login_scribblehub
+from flaresolverr_transport import FlareSolverrTransport
 
 VERSION = '4.61.0'
 TEST_SITES = {'test1.com', 'test2.com'}
@@ -136,8 +137,18 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
         return {'valid': True}
     url = request.get('url')
     validate_url(url)
-    transport = SafeTransport()
+    timeout = min(7200, max(1, request.get('timeoutSeconds', 1800)))
+    transport = FlareSolverrTransport(request['flaresolverrUrl'], timeout=timeout) if request.get('flaresolverrUrl') else SafeTransport(timeout=timeout)
     transport.load_cookies(request.get('cookies', []))
+    try:
+        return run_story(request, transport, operation, url, ini, save_cookies, report_progress)
+    finally:
+        if isinstance(transport, FlareSolverrTransport):
+            transport.close()
+
+
+def run_story(request, transport, operation, url, ini, save_cookies, report_progress):
+    from fanficfare import adapters, writers
     def finish(result):
         if save_cookies is not None:
             save_cookies(transport.export_cookies())
