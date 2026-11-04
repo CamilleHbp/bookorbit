@@ -133,9 +133,10 @@ function date(value: string) {
       <p v-if="connection" class="text-sm text-muted-foreground">{{ t('fanfiction.connections.savedHelp') }}</p>
       <template v-if="website.access === 'login'">
         <label class="block space-y-1 text-sm"
-          >{{ t('fanfiction.connections.username')
+          >{{ t(website.usernameKind === 'email' ? 'auth.fields.email' : 'fanfiction.connections.username')
           }}<input
             v-model="username"
+            :type="website.usernameKind === 'email' ? 'email' : 'text'"
             autocomplete="username"
             maxlength="4096"
             :disabled="busy"
