@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { api } from '@/lib/api'
 import { useFanfictionPreferences } from './useFanfictionPreferences'
-vi.mock('@/lib/api', () => ({ api: vi.fn() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 
 describe('story update defaults', () => {
   beforeEach(() => vi.resetAllMocks())
