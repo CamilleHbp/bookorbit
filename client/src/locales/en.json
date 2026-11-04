@@ -15606,6 +15606,20 @@
       "attention": "Stories needing attention",
       "noAttention": "No stories need your attention."
     },
+    "importInbox": {
+      "title": "Story imports",
+      "description": "Finish reviewing a story or retry a download. Your saved edits stay with the import.",
+      "back": "All imports",
+      "retry": "Retry download",
+      "ready": "Ready to review before downloading.",
+      "saved": "Your approved tags and metadata are saved.",
+      "empty": "No unfinished imports",
+      "emptyHint": "New imports and downloads that need attention will appear here.",
+      "loadFailed": "Could not load or update your imports. Try again.",
+      "metadata": "Library metadata",
+      "lastCheck": "Last library check",
+      "sourceDetails": "Details from the website"
+    },
     "reviewQueue": {
       "nav": "Review",
       "title": "Review stories",
