@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 
-const output = vi.hoisted(() => ({ response: {} as unknown }));
+const output = vi.hoisted(() => ({ response: {} as unknown, request: {} as Record<string, unknown> }));
 vi.mock('node:child_process', async () => {
   const { EventEmitter } = await import('node:events');
   const { PassThrough } = await import('node:stream');
@@ -18,6 +18,7 @@ vi.mock('node:child_process', async () => {
         kill: vi.fn(),
       });
       child.stdin.once('finish', () => {
+        output.request = JSON.parse(child.stdin.read().toString()) as Record<string, unknown>;
         child.stdout.write(JSON.stringify(output.response));
         child.emit('close', 0);
       });
@@ -30,16 +31,27 @@ const cookie = { name: 'session', value: 'private-renewal', domain: 'example.org
 describe('private FanFicFare runtime session output', () => {
   afterEach(() => vi.restoreAllMocks());
   let service: FanficfareRuntimeService;
+  let runtimeConfig: { python: string; maxWorkers: number; timeoutMs: number; flaresolverrUrl?: string };
   beforeEach(async () => {
+    runtimeConfig = { python: 'controlled-python', maxWorkers: 2, timeoutMs: 1000 };
     const module = await Test.createTestingModule({
       providers: [
         FanficfareRuntimeService,
-        { provide: fanficfareConfig.KEY, useValue: { python: 'controlled-python', maxWorkers: 2, timeoutMs: 1000 } },
+        { provide: fanficfareConfig.KEY, useValue: runtimeConfig },
         { provide: storageConfig.KEY, useValue: { appDataPath: tmpdir() } },
       ],
     }).compile();
     service = module.get(FanficfareRuntimeService);
     output.response = { ok: true, result: { title: 'Public preview' }, cookies: [cookie] };
+  });
+  it('passes the operator solver endpoint and extends only ScribbleHub download deadlines', async () => {
+    runtimeConfig.flaresolverrUrl = 'http://solver:8191/v1';
+    await service.execute({ operation: 'download', url: 'https://www.scribblehub.com/series/123/story/' }, '/unused');
+    expect(output.request).toMatchObject({ flaresolverrUrl: 'http://solver:8191/v1', timeoutSeconds: 7200 });
+    await service.execute({ operation: 'download', url: 'https://example.org/story' }, '/unused');
+    expect(output.request.timeoutSeconds).toBe(1);
+    await service.execute({ operation: 'merge' }, '/unused');
+    expect(output.request.timeoutSeconds).toBe(1);
   });
   it.each([
     ['identity_mismatch', 'source_identity_mismatch'],
