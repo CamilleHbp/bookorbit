@@ -310,18 +310,41 @@ describe('managed Fanfiction page requests', () => {
     expect(mockApi.mock.calls.every(([url]) => String(url).endsWith('/sources'))).toBe(true)
   })
 
-  it('retries a blocked import using the current website connection and a new request identity', async () => {
+  it.each(['configuration_blocked', 'failed', 'cancelled'])('resumes a %s import with its saved review and destination', async (stateName) => {
     const state = create()
     state.libraryId.value = 5
     state.folderId.value = 8
     state.urls.value = preview.canonicalUrl
-    mockApi.mockResolvedValue(response({ id: 'job', kind: 'import', state: 'configuration_blocked', errorCode: 'authentication_required' }))
+    const result = { importReview: { approved: true, preview, values: { title: 'Edited title', tags: ['My tag'] } } }
+    mockApi.mockResolvedValueOnce(response({ id: 'job', kind: 'import', state: stateName, result }))
     await state.importStories()
+    const importKey = state.candidates.value[0]!.importKey
+    state.folderId.value = 9
+    mockApi.mockResolvedValueOnce(response({ id: 'job', kind: 'import', state: 'queued', result }))
     await state.retryImport(state.candidates.value[0]!)
-    const first = JSON.parse(mockApi.mock.calls[0]![1]!.body as string)
-    const retry = JSON.parse(mockApi.mock.calls[1]![1]!.body as string)
-    expect(retry).not.toHaveProperty('profileId')
-    expect(retry.idempotencyKey).not.toBe(first.idempotencyKey)
+    expect(mockApi.mock.calls[1]![0]).toBe('/api/v1/libraries/5/fanfiction/jobs/job/retry')
+    expect(JSON.parse(mockApi.mock.calls[1]![1]!.body as string)).toEqual({})
+    expect(state.candidates.value[0]!.importKey).toBe(importKey)
+    expect(state.candidates.value[0]!.job?.result).toEqual(result)
+  })
+
+  it('retains the failed import and edited tags when a retry request loses its response', async () => {
+    const state = create()
+    state.libraryId.value = 5
+    state.folderId.value = 8
+    state.urls.value = preview.canonicalUrl
+    const result = { importReview: { approved: true, preview, values: { tags: ['My tag'] } } }
+    mockApi.mockResolvedValueOnce(response({ id: 'job', kind: 'import', state: 'failed', result }))
+    await state.importStories()
+    mockApi.mockRejectedValueOnce(new Error('Disconnected'))
+    await state.retryImport(state.candidates.value[0]!)
+    expect(state.candidates.value[0]!.job?.result).toEqual(result)
+    mockApi.mockResolvedValueOnce(response({ id: 'job', kind: 'import', state: 'queued', result }))
+    await state.retryImport(state.candidates.value[0]!)
+    expect(mockApi.mock.calls.slice(1).map(([url]) => url)).toEqual([
+      '/api/v1/libraries/5/fanfiction/jobs/job/retry',
+      '/api/v1/libraries/5/fanfiction/jobs/job/retry',
+    ])
   })
 
   it('keeps the same update request identity after an uncertain response and sends refresh separately', async () => {
