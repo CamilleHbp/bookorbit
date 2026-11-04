@@ -151,7 +151,13 @@ export class FanficfareRuntimeService {
         preview?: FanfictionPreview;
       };
       if (result.reviewRequired)
-        throw new BadRequestException({ message: 'Story identity or chapter count requires review', errorCode: 'review_required' });
+        throw new BadRequestException({
+          message:
+            result.reviewRequired === 'chapter_reduction'
+              ? 'The website has fewer chapters than the saved EPUB'
+              : 'The saved EPUB points to a different story',
+          errorCode: result.reviewRequired === 'chapter_reduction' ? 'source_chapter_reduction' : 'source_identity_mismatch',
+        });
       if (result.output !== 'output.epub' || !result.preview) throw new ServiceUnavailableException('Invalid FanFicFare update response');
       return consume(join(directory, 'output.epub'), validateFanfictionPreview(result.preview));
     });

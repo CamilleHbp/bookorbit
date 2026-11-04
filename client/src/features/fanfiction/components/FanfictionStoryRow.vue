@@ -119,6 +119,9 @@ function handlePause() {
       />
       <p v-if="source.sourceTitle && source.sourceTitle !== source.title" class="text-xs text-muted-foreground">{{ source.sourceTitle }}</p>
       <p v-if="source.attentionCode" class="text-sm text-destructive">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
+      <Button v-if="['review_required', 'source_chapter_reduction'].includes(source.attentionCode ?? '')" variant="outline" as-child>
+        <RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.maintenance.defaultPolicy') }}</RouterLink>
+      </Button>
       <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
       <div v-if="pending" role="status" class="flex items-center gap-2 text-sm">
         <LoaderCircle class="size-4 motion-safe:animate-spin" aria-hidden="true" />{{ t('fanfiction.checkingStory') }}

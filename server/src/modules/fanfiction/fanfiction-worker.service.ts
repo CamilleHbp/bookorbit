@@ -176,6 +176,10 @@ export class FanfictionWorkerService implements OnModuleDestroy {
           ? 'configuration_blocked'
           : [
                 'review_required',
+                'source_identity_mismatch',
+                'source_chapter_reduction',
+                'saved_epub_changed',
+                'import_source_changed',
                 'metadata_review_required',
                 'content_review_required',
                 'replacement_identity_mismatch',
