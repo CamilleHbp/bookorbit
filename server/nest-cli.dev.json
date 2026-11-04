@@ -9,6 +9,7 @@
     "assets": [
       "modules/fanfiction/runtime/fanficfare_wrapper.py",
       "modules/fanfiction/runtime/controlled_config.py",
+      "modules/fanfiction/runtime/website_catalog.py",
       "modules/fanfiction/runtime/safe_transport.py",
       "modules/fanfiction/runtime/flaresolverr_transport.py",
       "modules/fanfiction/runtime/scribblehub_login.py",

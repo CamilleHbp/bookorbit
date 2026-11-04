@@ -87,3 +87,27 @@ it('loads and saves advanced FanFicFare settings from the login repair form', as
     wrapper.unmount()
   }
 })
+
+it('saves Royal Road email and password while leaving browser cookies optional', async () => {
+  const website = { id: 'royalroad.com', name: 'Royal Road', access: 'login', usernameKind: 'email', examples: [] }
+  vi.mocked(api).mockImplementation((url, options) => {
+    if (String(url).endsWith('/websites')) return Promise.resolve(response([website]))
+    if (options?.method === 'POST') return Promise.resolve(response({ id: 'connection', website, hasPassword: true, version: 1 }))
+    return Promise.resolve(response([]))
+  })
+  const wrapper = mount(WebsiteConnections, { props: { focusSite: 'www.royalroad.com', repairsOnly: true } })
+  try {
+    await flushPromises()
+    expect(wrapper.get('input[type="email"]').element).toBeTruthy()
+    expect(wrapper.get('details').attributes('open')).toBeUndefined()
+    await wrapper.get('input[type="email"]').setValue('reader@example.com')
+    await wrapper.get('input[autocomplete="current-password"]').setValue('private-password')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const request = vi.mocked(api).mock.calls.find(([, options]) => options?.method === 'POST')!
+    expect(JSON.parse(request[1]!.body as string)).toEqual({ site: 'royalroad.com', username: 'reader@example.com', password: 'private-password' })
+    expect(wrapper.emitted('saved')).toHaveLength(1)
+  } finally {
+    wrapper.unmount()
+  }
+})
