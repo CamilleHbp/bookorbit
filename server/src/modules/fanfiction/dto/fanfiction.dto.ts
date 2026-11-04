@@ -5,6 +5,7 @@ import {
   IsArray,
   IsBoolean,
   IsInt,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -16,7 +17,8 @@ import {
 } from 'class-validator';
 
 export class FanfictionPreferencesDto {
-  @IsBoolean() isAdult!: boolean;
+  @IsOptional() @IsBoolean() isAdult?: boolean;
+  @IsOptional() @IsIn(['safe', 'review']) defaultUpdatePolicy?: 'safe' | 'review';
 }
 
 export class FanfictionCookieDto {

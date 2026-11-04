@@ -230,7 +230,11 @@ export class FanfictionSourceService {
   }
 
   async updateContext(job: Job) {
-    return this.db.transaction((tx) => this.assertUpdatable(job, tx));
+    const source = await this.db.transaction((tx) => this.assertUpdatable(job, tx));
+    return {
+      ...source,
+      updatePolicy: source.updatePolicy === 'safe' ? ('safe' as const) : await this.access.defaultUpdatePolicy(job.userId),
+    };
   }
 
   async assertUpdatable(job: Job, tx: DatabaseTransaction) {
@@ -568,7 +572,7 @@ export class FanfictionSourceService {
           createdBy: job.userId,
           maintainerUserId: job.userId,
           updatesEnabled: job.input!.intervalMinutes !== null,
-          updatePolicy: 'safe',
+          updatePolicy: 'review',
           tagPolicy: 'automatic',
           folderId: job.input!.folderId,
           canonicalUrl,
@@ -617,7 +621,7 @@ export class FanfictionSourceService {
       await this.db.transaction(async (tx) => {
         const source = await this.assertImportable(job, sourceId, tx);
         if (this.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl || preview.chapterCount < source.chapterCount)
-          throw new BadRequestException({ message: 'The story identity or chapter count changed before import', errorCode: 'review_required' });
+          throw new BadRequestException({ message: 'The story changed before import. Preview it again.', errorCode: 'import_source_changed' });
         await tx
           .update(sources)
           .set({

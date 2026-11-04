@@ -1,5 +1,6 @@
 export interface FanfictionPreferences {
   isAdult: boolean;
+  defaultUpdatePolicy?: FanfictionUpdatePolicy;
 }
 
 export type FanfictionUpdatePolicy = "review" | "safe";

@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { Test } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,11 +35,22 @@ describe('private FanFicFare runtime session output', () => {
       providers: [
         FanficfareRuntimeService,
         { provide: fanficfareConfig.KEY, useValue: { python: 'controlled-python', maxWorkers: 2, timeoutMs: 1000 } },
-        { provide: storageConfig.KEY, useValue: { appDataPath: '/unused-test-workspace' } },
+        { provide: storageConfig.KEY, useValue: { appDataPath: tmpdir() } },
       ],
     }).compile();
     service = module.get(FanficfareRuntimeService);
     output.response = { ok: true, result: { title: 'Public preview' }, cookies: [cookie] };
+  });
+  it.each([
+    ['identity_mismatch', 'source_identity_mismatch'],
+    ['chapter_reduction', 'source_chapter_reduction'],
+  ])('retains the actionable reason for %s without publishing', async (reason, errorCode) => {
+    output.response = { ok: true, result: { reviewRequired: reason } };
+    const consume = vi.fn();
+    await expect(
+      service.update('update', 'https://example.org/story', { configuration: '', cookies: [] }, async () => {}, consume),
+    ).rejects.toMatchObject({ response: { errorCode } });
+    expect(consume).not.toHaveBeenCalled();
   });
   it('awaits private persistence and returns only public result fields', async () => {
     let persisted = false;

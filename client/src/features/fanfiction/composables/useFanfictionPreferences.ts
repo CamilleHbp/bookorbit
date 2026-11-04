@@ -4,9 +4,10 @@ import { api } from '@/lib/api'
 
 export function useFanfictionPreferences() {
   const isAdult = ref(false)
+  const defaultUpdatePolicy = ref<'safe' | 'review'>('safe')
   const busy = ref(false)
   const error = ref('')
-  async function request(value?: boolean) {
+  async function request(value?: Partial<FanfictionPreferences>) {
     busy.value = true
     error.value = ''
     try {
@@ -17,12 +18,13 @@ export function useFanfictionPreferences() {
           : {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ isAdult: value }),
+              body: JSON.stringify(value),
             },
       )
       if (!response.ok) throw new Error('Could not save story preferences. Try again.')
       const result = (await response.json()) as FanfictionPreferences
       isAdult.value = result.isAdult
+      defaultUpdatePolicy.value = result.defaultUpdatePolicy ?? 'safe'
       return true
     } catch (failure) {
       error.value = failure instanceof Error ? failure.message : 'Request failed'
@@ -32,7 +34,7 @@ export function useFanfictionPreferences() {
     }
   }
   const load = () => request()
-  const save = () => request(isAdult.value)
-  const allowAdult = () => request(true)
-  return { isAdult, busy, error, load, save, allowAdult }
+  const save = () => request({ defaultUpdatePolicy: defaultUpdatePolicy.value })
+  const allowAdult = () => request({ isAdult: true })
+  return { isAdult, defaultUpdatePolicy, busy, error, load, save, allowAdult }
 }

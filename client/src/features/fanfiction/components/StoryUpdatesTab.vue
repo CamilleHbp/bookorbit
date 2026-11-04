@@ -206,6 +206,9 @@ onMounted(() => {
         {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }}
         <StoryUpdateOutcome :job="job" />
         <p v-if="job.errorCode" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
+        <Button v-if="['review_required', 'source_chapter_reduction'].includes(job.errorCode ?? '')" variant="outline" as-child>
+          <RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.maintenance.defaultPolicy') }}</RouterLink>
+        </Button>
         <div v-if="job.result?.contentReview && !job.result.contentReview.approved" class="space-y-3 py-3">
           <p>{{ t('fanfiction.maintenance.contentReview') }}</p>
           <div class="flex flex-wrap gap-2">

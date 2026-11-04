@@ -279,7 +279,7 @@ export class FanfictionAdoptionService {
           folderId: file.libraryFolderId,
           maintainerUserId: job.userId,
           updatesEnabled: selection.intervalMinutes !== null,
-          updatePolicy: 'safe',
+          updatePolicy: 'review',
           tagPolicy: 'automatic',
           bookId: file.bookId,
           bookFileId: file.id,
