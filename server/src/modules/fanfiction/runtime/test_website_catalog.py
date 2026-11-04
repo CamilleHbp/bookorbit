@@ -7,6 +7,11 @@ from website_catalog import website_catalog
 
 
 class WebsiteLoginTest(unittest.TestCase):
+    def setUp(self):
+        self.sleep = patch('fanficfare.fetchers.decorators.time.sleep')
+        self.sleep_mock = self.sleep.start()
+        self.addCleanup(self.sleep.stop)
+
     def test_catalog_exposes_native_and_inherited_password_logins(self):
         sites = {site['id']: site for site in website_catalog()}
         for site in ('www.royalroad.com', 'www.fimfiction.net', 'archiveofourown.org',
@@ -43,6 +48,7 @@ class WebsiteLoginTest(unittest.TestCase):
         login = 'https://www.royalroad.com/account/login'
         with patch.object(transport, 'request', side_effect=[(200, page, login), (200, b'Sign out', login)]) as request:
             self.assertTrue(adapter.performLogin())
+            self.assertEqual(self.sleep_mock.call_count, 2)
             self.assertEqual(request.call_args.args[:3], ('POST', login, {
                 'Email': 'reader@example.com', 'password': 'private%password', '__RequestVerificationToken': 'csrf-token',
             }))

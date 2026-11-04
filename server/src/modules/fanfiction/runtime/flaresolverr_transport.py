@@ -133,3 +133,4 @@ class FlareSolverrTransport(SafeTransport):
             except (OSError, PolicyError):
                 pass
             self.session = None
+        super().close()

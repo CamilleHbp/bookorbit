@@ -113,6 +113,7 @@ class SafeTransport:
         self.remaining_requests = max_requests
         self.deadline = time.monotonic() + timeout
         self.failure = None
+        self.browser_connections = {}
         self.cookies = http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(
             strict_ns_domain=http.cookiejar.DefaultCookiePolicy.DomainStrictNonDomain))
         self.context = ssl.create_default_context()
@@ -196,7 +197,17 @@ class SafeTransport:
                 safe_headers['Content-Type'] = 'application/x-www-form-urlencoded'
             request = urllib.request.Request(url, data=body, headers=safe_headers, method=method)
             self.cookies.add_cookie_header(request)
-            connection = PinnedConnection(hostname, timeout=min(20, max(0.1, self.deadline - time.monotonic())), context=self.context)
+            timeout = min(20, max(0.1, self.deadline - time.monotonic()))
+            if hostname in ('www.royalroad.com', 'royalroad.com'):
+                from browser_connection import BrowserConnection
+                connection = self.browser_connections.get(hostname)
+                if connection is None:
+                    connection = BrowserConnection(hostname, timeout=timeout, max_bytes=self.remaining_bytes)
+                    self.browser_connections[hostname] = connection
+                connection.timeout = timeout
+                connection.max_bytes = self.remaining_bytes
+            else:
+                connection = PinnedConnection(hostname, timeout=timeout, context=self.context)
             try:
                 connection.request(method, urllib.parse.urlunsplit(('', '', parsed.path or '/', parsed.query, '')), body, dict(request.header_items()))
                 response = connection.getresponse()
@@ -216,6 +227,11 @@ class SafeTransport:
             finally:
                 connection.close()
         raise PolicyError('Redirect limit exceeded')
+
+    def close(self):
+        for connection in self.browser_connections.values():
+            connection.shutdown()
+        self.browser_connections.clear()
 
     def read_body(self, response):
         encoding = response.getheader('Content-Encoding', 'identity').strip().lower()
