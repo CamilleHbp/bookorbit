@@ -64,6 +64,44 @@ describe('private FanFicFare runtime session output', () => {
     expect(result).toEqual({ title: 'Public preview' });
     expect(JSON.stringify(result)).not.toContain('private-renewal');
   });
+  it('keeps website catalog and credential edits available when every download worker is occupied', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const downloads = [1, 2].map(() => service.execute({ operation: 'download' }, '/unused', undefined, () => gate));
+    try {
+      await expect(service.execute({ operation: 'download' }, '/unused')).rejects.toThrow('busy');
+      await expect(service.execute({ operation: 'sites' }, '/unused')).resolves.toEqual({ title: 'Public preview' });
+      await expect(service.execute({ operation: 'merge' }, '/unused')).resolves.toEqual({ title: 'Public preview' });
+      await expect(service.execute({ operation: 'download' }, '/unused')).rejects.toThrow('busy');
+    } finally {
+      release();
+      await Promise.all(downloads);
+    }
+  });
+
+  it('queues local requests and continues after a failed request', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = service.execute({ operation: 'merge' }, '/unused', undefined, async () => {
+      await gate;
+      throw new Error('save failed');
+    });
+    const failure = expect(first).rejects.toThrow('save failed');
+    let completed = false;
+    const second = service.execute({ operation: 'sites' }, '/unused').then(() => {
+      completed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(completed).toBe(false);
+    release();
+    await failure;
+    await second;
+    expect(completed).toBe(true);
+  });
   it('blocks publication when cookie persistence fails', async () => {
     const saveCookies = vi.fn(() => Promise.reject(new Error('Encrypted storage unavailable')));
     await expect(service.execute({ operation: 'preview' }, '/unused', undefined, saveCookies)).rejects.toThrow('Encrypted storage unavailable');
