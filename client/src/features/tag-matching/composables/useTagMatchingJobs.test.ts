@@ -2,7 +2,7 @@ import { effectScope } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useTagMatchingJobs } from './useTagMatchingJobs'
 import { api } from '@/lib/api'
-vi.mock('@/lib/api', () => ({ api: vi.fn() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 const scopes: ReturnType<typeof effectScope>[] = []
 const job = { id: 'preview-id', version: 3, state: 'ready', processed: 1, changed: 1, skipped: 0, error: null }
