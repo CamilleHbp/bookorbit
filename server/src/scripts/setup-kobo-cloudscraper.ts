@@ -25,7 +25,7 @@ async function hasCloudscraper(): Promise<boolean> {
   try {
     await runCommand(PYTHON_BIN, [
       '-c',
-      'import cloudscraper, importlib.metadata, PIL.Image; assert getattr(cloudscraper, "__version__", "") == "3.0.0"; assert importlib.metadata.version("FanFicFare") == "4.61.0"; assert importlib.metadata.version("Pillow") == "12.3.0"',
+      'import cloudscraper, importlib.metadata, PIL.Image, curl_cffi; assert getattr(cloudscraper, "__version__", "") == "3.0.0"; assert importlib.metadata.version("FanFicFare") == "4.63.0"; assert importlib.metadata.version("Pillow") == "12.3.0"; assert importlib.metadata.version("curl_cffi") == "0.17.0"',
     ]);
     return true;
   } catch {
