@@ -41,6 +41,25 @@ describe('tag matching editor', () => {
     await vi.waitFor(() => expect(editor.saving.value).toBe(false))
     expect(JSON.parse(vi.mocked(api).mock.calls[0]![1]!.body as string)).toMatchObject({ id: 'rule-id', source: 'archiveofourown.org', version: 3 })
   })
+  it('keeps missing fandom decisions scoped to the affected book', async () => {
+    const editor = setup()
+    vi.mocked(api).mockResolvedValueOnce(response({ items: [], total: 0, version: 3 }))
+    await editor.load()
+    vi.mocked(api).mockClear()
+    editor.edit({ bookId: 42, sourceKey: 'fanfiction:one', source: 'ao3', field: 'fandoms', value: 'A story', bookCount: 1 })
+    vi.mocked(api)
+      .mockResolvedValueOnce(response({ version: 3 }))
+      .mockResolvedValueOnce(response({ items: [], total: 0, version: 3 }))
+    editor.ignore()
+    await vi.waitFor(() => expect(editor.saving.value).toBe(false))
+    expect(JSON.parse(vi.mocked(api).mock.calls[0]![1]!.body as string)).toMatchObject({
+      bookId: 42,
+      sourceKey: 'fanfiction:one',
+      action: 'ignore',
+      targets: [],
+    })
+    expect(editor.notice.value).toBe('tagMatching.decisionsSaved')
+  })
   it('preserves the draft after a stale save and refreshes when cancelled', async () => {
     const editor = setup()
     vi.mocked(api).mockResolvedValueOnce(response({ items: [], total: 0, version: 3 }))

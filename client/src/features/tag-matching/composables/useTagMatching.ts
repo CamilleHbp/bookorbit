@@ -31,7 +31,7 @@ export function useTagMatching() {
   let revision = 0,
     suggestionRevision = 0
   let timer: ReturnType<typeof setTimeout> | undefined, suggestTimer: ReturnType<typeof setTimeout> | undefined
-  const key = (row: MatchingRow) => JSON.stringify([row.source ?? '', row.field, row.value])
+  const key = (row: MatchingRow) => JSON.stringify([row.source ?? '', row.field, row.value, row.bookId ?? null, row.sourceKey ?? null])
   async function request<T>(path: string, body?: unknown, method = 'POST'): Promise<T> {
     const controller = new AbortController()
     controllers.add(controller)
@@ -143,6 +143,7 @@ export function useTagMatching() {
     }
     saving.value = true
     error.value = ''
+    const bookDecision = draft.value.some((row) => row.bookId)
     let completed = 0
     try {
       if (!version.value) version.value = (await request<{ version: number }>('initialize', {})).version
@@ -151,10 +152,11 @@ export function useTagMatching() {
           'rules',
           {
             id: row.id,
+            ...(row.bookId ? { bookId: row.bookId, sourceKey: row.sourceKey } : {}),
             version: version.value,
             source: row.source ?? '',
             field: row.field,
-            value: row.value,
+            value: row.bookId ? 'missing-fandom' : row.value,
             action,
             targets: action === 'ignore' ? [] : targets.value.map(({ field, id }) => ({ field, id })),
             newTargets: action === 'ignore' ? [] : newTargets.value,
@@ -165,7 +167,7 @@ export function useTagMatching() {
         completed++
       }
       draft.value = null
-      notice.value = t('tagMatching.saved', { count: completed })
+      notice.value = t(bookDecision ? 'tagMatching.decisionsSaved' : 'tagMatching.saved', { count: completed })
       await load()
     } catch (cause) {
       if (draft.value) draft.value = draft.value.slice(completed)

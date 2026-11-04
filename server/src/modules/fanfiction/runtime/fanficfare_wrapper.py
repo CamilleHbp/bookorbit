@@ -246,8 +246,8 @@ def main():
     logging.disable(logging.CRITICAL)
     install_network_guard()
     try:
-        raw = sys.stdin.buffer.read(512 * 1024 + 1)
-        if len(raw) > 512 * 1024:
+        raw = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)
+        if len(raw) > 8 * 1024 * 1024:
             raise PolicyError('Input limit exceeded')
         request = json.loads(raw)
         if not isinstance(request, dict):
