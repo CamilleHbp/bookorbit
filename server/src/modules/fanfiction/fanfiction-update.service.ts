@@ -96,7 +96,7 @@ export class FanfictionUpdateService {
     };
     const expected = await this.sources.expectRevision(job, current.id);
     if (expected !== current.id)
-      throw new ConflictException({ message: 'Installed EPUB changed before the update could resume', errorCode: 'review_required' });
+      throw new ConflictException({ message: 'Installed EPUB changed before the update could resume', errorCode: 'saved_epub_changed' });
     if (job.kind !== 'update' && job.kind !== 'refresh') throw new BadRequestException('Invalid source update operation');
     return this.runtime.update(
       job.kind,
@@ -113,7 +113,11 @@ export class FanfictionUpdateService {
           this.sources.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl ||
           (source.updatePolicy !== 'safe' && preview.chapterCount < source.chapterCount)
         )
-          throw new BadRequestException({ message: 'Story identity or chapter count requires review', errorCode: 'review_required' });
+          throw new BadRequestException({
+            message: 'The downloaded story does not match the saved source or chapter count',
+            errorCode:
+              this.sources.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl ? 'source_identity_mismatch' : 'source_chapter_reduction',
+          });
         const next = await this.manifests.inspect(path);
         if (current.contentHash === next.contentHash && current.metadataHash === next.metadataHash && current.coverHash === next.coverHash) {
           await this.revisions.observeFile(fileId, {});

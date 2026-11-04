@@ -10,6 +10,11 @@ export class FanfictionAccessService {
     private readonly libraries: LibraryService,
   ) {}
 
+  async defaultUpdatePolicy(userId: number): Promise<'safe' | 'review'> {
+    const user = await this.users.findByIdWithPermissions(userId);
+    return user?.settings?.fanfictionDefaultUpdatePolicy === 'review' ? 'review' : 'safe';
+  }
+
   async administer(user: RequestUser, libraryId: number): Promise<void> {
     const fresh = await this.users.findByIdWithPermissions(user.id);
     if (!fresh?.active || fresh.tokenVersion !== user.tokenVersion)

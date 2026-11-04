@@ -18,14 +18,26 @@ export class FanfictionLibraryController {
   @Get('preferences')
   @RequirePermission(Permission.ManageLibraries)
   preferences(@CurrentUser() user: RequestUser): FanfictionPreferences {
-    return { isAdult: user.settings?.fanfictionIsAdult === true };
+    return {
+      isAdult: user.settings?.fanfictionIsAdult === true,
+      defaultUpdatePolicy: user.settings?.fanfictionDefaultUpdatePolicy === 'review' ? 'review' : 'safe',
+    };
   }
 
   @Patch('preferences')
   @RequirePermission(Permission.ManageLibraries)
   async savePreferences(@Body() dto: FanfictionPreferencesDto, @CurrentUser() user: RequestUser): Promise<FanfictionPreferences> {
-    await this.users.updateMySettings(user, { settings: { fanfictionIsAdult: dto.isAdult } });
-    return { isAdult: dto.isAdult };
+    const updated = await this.users.updateMySettings(user, {
+      settings: {
+        ...(dto.isAdult !== undefined ? { fanfictionIsAdult: dto.isAdult } : {}),
+        ...(dto.defaultUpdatePolicy !== undefined ? { fanfictionDefaultUpdatePolicy: dto.defaultUpdatePolicy } : {}),
+      },
+    });
+    const settings = updated.settings as Record<string, unknown> | null;
+    return {
+      isAdult: settings?.fanfictionIsAdult === true,
+      defaultUpdatePolicy: settings?.fanfictionDefaultUpdatePolicy === 'review' ? 'review' : 'safe',
+    };
   }
 
   @Get('libraries')
