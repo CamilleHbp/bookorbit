@@ -138,6 +138,27 @@ describe.skipIf(!configPath)('managed story metadata with PostgreSQL', () => {
       expect(await db.select().from(schema.tagMatchingExclusions).where(eq(schema.tagMatchingExclusions.bookId, bookId))).toEqual([
         expect.objectContaining({ genreId: genre.id, userId: user.id }),
       ]);
+      const personalTag = `personal-${randomUUID()}`,
+        personalGenre = `personal-genre-${randomUUID()}`;
+      await db.transaction((tx) =>
+        managed.apply(
+          tx,
+          bookId,
+          { ...source(), userId: user.id },
+          { ...preview, tags: [personalTag], genres: [personalGenre] },
+          ['tags', 'genres'],
+          [],
+          false,
+          [],
+          { tags: { added: [personalTag], removed: ['Manual tag'] }, genres: { added: [personalGenre], removed: ['Manual genre'] } },
+        ),
+      );
+      await db.transaction((tx) => matching.sync(tx, bookId, incoming));
+      const final = await db.transaction((tx) => managed.snapshot(tx, bookId, libraryId));
+      expect(final.current.tags).toEqual([personalTag]);
+      expect(final.current.genres).toEqual([personalGenre]);
+      expect(await links()).toEqual([{ name: personalTag, managedOnly: false }]);
+      expect((await db.select().from(schema.bookGenres).where(eq(schema.bookGenres.bookId, bookId)))[0].managedOnly).toBe(false);
     } finally {
       await db.delete(schema.libraryTagRulebooks).where(eq(schema.libraryTagRulebooks.libraryId, libraryId));
       await db.delete(schema.users).where(eq(schema.users.id, user.id));

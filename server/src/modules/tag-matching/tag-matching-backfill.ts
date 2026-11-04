@@ -64,7 +64,7 @@ export async function backfillMatchingSnapshots(db: NodePgDatabase<typeof s>, us
           : claims.filter((c) => c.bookId === row.bookId && c.sourceKey === sourceKey).map((c) => ({ field: 'tags', value: c.value }));
         if (!row.raw && row.categories) {
           for (const field of ['fandoms', 'characters', 'relationships', 'warnings'] as const)
-            labels.push(...row.categories[field].map((value) => ({ field, value })));
+            labels.push(...(row.categories[field] ?? []).map((value) => ({ field, value })));
           if (row.categories.rating) labels.push({ field: 'rating', value: row.categories.rating });
         }
         if (labels.length)
