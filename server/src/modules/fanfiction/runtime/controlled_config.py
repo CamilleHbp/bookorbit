@@ -101,6 +101,17 @@ def make_configuration(url, ini, transport):
             return FetcherResponse(content, redirected)
 
     class ControlledConfiguration(Configuration):
+        def get_config(self, sections, key, default=''):
+            if key in ('username', 'password'):
+                # Credentials are literal input, not INI templates or booleans.
+                for section in sections:
+                    try:
+                        return self.get(section, key, raw=True)
+                    except (configparser.NoOptionError, configparser.NoSectionError):
+                        pass
+                return default
+            return super().get_config(sections, key, default)
+
         def get_fetcher(self, make_new=False):
             if self.fetcher is None:
                 self.fetcher = ControlledFetcher(self.getConfig, self.getConfigList)
