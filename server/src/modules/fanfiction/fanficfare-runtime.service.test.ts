@@ -66,6 +66,10 @@ describe('private FanFicFare runtime session output', () => {
     await service.execute({ operation: 'merge' }, '/unused');
     expect(output.request.timeoutSeconds).toBe(1);
   });
+  it('allows paced Royal Road downloads without a configured proxy', async () => {
+    await service.execute({ operation: 'download', url: 'https://www.royalroad.com/fiction/123/story/' }, '/unused');
+    expect(output.request).toMatchObject({ timeoutSeconds: 1, browserTimeoutSeconds: 7200 });
+  });
   it.each([
     ['identity_mismatch', 'source_identity_mismatch'],
     ['chapter_reduction', 'source_chapter_reduction'],
