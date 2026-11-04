@@ -146,7 +146,7 @@ function date(value: string) {
           }}<input
             v-model="password"
             type="password"
-            autocomplete="new-password"
+            autocomplete="current-password"
             maxlength="4096"
             :disabled="busy"
             class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
