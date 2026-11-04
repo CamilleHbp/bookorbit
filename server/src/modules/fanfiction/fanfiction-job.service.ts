@@ -366,6 +366,9 @@ export class FanfictionJobService {
           scheduled: false,
           cancellationRequested: false,
           attempts: 0,
+          ...(['saved_epub_changed', 'review_required'].includes(job.errorCode ?? '') && !job.result?.preparedUpdate
+            ? { expectedRevisionId: null }
+            : {}),
           ...(job.kind === 'source_batch' && job.sourceSelection && job.state === 'review_required'
             ? {
                 sourceSelection: { ...job.sourceSelection, cursor: null, processed: 0, failed: 0, retryFailedOnly: true },
