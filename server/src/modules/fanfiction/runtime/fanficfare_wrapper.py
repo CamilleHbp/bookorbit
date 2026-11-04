@@ -11,6 +11,7 @@ import resource
 import time
 import traceback
 
+from website_catalog import website_catalog
 from tag_rules import apply_tag_rules
 from controlled_config import make_configuration, merge_configuration, validate_ini
 from epub_policy import validate_epub
@@ -126,8 +127,7 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     if operation == 'health':
         return {'version': actual, 'protocolVersion': 1, 'ready': True}
     if operation == 'sites':
-        examples = adapters.getSiteExamples()
-        return {'version': actual, 'sites': [{'id': site, 'examples': urls[:3]} for site, urls in examples if site.removeprefix('www.') not in TEST_SITES]}
+        return {'version': actual, 'sites': website_catalog()}
     if operation == 'recognize':
         return recognize_urls(request.get('urls'))
     if operation == 'merge':
