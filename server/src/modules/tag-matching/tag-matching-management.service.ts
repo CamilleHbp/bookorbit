@@ -1,3 +1,4 @@
+import { TagMatchingService } from './tag-matching.service';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { and, asc, count, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -7,7 +8,7 @@ import type { DatabaseTransaction } from '../../db/transaction';
 import type { RequestUser } from '../../common/types/request-user';
 import { buildContentFilterClauses } from '../../common/utils/content-filter-sql.utils';
 import { LibraryService } from '../library/library.service';
-import { labelKey } from './match-labels';
+import { labelKey, needsFandomReview, originalWorkLabels } from './match-labels';
 import type { MatchingPageDto, SaveMatchingRuleDto } from './tag-matching.dto';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class TagMatchingManagementService {
   constructor(
     @Inject(DB) private readonly db: NodePgDatabase<typeof s>,
     private readonly libraries: LibraryService,
+    private readonly matching: TagMatchingService,
   ) {}
   async own(user: RequestUser, tx: NodePgDatabase<typeof s> | DatabaseTransaction = this.db) {
     if (!user.active) throw new ForbiddenException('Account is inactive');
@@ -36,10 +38,13 @@ export class TagMatchingManagementService {
       return { libraryId, rulebookId: own!.id };
     });
   }
-  async bookScope(user: RequestUser): Promise<SQL> {
+  async bookScope(user: RequestUser, requireEditor = false): Promise<SQL> {
     const ids = await this.libraries.findAccessibleLibraryIds(user);
     return and(
       ids.length ? inArray(s.books.libraryId, ids) : sql`false`,
+      requireEditor && !user.isSuperuser
+        ? sql`exists (select 1 from ${s.userLibraryAccess} where ${s.userLibraryAccess.libraryId}=${s.books.libraryId} and ${s.userLibraryAccess.userId}=${user.id} and ${s.userLibraryAccess.accessLevel} in ('editor','owner'))`
+        : undefined,
       ...(!user.isSuperuser ? buildContentFilterClauses(user.contentFilters, this.db) : []),
     )!;
   }
@@ -137,6 +142,10 @@ export class TagMatchingManagementService {
     const where = and(
       eq(o.rulebookId, own.id),
       sql`${o.status} <> 'suppressed'`,
+      sql`not (${o.field}='fandoms' and ${o.key} in (${sql.join(
+        originalWorkLabels.map((value) => sql`${value}`),
+        sql`, `,
+      )}))`,
       unresolved,
       scope,
       query.search ? ilike(o.value, `%${query.search}%`) : undefined,
@@ -150,17 +159,50 @@ export class TagMatchingManagementService {
         key: o.key,
         value: sql<string>`min(${o.value})`.as('value'),
         bookCount: sql<number>`count(distinct ${o.bookId})::int`.as('book_count'),
+        bookId: sql<number | null>`null::integer`.as('book_id'),
+        sourceKey: sql<string | null>`null::text`.as('source_key'),
       })
       .from(o)
       .innerJoin(s.books, eq(s.books.id, o.bookId))
       .where(where)
-      .groupBy(o.source, o.field, o.key)
-      .as('pending_labels');
-    const [{ total }] = await this.db.select({ total: count() }).from(grouped);
+      .groupBy(o.source, o.field, o.key);
+    const snapshots = s.tagMatchingSnapshots;
+    const editScope = await this.bookScope(user, true);
+    const missing = this.db
+      .select({
+        source: snapshots.source,
+        field: sql<'fandoms'>`'fandoms'`.as('field'),
+        key: sql<string>`'missing-fandom'`.as('key'),
+        value: sql<string>`coalesce(nullif(${s.bookMetadata.title}, ''), '#' || ${s.books.id}::text)`.as('value'),
+        bookCount: sql<number>`1`.as('book_count'),
+        bookId: snapshots.bookId,
+        sourceKey: snapshots.sourceKey,
+      })
+      .from(snapshots)
+      .innerJoin(s.books, eq(s.books.id, snapshots.bookId))
+      .innerJoin(s.bookMetadata, eq(s.bookMetadata.bookId, s.books.id))
+      .where(
+        and(
+          eq(snapshots.rulebookId, own.id),
+          editScope,
+          query.field && query.field !== 'fandoms' ? sql`false` : undefined,
+          query.search ? ilike(s.bookMetadata.title, `%${query.search}%`) : undefined,
+          query.source !== undefined ? eq(snapshots.source, query.source) : undefined,
+          sql`not exists (select 1 from jsonb_array_elements(${snapshots.labels}) label where label->>'field'='fandoms' and btrim(label->>'value')<>'')`,
+          sql`not exists (select 1 from jsonb_array_elements(${snapshots.labels}) label where label->>'field' in ('tags','genres') and lower(regexp_replace(btrim(label->>'value'), '\\s+', ' ', 'g')) in (${sql.join(
+            originalWorkLabels.map((value) => sql`${value}`),
+            sql`, `,
+          )}))`,
+          sql`exists (select 1 from tag_matching_observations evidence where evidence.book_id=${snapshots.bookId} and evidence.source_key=${snapshots.sourceKey} and evidence.status='suppressed')`,
+          sql`not exists (select 1 from tag_matching_snapshots decision where decision.book_id=${snapshots.bookId} and decision.source_key='manual:fandom' and decision.rulebook_id=${own.id})`,
+        ),
+      );
+    const combined = grouped.unionAll(missing).as('pending_labels');
+    const [{ total }] = await this.db.select({ total: count() }).from(combined);
     const items = await this.db
       .select()
-      .from(grouped)
-      .orderBy(asc(grouped.value), asc(grouped.source), asc(grouped.field))
+      .from(combined)
+      .orderBy(asc(combined.value), asc(combined.source), asc(combined.field), asc(combined.bookId), asc(combined.sourceKey))
       .limit(query.pageSize)
       .offset((query.page - 1) * query.pageSize);
     return { ...empty, total, items };
@@ -274,6 +316,59 @@ export class TagMatchingManagementService {
         if (rows.length !== ids.length) throw new BadRequestException('A selected label no longer exists');
         for (const row of rows) canonical.set(labelKey(row.name), { ...row, field });
       }
+      if (dto.bookId !== undefined) {
+        if (dto.id || dto.field !== 'fandoms' || !dto.sourceKey) throw new BadRequestException('Invalid book fandom decision');
+        const editScope = await this.bookScope(user, true);
+        const [book] = await tx
+          .select({ id: s.books.id, lockedFields: s.bookMetadata.lockedFields })
+          .from(s.books)
+          .innerJoin(s.bookMetadata, eq(s.bookMetadata.bookId, s.books.id))
+          .innerJoin(s.libraryTagRulebooks, eq(s.libraryTagRulebooks.libraryId, s.books.libraryId))
+          .where(and(eq(s.books.id, dto.bookId), eq(s.libraryTagRulebooks.rulebookId, own.id), editScope))
+          .for('update');
+        if (!book) throw new ForbiddenException('Book editing access is required');
+        const [snapshot] = await tx
+          .select()
+          .from(s.tagMatchingSnapshots)
+          .where(
+            and(
+              eq(s.tagMatchingSnapshots.bookId, book.id),
+              eq(s.tagMatchingSnapshots.sourceKey, dto.sourceKey),
+              eq(s.tagMatchingSnapshots.rulebookId, own.id),
+            ),
+          );
+        const [decision] = await tx
+          .select({ bookId: s.tagMatchingSnapshots.bookId })
+          .from(s.tagMatchingSnapshots)
+          .where(and(eq(s.tagMatchingSnapshots.bookId, book.id), eq(s.tagMatchingSnapshots.sourceKey, 'manual:fandom')));
+        if (decision) throw new ConflictException('This book fandom has already been reviewed. Reload and try again.');
+        if (!snapshot || !needsFandomReview(snapshot.labels, (await this.matching.resolve(tx, own.id, snapshot.source, snapshot.labels)).suppressed))
+          throw new ConflictException('Source fandoms changed. Reload and try again.');
+        for (const field of ['tags', 'genres'] as const) {
+          const added = [...canonical.values()].filter((target) => target.field === field).map((target) => target.name);
+          if (!added.length) continue;
+          if (book.lockedFields.includes(field)) throw new ConflictException('Unlock the book field before choosing its fandom labels.');
+          await this.matching.editManualLabels(tx, book.id, field, { added, removed: [] }, user.id);
+        }
+        await tx
+          .insert(s.tagMatchingSnapshots)
+          .values({
+            bookId: book.id,
+            sourceKey: 'manual:fandom',
+            source: 'manual',
+            userId: user.id,
+            rulebookId: own.id,
+            version: own.version,
+            labels: [],
+          })
+          .onConflictDoNothing();
+        if (canonical.size) {
+          await tx.update(s.bookMetadata).set({ updatedAt: new Date() }).where(eq(s.bookMetadata.bookId, book.id));
+          await tx.update(s.books).set({ updatedAt: new Date() }).where(eq(s.books.id, book.id));
+        }
+        return { version: own.version };
+      }
+      if (dto.sourceKey !== undefined) throw new BadRequestException('A source reference requires a book');
       const values = { rulebookId: own.id, source: dto.source, field: dto.field, value: dto.value, key: labelKey(dto.value), action: dto.action };
       const [rule] = dto.id
         ? await tx

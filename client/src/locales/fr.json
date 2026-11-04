@@ -14055,6 +14055,11 @@
     "resultCount": "{count, plural, =0 {Aucun résultat} one {# résultat} other {# résultats}}"
   },
   "tagMatching": {
+    "openBook": "Ouvrir le livre",
+    "decisionsSaved": "{count} décisions enregistrées.",
+    "missingFandom": "Fandom manquant : {title}",
+    "missingFandomHelp": "Choisissez les libellés de fandom pour ces livres, ou ignorez le fandom manquant. Aucun rapprochement partagé ne sera créé.",
+
     "pendingNotice": "{count} libellés à associer",
     "title": "Correspondance des tags",
     "matches": "Correspondances",

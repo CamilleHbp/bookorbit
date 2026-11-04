@@ -1,3 +1,4 @@
+import { needsFandomReview } from './match-labels';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { and, asc, count, eq, sql } from 'drizzle-orm';
@@ -40,7 +41,7 @@ export class TagMatchingJobsService {
   async create(user: RequestUser, overrides: Field[]) {
     const own = await this.management.own(user);
     if (!own) throw new BadRequestException('Create your matching database first');
-    const scope = await this.management.bookScope(user);
+    const scope = await this.management.bookScope(user, true);
     return this.db.transaction(async (tx) => {
       const [job] = await tx.insert(s.tagMatchingJobs).values({ userId: user.id, rulebookId: own.id, version: own.version }).returning();
       await this.current(job, tx);
@@ -67,7 +68,7 @@ export class TagMatchingJobsService {
     return job ?? null;
   }
   async items(user: RequestUser, id: string, page: number, pageSize: number) {
-    const scope = await this.management.bookScope(user);
+    const scope = await this.management.bookScope(user, true);
     return this.db.transaction(async (tx) => {
       const job = await this.owned(user, id, tx);
       const where = and(eq(s.tagMatchingJobItems.jobId, id), scope);
@@ -105,7 +106,7 @@ export class TagMatchingJobsService {
     const startedAt = Date.now();
     let lastBookId = 0;
     this.logger.log(`[tag_matching_job] [start] jobId=${id} userId=${user.id} batchSize=10 - processing batch`);
-    const scope = await this.management.bookScope(user);
+    const scope = await this.management.bookScope(user, true);
     try {
       return await this.db.transaction(async (tx) => {
         const job = await this.owned(user, id, tx);
@@ -244,14 +245,18 @@ export class TagMatchingJobsService {
       .digest('hex');
     const desired = { tags: new Map<number, string>(), genres: new Map<number, string>() };
     let unresolved = 0;
+    let missingFandom = false;
+    const fandomReviewed = snapshots.some((snapshot) => snapshot.sourceKey === 'manual:fandom');
     for (const snapshot of snapshots) {
       const result = await this.matching.resolve(tx, rulebookId, snapshot.source, snapshot.labels);
       unresolved += result.pending.length;
+      if (!fandomReviewed && needsFandomReview(snapshot.labels, result.suppressed)) missingFandom = true;
       for (const target of result.targets) {
         if (exclusions.some((e) => (target.field === 'tags' ? e.tagId === target.id : e.genreId === target.id))) continue;
         desired[target.field].set(target.id, result.names.get(`${target.field}:${target.id}`)!);
       }
     }
+    if (missingFandom) unresolved++;
     const sourceKeys = new Set(snapshots.map((snapshot) => snapshot.sourceKey));
     const diff = (field: Field, current: typeof tags, claims: Array<{ id: number; sourceKey: string }>) => {
       if (metadata.lockedFields.includes(field) && !overrides.includes(field)) return { added: [], removed: [] };

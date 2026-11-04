@@ -260,7 +260,10 @@ export class TagMatchingService {
         action: r.action,
       }));
       // Preserve deleted overrides as unresolved entries in the runtime protocol.
-      return { version: book.version, rules: rules.map((r) => ({ ...r, unresolved: r.action === 'match' && !r.targets.length })) };
+      return {
+        version: book.version,
+        rules: rules.map(({ action, ...rule }) => ({ ...rule, ...(action === 'match' && !rule.targets.length ? { unresolved: true } : {}) })),
+      };
     });
   }
 
