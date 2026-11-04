@@ -71,7 +71,7 @@ onMounted(initialize)
         >
         <div v-if="singleDraft" class="grid gap-3 sm:grid-cols-2">
           <label class="space-y-1 text-sm sm:col-span-2"
-            ><span>{{ t('tagMatching.incoming') }}</span
+            ><span>{{ t(singleDraft.bookId ? 'tagMatching.book' : 'tagMatching.incoming') }}</span
             ><input
               v-model="singleDraft.value"
               required

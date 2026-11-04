@@ -136,6 +136,16 @@ describe.skipIf(!configPath)('persistent tag matching', () => {
     expect((await tags()).map((row) => row.tagId)).toEqual([tagId]);
     await expect(jobs.items({ ...user, id: user.id + 100000 }, preview.id, 1, 25)).rejects.toThrow('not available');
   });
+  it('retains same-named tag and genre destinations through EPUB subjects', async () => {
+    await db.update(s.genres).set({ name: tagName }).where(eq(s.genres.id, genreId));
+    await save('tags', 'remote', [
+      { field: 'tags', id: tagId },
+      { field: 'genres', id: genreId },
+    ]);
+    await sync([{ field: 'genres', value: tagName }]);
+    expect((await tags()).map((row) => row.tagId)).toEqual([tagId]);
+    expect((await genres()).map((row) => row.genreId)).toEqual([genreId]);
+  });
   it('does not request fandom review for an explicitly original work', async () => {
     await save('tags', 'Original Work', []);
     await sync(
