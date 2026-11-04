@@ -34,6 +34,8 @@ type RuntimeResponse =
 export class FanficfareRuntimeService {
   private readonly logger = new Logger(FanficfareRuntimeService.name);
   private active = 0;
+  private controlPending = 0;
+  private controlTail: Promise<unknown> = Promise.resolve();
 
   constructor(
     @Inject(fanficfareConfig.KEY) private readonly config: ConfigType<typeof fanficfareConfig>,
@@ -170,11 +172,33 @@ export class FanficfareRuntimeService {
     saveCookies?: FanfictionCookieSink,
     reportProgress?: FanfictionProgressSink,
   ): Promise<unknown> {
-    if (this.active >= this.config.maxWorkers) throw new ServiceUnavailableException('FanFicFare runtime is busy');
+    // Local catalog/configuration work must remain available while downloads run.
+    const control = ['health', 'sites', 'validate', 'merge'].includes(request.operation);
+    if (!control) return this.executeWorker(request, workspace, signal, saveCookies, reportProgress);
+    if (this.controlPending >= 32) throw new ServiceUnavailableException('Too many website settings requests; try again shortly');
+    this.controlPending++;
+    const result = this.controlTail.then(() => this.executeWorker(request, workspace, signal, saveCookies, reportProgress, true));
+    this.controlTail = result.catch(() => {});
+    try {
+      return await result;
+    } finally {
+      this.controlPending--;
+    }
+  }
+
+  private async executeWorker(
+    request: RuntimeRequest,
+    workspace: string,
+    signal?: AbortSignal,
+    saveCookies?: FanfictionCookieSink,
+    reportProgress?: FanfictionProgressSink,
+    control = false,
+  ): Promise<unknown> {
+    if (!control && this.active >= this.config.maxWorkers) throw new ServiceUnavailableException('FanFicFare runtime is busy');
     if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
     const input = JSON.stringify(request);
     if (Buffer.byteLength(input) > 512 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
-    this.active++;
+    if (!control) this.active++;
     const startedAt = Date.now();
     const progress = new FanfictionRuntimeProgress(reportProgress);
     try {
@@ -193,10 +217,13 @@ export class FanficfareRuntimeService {
           failed = true;
           child.kill('SIGKILL');
         };
-        const timer = setTimeout(() => {
-          timedOut = true;
-          stop();
-        }, this.config.timeoutMs);
+        const timer = setTimeout(
+          () => {
+            timedOut = true;
+            stop();
+          },
+          control ? Math.min(this.config.timeoutMs, 5000) : this.config.timeoutMs,
+        );
         signal?.addEventListener('abort', stop, { once: true });
         child.stdout.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
@@ -248,7 +275,7 @@ export class FanficfareRuntimeService {
       return response.result;
     } finally {
       await progress.flush().catch(() => {});
-      this.active--;
+      if (!control) this.active--;
     }
   }
 
