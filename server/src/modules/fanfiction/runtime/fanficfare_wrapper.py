@@ -16,6 +16,7 @@ from controlled_config import make_configuration, merge_configuration, validate_
 from epub_policy import validate_epub
 from image_processing import install_image_processing
 from safe_transport import PolicyError, SafeTransport, install_network_guard, validate_url
+from scribblehub_login import login_scribblehub
 
 VERSION = '4.61.0'
 TEST_SITES = {'test1.com', 'test2.com'}
@@ -144,6 +145,7 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     configuration = make_configuration(url, ini, transport)
     adapter = adapters.getAdapter(configuration, url)
     report_progress({'stage': 'metadata'})
+    login_scribblehub(adapter)
     # FanFicFare caches metadata, so the writer cannot fetch a skipped cover later.
     story = adapter.getStoryMetadataOnly(get_cover=operation in ('download', 'update', 'refresh'))
     apply_tag_rules(story, request.get('tagRules', []))
