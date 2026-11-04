@@ -14059,7 +14059,6 @@
     "decisionsSaved": "{count} décisions enregistrées.",
     "missingFandom": "Fandom manquant : {title}",
     "missingFandomHelp": "Choisissez les libellés de fandom pour ces livres, ou ignorez le fandom manquant. Aucun rapprochement partagé ne sera créé.",
-
     "pendingNotice": "{count} libellés à associer",
     "title": "Correspondance des tags",
     "matches": "Correspondances",
@@ -14083,7 +14082,7 @@
     "save": "Enregistrer",
     "ignore": "Ignorer",
     "count": "{count} libellés",
-    "books": "{count} livres",
+    "books": "{count} livre | {count} livres",
     "editCount": "Modifier {count} libellés",
     "select": "Sélectionner {name}",
     "pagination": "Pages des libellés",
@@ -14131,6 +14130,7 @@
         "completed": "Terminé",
         "failed": "Impossible de terminer"
       }
-    }
+    },
+    "book": "Livre"
   }
 }
