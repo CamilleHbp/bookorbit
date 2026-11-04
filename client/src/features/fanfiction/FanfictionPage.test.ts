@@ -61,6 +61,36 @@ describe('Fanfiction navigation and story hierarchy', () => {
     return router
   }
 
+  it.each(['failed', 'configuration_blocked', 'cancelled'])('resumes a saved %s import after opening a new session', async (state) => {
+    const base = vi.mocked(api).getMockImplementation()!
+    const job = {
+      id: 'saved-import',
+      kind: 'import',
+      state,
+      url: 'https://archiveofourown.org/works/123',
+      updatedAt: new Date().toISOString(),
+      result: { importReview: { approved: true, values: { title: 'Edited title', tags: ['My tag'] } } },
+    }
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      if (String(url).endsWith('/jobs/saved-import/retry')) {
+        job.state = 'queued'
+        return new Response(JSON.stringify(job))
+      }
+      if (String(url).includes('/jobs?')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
+      return base(url, options)
+    })
+    await open('/fanfiction?tab=activity')
+    const retry = wrapper!.findAll('button').find((button) => button.text() === 'Retry')
+    expect(retry).toBeDefined()
+    await retry!.trigger('click')
+    await flushPromises()
+    expect(api).toHaveBeenCalledWith(
+      '/api/v1/libraries/5/fanfiction/jobs/saved-import/retry',
+      expect.objectContaining({ method: 'POST', body: '{}' }),
+    )
+    expect(wrapper!.findAll('button').some((button) => button.text() === 'Retry')).toBe(false)
+  })
+
   it('keeps multiple pending reviews accessible without a confirmation modal', async () => {
     await open('/fanfiction?tab=add')
     vi.mocked(api).mockImplementation(async (url, options) => {
