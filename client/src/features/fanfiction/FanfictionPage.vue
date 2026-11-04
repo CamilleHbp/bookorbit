@@ -2,6 +2,7 @@
 import WebsiteConnections from './components/WebsiteConnections.vue'
 import StoryAttentionList from './components/StoryAttentionList.vue'
 import StoryReviewQueue from './components/StoryReviewQueue.vue'
+import StoryImportInbox from './components/StoryImportInbox.vue'
 import { api } from '@/lib/api'
 import { useCollections } from '@/features/collection/composables/useCollections'
 import StoryReadingActions from './components/StoryReadingActions.vue'
@@ -111,9 +112,19 @@ const {
 const connectionIssues = ref<InstanceType<typeof WebsiteConnections> | null>(null)
 const storyIssues = ref<InstanceType<typeof StoryAttentionList> | null>(null)
 const reviewQueue = ref<InstanceType<typeof StoryReviewQueue> | null>(null)
+const importInbox = ref<InstanceType<typeof StoryImportInbox> | null>(null)
+const reviewView = ref<'imports' | 'metadata'>('imports')
+function showImportReviews() {
+  if (reviewQueue.value?.canLeave() === false) return
+  reviewView.value = 'imports'
+}
+function showMetadataReviews() {
+  if (importInbox.value?.canLeave() === false) return
+  reviewView.value = 'metadata'
+}
 function handleLibraryChange(event: Event) {
   const select = event.target as HTMLSelectElement
-  if (reviewQueue.value && !reviewQueue.value.canLeave()) {
+  if (reviewQueue.value?.canLeave() === false || importInbox.value?.canLeave() === false) {
     select.value = String(libraryId.value)
     return
   }
@@ -121,7 +132,7 @@ function handleLibraryChange(event: Event) {
   void changeLibrary()
 }
 async function refresh() {
-  await Promise.all([refreshStories(), connectionIssues.value?.reload?.(), storyIssues.value?.refresh?.()])
+  await Promise.all([refreshStories(), connectionIssues.value?.reload?.(), storyIssues.value?.refresh?.(), importInbox.value?.reload?.()])
 }
 const existingNeedsReview = computed(() => existingCandidate.value?.existingStory?.attentionCode === 'metadata_review_required')
 const importHeading = ref<HTMLElement | null>(null)
@@ -351,7 +362,21 @@ onMounted(() => {
           t('fanfiction.maintenance.fromLibrary')
         }}</RouterLink>
       </nav>
-      <StoryReviewQueue v-if="tab === 'review'" ref="reviewQueue" :key="libraryId" :library-id="libraryId" />
+      <section v-if="tab === 'review'" class="mx-auto w-full max-w-4xl space-y-6">
+        <div class="flex flex-wrap gap-2" role="group" :aria-label="t('fanfiction.reviewQueue.nav')">
+          <Button :variant="reviewView === 'imports' ? 'secondary' : 'ghost'" :aria-pressed="reviewView === 'imports'" @click="showImportReviews">{{
+            t('fanfiction.importInbox.title')
+          }}</Button>
+          <Button
+            :variant="reviewView === 'metadata' ? 'secondary' : 'ghost'"
+            :aria-pressed="reviewView === 'metadata'"
+            @click="showMetadataReviews"
+            >{{ t('fanfiction.importInbox.metadata') }}</Button
+          >
+        </div>
+        <StoryImportInbox v-if="reviewView === 'imports'" ref="importInbox" :key="libraryId" :library-id="libraryId" :disabled="!canManage" />
+        <StoryReviewQueue v-else ref="reviewQueue" :key="libraryId" :library-id="libraryId" />
+      </section>
       <section v-if="tab === 'stories'" class="space-y-3 rounded-xl bg-card p-3 sm:p-4" :aria-label="t('fanfiction.stories')" :aria-busy="busy">
         <form class="flex flex-wrap items-center gap-2" @submit.prevent="applyFilters">
           <Input
@@ -572,21 +597,29 @@ onMounted(() => {
       </section>
       <ExistingStories v-else-if="tab === 'discovery'" :key="libraryId" :library-id="libraryId" />
       <section v-else-if="tab === 'activity'" class="space-y-3" :aria-label="t('fanfiction.activity')">
-        <StoryBulkActions
-          v-if="bulk.job"
-          v-model:all-matching="bulk.allMatching"
-          v-model:action="bulk.action"
-          v-model:interval="bulk.interval"
-          :bulk="bulk"
-          :loading="busy"
-          :selecting="false"
-          :library-name="libraryName"
-          @fix-login="fixSourceLogin"
-        />
-        <WebsiteConnections ref="connectionIssues" :library-id="libraryId" repairs-only @saved="handleConnectionSaved" />
-        <StoryAttentionList ref="storyIssues" :library-id="libraryId" />
+        <details v-if="bulk.job" :open="bulk.active" class="border-b border-border pb-4">
+          <summary class="min-h-11 cursor-pointer py-3 font-medium">{{ t('fanfiction.importInbox.lastCheck') }}</summary>
+          <StoryBulkActions
+            v-model:all-matching="bulk.allMatching"
+            v-model:action="bulk.action"
+            v-model:interval="bulk.interval"
+            :bulk="bulk"
+            :loading="busy"
+            :selecting="false"
+            :library-name="libraryName"
+            @fix-login="fixSourceLogin"
+          />
+        </details>
+        <details class="border-b border-border pb-4">
+          <summary class="min-h-11 cursor-pointer py-3 font-medium">{{ t('fanfiction.maintenance.attention') }}</summary>
+          <StoryAttentionList ref="storyIssues" :library-id="libraryId" />
+        </details>
+        <details class="border-b border-border pb-4">
+          <summary class="min-h-11 cursor-pointer py-3 font-medium">{{ t('fanfiction.connections.attention') }}</summary>
+          <WebsiteConnections ref="connectionIssues" :library-id="libraryId" repairs-only @saved="handleConnectionSaved" />
+        </details>
         <h2 class="text-lg font-medium">{{ t('fanfiction.recentChanges') }}</h2>
-        <article v-for="event in activity" :key="event.id" class="border-border bg-card rounded-lg border p-4">
+        <article v-for="event in activity" :key="event.id" class="border-b border-border py-3">
           <p class="font-medium">{{ event.title }}</p>
           <p class="text-muted-foreground text-sm">{{ t(`fanfiction.activityKinds.${event.kind}`) }} · {{ dateLabel(event.createdAt) }}</p>
           <RouterLink v-if="event.bookId" :to="{ name: 'book-detail', params: { bookId: event.bookId } }" class="text-primary text-sm underline">{{

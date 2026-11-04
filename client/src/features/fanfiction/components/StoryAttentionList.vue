@@ -69,7 +69,7 @@ onScopeDispose(() => {
             :to="
               story.bookId
                 ? { name: 'book-detail', params: { bookId: story.bookId }, query: { tab: 'story-updates' } }
-                : { name: 'fanfiction', query: { tab: 'activity', libraryId, sourceId: story.id } }
+                : { name: 'fanfiction', query: { tab: 'review', libraryId } }
             "
             >{{ t('fanfiction.reviewStory') }}</RouterLink
           ></Button
