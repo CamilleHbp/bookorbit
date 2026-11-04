@@ -44,12 +44,12 @@ describe('private FanFicFare runtime session output', () => {
     service = module.get(FanficfareRuntimeService);
     output.response = { ok: true, result: { title: 'Public preview' }, cookies: [cookie] };
   });
-  it('passes the operator solver endpoint and extends only ScribbleHub download deadlines', async () => {
+  it('passes the operator solver endpoint and allows browser download deadlines while retaining the direct request timeout', async () => {
     runtimeConfig.flaresolverrUrl = 'http://solver:8191/v1';
     await service.execute({ operation: 'download', url: 'https://www.scribblehub.com/series/123/story/' }, '/unused');
-    expect(output.request).toMatchObject({ flaresolverrUrl: 'http://solver:8191/v1', timeoutSeconds: 7200 });
+    expect(output.request).toMatchObject({ flaresolverrUrl: 'http://solver:8191/v1', timeoutSeconds: 1, browserTimeoutSeconds: 7200 });
     await service.execute({ operation: 'download', url: 'https://example.org/story' }, '/unused');
-    expect(output.request.timeoutSeconds).toBe(1);
+    expect(output.request).toMatchObject({ timeoutSeconds: 1, browserTimeoutSeconds: 7200 });
     await service.execute({ operation: 'merge' }, '/unused');
     expect(output.request.timeoutSeconds).toBe(1);
   });
