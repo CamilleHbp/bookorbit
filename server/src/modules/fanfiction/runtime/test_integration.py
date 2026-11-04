@@ -12,6 +12,18 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_preview_without_a_rulebook_has_no_mapping_version(self):
+        from fanficfare.adapters.adapter_test1 import TestSiteAdapter
+        with patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'):
+            result = execute_request({'operation': 'preview', 'url': 'https://test1.com/?sid=1', 'configuration': ''})
+        self.assertTrue(result['ok'])
+        preview = result['result']
+        self.assertNotIn('labelMappingVersion', preview)
+        self.assertGreater(preview['chapterCount'], 0)
+        self.assertGreater(preview['pendingLabelCount'], 0)
+        self.assertTrue(preview['rawLabels'])
+        self.assertEqual(preview['tags'], [])
+
     def test_matching_survives_download_update_and_refresh(self):
         import xml.etree.ElementTree as ET
         from fanficfare.adapters.adapter_test1 import TestSiteAdapter
