@@ -9,6 +9,7 @@ export interface FanfictionWebsite {
   name: string;
   examples: string[];
   access: "login" | "cookies";
+  usernameKind?: "email";
 }
 export interface FanfictionConnection {
   id: string;
@@ -75,6 +76,7 @@ export interface FanfictionCategories {
 }
 
 export interface FanficfareSite {
+  supportsPasswordLogin?: boolean;
   id: string;
   examples: string[];
 }
