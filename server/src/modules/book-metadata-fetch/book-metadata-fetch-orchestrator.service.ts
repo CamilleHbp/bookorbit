@@ -321,13 +321,26 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
         existingFields.comicMetadata = await this.comicMetadataRepository.findByBookId(bookId);
       }
 
-      const { resolved, providerIds, cache } = await this.pipeline.runWithSources(searchParams, existingFields, libraryId, {
+      const {
+        resolved,
+        sources: fieldSources,
+        providerIds,
+        cache,
+      } = await this.pipeline.runWithSources(searchParams, existingFields, libraryId, {
         ...coverInputs.options,
         ...(preserveExisting ? { preserveExisting: true } : {}),
         cacheDirective: { policy: ignoreCache ? 'refresh' : 'default', allowFallback: true },
       });
 
-      const coverDownloads = await this.persistResolved(bookId, resolved, providerIds, authorRows, genreRows, narratorRows);
+      const coverDownloads = await this.persistResolved(
+        bookId,
+        resolved,
+        providerIds,
+        authorRows,
+        genreRows,
+        narratorRows,
+        fieldSources?.genres ?? 'provider',
+      );
 
       await this.scoreService.calculateAndSave(bookId);
 
@@ -362,6 +375,7 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
     existingAuthorRows: { name: string }[],
     existingGenreRows: { name: string }[],
     existingNarratorRows: { name: string }[],
+    genreSource = 'provider',
   ): Promise<number> {
     const {
       resolved: filteredResolved,
@@ -467,12 +481,18 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
       }
     }
 
+    const incomingGenres = this.asStringArray(resolved.genres);
+    const matched =
+      incomingGenres !== undefined &&
+      (await this.metadataService.applyImportedLabels(bookId, {
+        sourceKey: 'provider:metadata',
+        source: genreSource,
+        preserveFields: ['tags'],
+        labels: incomingGenres.map((value) => ({ field: 'genres', value })),
+      }));
     const resolvedGenres = this.asStringArray(filteredResolved.genres);
-    if (resolvedGenres !== undefined) {
-      const names = resolvedGenres;
-      if (names.length > 0 || existingGenreRows.length > 0) {
-        await this.metadataService.replaceGenres(bookId, names);
-      }
+    if (!matched && resolvedGenres !== undefined && (resolvedGenres.length > 0 || existingGenreRows.length > 0)) {
+      await this.metadataService.replaceGenres(bookId, resolvedGenres);
     }
 
     const resolvedNarrators = this.asStringArray(filteredResolved.narrators);

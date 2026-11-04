@@ -10,12 +10,9 @@ const { t } = useI18n()
 const state = useWebsiteConnections(() => props.libraryId)
 const {
   configuration,
-  tagRules,
   settingsLoaded,
   settingsLoading,
   loadSettings,
-  addTagRule,
-  removeTagRule,
   websites,
   connections,
   issues,
@@ -192,35 +189,9 @@ function date(value: string) {
           <pre class="overflow-x-auto rounded-md bg-muted p-3 text-sm">
 [defaults]
 use_flaresolverr_proxy: true</pre>
-          <fieldset class="space-y-3">
-            <legend class="text-sm font-medium">{{ t('fanfiction.tagRules') }}</legend>
-            <div v-for="(rule, index) in tagRules" :key="index" class="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <label class="min-w-0 flex-1 text-sm"
-                >{{ t('fanfiction.remoteTag')
-                }}<input
-                  v-model="rule.remoteTag"
-                  required
-                  maxlength="500"
-                  :disabled="busy"
-                  class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
-              /></label>
-              <label class="min-w-0 flex-1 text-sm"
-                >{{ t('fanfiction.targetTag')
-                }}<input
-                  v-model="rule.targetTag"
-                  required
-                  maxlength="500"
-                  :disabled="busy"
-                  class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
-              /></label>
-              <Button type="button" variant="ghost" class="self-start sm:self-auto" :disabled="busy" @click="removeTagRule(index)">{{
-                t('fanfiction.removeTagRule')
-              }}</Button>
-            </div>
-            <Button type="button" variant="outline" :disabled="busy || tagRules.length >= 100" @click="addTagRule">{{
-              t('fanfiction.addTagRule')
-            }}</Button>
-          </fieldset>
+          <RouterLink class="text-sm text-primary underline underline-offset-4" :to="{ name: 'tools-tag-matching' }">{{
+            t('tagMatching.title')
+          }}</RouterLink>
         </template>
         <Button v-else-if="!settingsLoading" type="button" variant="outline" @click="loadSettings">{{ t('fanfiction.retry') }}</Button>
       </details>

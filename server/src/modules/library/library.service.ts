@@ -1,3 +1,4 @@
+import { TagMatchingService } from '../tag-matching/tag-matching.service';
 import { isDeepStrictEqual } from 'node:util';
 import { RegexMetadataService } from '../metadata/regex/regex-metadata.service';
 import { RegexMetadataPreviewDto, RegexMetadataValidationDto } from './dto/regex-metadata.dto';
@@ -115,6 +116,7 @@ export class LibraryService {
     private readonly scanScheduler: LibraryScanSchedulerService,
     private readonly regexMetadata: RegexMetadataService,
     private readonly readingAttemptEvents: ReadingAttemptEventsService,
+    private readonly tagMatching: TagMatchingService,
   ) {
     this.appDataPath = this.config.get<string>('storage.appDataPath')!;
   }
@@ -234,7 +236,7 @@ export class LibraryService {
     return { items, nextCursor: rows.length > size ? items.at(-1)!.id : null };
   }
 
-  async create(dto: CreateLibraryDto) {
+  async create(dto: CreateLibraryDto, user: RequestUser) {
     const libraryType = dto.type ?? 'books';
     if (libraryType === 'podcasts' && !APP_FEATURES.podcasts) {
       throw new BadRequestException('Podcast libraries are not available');
@@ -292,6 +294,8 @@ export class LibraryService {
       fileWriteReadAlongMaxFileSizeMb: libraryType === 'books' ? (dto.fileWriteReadAlongMaxFileSizeMb ?? 1000) : 1000,
       fileRenameEnabled: libraryType === 'books' ? (dto.fileRenameEnabled ?? false) : false,
     });
+
+    if (library.type === 'books') await this.tagMatching.assignNewLibrary(user, library.id);
 
     const folders = await this.libraryRepo.insertFolders(folderInputs.map(({ path, role }) => ({ libraryId: library.id, path, role })));
 

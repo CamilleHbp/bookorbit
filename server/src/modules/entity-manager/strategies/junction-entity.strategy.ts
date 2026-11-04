@@ -1,3 +1,4 @@
+import type { TagMatchingLifecycleService } from '../../tag-matching/tag-matching-lifecycle.service';
 import { BadRequestException, Inject, NotFoundException } from '@nestjs/common';
 import { and, asc, count, desc, eq, exists, inArray, notExists, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -47,7 +48,10 @@ export abstract class JunctionEntityStrategy implements EntityStrategy {
   protected abstract readonly rawEntityIdCol: string;
   protected abstract readonly hasCascade: boolean;
 
-  constructor(@Inject(DB) protected readonly db: Db) {}
+  constructor(
+    @Inject(DB) protected readonly db: Db,
+    protected readonly matching?: TagMatchingLifecycleService,
+  ) {}
 
   async findCandidatePairs(libraryIds: number[], minSimilarity: number): Promise<RawCandidatePair[]> {
     const similarityThreshold = Math.max(0.1, Math.min(1, minSimilarity));
@@ -206,6 +210,7 @@ export abstract class JunctionEntityStrategy implements EntityStrategy {
   async merge(input: MergeInput): Promise<StrategyMergeResult> {
     const targetId = input.targetId as number;
     const sourceIds = input.sourceIds as number[];
+    if (sourceIds.includes(targetId)) throw new BadRequestException('The merge target cannot be a source');
 
     await this.assertMutationScope([targetId, ...sourceIds], input.libraryIds ?? []);
 
@@ -215,6 +220,8 @@ export abstract class JunctionEntityStrategy implements EntityStrategy {
     const affectedBookIds = await this.findAffectedBookIds(sourceIds);
 
     await this.db.transaction(async (tx) => {
+      if (this.matching && (this.entityType === 'tag' || this.entityType === 'genre'))
+        await this.matching.merge(tx, this.entityType === 'tag' ? 'tags' : 'genres', sourceIds, targetId, input.userId);
       const sourceRelations = await tx
         .selectDistinct({ bookId: this.junctionBookIdCol })
         .from(this.junctionTable)
@@ -251,7 +258,14 @@ export abstract class JunctionEntityStrategy implements EntityStrategy {
       return { oldName, affectedBookIds: mergeResult.affectedBookIds, wasImplicitMerge: true, mergedEntityId: existingId };
     }
 
-    await this.db.update(this.entityTable).set({ name: trimmed }).where(eq(this.entityIdCol, entityId));
+    if (this.matching && (this.entityType === 'tag' || this.entityType === 'genre')) {
+      await this.db.transaction(async (tx) => {
+        await this.matching!.rename(tx, this.entityType === 'tag' ? 'tags' : 'genres', entityId, oldName, trimmed, input.userId);
+        await tx.update(this.entityTable).set({ name: trimmed }).where(eq(this.entityIdCol, entityId));
+      });
+    } else {
+      await this.db.update(this.entityTable).set({ name: trimmed }).where(eq(this.entityIdCol, entityId));
+    }
     const affectedBookIds = await this.findAffectedBookIds([entityId]);
     return { oldName, affectedBookIds, wasImplicitMerge: false };
   }
@@ -264,7 +278,14 @@ export abstract class JunctionEntityStrategy implements EntityStrategy {
 
     const affectedBookIds = await this.findAffectedBookIds([entityId]);
 
-    if (input.mode === 'soft') {
+    if (this.matching && (this.entityType === 'tag' || this.entityType === 'genre')) {
+      if (!input.userId) throw new BadRequestException('A label edit requires an account');
+      await this.db.transaction(async (tx) => {
+        await this.matching!.remove(tx, this.entityType === 'tag' ? 'tags' : 'genres', entityId, input.userId!, input.mode === 'soft');
+        if (input.mode === 'soft') await tx.delete(this.junctionTable).where(eq(this.junctionEntityIdCol, entityId));
+        else await tx.delete(this.entityTable).where(eq(this.entityIdCol, entityId));
+      });
+    } else if (input.mode === 'soft') {
       await this.db.delete(this.junctionTable).where(eq(this.junctionEntityIdCol, entityId));
     } else {
       if (!this.hasCascade) {

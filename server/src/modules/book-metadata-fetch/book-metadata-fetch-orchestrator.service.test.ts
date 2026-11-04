@@ -50,6 +50,8 @@ function makeService(withGateway = true) {
     runWithSources: vi.fn().mockResolvedValue({ resolved: {}, providerIds: {}, cache: { servedProviders: [], outboundRequests: 0 } }),
   };
   const metadataService = {
+    applyImportedLabels: vi.fn().mockResolvedValue(false),
+    recordManualLabels: vi.fn().mockResolvedValue(undefined),
     replaceAuthors: vi.fn().mockResolvedValue(undefined),
     replaceGenres: vi.fn().mockResolvedValue(undefined),
     replaceNarrators: vi.fn().mockResolvedValue(undefined),
@@ -294,6 +296,20 @@ describe('BookMetadataFetchOrchestratorService', () => {
       lockedCoverSlots: ['ebook'],
       cacheDirective: { policy: 'default', allowFallback: true },
     });
+  });
+
+  it('records raw provider genres behind a lock without replacing canonical assignments', async () => {
+    const { service, bookMetadataLockService, metadataService } = makeService();
+    bookMetadataLockService.filterResolvedMetadata.mockResolvedValue({ resolved: {}, providerIds: {}, skippedFields: ['genres'] });
+    metadataService.applyImportedLabels.mockResolvedValue(true);
+    await service['persistResolved'](88, { genres: ['Unknown provider genre'] }, {}, [], [{ name: 'Manual genre' }], [], 'google');
+    expect(metadataService.applyImportedLabels).toHaveBeenCalledWith(88, {
+      sourceKey: 'provider:metadata',
+      source: 'google',
+      preserveFields: ['tags'],
+      labels: [{ field: 'genres', value: 'Unknown provider genre' }],
+    });
+    expect(metadataService.replaceGenres).not.toHaveBeenCalled();
   });
 
   it('processOne persists resolved metadata and handles provider ids + related entities', async () => {

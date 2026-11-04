@@ -63,7 +63,7 @@ describe('tag grouping controller contracts', () => {
       contentFilters: EMPTY_CONTENT_FILTER_RULES,
     };
     await controller.updateTagGrouping(user, { separator: '::', enabled: true });
-    expect(service.updateMySettings).toHaveBeenCalledWith(7, { settings: { tagGrouping: { separator: '::', enabled: true } } });
+    expect(service.updateMySettings).toHaveBeenCalledWith(user, { settings: { tagGrouping: { separator: '::', enabled: true } } });
     expect(Reflect.getMetadata(PERMISSION_KEY, controller.updateTagGrouping)).toBeUndefined();
     await module.close();
   });

@@ -197,6 +197,8 @@ function makeService(
     buildOrderBy: vi.fn(),
   };
   const metadataService = {
+    applyImportedLabels: vi.fn().mockResolvedValue(false),
+    recordManualLabels: vi.fn().mockResolvedValue(undefined),
     replaceAuthors: vi.fn().mockResolvedValue([]),
     replaceGenres: vi.fn().mockResolvedValue(undefined),
     replaceTags: vi.fn().mockResolvedValue(undefined),
@@ -1106,7 +1108,7 @@ describe('BookService', () => {
       pipeline.runWithSources.mockResolvedValue({
         cache: NO_CACHE_USE,
         resolved: { title: 'Resolved', authors: ['A'], genres: ['G'], isbn10: '0306406152', isbn13: '9780306406157', coverUrl: 'https://img/c.jpg' },
-        sources: {},
+        sources: { genres: 'google' },
         providerIds: {},
       });
 
@@ -1123,7 +1125,11 @@ describe('BookService', () => {
         1,
         { title: 'Resolved', authors: ['A'], genres: ['G'], isbn10: '0306406152', isbn13: '9780306406157' },
         user,
-        { postSaveMode: 'schedule', chaptersSource: 'provider' },
+        {
+          postSaveMode: 'schedule',
+          chaptersSource: 'provider',
+          importedLabels: { sourceKey: 'provider:metadata', source: 'google', preserveFields: ['tags'], labels: [{ field: 'genres', value: 'G' }] },
+        },
       );
       expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith([{ url: 'https://img/c.jpg' }], 1, 'ebook');
       expect(getDetailSpy).toHaveBeenCalledWith(1, user);
@@ -1757,8 +1763,8 @@ describe('BookService', () => {
       });
       pipeline.runWithSources.mockResolvedValue({
         cache: NO_CACHE_USE,
-        resolved: { title: 'Resolved', authors: ['A'], coverUrl: 'https://img/c.jpg', hardcoverEditionId: '8941973' },
-        sources: {},
+        resolved: { title: 'Resolved', authors: ['A'], genres: ['Unknown genre'], coverUrl: 'https://img/c.jpg', hardcoverEditionId: '8941973' },
+        sources: { genres: 'google' },
         providerIds: {
           [MetadataProviderKey.GOOGLE]: 'g-id',
         },
@@ -1766,7 +1772,7 @@ describe('BookService', () => {
       bookMetadataLockService.filterResolvedMetadata.mockResolvedValue({
         resolved: { authors: ['A'] },
         providerIds: {},
-        skippedFields: ['title', 'cover', 'googleBooksId', 'hardcoverEditionId'],
+        skippedFields: ['genres', 'title', 'cover', 'googleBooksId', 'hardcoverEditionId'],
       });
 
       const updateSpy = vi.spyOn(service, 'updateMetadata').mockResolvedValue({
@@ -1777,7 +1783,16 @@ describe('BookService', () => {
 
       await service.refreshMetadata(1, false, user);
 
-      expect(updateSpy).toHaveBeenCalledWith(1, { authors: ['A'] }, user, { postSaveMode: 'schedule', chaptersSource: 'provider' });
+      expect(updateSpy).toHaveBeenCalledWith(1, { authors: ['A'] }, user, {
+        postSaveMode: 'schedule',
+        chaptersSource: 'provider',
+        importedLabels: {
+          sourceKey: 'provider:metadata',
+          source: 'google',
+          preserveFields: ['tags'],
+          labels: [{ field: 'genres', value: 'Unknown genre' }],
+        },
+      });
       expect(metadataService.downloadAndSaveCover).not.toHaveBeenCalled();
     });
 

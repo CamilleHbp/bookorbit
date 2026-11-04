@@ -1,3 +1,4 @@
+import { TagMatchingLifecycleService } from '../../tag-matching/tag-matching-lifecycle.service';
 import { Inject, Injectable } from '@nestjs/common';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
@@ -22,8 +23,8 @@ export class GenreStrategy extends JunctionEntityStrategy {
   protected readonly rawEntityIdCol = 'genre_id';
   protected readonly hasCascade = true;
 
-  constructor(@Inject(DB) db: Db) {
-    super(db);
+  constructor(@Inject(DB) db: Db, matching: TagMatchingLifecycleService) {
+    super(db, matching);
   }
 
   protected buildJunctionRow(bookId: number, entityId: number) {

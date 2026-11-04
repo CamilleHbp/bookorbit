@@ -734,9 +734,15 @@ export const routes: RouteRecordRaw[] = [
           {
             path: 'tags',
             name: 'tools-tags',
-            component: () => import('@/features/tools/entity-manager/views/EntityManagerView.vue'),
-            props: { tagsOnly: true },
+            component: () => import('@/features/tools/entity-manager/views/ManageTagsView.vue'),
             meta: { title: () => t('tools.header.tags') },
+          },
+          {
+            path: 'tag-matching',
+            name: 'tools-tag-matching',
+            component: () => import('@/features/tools/entity-manager/views/ManageTagsView.vue'),
+            props: { matching: true },
+            meta: { title: () => t('tagMatching.title') },
           },
           {
             path: 'entity-manager',

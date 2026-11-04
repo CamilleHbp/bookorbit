@@ -39,6 +39,10 @@ const sections = computed<ToolSection[]>(() => {
   return result
 })
 
+function isActive(section: ToolSection): boolean {
+  return route.name === section.routeName || (section.routeName === 'tools-tags' && route.name === 'tools-tag-matching')
+}
+
 function navigateToSection(section: ToolSection): void {
   router.push({ name: section.routeName })
 }
@@ -55,7 +59,7 @@ function navigateToSection(section: ToolSection): void {
       v-for="section in sections"
       :key="section.routeName"
       class="px-3 h-full text-sm font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 snap-start"
-      :class="route.name === section.routeName ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+      :class="isActive(section) ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
       @click="navigateToSection(section)"
     >
       {{ section.label }}

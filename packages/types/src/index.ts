@@ -102,3 +102,4 @@ export * from "./book-revision";
 export * from "./anchor-text";
 export * from "./fanfiction";
 export * from "./koreader-delivery";
+export * from "./tag-matching";

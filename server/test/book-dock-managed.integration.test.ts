@@ -1,3 +1,4 @@
+import { TagMatchingService } from '../src/modules/tag-matching/tag-matching.service';
 import { CollectionService } from '../src/modules/collection/collection.service';
 import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
 import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
@@ -84,7 +85,8 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     if (
       config.database !== 'bookorbit_revision_validation' &&
       !/^bookorbit_ux_(fresh|upgrade)_20260910$/.test(config.database ?? '') &&
-      !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? '')
+      !/^bookorbit_metadata_review_[a-z0-9]+$/.test(config.database ?? '') &&
+      !/^bookorbit_tagmatch_test_[0-9]+$/.test(config.database ?? '')
     )
       throw new Error('An isolated validation database is required');
     pool = new Pool(config);
@@ -126,6 +128,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
         { provide: FanfictionReaderService, useValue: {} },
         ManagedTagService,
         ManagedMetadataService,
+        TagMatchingService,
         { provide: BookMetadataLockService, useValue: { filterAutomatedBookUpdate: (_id: number, dto: unknown) => Promise.resolve({ dto }) } },
         FanfictionJobService,
         { provide: FanfictionAccessService, useValue: { administer: async () => {} } },
@@ -199,6 +202,35 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
   async function receipt(request: ManagedDockImport) {
     return (await db.select().from(schema.bookDockManagedImports).where(eq(schema.bookDockManagedImports.id, request.operationId)))[0]!;
   }
+  it('restarts obsolete unpublished staging without deleting the original input', async () => {
+    const request = input();
+    const original = await readFile(sourcePath);
+    const copy = files.copy.bind(files);
+    vi.spyOn(files, 'copy').mockImplementation(async (source, target) => {
+      await copy(source, target);
+      if (target.endsWith('initial.epub')) authorize.mockRejectedValue(new ForbiddenException('Pause before publication'));
+    });
+    await expect(service.ingest(request, authorize)).rejects.toThrow('Pause before publication');
+    vi.restoreAllMocks();
+    authorize.mockReset();
+    expect(await service.resetPrepared(request, authorize)).toEqual({ published: false });
+    expect(await service.isPrepared(request, authorize)).toBe(false);
+    expect(await readFile(sourcePath)).toEqual(original);
+    expect(await lstat((await receipt(request)).destinationPath).catch(() => null)).toBeNull();
+    const installed = await service.ingest(request, authorize);
+    expect(installed.bookId).toBeGreaterThan(0);
+  }, 60000);
+  it('retains already published bytes when restarting import matching', async () => {
+    const request = input();
+    metadata.extractAndSave.mockRejectedValueOnce(new ConflictException('Metadata interrupted'));
+    await expect(service.ingest(request, authorize)).rejects.toThrow('Metadata interrupted');
+    const stored = await receipt(request);
+    const before = await lstat(stored.destinationPath);
+    expect(await service.resetPrepared(request, authorize)).toEqual({ published: true });
+    expect((await lstat(stored.destinationPath)).ino).toBe(before.ino);
+    expect(await readFile(stored.destinationPath)).toEqual(await readFile(sourcePath));
+    expect((await receipt(request)).state).toBe('database_committed');
+  }, 60000);
   it('finalizes concurrent retries once and keeps a receipt after the dock row is removed', async () => {
     const request = input();
     const [first, second] = await Promise.all([service.ingest(request, authorize), service.ingest(request, authorize)]);
@@ -318,6 +350,100 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     await module.get(FanfictionReviewService).importDecision(libraryId, job.id, { action: 'apply', values }, requestUser);
     return (await jobs.claim())!;
   }
+
+  it('imports approved matches with manual additions and exclusions through the full fiction path', async () => {
+    const [rulebook] = await db.insert(schema.tagRulebooks).values({ userId }).returning();
+    await db.insert(schema.libraryTagRulebooks).values({ libraryId, rulebookId: rulebook.id });
+    try {
+      const [tag] = await db
+        .insert(schema.tags)
+        .values({ name: `canonical-${randomUUID()}` })
+        .returning();
+      const [genre] = await db
+        .insert(schema.genres)
+        .values({ name: `canonical-genre-${randomUUID()}` })
+        .returning();
+      const rules = await db
+        .insert(schema.tagMatchingRules)
+        .values(
+          (['tags', 'genres'] as const).map((field) => ({
+            rulebookId: rulebook.id,
+            source: '',
+            field,
+            value: 'remote',
+            key: 'remote',
+            action: 'match' as const,
+          })),
+        )
+        .returning();
+      for (const rule of rules)
+        await db
+          .insert(schema.tagMatchingTargets)
+          .values({ ruleId: rule.id, ...(rule.field === 'tags' ? { tagId: tag.id } : { genreId: genre.id }) });
+      const url = `https://example.org/story/${randomUUID()}`;
+      const incoming: FanfictionPreview = {
+        ...previewFor(url),
+        labelMappingVersion: 1,
+        tags: [tag.name],
+        genres: [genre.name],
+        rawLabels: [
+          { field: 'tags', value: 'remote' },
+          { field: 'genres', value: 'remote' },
+          { field: 'tags', value: 'unapproved wording' },
+        ],
+      };
+      runtime.preview.mockResolvedValueOnce(incoming);
+      runtime.download.mockImplementationOnce(async (_url, _document, consume) => consume(sourcePath, incoming));
+      await sources.create(libraryId, { url, folderId, idempotencyKey: randomUUID() }, requestUser);
+      const job = (await jobs.claim())!;
+      const document = { configuration: '', cookies: [], tagMatching: { version: 1, rules: [] } };
+      const proposal = await imports.run(job, requestUser, document, authorize, new AbortController().signal);
+      await jobs.finish(job, 'review_required', proposal, 'import_review_required');
+      const personalTag = `personal-${randomUUID()}`,
+        personalGenre = `personal-genre-${randomUUID()}`;
+      await module.get(FanfictionReviewService).importDecision(
+        libraryId,
+        job.id,
+        {
+          action: 'apply',
+          values: {
+            ...proposal!.importReview!.values,
+            tags: [tag.name, personalTag],
+            genres: [personalGenre],
+          },
+        },
+        requestUser,
+      );
+      const approved = (await jobs.claim())!;
+      const installed = await imports.run(approved, requestUser, document, authorize, new AbortController().signal);
+      const tags = await db
+        .select({ name: schema.tags.name, manual: schema.bookTags.managedOnly })
+        .from(schema.bookTags)
+        .innerJoin(schema.tags, eq(schema.tags.id, schema.bookTags.tagId))
+        .where(eq(schema.bookTags.bookId, installed!.bookId!));
+      expect(tags).toEqual(
+        expect.arrayContaining([
+          { name: tag.name, manual: true },
+          { name: personalTag, manual: false },
+        ]),
+      );
+      expect(tags).toHaveLength(2);
+      const genres = await db
+        .select({ name: schema.genres.name, managed: schema.bookGenres.managedOnly })
+        .from(schema.bookGenres)
+        .innerJoin(schema.genres, eq(schema.genres.id, schema.bookGenres.genreId))
+        .where(eq(schema.bookGenres.bookId, installed!.bookId!));
+      expect(genres).toEqual([{ name: personalGenre, managed: false }]);
+      const observations = await db
+        .select()
+        .from(schema.tagMatchingObservations)
+        .where(eq(schema.tagMatchingObservations.bookId, installed!.bookId!));
+      expect(observations).toContainEqual(expect.objectContaining({ value: 'unapproved wording', status: 'pending' }));
+    } finally {
+      await db.delete(schema.libraryTagRulebooks).where(eq(schema.libraryTagRulebooks.libraryId, libraryId));
+      await db.delete(schema.tagRulebooks).where(eq(schema.tagRulebooks.id, rulebook.id));
+    }
+  }, 60000);
 
   it('preserves approved metadata across a failed download and a retry from a later session', async () => {
     await sources.create(libraryId, { url: 'https://example.org/story/2099', folderId, idempotencyKey: randomUUID() }, requestUser);

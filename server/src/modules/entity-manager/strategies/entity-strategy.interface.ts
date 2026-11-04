@@ -64,6 +64,7 @@ export interface StrategyRenameResult {
 }
 
 export interface DeleteInput {
+  userId?: number;
   entityId: number | string;
   mode: 'soft' | 'hard' | 'inline';
   libraryIds: number[];

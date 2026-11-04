@@ -236,6 +236,7 @@ describe('MetadataService', () => {
       (overrides?.coverStore ?? defaultCoverStore) as never,
       audiobookChapters as never,
       (overrides?.managedTags ?? { sync: vi.fn().mockResolvedValue(undefined) }) as never,
+      { sync: vi.fn().mockResolvedValue(null) } as never,
       (overrides?.embedder ?? embedder) as never,
       metadataEvents as never,
       undefined,
