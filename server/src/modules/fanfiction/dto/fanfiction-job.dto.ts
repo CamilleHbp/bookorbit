@@ -7,5 +7,6 @@ export class ListFanfictionJobsDto extends FanfictionPageDto {
   @IsIn(['preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch', 'replacement'])
   kind?: FanfictionJobKind;
   @IsOptional() @IsIn(['true']) activeOnly?: 'true';
+  @IsOptional() @IsIn(['true']) pendingImportsOnly?: 'true';
   @IsOptional() @IsUUID() sourceId?: string;
 }

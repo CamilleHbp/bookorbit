@@ -348,6 +348,54 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     await jobs.finish(resumed, 'succeeded', result);
   });
 
+  it('pages unfinished imports by owner without history noise or superseded attempts', async () => {
+    const [otherUser] = await db
+      .insert(schema.users)
+      .values({ username: `inbox-${randomUUID()}`, name: 'Other reader', passwordHash: 'not-a-login-hash' })
+      .returning();
+    try {
+      const base = { libraryId, userId, tokenVersion: requestUser.tokenVersion, kind: 'import' as const, site: 'example.org' };
+      const [old, latest, failed, queued] = await db
+        .insert(schema.fanfictionJobs)
+        .values([
+          { ...base, idempotencyKey: randomUUID(), url: 'https://example.org/duplicate', state: 'failed', createdAt: new Date('2026-01-01') },
+          {
+            ...base,
+            idempotencyKey: randomUUID(),
+            url: 'https://example.org/duplicate',
+            state: 'review_required',
+            createdAt: new Date('2026-01-02'),
+          },
+          {
+            ...base,
+            idempotencyKey: randomUUID(),
+            url: 'https://example.org/failed',
+            state: 'configuration_blocked',
+            createdAt: new Date('2026-01-03'),
+          },
+          { ...base, idempotencyKey: randomUUID(), url: 'https://example.org/queued', state: 'queued', createdAt: new Date('2026-01-04') },
+          { ...base, idempotencyKey: randomUUID(), url: 'https://example.org/completed', state: 'succeeded' },
+          { ...base, idempotencyKey: randomUUID(), url: 'https://example.org/cancelled', state: 'cancelled' },
+          { ...base, idempotencyKey: randomUUID(), url: 'https://example.org/history', kind: 'preview', state: 'failed' },
+          { ...base, idempotencyKey: randomUUID(), userId: otherUser.id, url: 'https://example.org/private', state: 'review_required' },
+        ])
+        .returning();
+      await db
+        .insert(schema.fanfictionJobs)
+        .values({ ...base, idempotencyKey: randomUUID(), url: latest.url, state: 'succeeded', result: { existingImportId: latest.id } });
+      const first = await jobs.list(libraryId, { limit: 2, pendingImportsOnly: 'true' }, requestUser);
+      expect(first.items.map((job) => job.id)).toEqual([queued.id, failed.id]);
+      const second = await jobs.list(libraryId, { limit: 2, pendingImportsOnly: 'true', cursor: first.nextCursor! }, requestUser);
+      expect(second.items.map((job) => job.id)).toEqual([latest.id]);
+      expect(second.nextCursor).toBeNull();
+      expect([...first.items, ...second.items].some((job) => job.id === old.id)).toBe(false);
+      const privileged = await jobs.list(libraryId, { limit: 20, pendingImportsOnly: 'true' }, { ...requestUser, isSuperuser: true });
+      expect(privileged.items.map((job) => job.id)).toEqual([queued.id, failed.id, latest.id]);
+    } finally {
+      await db.delete(schema.users).where(eq(schema.users.id, otherUser.id));
+    }
+  });
+
   it('connects the durable source job to Book Dock and an initial revision, including a lost completion response', async () => {
     await sources.create(libraryId, { url: 'https://example.org/story/2001', folderId, idempotencyKey: randomUUID() }, requestUser);
     const first = await approveImport();

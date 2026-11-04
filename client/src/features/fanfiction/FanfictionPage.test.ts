@@ -91,6 +91,122 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.findAll('button').some((button) => button.text() === 'Retry')).toBe(false)
   })
 
+  it('shows saved imports in Review without opening task history, and submits the recovered tags', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    const job = {
+      id: 'saved-import',
+      libraryId: 5,
+      kind: 'import',
+      state: 'review_required',
+      url: 'https://example.org/story',
+      result: {
+        importReview: {
+          approved: false,
+          preview: {},
+          values: { title: 'Recovered story', authors: ['Writer'], description: '', tags: ['custom.saved-tag'] },
+        },
+      },
+    }
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      if (String(url).includes('pendingImportsOnly=true')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
+      if (String(url).endsWith('/import-review')) return new Response(JSON.stringify({ ...job, state: 'queued' }))
+      return base(url, options)
+    })
+    await open('/fanfiction?tab=review')
+    expect(wrapper!.text()).toContain('Recovered story')
+    expect(wrapper!.text()).not.toContain('Task history')
+    expect(wrapper!.text()).not.toContain('Recent story changes')
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Review story')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('custom.saved-tag')
+    await wrapper!.get('form').trigger('submit')
+    await flushPromises()
+    expect(api).toHaveBeenCalledWith(
+      '/api/v1/libraries/5/fanfiction/jobs/saved-import/import-review',
+      expect.objectContaining({
+        body: JSON.stringify({ action: 'apply', values: job.result.importReview.values }),
+      }),
+    )
+  })
+
+  it('protects edited tags when leaving Review and saves pending tag input for later', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    const job = {
+      id: 'draft-import',
+      libraryId: 5,
+      kind: 'import',
+      state: 'review_required',
+      url: 'https://example.org/story',
+      result: {
+        importReview: { approved: false, preview: {}, values: { title: 'Draft story', description: '', authors: ['Writer'], tags: ['saved'] } },
+      },
+    }
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      if (String(url).includes('pendingImportsOnly=true')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
+      if (String(url).endsWith('/import-review')) return new Response(JSON.stringify(job))
+      return base(url, options)
+    })
+    await open('/fanfiction?tab=review')
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Review story')!
+      .trigger('click')
+    await flushPromises()
+    await wrapper!.get('input[id$="-tags"]').setValue('new.tag')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Library metadata')!
+      .trigger('click')
+    expect(confirm).toHaveBeenCalled()
+    expect(wrapper!.text()).toContain('new.tag')
+    expect(wrapper!.find('form').exists()).toBe(true)
+    await wrapper!.get('input[id$="-tags"]').setValue('pending.tag')
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Review later')!
+      .trigger('click')
+    await flushPromises()
+    expect(api).toHaveBeenCalledWith(
+      '/api/v1/libraries/5/fanfiction/jobs/draft-import/import-review',
+      expect.objectContaining({
+        body: JSON.stringify({ action: 'later', values: { ...job.result.importReview.values, tags: ['saved', 'new.tag', 'pending.tag'] } }),
+      }),
+    )
+    expect(wrapper!.find('form').exists()).toBe(false)
+    confirm.mockRestore()
+  })
+
+  it('shows failed imports with a direct retry that keeps the original job', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    const job = {
+      id: 'failed-import',
+      libraryId: 5,
+      kind: 'import',
+      state: 'failed',
+      url: 'https://example.org/story',
+      result: { importReview: { approved: true, values: { title: 'Saved story', tags: ['custom.saved-tag'] } } },
+    }
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      if (String(url).includes('pendingImportsOnly=true')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
+      if (String(url).endsWith('/retry')) return new Response(JSON.stringify({ ...job, state: 'queued' }))
+      return base(url, options)
+    })
+    await open('/fanfiction?tab=review')
+    expect(wrapper!.text()).toContain('Saved story')
+    expect(wrapper!.text()).toContain('Your approved tags and metadata are saved.')
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'Retry download')!
+      .trigger('click')
+    await flushPromises()
+    expect(api).toHaveBeenCalledWith('/api/v1/libraries/5/fanfiction/jobs/failed-import/retry', expect.objectContaining({ body: '{}' }))
+    expect(wrapper!.findAll('button').some((button) => button.text() === 'Retry download')).toBe(false)
+  })
+
   it('keeps multiple pending reviews accessible without a confirmation modal', async () => {
     await open('/fanfiction?tab=add')
     vi.mocked(api).mockImplementation(async (url, options) => {

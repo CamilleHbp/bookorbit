@@ -240,6 +240,9 @@ describe('Fanfiction HTTP contracts', () => {
     expect(jobs.list).toHaveBeenCalledWith(5, expect.objectContaining({ kind: 'discovery', activeOnly: 'true', limit: 1 }), undefined);
     expect((await app.inject({ method: 'GET', url: `${base}/jobs?kind=unknown` })).statusCode).toBe(400);
     expect((await app.inject({ method: 'GET', url: `${base}/jobs?activeOnly=yes` })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: `${base}/jobs?pendingImportsOnly=true&limit=20` })).statusCode).toBe(200);
+    expect(jobs.list).toHaveBeenCalledWith(5, expect.objectContaining({ pendingImportsOnly: 'true', limit: 20 }), undefined);
+    expect((await app.inject({ method: 'GET', url: `${base}/jobs?pendingImportsOnly=yes` })).statusCode).toBe(400);
     const sourceJob = await app.inject({ method: 'GET', url: `${base}/jobs?sourceId=${uuid}&activeOnly=true&limit=1` });
     expect(sourceJob.statusCode).toBe(200);
     expect(sourceJob.json()).toEqual({ items: [job], nextCursor: null });
