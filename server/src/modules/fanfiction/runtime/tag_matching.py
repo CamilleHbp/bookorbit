@@ -56,7 +56,9 @@ def install(story, source, policy):
         rating = story.getMetadata('rating')
         if rating:
             labels.append({'field': 'rating', 'value': rating})
-        return {**resolve(source, labels, policy['rules']), 'rawLabels': labels, 'labelMappingVersion': policy['version']}
+        # The preview contract only carries versions of configured rulebooks.
+        version = {'labelMappingVersion': policy['version']} if policy['version'] > 0 else {}
+        return {**resolve(source, labels, policy['rules']), 'rawLabels': labels, **version}
     def subjects(*args, **kwargs):
         resolved = snapshot()
         return list(dict.fromkeys(resolved['tags'] + resolved['genres']))
