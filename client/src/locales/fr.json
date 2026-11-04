@@ -13264,7 +13264,7 @@
   },
   "tagMatching": {
     "openBook": "Ouvrir le livre",
-    "decisionsSaved": "{count} décisions enregistrées.",
+    "decisionsSaved": "{count} décision enregistrée. | {count} décisions enregistrées.",
     "missingFandom": "Fandom manquant : {title}",
     "missingFandomHelp": "Choisissez les libellés de fandom pour ces livres, ou ignorez le fandom manquant. Aucun rapprochement partagé ne sera créé.",
     "pendingNotice": "{count} libellés à associer",
