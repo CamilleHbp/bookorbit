@@ -1,3 +1,4 @@
+import { TagMatchingService } from '../tag-matching/tag-matching.service';
 import { ForbiddenException, HttpException, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import type { FanfictionJob } from '@bookorbit/types';
@@ -25,6 +26,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
   private closing = false;
 
   constructor(
+    private readonly tagMatching: TagMatchingService,
     private readonly jobs: FanfictionJobService,
     private readonly access: FanfictionAccessService,
     private readonly connections: FanfictionConnectionService,
@@ -107,10 +109,12 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       // Resolve at execution time so already queued stories use a repaired website login.
       const session = downloads ? await this.connections.session(job.url, user, authorizeCookies) : null;
       connection = session?.connection ?? null;
-      const { document, saveCookies } = session ?? {
+      const { document: connectionDocument, saveCookies } = session ?? {
         document: withFanfictionDefaults({ configuration: '', cookies: [] }, user),
         saveCookies: undefined,
       };
+      const policy = downloads ? await this.tagMatching.runtimePolicy(job.libraryId) : undefined;
+      const document = policy ? { ...connectionDocument, tagMatching: policy } : connectionDocument;
       const result: FanfictionJob['result'] =
         job.kind === 'replacement'
           ? await this.replacements.run(job, () => this.authorized(job), controller.signal)

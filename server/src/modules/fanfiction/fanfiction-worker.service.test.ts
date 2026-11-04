@@ -1,3 +1,4 @@
+import { TagMatchingService } from '../tag-matching/tag-matching.service';
 import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { describe, expect, it, vi } from 'vitest';
@@ -46,6 +47,8 @@ describe('Fanfiction queued execution', () => {
     };
     const module = await Test.createTestingModule({
       providers: [
+        { provide: TagMatchingService, useValue: { runtimePolicy: vi.fn().mockResolvedValue(undefined) } },
+
         FanfictionWorkerService,
         { provide: FanfictionConnectionService, useValue: connections },
         { provide: FanfictionJobService, useValue: jobs },
@@ -100,6 +103,8 @@ describe('Fanfiction queued execution', () => {
       const rollback = { run: vi.fn().mockResolvedValue(result) };
       const module = await Test.createTestingModule({
         providers: [
+          { provide: TagMatchingService, useValue: { runtimePolicy: vi.fn().mockResolvedValue(undefined) } },
+
           FanfictionWorkerService,
           { provide: FanfictionConnectionService, useValue: connections },
           { provide: FanfictionJobService, useValue: jobs },
@@ -153,6 +158,8 @@ describe('Fanfiction queued execution', () => {
     const jobs = { claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null), finish: vi.fn().mockResolvedValue(true) };
     const module = await Test.createTestingModule({
       providers: [
+        { provide: TagMatchingService, useValue: { runtimePolicy: vi.fn().mockResolvedValue(undefined) } },
+
         FanfictionWorkerService,
         {
           provide: FanfictionConnectionService,

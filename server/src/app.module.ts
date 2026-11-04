@@ -1,3 +1,4 @@
+import { TagMatchingManagementModule } from './modules/tag-matching/tag-matching-management.module';
 import { Module } from '@nestjs/common';
 import { RevisionApiModule } from './modules/book-revision/revision-api.module';
 import { FanfictionModule } from './modules/fanfiction/fanfiction.module';
@@ -108,6 +109,7 @@ import { ReadAloudModule } from './modules/read-aloud/read-aloud.module';
 
 @Module({
   imports: [
+    TagMatchingManagementModule,
     FanfictionModule,
     LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({

@@ -25,6 +25,42 @@ function makeRepoMocks() {
 }
 
 describe('SharedOverlaysImporter', () => {
+  it('withholds unknown migration labels and never inserts or removes their raw assignments', async () => {
+    const { repo, importRepo } = makeRepoMocks();
+    const matching = { importLabels: vi.fn().mockResolvedValue({ version: 2, pending: 1, targets: [] }) };
+    const importer = new SharedOverlaysImporter(repo as never, importRepo as never, matching as never);
+    const ensureRunning = vi.fn().mockResolvedValue(undefined);
+    await importer.import(
+      1,
+      {
+        plan: { snapshot: { sourceType: 'calibre' } },
+        execution: {
+          matchedBooks: [{ sourceBookId: 'source-1', targetBookId: 901 }],
+          sourceData: {
+            availableDomains: { metadata: false, authors: false, narrators: false, genres: true, tags: true },
+            books: [{ sourceBookId: 'source-1', genres: ['Unknown genre'], tags: ['Unknown tag'] }],
+          },
+        },
+      } as never,
+      ensureRunning,
+    );
+    expect(matching.importLabels).toHaveBeenCalledWith(901, {
+      source: 'migration:calibre',
+      sourceKey: 'migration:calibre:genres',
+      labels: [{ field: 'genres', value: 'Unknown genre' }],
+    });
+    expect(matching.importLabels).toHaveBeenCalledWith(901, {
+      source: 'migration:calibre',
+      sourceKey: 'migration:calibre:tags',
+      labels: [{ field: 'tags', value: 'Unknown tag' }],
+    });
+    expect(importRepo.batchDeleteBookGenres).toHaveBeenCalledWith([]);
+    expect(importRepo.batchDeleteBookTags).toHaveBeenCalledWith([]);
+    expect(importRepo.batchUpsertGenres).toHaveBeenCalledWith([]);
+    expect(importRepo.batchUpsertTags).toHaveBeenCalledWith([]);
+    expect(repo.setRunMetric).toHaveBeenCalledWith(1, 'shared_overlays', 'book_tags', expect.objectContaining({ unresolved: 1, imported: 0 }));
+  });
+
   it('imports metadata/contributors/genres/tags and tracks unresolved source books', async () => {
     const { repo, importRepo } = makeRepoMocks();
     importRepo.batchUpsertAuthors.mockResolvedValue(
@@ -37,7 +73,7 @@ describe('SharedOverlaysImporter', () => {
     importRepo.batchUpsertGenres.mockResolvedValue(new Map([['Science Fiction', 11]]));
     importRepo.batchUpsertTags.mockResolvedValue(new Map([['Space Opera', 12]]));
 
-    const importer = new SharedOverlaysImporter(repo as never, importRepo as never);
+    const importer = new SharedOverlaysImporter(repo as never, importRepo as never, { importLabels: vi.fn().mockResolvedValue(null) } as never);
 
     const planned = {
       execution: {

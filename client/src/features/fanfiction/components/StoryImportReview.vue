@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TagReviewNotice from './TagReviewNotice.vue'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { FanfictionJob } from '@bookorbit/types'
@@ -22,6 +23,7 @@ function handleApply() {
   <Button v-if="deferred" @click="resume">{{ t('fanfiction.previewStory') }}</Button>
   <form v-else class="space-y-4 border-border rounded-lg border p-4 w-full" @submit.prevent="handleApply">
     <h3 class="font-semibold">{{ t('fanfiction.previewStory') }}</h3>
+    <TagReviewNotice :count="job.result?.importReview?.preview.pendingLabelCount" />
     <StoryCategories :categories="job.result?.importReview?.preview?.categories" />
     <StoryMetadataFields ref="fields" v-model="values" :disabled="busy || disabled" />
     <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>

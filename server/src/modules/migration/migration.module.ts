@@ -1,3 +1,4 @@
+import { TagMatchingModule } from '../tag-matching/tag-matching.module';
 import { ReadingAttemptEventsModule } from '../user-book-status/reading-attempt-events.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -38,6 +39,7 @@ import { MigrationReportingService } from './reporting/migration-reporting.servi
 
 @Module({
   imports: [
+    TagMatchingModule,
     ReadingAttemptEventsModule,
     AuthModule,
     forwardRef(() => NotificationModule),

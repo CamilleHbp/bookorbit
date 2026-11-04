@@ -1,3 +1,4 @@
+import { TagMatchingService } from '../src/modules/tag-matching/tag-matching.service';
 import { CollectionService } from '../src/modules/collection/collection.service';
 import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
 import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
@@ -123,6 +124,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
         { provide: FanfictionReaderService, useValue: {} },
         ManagedTagService,
         ManagedMetadataService,
+        TagMatchingService,
         { provide: BookMetadataLockService, useValue: { filterAutomatedBookUpdate: (_id: number, dto: unknown) => Promise.resolve({ dto }) } },
         FanfictionJobService,
         { provide: FanfictionAccessService, useValue: { administer: async () => {} } },

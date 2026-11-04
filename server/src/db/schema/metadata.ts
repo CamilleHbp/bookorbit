@@ -357,6 +357,7 @@ export const genres = pgTable(
 export const bookGenres = pgTable(
   'book_genres',
   {
+    managedOnly: boolean('managed_only').notNull().default(false),
     bookId: integer('book_id')
       .notNull()
       .references(() => books.id, { onDelete: 'cascade' }),

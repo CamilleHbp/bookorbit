@@ -1,3 +1,4 @@
+import type { IncomingLabel } from "./tag-matching";
 export interface FanfictionPreferences {
   isAdult: boolean;
   defaultUpdatePolicy?: FanfictionUpdatePolicy;
@@ -53,6 +54,9 @@ export interface FanficfareRuntimeHealth {
 }
 
 export interface FanfictionPreview {
+  rawLabels?: IncomingLabel[];
+  labelMappingVersion?: number;
+  pendingLabelCount?: number;
   canonicalUrl: string;
   site: string;
   title: string;
@@ -104,6 +108,16 @@ export interface FanfictionTagRule {
 }
 
 export interface FanfictionConnectionDocument {
+  tagMatching?: {
+    version: number;
+    rules: Array<{
+      source: string | null;
+      unresolved?: boolean;
+      field: import("./tag-matching").LabelField;
+      value: string;
+      targets: Array<{ field: "tags" | "genres"; name: string }>;
+    }>;
+  };
   configuration: string;
   tagRules?: FanfictionTagRule[];
   cookies: FanfictionCookie[];
