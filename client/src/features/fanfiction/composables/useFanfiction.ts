@@ -459,19 +459,13 @@ export function useFanfiction(
   }
   async function retryImport(candidate: Candidate) {
     if (busy.value || !candidate.job || !['configuration_blocked', 'failed', 'cancelled'].includes(candidate.job.state)) return
-    if (candidate.job.kind !== 'import') {
-      const jobId = candidate.job.id
-      await perform(async (current, path) => {
-        const job = await request<FanfictionJob>(`${path}/jobs/${jobId}/retry`, {})
-        if (!currentScope(current)) return
-        candidate.job = job
-        schedulePoll(current)
-      })
-      return
-    }
-    candidate.importKey = createUuid()
-    candidate.job = null
-    await perform((current, path) => submitImport(candidate, current, path))
+    const jobId = candidate.job.id
+    await perform(async (current, path) => {
+      const job = await request<FanfictionJob>(`${path}/jobs/${jobId}/retry`, {})
+      if (!currentScope(current)) return
+      candidate.job = job
+      schedulePoll(current)
+    })
   }
   async function previewStories() {
     await perform(async (current, path) => {
