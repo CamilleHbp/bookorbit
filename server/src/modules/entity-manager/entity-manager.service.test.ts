@@ -744,7 +744,7 @@ describe('EntityManagerService', () => {
 
       const result = await service.deleteEntity('genre', mockUser, 5, 'hard', false);
 
-      expect(strategies.genre.deleteEntity).toHaveBeenCalledWith({ entityId: 5, mode: 'hard', libraryIds: [1, 2] });
+      expect(strategies.genre.deleteEntity).toHaveBeenCalledWith({ entityId: 5, mode: 'hard', libraryIds: [1, 2], userId: mockUser.id });
       expect(repo.deleteDismissedPairsForEntity).toHaveBeenCalledWith('genre', 5);
       expect(result).toEqual({ entityId: 5, name: 'Fantasy', affectedBookCount: 2, mode: 'hard' });
     });
@@ -756,7 +756,7 @@ describe('EntityManagerService', () => {
 
       await service.deleteEntity('genre', mockUser, 5, 'soft', false);
 
-      expect(strategies.genre.deleteEntity).toHaveBeenCalledWith({ entityId: 5, mode: 'soft', libraryIds: [1, 2] });
+      expect(strategies.genre.deleteEntity).toHaveBeenCalledWith({ entityId: 5, mode: 'soft', libraryIds: [1, 2], userId: mockUser.id });
       expect(repo.deleteDismissedPairsForEntity).not.toHaveBeenCalled();
     });
 
@@ -767,7 +767,7 @@ describe('EntityManagerService', () => {
 
       const result = await service.deleteEntity('author', mockUser, 5, 'soft', false);
 
-      expect(strategies.author.deleteEntity).toHaveBeenCalledWith({ entityId: 5, mode: 'hard', libraryIds: [1, 2] });
+      expect(strategies.author.deleteEntity).toHaveBeenCalledWith({ entityId: 5, mode: 'hard', libraryIds: [1, 2], userId: mockUser.id });
       expect(repo.deleteDismissedPairsForEntity).toHaveBeenCalledWith('author', 5);
       expect(duplicateCompute.invalidateCandidatesForEntities).toHaveBeenCalledWith('author', [5]);
       expect(result.mode).toBe('hard');

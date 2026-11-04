@@ -26,7 +26,31 @@ export function validateFanfictionPreview(value: unknown): FanfictionPreview {
   if (!Number.isInteger(row.chapterCount) || Number(row.chapterCount) < 1 || Number(row.chapterCount) > 10_000) throw invalid();
   if (row.wordCount != null && (!Number.isInteger(row.wordCount) || Number(row.wordCount) < 0 || Number(row.wordCount) > 2_147_483_647))
     throw invalid();
+  if (
+    row.rawLabels !== undefined &&
+    (!Array.isArray(row.rawLabels) ||
+      row.rawLabels.length > 5000 ||
+      row.rawLabels.some(
+        (label: { field?: unknown; value?: unknown }) =>
+          !label ||
+          typeof label.field !== 'string' ||
+          !['tags', 'genres', 'fandoms', 'characters', 'relationships', 'warnings', 'rating'].includes(label.field) ||
+          typeof label.value !== 'string' ||
+          label.value.length > 500,
+      ))
+  )
+    throw invalid();
+  if (row.labelMappingVersion !== undefined && (!Number.isSafeInteger(row.labelMappingVersion) || Number(row.labelMappingVersion) < 1))
+    throw invalid();
+  if (
+    row.pendingLabelCount !== undefined &&
+    (!Number.isSafeInteger(row.pendingLabelCount) || Number(row.pendingLabelCount) < 0 || Number(row.pendingLabelCount) > 5000)
+  )
+    throw invalid();
   return {
+    ...(row.rawLabels === undefined ? {} : { rawLabels: row.rawLabels as NonNullable<FanfictionPreview['rawLabels']> }),
+    ...(row.labelMappingVersion === undefined ? {} : { labelMappingVersion: Number(row.labelMappingVersion) }),
+    ...(row.pendingLabelCount === undefined ? {} : { pendingLabelCount: Number(row.pendingLabelCount) }),
     canonicalUrl,
     site: string('site', 255, false),
     title: string('title', 500, false),

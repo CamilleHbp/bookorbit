@@ -262,7 +262,7 @@ describe('SharedOverlaysImporter author import', () => {
       ]),
     );
 
-    const importer = new SharedOverlaysImporter(repo as never, importRepo as never);
+    const importer = new SharedOverlaysImporter(repo as never, importRepo as never, { importLabels: vi.fn().mockResolvedValue(null) } as never);
 
     const planned = {
       execution: {
@@ -433,7 +433,7 @@ describe('SharedOverlaysImporter domain gating', () => {
   it('marks all shared overlay stages skipped when source domains are unavailable', async () => {
     const repo = createRepoMock();
     const importRepo = createImportRepoMock();
-    const importer = new SharedOverlaysImporter(repo as never, importRepo as never);
+    const importer = new SharedOverlaysImporter(repo as never, importRepo as never, { importLabels: vi.fn().mockResolvedValue(null) } as never);
 
     const planned = {
       execution: {

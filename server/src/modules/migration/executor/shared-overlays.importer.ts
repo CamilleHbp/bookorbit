@@ -1,3 +1,4 @@
+import { TagMatchingService } from '../../tag-matching/tag-matching.service';
 import { Injectable } from '@nestjs/common';
 
 import type * as schema from '../../../db/schema';
@@ -22,14 +23,15 @@ export class SharedOverlaysImporter {
   constructor(
     private readonly repo: MigrationRepository,
     private readonly importRepo: MigrationImportRepository,
+    private readonly tagMatching: TagMatchingService,
   ) {}
 
   async import(runId: number, planned: PlannerResult, ensureRunning: RunStateCheck): Promise<void> {
     await this.importMetadata(runId, planned, ensureRunning);
     await this.importAuthors(runId, planned);
     await this.importNarrators(runId, planned);
-    await this.importGenres(runId, planned);
-    await this.importTags(runId, planned);
+    await this.importGenres(runId, planned, ensureRunning);
+    await this.importTags(runId, planned, ensureRunning);
   }
 
   private async importMetadata(runId: number, planned: PlannerResult, ensureRunning: RunStateCheck): Promise<void> {
@@ -171,7 +173,7 @@ export class SharedOverlaysImporter {
     await this.repo.setRunMetric(runId, 'shared_overlays', 'book_narrators', counters);
   }
 
-  private async importGenres(runId: number, planned: PlannerResult): Promise<void> {
+  private async importGenres(runId: number, planned: PlannerResult, ensureRunning: RunStateCheck): Promise<void> {
     const sourceBooksById = new Map(planned.execution.sourceData.books.map((b) => [b.sourceBookId, b]));
     const counters = emptyCounters();
 
@@ -191,6 +193,19 @@ export class SharedOverlaysImporter {
       const sourceBook = sourceBooksById.get(match.sourceBookId);
       if (!sourceBook) {
         counters.unresolved += 1;
+        continue;
+      }
+
+      await ensureRunning();
+      const source = `migration:${planned.plan?.snapshot?.sourceType ?? 'library'}`;
+      const matched = await this.tagMatching.importLabels(match.targetBookId, {
+        source,
+        sourceKey: `${source}:genres`,
+        labels: sourceBook.genres.map((value) => ({ field: 'genres' as const, value })),
+      });
+      if (matched) {
+        counters.unresolved += matched.pending;
+        counters.imported += matched.targets.length;
         continue;
       }
 
@@ -219,7 +234,7 @@ export class SharedOverlaysImporter {
     await this.repo.setRunMetric(runId, 'shared_overlays', 'book_genres', counters);
   }
 
-  private async importTags(runId: number, planned: PlannerResult): Promise<void> {
+  private async importTags(runId: number, planned: PlannerResult, ensureRunning: RunStateCheck): Promise<void> {
     const sourceBooksById = new Map(planned.execution.sourceData.books.map((b) => [b.sourceBookId, b]));
     const counters = emptyCounters();
 
@@ -239,6 +254,19 @@ export class SharedOverlaysImporter {
       const sourceBook = sourceBooksById.get(match.sourceBookId);
       if (!sourceBook) {
         counters.unresolved += 1;
+        continue;
+      }
+
+      await ensureRunning();
+      const source = `migration:${planned.plan?.snapshot?.sourceType ?? 'library'}`;
+      const matched = await this.tagMatching.importLabels(match.targetBookId, {
+        source,
+        sourceKey: `${source}:tags`,
+        labels: sourceBook.tags.map((value) => ({ field: 'tags' as const, value })),
+      });
+      if (matched) {
+        counters.unresolved += matched.pending;
+        counters.imported += matched.targets.length;
         continue;
       }
 

@@ -55,3 +55,4 @@ export * from './server-identity';
 export * from './story-edits';
 export * from './fanfiction';
 export * from './koreader-delivery';
+export * from './tag-matching';

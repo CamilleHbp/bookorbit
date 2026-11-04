@@ -467,12 +467,18 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
       }
     }
 
+    const incomingGenres = this.asStringArray(resolved.genres);
+    const matched =
+      incomingGenres !== undefined &&
+      (await this.metadataService.applyImportedLabels(bookId, {
+        sourceKey: 'provider:metadata',
+        source: 'provider',
+        preserveFields: ['tags'],
+        labels: incomingGenres.map((value) => ({ field: 'genres', value })),
+      }));
     const resolvedGenres = this.asStringArray(filteredResolved.genres);
-    if (resolvedGenres !== undefined) {
-      const names = resolvedGenres;
-      if (names.length > 0 || existingGenreRows.length > 0) {
-        await this.metadataService.replaceGenres(bookId, names);
-      }
+    if (!matched && resolvedGenres !== undefined && (resolvedGenres.length > 0 || existingGenreRows.length > 0)) {
+      await this.metadataService.replaceGenres(bookId, resolvedGenres);
     }
 
     const resolvedNarrators = this.asStringArray(filteredResolved.narrators);

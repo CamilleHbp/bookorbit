@@ -1,3 +1,4 @@
+import { TagMatchingModule } from '../tag-matching/tag-matching.module';
 import { CollectionModule } from '../collection/collection.module';
 import { BookModule } from '../book/book.module';
 import { FanfictionReaderService } from './fanfiction-reader.service';
@@ -41,6 +42,7 @@ import { FanfictionConnectionController } from './fanfiction-connection.controll
 
 @Module({
   imports: [
+    TagMatchingModule,
     BookModule,
     CollectionModule,
     ConfigModule.forFeature(fanficfareConfig),

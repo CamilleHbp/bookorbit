@@ -335,7 +335,7 @@ export class EntityManagerService {
       const strategy = this.getStrategy(entityType);
       const libraryIds = await this.libraryService.findEditableLibraryIds(user);
       const effectiveMode = !strategy.isInline && mode === 'soft' && (await strategy.getBookCount(entityId)) === 0 ? 'hard' : mode;
-      const result = await strategy.deleteEntity({ entityId, mode: effectiveMode, libraryIds });
+      const result = await strategy.deleteEntity({ entityId, mode: effectiveMode, libraryIds, userId: user.id });
 
       if (strategy.isInline) {
         await this.repo.deleteInlineDismissedPairsForValue(entityType, entityId as string);

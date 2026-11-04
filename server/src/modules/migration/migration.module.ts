@@ -1,3 +1,4 @@
+import { TagMatchingModule } from '../tag-matching/tag-matching.module';
 import { ReadingAttemptEventsModule } from '../user-book-status/reading-attempt-events.module';
 import { Module, forwardRef } from '@nestjs/common';
 
@@ -34,7 +35,7 @@ import { MigrationExecutorService } from './executor/migration-executor.service'
 import { MigrationReportingService } from './reporting/migration-reporting.service';
 
 @Module({
-  imports: [ReadingAttemptEventsModule, AuthModule, forwardRef(() => NotificationModule), ScannerModule, BookCoverStoreModule],
+  imports: [TagMatchingModule, ReadingAttemptEventsModule, AuthModule, forwardRef(() => NotificationModule), ScannerModule, BookCoverStoreModule],
   controllers: [MigrationController],
   providers: [
     MigrationRepository,

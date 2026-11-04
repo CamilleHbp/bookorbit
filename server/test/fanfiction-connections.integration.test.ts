@@ -1,3 +1,4 @@
+import { TagMatchingService } from '../src/modules/tag-matching/tag-matching.service';
 import { installPostgresExtensions } from '../src/scripts/postgres-extensions';
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
@@ -36,7 +37,8 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('private web
   };
   beforeAll(async () => {
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as PoolConfig;
-    if (!/^bookorbit_revision_validation_[a-z0-9]+$/.test(String(config.database))) throw new Error('Isolated validation database required');
+    if (!/^bookorbit_(?:revision_validation_[a-z0-9]+|tagmatch_test_[0-9]+)$/.test(String(config.database)))
+      throw new Error('Isolated validation database required');
     pool = new Pool(config);
     db = drizzle(pool, { schema });
     await installPostgresExtensions(pool);
@@ -45,6 +47,7 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('private web
     const module = await Test.createTestingModule({
       providers: [
         FanfictionConnectionService,
+        TagMatchingService,
         FanficfareRuntimeService,
         FanfictionVaultService,
         { provide: DB, useValue: db },
@@ -103,18 +106,20 @@ describe.skipIf(!configPath || !process.env.FANFICFARE_TEST_PYTHON)('private web
     await service.remove(connection.id, owner);
     expect(await service.list(owner)).toEqual([]);
   }, 60000);
-  it('edits advanced website settings without exposing or clearing credentials, cookies, or tag rules', async () => {
+  it('edits advanced settings privately and redirects legacy rule edits to Manage tags', async () => {
     const saved = await service.save(
       {
         site: 'fiction.live',
         configuration: '[fiction.live]\ndedup_img_files: false\n',
-        tagRules: [{ remoteTag: 'fantasy', targetTag: 'My fantasy' }],
       },
       owner,
     );
     const settings = await service.settings(saved.id, owner);
     expect(settings.configuration).toContain('dedup_img_files = false');
-    expect(settings.tagRules).toEqual([{ remoteTag: 'fantasy', targetTag: 'My fantasy' }]);
+    expect(settings.tagRules).toEqual([]);
+    await expect(
+      service.save({ site: saved.website.id, version: saved.version, tagRules: [{ remoteTag: 'fantasy', targetTag: 'My fantasy' }] }, owner),
+    ).rejects.toThrow('Manage tags');
     const changed = await service.save(
       {
         site: saved.website.id,

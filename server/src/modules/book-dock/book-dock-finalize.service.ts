@@ -1554,7 +1554,13 @@ export class BookDockFinalizeService implements OnModuleInit, OnApplicationBoots
     }
 
     if (meta.genres.length > 0) {
-      await this.metadataService.replaceGenres(bookId, meta.genres);
+      const matched = await this.metadataService.applyImportedLabels(bookId, {
+        sourceKey: 'file:metadata',
+        source: 'file',
+        preserveFields: ['tags'],
+        labels: meta.genres.map((value) => ({ field: 'genres', value })),
+      });
+      if (!matched) await this.metadataService.replaceGenres(bookId, meta.genres);
     }
 
     if (audio.narrators.length > 0) {

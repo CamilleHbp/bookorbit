@@ -1,3 +1,4 @@
+import { TagMatchingModule } from '../tag-matching/tag-matching.module';
 import { Module } from '@nestjs/common';
 
 import { AuthorsModule } from '../authors/authors.module';
@@ -17,7 +18,7 @@ import { SeriesStrategy } from './strategies/series.strategy';
 import { TagStrategy } from './strategies/tag.strategy';
 
 @Module({
-  imports: [AuthorsModule, FileWriteModule, LibraryModule, MetadataScoreModule],
+  imports: [TagMatchingModule, AuthorsModule, FileWriteModule, LibraryModule, MetadataScoreModule],
   controllers: [EntityManagerController],
   providers: [
     EntityManagerService,

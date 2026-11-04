@@ -1,3 +1,4 @@
+import { TagMatchingService, storyLabels } from '../tag-matching/tag-matching.service';
 import { personalAccessIssueFilter, storyStateFilter } from './fanfiction-source-filters';
 import { FanfictionReaderService } from './fanfiction-reader.service';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
@@ -32,6 +33,7 @@ type Job = typeof schema.fanfictionJobs.$inferSelect;
 export class FanfictionSourceService {
   private readonly logger = new Logger(FanfictionSourceService.name);
   constructor(
+    private readonly tagMatching: TagMatchingService,
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly access: FanfictionAccessService,
     private readonly libraries: LibraryService,
@@ -175,7 +177,7 @@ export class FanfictionSourceService {
         await this.managedMetadata.apply(
           tx,
           file.bookId,
-          { key: `fanfiction:${id}`, libraryId },
+          { key: `fanfiction:${id}`, libraryId, userId: user.id },
           incoming,
           fields,
           incoming.tags.filter((tag) => snapshot.customTags.includes(tag) || !review.incoming.tags.includes(tag)),
@@ -256,6 +258,8 @@ export class FanfictionSourceService {
       (job.scheduled && source.state !== 'active')
     )
       throw new ConflictException({ message: 'Story source settings changed before publication', errorCode: 'configuration_blocked' });
+    if (['update', 'refresh'].includes(job.kind) && job.result?.preview)
+      await this.tagMatching.assertCurrentVersion(tx, job.libraryId, job.result.preview.labelMappingVersion);
     return source;
   }
 
@@ -297,7 +301,19 @@ export class FanfictionSourceService {
       const file = await this.catalog.lockCurrent(tx, result.bookFileId, job.libraryId, result.revisionId);
       const source = await this.assertUpdatable(job, tx);
       if (source.bookFileId !== result.bookFileId || source.bookId !== file.bookId) throw new ConflictException('The managed book identity changed');
+      if (preview) {
+        const binding = await this.tagMatching.binding(tx, job.libraryId);
+        if (binding && preview.labelMappingVersion !== binding.version)
+          throw new ConflictException('Tag matches changed. Preview this update again.');
+      }
       const reviewed = await this.reviews.apply(tx, job, source.bookId!);
+      if (preview)
+        await this.tagMatching.sync(
+          tx,
+          source.bookId!,
+          { sourceKey: `fanfiction:${source.id}`, source: preview.site, labels: storyLabels(preview) },
+          { expectedVersion: preview.labelMappingVersion },
+        );
       result = { ...reviewed, ...result, ...(preview ? { preview } : {}) };
       if (!result.metadataDeferred) delete result.metadataReview;
       await tx
@@ -311,6 +327,8 @@ export class FanfictionSourceService {
                 wordCount: preview.wordCount ?? null,
                 storyStatus: preview.status,
                 categories: preview.categories ?? null,
+                rawLabels: storyLabels(preview),
+                labelMappingVersion: preview.labelMappingVersion ?? null,
               }
             : {}),
           ...(job.kind === 'replacement' && result.replacement
@@ -607,6 +625,8 @@ export class FanfictionSourceService {
       .where(and(eq(sources.id, sourceId), eq(sources.libraryId, job.libraryId)))
       .for('update');
     if (!source || source.state !== 'pending') throw new ConflictException('Story import was paused or unlinked');
+    await this.tagMatching.assertCurrentVersion(transaction, job.libraryId, source.labelMappingVersion);
+    await this.tagMatching.assertCurrentVersion(transaction, job.libraryId, job.result?.importReview?.preview.labelMappingVersion);
     return source;
   }
 
@@ -631,6 +651,8 @@ export class FanfictionSourceService {
             wordCount: preview.wordCount ?? null,
             storyStatus: preview.status,
             categories: preview.categories ?? null,
+            rawLabels: storyLabels(preview),
+            labelMappingVersion: preview.labelMappingVersion ?? null,
             updatedAt: sql`now()`,
             version: sql`${sources.version} + 1`,
           })
@@ -680,6 +702,17 @@ export class FanfictionSourceService {
         })
         .where(and(eq(sources.id, sourceId), eq(sources.libraryId, job.libraryId)))
         .returning();
+      if (source!.rawLabels) {
+        const binding = await this.tagMatching.binding(tx, job.libraryId);
+        if (binding && source!.labelMappingVersion !== binding.version)
+          throw new ConflictException('Tag matches changed. Preview this import again.');
+        await this.tagMatching.sync(
+          tx,
+          installed.bookId,
+          { sourceKey: `fanfiction:${sourceId}`, source: source!.site, labels: source!.rawLabels },
+          { expectedVersion: source!.labelMappingVersion ?? undefined },
+        );
+      }
       await recordFanfictionActivity(tx, {
         libraryId: job.libraryId,
         userId: job.userId,

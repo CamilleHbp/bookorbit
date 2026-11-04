@@ -44,6 +44,8 @@ describe('LibraryService', () => {
     findGrantedLevel: vi.fn(),
     findIsSuperuser: vi.fn(),
   };
+  const creator = { id: 1, active: true } as never;
+  const tagMatching = { assignNewLibrary: vi.fn().mockResolvedValue(undefined) };
   const libraryRepo = {
     findAll: vi.fn(),
     findAllForUser: vi.fn(),
@@ -111,6 +113,7 @@ describe('LibraryService', () => {
       readingEvents,
       libraryGate,
       new LibraryScopeService(scopeRepo as any),
+      tagMatching as never,
     );
 
     libraryRepo.findById.mockResolvedValue([{ id: 1 }]);
@@ -296,7 +299,7 @@ describe('LibraryService', () => {
     libraryRepo.findByName.mockResolvedValue([]);
     libraryRepo.insert.mockResolvedValue([{ id: 5, name: 'Regex', icon: 'BookOpen' }]);
     libraryRepo.insertFolders.mockResolvedValue([]);
-    await service.create({ name: 'Regex', icon: 'BookOpen', folders: ['/a'], regexMetadata: config, metadataPrecedence });
+    await service.create({ name: 'Regex', icon: 'BookOpen', folders: ['/a'], regexMetadata: config, metadataPrecedence }, creator);
     expect(libraryRepo.insert).toHaveBeenCalledWith(
       expect.objectContaining({
         regexMetadata: config,
@@ -313,7 +316,7 @@ describe('LibraryService', () => {
       { id: 12, path: '/b' },
     ]);
 
-    const result = await service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/a', '/b'] } as any);
+    const result = await service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/a', '/b'] } as any, creator);
 
     expect(libraryRepo.insert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -362,7 +365,7 @@ describe('LibraryService', () => {
     libraryRepo.insert.mockResolvedValue([{ id: 5, name: 'Sci-Fi', icon: 'BookOpen' }]);
     libraryRepo.insertFolders.mockResolvedValue([{ id: 11, path: '/a' }]);
 
-    await service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/a'] } as any);
+    await service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/a'] } as any, creator);
 
     expect(libraryRepo.insert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -389,7 +392,7 @@ describe('LibraryService', () => {
     libraryRepo.insert.mockResolvedValue([{ id: 5, name: 'Mixed', icon: 'BookOpen' }]);
     libraryRepo.insertFolders.mockResolvedValue([{ id: 11, path: '/a' }]);
 
-    await service.create({ name: 'Mixed', icon: 'BookOpen', folders: ['/a'], fileWriteAllFiles: true } as any);
+    await service.create({ name: 'Mixed', icon: 'BookOpen', folders: ['/a'], fileWriteAllFiles: true } as any, creator);
 
     expect(libraryRepo.insert).toHaveBeenCalledWith(expect.objectContaining({ fileWriteAllFiles: true }));
   });
@@ -412,9 +415,11 @@ describe('LibraryService', () => {
       { id: 22, path: '/watch-b' },
     ]);
 
-    await service.create({ name: 'Watched', icon: 'BookOpen', folders: ['/watch-a', '/watch-b'], watch: true } as any);
+    await service.create({ name: 'Watched', icon: 'BookOpen', folders: ['/watch-a', '/watch-b'], watch: true } as any, creator);
 
     expect(fileWatcherService.startWatcher).toHaveBeenCalledWith(6, ['/watch-a', '/watch-b']);
+    expect(tagMatching.assignNewLibrary).toHaveBeenCalledWith(creator, 6);
+    expect(tagMatching.assignNewLibrary.mock.invocationCallOrder[0]).toBeLessThan(fileWatcherService.startWatcher.mock.invocationCallOrder[0]);
     expect(scannerService.startScanAsync).toHaveBeenCalledWith(6);
   });
 
@@ -423,12 +428,15 @@ describe('LibraryService', () => {
     libraryRepo.insert.mockResolvedValue([{ id: 6, name: 'Scheduled', icon: 'BookOpen', watch: false }]);
     libraryRepo.insertFolders.mockResolvedValue([{ id: 21, path: '/scheduled' }]);
 
-    await service.create({
-      name: 'Scheduled',
-      icon: 'BookOpen',
-      folders: ['/scheduled'],
-      autoScanCronExpression: '0 4 * * *',
-    } as any);
+    await service.create(
+      {
+        name: 'Scheduled',
+        icon: 'BookOpen',
+        folders: ['/scheduled'],
+        autoScanCronExpression: '0 4 * * *',
+      } as any,
+      creator,
+    );
 
     expect(scanScheduler.syncSchedule).toHaveBeenCalledWith(6, '0 4 * * *');
   });
@@ -436,14 +444,16 @@ describe('LibraryService', () => {
   it('create rejects duplicate library names', async () => {
     libraryRepo.findByName.mockResolvedValue([{ id: 9 }]);
 
-    await expect(service.create({ name: 'Dup', icon: 'BookOpen', folders: ['/x'] } as any)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.create({ name: 'Dup', icon: 'BookOpen', folders: ['/x'] } as any, creator)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('create rejects folders outside the configured browse root before inserting the library', async () => {
     libraryRepo.findByName.mockResolvedValue([]);
     pathPolicy.assertWithinBrowseRoot.mockRejectedValue(new ForbiddenException('outside root'));
 
-    await expect(service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/outside'] } as any)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.create({ name: 'Sci-Fi', icon: 'BookOpen', folders: ['/outside'] } as any, creator)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
 
     expect(libraryRepo.insert).not.toHaveBeenCalled();
     expect(libraryRepo.insertFolders).not.toHaveBeenCalled();
@@ -452,7 +462,7 @@ describe('LibraryService', () => {
   it('create rejects missing icons', async () => {
     libraryRepo.findByName.mockResolvedValue([]);
 
-    await expect(service.create({ name: 'Sci-Fi', folders: ['/a'] } as any)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.create({ name: 'Sci-Fi', folders: ['/a'] } as any, creator)).rejects.toBeInstanceOf(BadRequestException);
     expect(libraryRepo.insert).not.toHaveBeenCalled();
   });
 

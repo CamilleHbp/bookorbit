@@ -6,6 +6,7 @@ import { bookMetadata, books, bookTags, bookTagSources, tags } from '../../db/sc
 export interface ManagedTagSource {
   key: string;
   libraryId: number;
+  userId?: number;
 }
 
 @Injectable()
