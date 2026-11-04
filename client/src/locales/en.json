@@ -573,6 +573,20 @@
       "discardOlderDrafts": "Continue and discard unsaved edits from the oldest 25 stories? Those stories will still need review.",
       "readOnly": "You don’t have permission to edit this story’s metadata.",
       "locked": "Protected fields can be edited here. Their protection from automatic updates will be kept."
+    },
+    "importInbox": {
+      "back": "All imports",
+      "retry": "Retry download",
+      "ready": "Ready to review before downloading.",
+      "metadata": "Library metadata",
+      "description": "Finish reviewing a story or retry a download. Your saved edits stay with the import.",
+      "sourceDetails": "Details from the website",
+      "title": "Story imports",
+      "saved": "Your approved tags and metadata are saved.",
+      "emptyHint": "New imports and downloads that need attention will appear here.",
+      "empty": "No unfinished imports",
+      "loadFailed": "Could not load or update your imports. Try again.",
+      "lastCheck": "Last library check"
     }
   },
   "auth": {
