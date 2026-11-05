@@ -1226,6 +1226,13 @@
       "when": 1793820393648,
       "tag": "0174_tag_matching_preview_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1793893942984,
+      "tag": "0175_fanfiction_activity_kind_index",
+      "breakpoints": true
     }
   ]
 }

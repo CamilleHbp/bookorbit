@@ -66,7 +66,8 @@ function edit(value: string) {
   focusRequested.value = true
   state.select(value)
 }
-defineExpose({ reload })
+const needsAttention = computed(() => Boolean(props.repairsOnly && (rows.value.length || error.value)))
+defineExpose({ reload, needsAttention })
 watch(
   () => props.focusSite,
   (value) => {

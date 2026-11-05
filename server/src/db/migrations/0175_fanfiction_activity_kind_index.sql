@@ -1,0 +1,1 @@
+CREATE INDEX "fanfiction_activity_library_kind_idx" ON "fanfiction_activity" USING btree ("library_id","kind","created_at","id");
