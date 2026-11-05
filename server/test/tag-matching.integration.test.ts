@@ -386,6 +386,50 @@ describe.skipIf(!configPath)('persistent tag matching', () => {
     await jobs.advance(user, preview.id);
     expect((await jobs.items(user, preview.id, 1, 25)).items[0].change).toMatchObject({ unresolved: 1, removedTags: [] });
   });
+  it('replaces only explicitly selected ignores with existing fandom targets and resolves characters', async () => {
+    await db.update(s.users).set({ isSuperuser: true }).where(eq(s.users.id, user.id));
+    await db
+      .update(s.tags)
+      .set({ name: `fandom.${tagName}` })
+      .where(eq(s.tags.id, tagId));
+    const character = 'Alice (Example)';
+    await management.save(user, {
+      version: (await management.own(user))!.version,
+      source: '',
+      field: 'characters',
+      value: character,
+      action: 'ignore',
+      targets: [],
+    });
+    await sync([
+      { field: 'characters', value: character },
+      { field: 'characters', value: 'Unknown character' },
+    ]);
+    const seed = {
+      schemaVersion: 1,
+      rules: [{ source: '', field: 'characters', value: character, action: 'match', targets: [{ field: 'tags', name: `fandom.${tagName}` }] }],
+    };
+    expect(await importMatchingSeed(db, user.id, [libraryId], seed, true)).toMatchObject({ replaced: 0, retained: 1 });
+    expect(await importMatchingSeed(db, user.id, [libraryId], seed, false, true)).toMatchObject({ replaced: 1, applied: false });
+    expect(await tags()).toEqual([]);
+    expect(await importMatchingSeed(db, user.id, [libraryId], seed, true, true)).toMatchObject({ replaced: 1, inserted: 0 });
+    const version = (await management.own(user))!.version;
+    expect(await importMatchingSeed(db, user.id, [libraryId], seed, true, true)).toMatchObject({ replaced: 0, retained: 1, version });
+    expect((await management.review(user, new MatchingPageDto())).items).toEqual([]);
+    await sync([
+      { field: 'characters', value: character },
+      { field: 'characters', value: 'Unknown character' },
+    ]);
+    expect((await tags()).map((row) => row.tagId)).toEqual([tagId]);
+    expect((await management.review(user, new MatchingPageDto())).items).toEqual([]);
+    const jobs = module.get(TagMatchingJobsService);
+    const job = await jobs.create(user, []);
+    await jobs.advance(user, job.id);
+    expect((await jobs.items(user, job.id, 1, 25)).items[0].change.unresolved).toBe(0);
+    expect((await matching.runtimePolicy(libraryId))!.rules).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'characters', targets: [{ field: 'tags', name: `fandom.${tagName}` }] })]),
+    );
+  });
   it('seeds only the explicit account and retains subsequent edits on repeated deployment', async () => {
     await db.update(s.users).set({ isSuperuser: true }).where(eq(s.users.id, user.id));
     const seed = {

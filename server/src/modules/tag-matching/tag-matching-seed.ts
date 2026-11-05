@@ -51,8 +51,15 @@ export function parseMatchingSeed(input: unknown): MatchingSeedRule[] {
   return input.rules as MatchingSeedRule[];
 }
 
-/** Operator-only deployment import. Existing personal decisions and canonical entities are never overwritten. */
-export async function importMatchingSeed(db: NodePgDatabase<typeof s>, userId: number, libraryIds: number[], input: unknown, apply: boolean) {
+/** Operator-only import. Existing matches are retained; replacing ignores requires explicit opt-in. */
+export async function importMatchingSeed(
+  db: NodePgDatabase<typeof s>,
+  userId: number,
+  libraryIds: number[],
+  input: unknown,
+  apply: boolean,
+  replaceIgnoredFandoms = false,
+) {
   const rules = parseMatchingSeed(input);
   if (!libraryIds.length || libraryIds.length > 1000 || libraryIds.some((id) => !Number.isSafeInteger(id) || id < 1))
     throw new BadRequestException('Choose the libraries for this rulebook');
@@ -74,17 +81,38 @@ export async function importMatchingSeed(db: NodePgDatabase<typeof s>, userId: n
     if (apply) await tx.insert(s.tagRulebooks).values({ userId }).onConflictDoNothing();
     const [own] = await tx.select().from(s.tagRulebooks).where(eq(s.tagRulebooks.userId, userId)).for('update');
     const existing = new Set<string>();
+    const ignoredIds = new Map<string, string>();
     if (own) {
       const keys = [...new Set(rules.map((r) => labelKey(r.value)))];
       for (let offset = 0; offset < keys.length; offset += 1000) {
         const rows = await tx
-          .select({ source: s.tagMatchingRules.source, field: s.tagMatchingRules.field, value: s.tagMatchingRules.value })
+          .select({
+            id: s.tagMatchingRules.id,
+            action: s.tagMatchingRules.action,
+            source: s.tagMatchingRules.source,
+            field: s.tagMatchingRules.field,
+            value: s.tagMatchingRules.value,
+          })
           .from(s.tagMatchingRules)
           .where(and(eq(s.tagMatchingRules.rulebookId, own.id), inArray(s.tagMatchingRules.key, keys.slice(offset, offset + 1000))));
-        rows.forEach((row) => existing.add(ruleKey(row)));
+        rows.forEach((row) => {
+          existing.add(ruleKey(row));
+          if (row.action === 'ignore') ignoredIds.set(ruleKey(row), row.id);
+        });
       }
     }
-    const pending = rules.filter((rule) => !existing.has(ruleKey(rule)));
+    const replacements = new Map(
+      rules
+        .filter(
+          (rule) =>
+            replaceIgnoredFandoms &&
+            ignoredIds.has(ruleKey(rule)) &&
+            rule.action === 'match' &&
+            rule.targets.every((target) => target.field === 'tags' && target.name.startsWith('fandom.')),
+        )
+        .map((rule) => [ruleKey(rule), ignoredIds.get(ruleKey(rule))!]),
+    );
+    const pending = rules.filter((rule) => !existing.has(ruleKey(rule)) || replacements.has(ruleKey(rule)));
     const canonical = new Map<string, number>();
     for (const field of ['tags', 'genres'] as const) {
       const names = [...new Set(pending.flatMap((rule) => rule.targets.filter((t) => t.field === field).map((t) => t.name)))];
@@ -102,20 +130,38 @@ export async function importMatchingSeed(db: NodePgDatabase<typeof s>, userId: n
     if (apply && own) {
       const byKey = new Map(pending.map((rule) => [ruleKey(rule), rule]));
       for (let offset = 0; offset < pending.length; offset += 250) {
-        const inserted = await tx
-          .insert(s.tagMatchingRules)
-          .values(
-            pending.slice(offset, offset + 250).map((rule) => ({
-              rulebookId: own.id,
-              source: rule.source,
-              field: rule.field,
-              value: rule.value,
-              key: labelKey(rule.value),
-              action: rule.action,
-            })),
-          )
-          .returning();
-        const targets = inserted.flatMap((rule) =>
+        const batch = pending.slice(offset, offset + 250);
+        const replacementIds = batch.flatMap((rule) => (replacements.has(ruleKey(rule)) ? [replacements.get(ruleKey(rule))!] : []));
+        const replaced = replacementIds.length
+          ? await tx
+              .update(s.tagMatchingRules)
+              .set({ action: 'match' })
+              .where(
+                and(
+                  eq(s.tagMatchingRules.rulebookId, own.id),
+                  eq(s.tagMatchingRules.action, 'ignore'),
+                  inArray(s.tagMatchingRules.id, replacementIds),
+                ),
+              )
+              .returning()
+          : [];
+        const additions = batch.filter((rule) => !replacements.has(ruleKey(rule)));
+        const inserted = additions.length
+          ? await tx
+              .insert(s.tagMatchingRules)
+              .values(
+                additions.map((rule) => ({
+                  rulebookId: own.id,
+                  source: rule.source,
+                  field: rule.field,
+                  value: rule.value,
+                  key: labelKey(rule.value),
+                  action: rule.action,
+                })),
+              )
+              .returning()
+          : [];
+        const targets = [...inserted, ...replaced].flatMap((rule) =>
           byKey.get(ruleKey(rule))!.targets.map((target) => ({
             ruleId: rule.id,
             ...(target.field === 'tags'
@@ -137,7 +183,8 @@ export async function importMatchingSeed(db: NodePgDatabase<typeof s>, userId: n
     }
     return {
       applied: apply,
-      inserted: pending.length,
+      inserted: pending.length - replacements.size,
+      replaced: replacements.size,
       retained: rules.length - pending.length,
       libraries: libraries.length,
       version: (own?.version ?? 1) + (apply && pending.length ? 1 : 0),

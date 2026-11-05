@@ -25,7 +25,7 @@ function closePreview() {
 }
 const canEdit = computed(() => hasPermission('library_edit_metadata'))
 const tabs = ['matches', 'review', 'ignored'] as const
-const fields = ['tags', 'genres', 'fandoms', 'relationships', 'warnings', 'rating'] as const
+const fields = ['tags', 'genres', 'fandoms', 'characters', 'relationships', 'warnings', 'rating'] as const
 const inputClass =
   'min-h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 const hasMissingFandom = computed(() => matching.draft?.some((row) => row.bookId))
