@@ -13356,6 +13356,7 @@
         "missing-fandom": "Choisir les fandoms ou ignorer pour ce livre"
       }
     },
-    "book": "Livre"
+    "book": "Livre",
+    "searching": "Recherche de correspondances…"
   }
 }
