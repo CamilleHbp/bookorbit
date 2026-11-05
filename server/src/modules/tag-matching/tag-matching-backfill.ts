@@ -92,7 +92,7 @@ export async function backfillMatchingSnapshots(db: NodePgDatabase<typeof s>, us
             ),
           );
         for (const snapshot of retained) {
-          const result = await matching.resolve(tx, rulebook.id, snapshot.source, snapshot.labels);
+          const result = await matching.resolve(tx, rulebook.id, snapshot.source, snapshot.labels, snapshot.sourceKey);
           const key = (label: IncomingLabel) => JSON.stringify([label.field, labelKey(label.value)]);
           const pending = new Set(result.pending.map(key)),
             ignored = new Set(result.ignored.map(key)),

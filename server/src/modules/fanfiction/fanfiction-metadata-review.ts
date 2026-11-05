@@ -12,7 +12,7 @@ export function planStoryMetadata(
 ) {
   const fields: FanfictionMetadataField[] = [];
   const values = { ...current, tags: managed };
-  for (const field of ['title', 'description', 'authors', 'genres'] as const) {
+  for (const field of ['title', 'description', 'authors'] as const) {
     if (
       incoming[field] === undefined ||
       locked.includes(field) ||
@@ -33,7 +33,7 @@ export function planStoryMetadata(
 }
 
 export function changedStoryMetadata(current: FanfictionMetadataValues, incoming: FanfictionMetadataValues, previous?: FanfictionMetadataValues) {
-  const fields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags', 'genres'];
+  const fields: FanfictionMetadataField[] = ['title', 'description', 'authors', 'tags'];
   const value = (metadata: FanfictionMetadataValues, field: FanfictionMetadataField) =>
     field === 'tags'
       ? JSON.stringify([...new Set(metadata.tags.map((tag) => tag.trim().slice(0, 200)).filter(Boolean))].sort())

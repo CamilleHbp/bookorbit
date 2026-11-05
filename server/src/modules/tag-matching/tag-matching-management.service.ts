@@ -350,7 +350,7 @@ export class TagMatchingManagementService {
           .from(s.tagMatchingSnapshots)
           .where(and(eq(s.tagMatchingSnapshots.bookId, book.id), eq(s.tagMatchingSnapshots.sourceKey, 'manual:fandom')));
         if (decision) throw new ConflictException('This book fandom has already been reviewed. Reload and try again.');
-        const resolved = snapshot ? await this.matching.resolve(tx, own.id, snapshot.source, snapshot.labels) : null;
+        const resolved = snapshot ? await this.matching.resolve(tx, own.id, snapshot.source, snapshot.labels, snapshot.sourceKey) : null;
         if (!snapshot || !resolved || !needsFandomReview(snapshot.labels, resolved.suppressed, resolved.hasFandom))
           throw new ConflictException('Source fandoms changed. Reload and try again.');
         for (const field of ['tags', 'genres'] as const) {
