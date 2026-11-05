@@ -1,6 +1,6 @@
 import { TagMatchingJobsService } from './tag-matching-jobs.service';
 import { MatchingPreviewDto } from './tag-matching.dto';
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, Put } from '@nestjs/common';
 import { Permission } from '@bookorbit/types';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -22,6 +22,14 @@ export class TagMatchingController {
   }
   @Get('jobs/:id') jobItems(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string, @Query() dto: MatchingPageDto) {
     return this.jobs.items(user, id, dto.page, dto.pageSize);
+  }
+  @Get('jobs/:id/books/:bookId') bookPreview(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('bookId', ParseIntPipe) bookId: number,
+    @Query() dto: MatchingPageDto,
+  ) {
+    return this.jobs.details(user, id, bookId, dto.page, dto.pageSize);
   }
   @Post('jobs/:id/advance') advanceJob(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.jobs.advance(user, id);
