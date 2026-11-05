@@ -226,8 +226,23 @@ export class TagMatchingService {
     );
     const active: LabelRule[] = rules
       .filter((r) => (r.action === 'ignore' || byRule.has(r.id)) && (r.source !== '' || !blocked.has(JSON.stringify([r.field, r.key]))))
-      .map((r) => ({ source: r.source || null, field: r.field, value: r.value, targets: r.action === 'ignore' ? [] : byRule.get(r.id)! }));
-    return { ...matchLabels(source, labels, active), names, rules: active };
+      .map((r) => ({
+        source: r.source || null,
+        field: r.field,
+        value: r.value,
+        targets: r.action === 'ignore' ? [] : byRule.get(r.id)!,
+        fandomTargets:
+          r.action === 'ignore'
+            ? []
+            : (byRule.get(r.id) ?? []).filter((target) => target.field === 'tags' && names.get(`tags:${target.id}`)?.startsWith('fandom.')),
+      }));
+    const resolved = matchLabels(source, labels, active);
+    return {
+      ...resolved,
+      names,
+      rules: active,
+      hasFandom: resolved.targets.some((target) => target.field === 'tags' && names.get(`tags:${target.id}`)?.startsWith('fandom.')),
+    };
   }
 
   async runtimePolicy(libraryId: number): Promise<import('@bookorbit/types').FanfictionConnectionDocument['tagMatching']> {

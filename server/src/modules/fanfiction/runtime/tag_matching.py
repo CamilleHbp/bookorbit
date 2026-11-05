@@ -28,9 +28,15 @@ def resolve(source, labels, rules):
         field, value = item['field'], key(item['value'])
         if not value:
             continue
-        if field == 'characters' or (field == 'relationships' and value not in BROAD) or (field in ('tags', 'genres') and value in blocked):
-            continue
         rule = specific.get((field, value), general.get((field, value)))
+        if field == 'characters' or (field == 'relationships' and value not in BROAD) or (field in ('tags', 'genres') and value in blocked):
+            if rule is not None and not rule.get('unresolved'):
+                for target in rule['targets']:
+                    if target['field'] == 'tags' and target['name'].startswith('fandom.'):
+                        targets[('tags', target['name'])] = target
+                        if target['name'] not in categories['fandoms']:
+                            categories['fandoms'].append(target['name'])
+            continue
         if (rule is None or rule.get('unresolved')) and field == 'fandoms' and value in ORIGINAL_WORK:
             continue
         if rule is None or rule.get('unresolved'):

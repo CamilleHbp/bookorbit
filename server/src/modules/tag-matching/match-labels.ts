@@ -5,8 +5,9 @@ export { labelKey } from '../../common/utils/label-key';
 const broadRelationships = new Set(['m/m', 'f/f', 'f/m', 'm/f', 'male/male', 'female/female', 'female/male', 'male/female', 'gen', 'multi', 'other']);
 
 export const originalWorkLabels = ['original work', 'original works', 'original fiction', 'original-work', 'original-fiction'];
-export function needsFandomReview(labels: IncomingLabel[], suppressed: IncomingLabel[]): boolean {
+export function needsFandomReview(labels: IncomingLabel[], suppressed: IncomingLabel[], hasApprovedFandom = false): boolean {
   return (
+    !hasApprovedFandom &&
     suppressed.length > 0 &&
     !labels.some(
       (label) =>
@@ -37,16 +38,19 @@ export function matchLabels(source: string, labels: IncomingLabel[], rules: Labe
   for (const label of labels) {
     const value = labelKey(label.value);
     if (!value) continue;
+    const key = JSON.stringify([label.field, value]);
+    const rule = specific.get(key) ?? general.get(key);
     if (
       label.field === 'characters' ||
       (label.field === 'relationships' && !broadRelationships.has(value)) ||
       ((label.field === 'tags' || label.field === 'genres') && blocked.has(value))
     ) {
-      suppressed.push(label);
+      // Character rules may contribute approved fandoms, never character labels.
+      if (rule?.fandomTargets?.length) {
+        for (const target of rule.fandomTargets) targets.set(JSON.stringify([target.field, target.id]), target);
+      } else suppressed.push(label);
       continue;
     }
-    const key = JSON.stringify([label.field, value]);
-    const rule = specific.get(key) ?? general.get(key);
     if (!rule && label.field === 'fandoms' && originalWorkLabels.includes(value)) {
       ignored.push(label);
       continue;

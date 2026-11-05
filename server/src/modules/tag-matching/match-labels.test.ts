@@ -53,6 +53,24 @@ describe('approved label matching', () => {
     expect(result.suppressed).toHaveLength(4);
     expect(result.pending).toEqual([]);
   });
+  it('maps approved character fandoms without reintroducing names and respects source ignores', () => {
+    const target = { field: 'tags' as const, id: 3 };
+    const rule: LabelRule = {
+      source: null,
+      field: 'characters',
+      value: 'Alice (A)',
+      targets: [target, { field: 'tags', id: 99 }],
+      fandomTargets: [target],
+    };
+    const labels = [
+      { field: 'characters' as const, value: 'Alice (A)' },
+      { field: 'characters' as const, value: 'Unknown character' },
+    ];
+    const result = matchLabels('ao3', labels, [rule]);
+    expect(result.targets).toEqual([target]);
+    expect(needsFandomReview(labels, result.suppressed, true)).toBe(false);
+    expect(matchLabels('ao3', labels, [rule, { ...rule, source: 'ao3', targets: [], fandomTargets: [] }]).targets).toEqual([]);
+  });
   it('retains crossover fandoms and holds missing matches without restoring characters', () => {
     const result = matchLabels(
       'ao3',

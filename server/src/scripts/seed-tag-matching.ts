@@ -19,6 +19,7 @@ async function main() {
       file: { type: 'string' },
       user: { type: 'string' },
       libraries: { type: 'string' },
+      'replace-ignored-fandoms': { type: 'boolean', default: false },
       apply: { type: 'boolean', default: false },
       legacy: { type: 'boolean', default: false },
       snapshots: { type: 'boolean', default: false },
@@ -34,7 +35,7 @@ async function main() {
   console.log(`[tag_matching_seed] [start] userId=${userId} libraries=${libraryIds.length} apply=${values.apply} - validating personal matches`);
   try {
     const db = drizzle(pool, { schema });
-    const result = await importMatchingSeed(db, userId, libraryIds, data, values.apply);
+    const result = await importMatchingSeed(db, userId, libraryIds, data, values.apply, values['replace-ignored-fandoms']);
     let legacyRules = 0;
     if (values.legacy) {
       const vault = new FanfictionVaultService(storageConfig(), fanficfareConfig());
@@ -76,7 +77,7 @@ async function main() {
     }
     const snapshots = values.snapshots ? await backfillMatchingSnapshots(db, userId, libraryIds, values.apply) : { examined: 0, inserted: 0 };
     console.log(
-      `[tag_matching_seed] [end] userId=${userId} durationMs=${Date.now() - startedAt} inserted=${result.inserted} retained=${result.retained} legacyRules=${legacyRules} snapshots=${snapshots.inserted} examined=${snapshots.examined} applied=${result.applied} version=${result.version} - seed processed`,
+      `[tag_matching_seed] [end] userId=${userId} durationMs=${Date.now() - startedAt} inserted=${result.inserted} replaced=${result.replaced} retained=${result.retained} legacyRules=${legacyRules} snapshots=${snapshots.inserted} examined=${snapshots.examined} applied=${result.applied} version=${result.version} - seed processed`,
     );
   } catch (error) {
     console.error(

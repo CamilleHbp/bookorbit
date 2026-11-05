@@ -295,15 +295,17 @@ export class TagMatchingJobsService {
             status,
             targets:
               status === 'matched'
-                ? (rule?.targets ?? []).map((target) => ({
-                    ...target,
-                    name: result.names.get(`${target.field}:${target.id}`)!,
-                    excluded: exclusions.some((e) => (target.field === 'tags' ? e.tagId === target.id : e.genreId === target.id)),
-                  }))
+                ? (rule?.targets ?? [])
+                    .filter((target) => result.targets.some((resolved) => resolved.field === target.field && resolved.id === target.id))
+                    .map((target) => ({
+                      ...target,
+                      name: result.names.get(`${target.field}:${target.id}`)!,
+                      excluded: exclusions.some((e) => (target.field === 'tags' ? e.tagId === target.id : e.genreId === target.id)),
+                    }))
                 : [],
           });
         }
-        if (!fandomReviewed && needsFandomReview(snapshot.labels, result.suppressed))
+        if (!fandomReviewed && needsFandomReview(snapshot.labels, result.suppressed, result.hasFandom))
           labels.push({
             source: snapshot.source,
             sourceKey: snapshot.sourceKey,
@@ -313,7 +315,7 @@ export class TagMatchingJobsService {
             targets: [],
           });
       }
-      if (!fandomReviewed && needsFandomReview(snapshot.labels, result.suppressed)) missingFandom = true;
+      if (!fandomReviewed && needsFandomReview(snapshot.labels, result.suppressed, result.hasFandom)) missingFandom = true;
       for (const target of result.targets) {
         if (exclusions.some((e) => (target.field === 'tags' ? e.tagId === target.id : e.genreId === target.id))) continue;
         desired[target.field].set(target.id, result.names.get(`${target.field}:${target.id}`)!);

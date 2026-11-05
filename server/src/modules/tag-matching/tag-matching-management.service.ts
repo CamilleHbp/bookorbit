@@ -193,6 +193,14 @@ export class TagMatchingManagementService {
             originalWorkLabels.map((value) => sql`${value}`),
             sql`, `,
           )}))`,
+          sql`not exists (select 1 from tag_matching_observations evidence
+            join tag_matching_rules r on r.rulebook_id=${own.id} and r.field=evidence.field and r.key=evidence.key and r.action='match'
+              and (r.source='' or r.source=evidence.source)
+            join tag_matching_targets target on target.rule_id=r.id
+            join tags fandom on fandom.id=target.tag_id and fandom.name like 'fandom.%'
+            where evidence.book_id=${snapshots.bookId} and evidence.source_key=${snapshots.sourceKey}
+              and not exists (select 1 from tag_matching_rules specific where r.source='' and specific.rulebook_id=r.rulebook_id
+                and specific.field=r.field and specific.key=r.key and specific.source=evidence.source))`,
           sql`exists (select 1 from tag_matching_observations evidence where evidence.book_id=${snapshots.bookId} and evidence.source_key=${snapshots.sourceKey} and evidence.status='suppressed')`,
           sql`not exists (select 1 from tag_matching_snapshots decision where decision.book_id=${snapshots.bookId} and decision.source_key='manual:fandom' and decision.rulebook_id=${own.id})`,
         ),
@@ -342,7 +350,8 @@ export class TagMatchingManagementService {
           .from(s.tagMatchingSnapshots)
           .where(and(eq(s.tagMatchingSnapshots.bookId, book.id), eq(s.tagMatchingSnapshots.sourceKey, 'manual:fandom')));
         if (decision) throw new ConflictException('This book fandom has already been reviewed. Reload and try again.');
-        if (!snapshot || !needsFandomReview(snapshot.labels, (await this.matching.resolve(tx, own.id, snapshot.source, snapshot.labels)).suppressed))
+        const resolved = snapshot ? await this.matching.resolve(tx, own.id, snapshot.source, snapshot.labels) : null;
+        if (!snapshot || !resolved || !needsFandomReview(snapshot.labels, resolved.suppressed, resolved.hasFandom))
           throw new ConflictException('Source fandoms changed. Reload and try again.');
         for (const field of ['tags', 'genres'] as const) {
           const added = [...canonical.values()].filter((target) => target.field === field).map((target) => target.name);
