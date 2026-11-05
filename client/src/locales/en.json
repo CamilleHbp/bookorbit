@@ -16216,6 +16216,30 @@
       "discardOlderDrafts": "Continue and discard unsaved edits from the oldest 25 stories? Those stories will still need review.",
       "readOnly": "You don’t have permission to edit this story’s metadata.",
       "locked": "Protected fields can be edited here. Their protection from automatic updates will be kept."
+    },
+    "tasks": {
+      "title": "Running and recent tasks",
+      "empty": "No tasks right now.",
+      "completed": "{count, plural, one {Show # finished task} other {Show # finished tasks}}",
+      "websiteLogins": "Website logins",
+      "openStory": "Open story page"
+    },
+    "changeLog": {
+      "lastDays": "Last 7 days",
+      "none": "No changes in the last 7 days",
+      "updated": "{count, plural, one {# story updated} other {# stories updated}}",
+      "imported": "{count} imported",
+      "failed": "{count} failed",
+      "attention": "{count} need attention",
+      "rolled_back": "{count} restored",
+      "filter": "Show",
+      "all": "All changes",
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "empty": "No story changes yet.",
+      "emptyFiltered": "No changes of this kind yet.",
+      "older": "Older",
+      "newer": "Newer"
     }
   },
   "koreaderCopies": {

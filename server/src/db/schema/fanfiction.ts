@@ -267,6 +267,7 @@ export const fanfictionActivity = pgTable(
   },
   (t) => [
     index('fanfiction_activity_library_idx').on(t.libraryId, t.createdAt, t.id),
+    index('fanfiction_activity_library_kind_idx').on(t.libraryId, t.kind, t.createdAt, t.id),
     index('fanfiction_activity_pending_idx')
       .on(t.notificationRunAfter, t.id)
       .where(sql`${t.notifiedAt} is null`),

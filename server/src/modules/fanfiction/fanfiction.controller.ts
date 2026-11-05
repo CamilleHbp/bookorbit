@@ -6,7 +6,7 @@ import { RequireLibraryAccess } from '../../common/decorators/require-library-ac
 import type { RequestUser } from '../../common/types/request-user';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
-import { FanfictionPageDto, PreviewFanfictionDto, FanfictionJobsStatusDto } from './dto/fanfiction.dto';
+import { FanfictionActivitySummaryDto, ListFanfictionActivityDto, PreviewFanfictionDto, FanfictionJobsStatusDto } from './dto/fanfiction.dto';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { FanfictionActivityService } from './fanfiction-activity.service';
@@ -37,8 +37,13 @@ export class FanfictionController {
   }
 
   @Get('activity')
-  listActivity(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: FanfictionPageDto, @CurrentUser() user: RequestUser) {
+  listActivity(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: ListFanfictionActivityDto, @CurrentUser() user: RequestUser) {
     return this.activity.list(libraryId, dto, user);
+  }
+
+  @Get('activity/summary')
+  activitySummary(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: FanfictionActivitySummaryDto, @CurrentUser() user: RequestUser) {
+    return this.activity.summary(libraryId, dto, user);
   }
 
   @Post('jobs/status')

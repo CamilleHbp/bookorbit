@@ -145,6 +145,7 @@ export interface FanfictionImportProgress {
 
 export interface FanfictionJob {
   reviewWebsite?: string;
+  sourceTitle?: string;
   id: string;
   libraryId: number;
   kind: FanfictionJobKind;
@@ -395,12 +396,14 @@ export interface FanfictionJobPage {
   nextCursor: string | null;
 }
 
+export type FanfictionActivityKind = "imported" | "updated" | "rolled_back" | "attention" | "failed" | "batch_completed";
+
 export interface FanfictionActivity {
   id: string;
   libraryId: number;
   sourceId: string | null;
   jobId: string | null;
-  kind: "imported" | "updated" | "rolled_back" | "attention" | "failed" | "batch_completed";
+  kind: FanfictionActivityKind;
   title: string;
   bookId: number | null;
   revisionId: string | null;
@@ -411,6 +414,12 @@ export interface FanfictionActivity {
 export interface FanfictionActivityPage {
   items: FanfictionActivity[];
   nextCursor: string | null;
+}
+
+export interface FanfictionActivitySummary {
+  since: string;
+  counts: Record<FanfictionActivityKind, number>;
+  updatedStories: number;
 }
 
 export interface FanfictionReplacementReview {
