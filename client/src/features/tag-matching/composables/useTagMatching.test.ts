@@ -1,4 +1,4 @@
-import { effectScope } from 'vue'
+import { effectScope, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useTagMatching } from './useTagMatching'
 import { api } from '@/lib/api'
@@ -16,9 +16,65 @@ function response(data: unknown, status = 200) {
 afterEach(() => {
   scopes.forEach((scope) => scope.stop())
   scopes.length = 0
+  vi.useRealTimers()
   vi.resetAllMocks()
 })
 describe('tag matching editor', () => {
+  it('returns suggestions after 100ms and reuses recent searches immediately', async () => {
+    vi.useFakeTimers()
+    const editor = setup()
+    editor.edit({ source: '', field: 'tags', value: 'alias', bookCount: 1 })
+    vi.mocked(api).mockImplementation(async () => response([{ id: 1, field: 'tags', name: 'fandom.harry-potter', score: 0.8 }]))
+    editor.targetSearch.value = '  HARRY '
+    await nextTick()
+    expect(editor.suggestionsLoading.value).toBe(true)
+    await vi.advanceTimersByTimeAsync(99)
+    expect(api).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(editor.suggestions.value[0]?.name).toBe('fandom.harry-potter')
+    expect(vi.mocked(api).mock.calls[0]?.[0]).toContain('search=harry&field=tags')
+    editor.targetSearch.value = 'harry-p'
+    await nextTick()
+    expect(editor.suggestions.value).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(100)
+    editor.targetSearch.value = 'harry'
+    await nextTick()
+    expect(editor.suggestionsLoading.value).toBe(false)
+    expect(editor.suggestions.value).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(api).toHaveBeenCalledTimes(2)
+    editor.targetField.value = 'genres'
+    await nextTick()
+    expect(editor.suggestions.value).toEqual([])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(vi.mocked(api).mock.calls[2]?.[0]).toContain('field=genres')
+  })
+  it('aborts obsolete searches and ignores their late results', async () => {
+    vi.useFakeTimers()
+    const editor = setup()
+    editor.edit({ source: '', field: 'tags', value: 'alias', bookCount: 1 })
+    let finishOld!: (value: Response) => void
+    vi.mocked(api)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishOld = resolve
+          }),
+      )
+      .mockResolvedValueOnce(response([{ id: 2, field: 'tags', name: 'new', score: 1 }]))
+    editor.targetSearch.value = 'old'
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(100)
+    const signal = vi.mocked(api).mock.calls[0]![1]!.signal!
+    editor.targetSearch.value = 'new'
+    await nextTick()
+    expect(signal.aborted).toBe(true)
+    await vi.advanceTimersByTimeAsync(100)
+    finishOld(response([{ id: 1, field: 'tags', name: 'old', score: 1 }]))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(editor.suggestions.value.map((item) => item.name)).toEqual(['new'])
+    expect(editor.suggestionsError.value).toBe('')
+  })
   it('sends the existing rule ID when changing its source', async () => {
     const editor = setup()
     vi.mocked(api).mockResolvedValueOnce(response({ items: [], total: 0, version: 3 }))

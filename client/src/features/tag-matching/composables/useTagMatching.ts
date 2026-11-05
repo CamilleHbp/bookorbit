@@ -26,14 +26,27 @@ export function useTagMatching() {
   const targetSearch = ref(''),
     targetField = ref<'tags' | 'genres'>('tags')
   const suggestions = ref<TagMatchingSuggestion[]>([])
+  const suggestionsLoading = ref(false),
+    suggestionsError = ref('')
+  const suggestionCache = new Map<string, { items: TagMatchingSuggestion[]; expires: number }>()
+  let suggestionController: AbortController | undefined
+  const suggestionKey = (value: string) => value.normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+  function resetSuggestions() {
+    suggestionRevision++
+    clearTimeout(suggestTimer)
+    suggestionController?.abort()
+    suggestionsLoading.value = false
+    suggestionsError.value = ''
+    suggestions.value = []
+    suggestionCache.clear()
+  }
   const pages = computed(() => Math.max(1, Math.ceil(total.value / 25)))
   const controllers = new Set<AbortController>()
   let revision = 0,
     suggestionRevision = 0
   let timer: ReturnType<typeof setTimeout> | undefined, suggestTimer: ReturnType<typeof setTimeout> | undefined
   const key = (row: MatchingRow) => JSON.stringify([row.source ?? '', row.field, row.value, row.bookId ?? null, row.sourceKey ?? null])
-  async function request<T>(path: string, body?: unknown, method = 'POST'): Promise<T> {
-    const controller = new AbortController()
+  async function request<T>(path: string, body?: unknown, method = 'POST', controller = new AbortController()): Promise<T> {
     controllers.add(controller)
     const timeout = setTimeout(() => controller.abort(), 30000)
     try {
@@ -92,6 +105,7 @@ export function useTagMatching() {
     selection.value = selection.value.includes(id) ? selection.value.filter((item) => item !== id) : [...selection.value, id]
   }
   function edit(row: MatchingRow) {
+    resetSuggestions()
     draft.value = [{ ...row }]
     newTargets.value = []
     targetSearch.value = ''
@@ -111,6 +125,7 @@ export function useTagMatching() {
   }
   function cancel() {
     if (!saving.value) {
+      resetSuggestions()
       draft.value = null
       error.value = ''
       void load()
@@ -166,6 +181,7 @@ export function useTagMatching() {
         version.value = result.version
         completed++
       }
+      resetSuggestions()
       draft.value = null
       notice.value = t(bookDecision ? 'tagMatching.decisionsSaved' : 'tagMatching.saved', { count: completed })
       await load()
@@ -192,18 +208,41 @@ export function useTagMatching() {
   watch([targetSearch, targetField], () => {
     const current = ++suggestionRevision
     clearTimeout(suggestTimer)
-    suggestions.value = []
-    if (targetSearch.value.trim().length < 2) return
+    suggestionController?.abort()
+    suggestionsError.value = ''
+    const search = suggestionKey(targetSearch.value)
+    const field = targetField.value
+    const cacheKey = `${field}:${search}`
+    suggestionsLoading.value = false
+    if (search.length < 2 || !draft.value) {
+      suggestions.value = []
+      return
+    }
+    const cached = suggestionCache.get(cacheKey)
+    if (cached && cached.expires > Date.now()) {
+      suggestions.value = cached.items
+      return
+    }
+    // Keep useful local matches visible while the full fuzzy search is refreshed.
+    suggestions.value = suggestions.value.filter((item) => item.field === field && suggestionKey(item.name).includes(search))
+    suggestionsLoading.value = true
     suggestTimer = setTimeout(async () => {
+      const controller = new AbortController()
+      suggestionController = controller
       try {
-        const data = await request<TagMatchingSuggestion[]>(
-          `suggestions?${new URLSearchParams({ search: targetSearch.value, field: targetField.value })}`,
-        )
-        if (current === suggestionRevision) suggestions.value = data
+        const data = await request<TagMatchingSuggestion[]>(`suggestions?${new URLSearchParams({ search, field })}`, undefined, 'GET', controller)
+        if (current !== suggestionRevision) return
+        suggestions.value = data
+        suggestionCache.delete(cacheKey)
+        suggestionCache.set(cacheKey, { items: data, expires: Date.now() + 30000 })
+        if (suggestionCache.size > 32) suggestionCache.delete(suggestionCache.keys().next().value!)
       } catch (cause) {
-        if (current === suggestionRevision) error.value = (cause as Error).message
+        if (current === suggestionRevision)
+          suggestionsError.value = controller.signal.aborted ? t('tagMatching.requestError') : (cause as Error).message
+      } finally {
+        if (current === suggestionRevision) suggestionsLoading.value = false
       }
-    }, 300)
+    }, 100)
   })
   onScopeDispose(() => {
     revision++
@@ -232,6 +271,8 @@ export function useTagMatching() {
     targetSearch,
     targetField,
     suggestions,
+    suggestionsLoading,
+    suggestionsError,
     key,
     load,
     switchView,
