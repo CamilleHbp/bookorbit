@@ -136,6 +136,38 @@ describe.skipIf(!configPath)('persistent tag matching', () => {
     expect((await tags()).map((row) => row.tagId)).toEqual([tagId]);
     await expect(jobs.items({ ...user, id: user.id + 100000 }, preview.id, 1, 25)).rejects.toThrow('not available');
   });
+  it('shows paginated preview labels and protected changes without allowing empty application', async () => {
+    await sync([
+      { field: 'tags', value: 'remote' },
+      { field: 'tags', value: 'unknown' },
+      { field: 'characters', value: 'Named character' },
+    ]);
+    await save('tags', 'remote', [{ field: 'tags', id: tagId }]);
+    await db
+      .update(s.bookMetadata)
+      .set({ lockedFields: ['tags'] })
+      .where(eq(s.bookMetadata.bookId, bookId));
+    const jobs = module.get(TagMatchingJobsService);
+    const job = await jobs.create(user, []);
+    await jobs.advance(user, job.id);
+    const detail = await jobs.details(user, job.id, bookId, 1, 25);
+    expect(detail.change.addedTags).toEqual([]);
+    expect(detail.protectedChanges.addedTags).toEqual([tagName]);
+    expect(detail.labels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'unknown', status: 'pending' }),
+        expect.objectContaining({ value: 'Named character', status: 'suppressed', targets: [] }),
+        expect.objectContaining({ status: 'missing-fandom' }),
+        expect.objectContaining({ value: 'remote', status: 'matched', targets: [{ field: 'tags', id: tagId, name: tagName, excluded: false }] }),
+      ]),
+    );
+    expect((await jobs.details(user, job.id, bookId, 2, 1)).labels).toHaveLength(1);
+    await expect(jobs.apply(user, job.id)).rejects.toThrow('no changes');
+    await expect(jobs.details({ ...user, id: user.id + 100000 }, job.id, bookId, 1, 25)).rejects.toThrow('not available');
+    await expect(jobs.details(user, job.id, bookId + 100000, 1, 25)).rejects.toThrow('not available');
+    await db.update(s.bookMetadata).set({ title: 'Changed' }).where(eq(s.bookMetadata.bookId, bookId));
+    await expect(jobs.details(user, job.id, bookId, 1, 25)).rejects.toThrow('new preview');
+  });
   it('retains same-named tag and genre destinations through EPUB subjects', async () => {
     await db.update(s.genres).set({ name: tagName }).where(eq(s.genres.id, genreId));
     await save('tags', 'remote', [

@@ -17,7 +17,9 @@ export function useTagMatchingJobs() {
   const overrides = computed(() => [...(overrideTags.value ? ['tags' as const] : []), ...(overrideGenres.value ? ['genres' as const] : [])])
   const dirty = computed(() => [...overrides.value].sort().join() !== [...previewOverrides.value].sort().join())
   const pages = computed(() => Math.max(1, Math.ceil(total.value / 20)))
-  const canApply = computed(() => job.value?.state === 'ready' && !dirty.value && !busy.value && !error.value && total.value > 0)
+  const canApply = computed(
+    () => job.value?.state === 'ready' && !dirty.value && !busy.value && !error.value && total.value > 0 && job.value.changed > 0,
+  )
   const controllers = new Set<AbortController>()
   let disposed = false
   async function request<T>(path: string, body?: unknown): Promise<T> {

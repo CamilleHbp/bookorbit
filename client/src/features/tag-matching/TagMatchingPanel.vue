@@ -5,13 +5,19 @@ import { Plus, Search, X, ChevronLeft, ChevronRight } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import TagMatchingPreview from './TagMatchingPreview.vue'
-import { useTagMatching } from './composables/useTagMatching'
+import { useTagMatching, type MatchingRow } from './composables/useTagMatching'
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
 const matching = reactive(useTagMatching())
 const showingPreview = ref(false)
 function openPreview() {
   showingPreview.value = true
+}
+async function reviewLabel(row: MatchingRow) {
+  showingPreview.value = false
+  matching.view = 'review'
+  await matching.load()
+  if (!matching.error) matching.edit(row)
 }
 function closePreview() {
   showingPreview.value = false
@@ -31,7 +37,7 @@ function initialize() {
 onMounted(initialize)
 </script>
 <template>
-  <TagMatchingPreview v-if="showingPreview" @close="closePreview" />
+  <TagMatchingPreview v-if="showingPreview" @close="closePreview" @review="reviewLabel" />
   <section v-else class="flex h-full min-h-0 flex-col gap-4" :aria-label="t('tagMatching.title')">
     <header class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-xl font-semibold">{{ t('tagMatching.title') }}</h1>

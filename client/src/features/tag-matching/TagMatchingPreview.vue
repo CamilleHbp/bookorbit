@@ -4,7 +4,12 @@ import { useI18n } from 'vue-i18n'
 import { ArrowLeft, ChevronLeft, ChevronRight } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { useTagMatchingJobs } from './composables/useTagMatchingJobs'
-const emit = defineEmits<{ close: [] }>()
+import TagMatchingBookDetails from './TagMatchingBookDetails.vue'
+import type { MatchingRow } from './composables/useTagMatching'
+const emit = defineEmits<{ close: []; review: [row: MatchingRow] }>()
+function reviewLabel(row: MatchingRow) {
+  emit('review', row)
+}
 const { t } = useI18n()
 const preview = reactive(useTagMatchingJobs())
 const changes = ['addedTags', 'removedTags', 'addedGenres', 'removedGenres'] as const
@@ -44,15 +49,19 @@ onMounted(preview.initialize)
         {{ t('tagMatching.preview.progress', { count: preview.job.processed, total: preview.total }) }}
       </p>
       <p>{{ t('tagMatching.preview.summary', { changed: preview.job.changed, skipped: preview.job.skipped }) }}</p>
+      <p v-if="preview.job.state === 'ready' && !preview.job.changed" class="text-muted-foreground">{{ t('tagMatching.preview.noChanges') }}</p>
       <p v-if="preview.job.error" class="text-muted-foreground">{{ t('tagMatching.preview.failures') }}</p>
     </div>
     <div class="min-h-0 flex-1 overflow-y-auto" :aria-busy="preview.busy">
       <p v-if="!preview.job" class="py-8 text-sm text-muted-foreground">{{ t('tagMatching.preview.intro') }}</p>
       <p v-else-if="!preview.total && !preview.busy" class="py-8 text-sm text-muted-foreground">{{ t('tagMatching.preview.empty') }}</p>
       <ul v-else class="divide-y divide-border">
-        <li v-for="item in preview.items" :key="item.change.bookId" class="space-y-2 py-4">
+        <li v-for="(item, index) in preview.items" :key="item.change.bookId" class="space-y-2 py-4">
           <h2 class="break-words font-medium">{{ item.change.title || t('tagMatching.preview.book', { id: item.change.bookId }) }}</h2>
           <p v-if="item.state === 'skipped'" class="text-sm text-muted-foreground">{{ t('tagMatching.preview.skipped') }}</p>
+          <p v-if="!changes.some((field) => item.change[field].length)" class="text-sm text-muted-foreground">
+            {{ t('tagMatching.preview.bookUnchanged') }}
+          </p>
           <dl class="grid gap-3 text-sm sm:grid-cols-2">
             <template v-for="field in changes" :key="field">
               <div v-if="item.change[field].length">
@@ -68,6 +77,14 @@ onMounted(preview.initialize)
           <p v-if="item.change.unresolved" class="text-sm text-muted-foreground">
             {{ t('tagMatching.preview.unresolved', { count: item.change.unresolved }) }}
           </p>
+          <TagMatchingBookDetails
+            v-if="preview.job && !preview.busy"
+            :key="`${preview.job.id}:${item.change.bookId}`"
+            :job-id="preview.job.id"
+            :initially-open="index === 0"
+            :change="item.change"
+            @review="reviewLabel"
+          />
         </li>
       </ul>
     </div>
