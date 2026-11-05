@@ -144,7 +144,7 @@ export class FanfictionRecoveryService {
     const [current] = await tx.select().from(schema.tagRulebooks).where(eq(schema.tagRulebooks.id, binding.id)).for('share');
     if (preview.labelMappingVersion === current.version) return;
     const labels = storyLabels(preview);
-    const resolved = await this.matching.resolve(tx, binding.id, preview.site, labels);
+    const resolved = await this.matching.resolve(tx, binding.id, preview.site, labels, 'fanfiction:recovery');
     // The file may already be installed. Reconcile its raw evidence using current
     // rules, but require another review before applying stale manual choices.
     job.result = {

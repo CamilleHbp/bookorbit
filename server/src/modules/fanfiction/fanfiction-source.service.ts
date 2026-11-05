@@ -651,7 +651,7 @@ export class FanfictionSourceService {
 
   async rematchImportPreview(libraryId: number, preview: FanfictionPreview): Promise<FanfictionPreview> {
     const rawLabels = storyLabels(preview);
-    const matched = await this.tagMatching.preview(libraryId, { sourceKey: 'preview', source: preview.site, labels: rawLabels });
+    const matched = await this.tagMatching.preview(libraryId, { sourceKey: 'fanfiction:preview', source: preview.site, labels: rawLabels });
     return matched
       ? {
           ...preview,
@@ -662,7 +662,7 @@ export class FanfictionSourceService {
           pendingLabelCount: matched.pending.length,
           categories: undefined,
         }
-      : preview;
+      : { ...preview, genres: [] };
   }
 
   async refreshImportPreview(job: Job, sourceId: string, incoming: FanfictionPreview, user: RequestUser, stagedChecked = false) {

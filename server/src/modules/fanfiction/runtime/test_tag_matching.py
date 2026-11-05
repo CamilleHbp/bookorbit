@@ -22,7 +22,7 @@ class MatchingTests(unittest.TestCase):
         result = resolve('ao3', [{'field': 'tags', 'value': ' OLD '}, {'field': 'genres', 'value': 'old'}], self.rules)
         self.assertEqual(result['tags'], ['canonical'])
         self.assertEqual(result['genres'], [])
-        self.assertEqual(result['pendingLabelCount'], 1)
+        self.assertEqual(result['pendingLabelCount'], 0)
 
     def test_ignore_and_deleted_override(self):
         labels = [{'field': 'tags', 'value': 'old'}]
@@ -51,7 +51,7 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(result['categories']['characters'], [])
         self.assertEqual(resolve('ao3', labels, [rule, {**rule, 'source': 'ao3', 'targets': []}])['tags'], [])
 
-    def test_writer_includes_canonical_genres_without_changing_preview_tag_fields(self):
+    def test_writer_omits_genre_destinations_and_keeps_approved_tags(self):
         class Story:
             def getSubjectTags(self): return ['source genre']
             def getList(self, name): return []
@@ -61,10 +61,10 @@ class MatchingTests(unittest.TestCase):
             {'source': None, 'field': 'tags', 'value': 'source genre', 'targets': [
                 {'field': 'tags', 'name': 'approved.tag'}, {'field': 'genres', 'name': 'Approved genre'}]},
         ]})
-        self.assertEqual(story.getSubjectTags(), ['approved.tag', 'Approved genre'])
+        self.assertEqual(story.getSubjectTags(), ['approved.tag'])
         preview = matched_preview(story, {})
         self.assertEqual(preview['tags'], ['approved.tag'])
-        self.assertEqual(preview['genres'], ['Approved genre'])
+        self.assertEqual(preview['genres'], [])
 
     def test_writer_and_preview_share_final_subjects_after_metadata_changes(self):
         class Story:

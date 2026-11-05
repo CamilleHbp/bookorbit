@@ -273,7 +273,7 @@ export class TagMatchingJobsService {
     let missingFandom = false;
     const fandomReviewed = snapshots.some((snapshot) => snapshot.sourceKey === 'manual:fandom');
     for (const snapshot of snapshots) {
-      const result = await this.matching.resolve(tx, rulebookId, snapshot.source, snapshot.labels);
+      const result = await this.matching.resolve(tx, rulebookId, snapshot.source, snapshot.labels, snapshot.sourceKey);
       unresolved += result.pending.length;
       if (includeLabels) {
         for (const label of snapshot.labels) {
@@ -326,7 +326,11 @@ export class TagMatchingJobsService {
     const diff = (field: Field, current: typeof tags, claims: Array<{ id: number; sourceKey: string }>, respectLocks = true) => {
       if (respectLocks && metadata.lockedFields.includes(field) && !overrides.includes(field)) return { added: [], removed: [] };
       const next = new Map(desired[field]);
-      const external = new Set(claims.filter((claim) => !sourceKeys.has(claim.sourceKey)).map((claim) => claim.id));
+      const external = new Set(
+        claims
+          .filter((claim) => !sourceKeys.has(claim.sourceKey) || (field === 'genres' && claim.sourceKey.startsWith('fanfiction:')))
+          .map((claim) => claim.id),
+      );
       const owned = new Set(claims.filter((claim) => sourceKeys.has(claim.sourceKey)).map((claim) => claim.id));
       for (const row of current) if (!row.managed || !owned.has(row.id) || external.has(row.id)) next.set(row.id, row.name);
       const currentIds = new Set(current.map((row) => row.id));

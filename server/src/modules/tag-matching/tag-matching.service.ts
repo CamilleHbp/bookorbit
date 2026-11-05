@@ -176,7 +176,10 @@ export class TagMatchingService {
     return this.db.transaction((tx) => this.sync(tx, bookId, input));
   }
 
-  async resolve(tx: Executor, rulebookId: number, source: string, labels: IncomingLabel[]) {
+  async resolve(tx: Executor, rulebookId: number, source: string, labels: IncomingLabel[], sourceKey = '') {
+    const manualGenres = sourceKey.startsWith('fanfiction:');
+    const genreLabels = manualGenres ? labels.filter((label) => label.field === 'genres') : [];
+    if (manualGenres) labels = labels.filter((label) => label.field !== 'genres');
     validateLabels({ sourceKey: 'preview', source, labels });
     const keys = [...new Set(labels.map((l) => labelKey(l.value)))];
     const rules = keys.length
@@ -230,7 +233,7 @@ export class TagMatchingService {
         source: r.source || null,
         field: r.field,
         value: r.value,
-        targets: r.action === 'ignore' ? [] : byRule.get(r.id)!,
+        targets: r.action === 'ignore' ? [] : byRule.get(r.id)!.filter((target) => !manualGenres || target.field !== 'genres'),
         fandomTargets:
           r.action === 'ignore'
             ? []
@@ -239,6 +242,7 @@ export class TagMatchingService {
     const resolved = matchLabels(source, labels, active);
     return {
       ...resolved,
+      ignored: [...resolved.ignored, ...genreLabels],
       names,
       rules: active,
       hasFandom: resolved.targets.some((target) => target.field === 'tags' && names.get(`tags:${target.id}`)?.startsWith('fandom.')),
@@ -288,7 +292,7 @@ export class TagMatchingService {
       const binding = await this.binding(tx, libraryId);
       if (!binding) return null;
       const [current] = await tx.select().from(s.tagRulebooks).where(eq(s.tagRulebooks.id, binding.id)).for('share');
-      const resolved = await this.resolve(tx, binding.id, input.source, input.labels);
+      const resolved = await this.resolve(tx, binding.id, input.source, input.labels, input.sourceKey);
       return {
         version: current.version,
         tags: resolved.targets.filter((t) => t.field === 'tags').map((t) => resolved.names.get(`tags:${t.id}`)!),
@@ -345,7 +349,7 @@ export class TagMatchingService {
         validateLabels(input);
       }
 
-      const resolved = await this.resolve(tx, binding.id, input.source, input.labels);
+      const resolved = await this.resolve(tx, binding.id, input.source, input.labels, input.sourceKey);
       const pending = new Set(resolved.pending.map((l) => JSON.stringify([l.field, labelKey(l.value)])));
       const ignored = new Set(resolved.ignored.map((l) => JSON.stringify([l.field, labelKey(l.value)])));
       const suppressed = new Set(resolved.suppressed.map((l) => JSON.stringify([l.field, labelKey(l.value)])));
@@ -395,6 +399,7 @@ export class TagMatchingService {
       const exclusions = await tx.select().from(s.tagMatchingExclusions).where(eq(s.tagMatchingExclusions.bookId, bookId));
       const selected = resolved.targets.filter((t) => !exclusions.some((e) => (t.field === 'tags' ? e.tagId === t.id : e.genreId === t.id)));
       for (const field of ['tags', 'genres'] as const) {
+        if (field === 'genres' && input.sourceKey.startsWith('fanfiction:')) continue;
         if (metadata.lockedFields.includes(field) && !options.overrideFields?.includes(field)) continue;
         await this.syncAssignments(
           tx,

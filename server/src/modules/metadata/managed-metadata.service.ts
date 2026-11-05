@@ -107,6 +107,7 @@ export class ManagedMetadataService {
       preview.authors.some((name) => typeof name !== 'string' || name.length > 500)
     )
       throw new BadRequestException('Invalid managed story metadata');
+    if (source.key.startsWith('fanfiction:')) fields = fields.filter((field) => field !== 'genres');
     const startedAt = Date.now();
     this.logger.log(`[metadata.managed_story] [start] bookId=${bookId} libraryId=${source.libraryId} - applying story metadata`);
     try {

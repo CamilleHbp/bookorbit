@@ -26,7 +26,7 @@ def resolve(source, labels, rules):
     targets, pending, categories = {}, set(), {'fandoms': [], 'characters': [], 'relationships': [], 'warnings': [], 'rating': ''}
     for item in labels:
         field, value = item['field'], key(item['value'])
-        if not value:
+        if not value or field == 'genres':
             continue
         rule = specific.get((field, value), general.get((field, value)))
         if field == 'characters' or (field == 'relationships' and value not in BROAD) or (field in ('tags', 'genres') and value in blocked):
@@ -43,6 +43,8 @@ def resolve(source, labels, rules):
             pending.add((field, value))
             continue
         for target in rule['targets']:
+            if target['field'] == 'genres':
+                continue
             targets[(target['field'], target['name'])] = target
             if field in ('fandoms', 'relationships', 'warnings') and target['name'] not in categories[field]:
                 categories[field].append(target['name'])
