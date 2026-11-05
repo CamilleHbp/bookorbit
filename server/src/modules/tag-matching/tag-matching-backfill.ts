@@ -2,11 +2,14 @@ import { ForbiddenException } from '@nestjs/common';
 import { and, asc, eq, gt, inArray, isNotNull, ne } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { IncomingLabel } from '@bookorbit/types';
+import { TagMatchingService } from './tag-matching.service';
+import { labelKey } from './match-labels';
 import * as s from '../../db/schema';
 
 // Only retained source evidence is imported. Existing manual labels are not inferred
 // to be source-owned, and this operation never changes displayed book metadata.
 export async function backfillMatchingSnapshots(db: NodePgDatabase<typeof s>, userId: number, libraryIds: number[], apply: boolean) {
+  const matching = new TagMatchingService(db);
   let cursor: string | undefined;
   let inserted = 0,
     examined = 0;
@@ -74,6 +77,51 @@ export async function backfillMatchingSnapshots(db: NodePgDatabase<typeof s>, us
         apply && values.length
           ? await tx.insert(s.tagMatchingSnapshots).values(values).onConflictDoNothing().returning({ bookId: s.tagMatchingSnapshots.bookId })
           : [];
+      if (apply && rulebook) {
+        // Existing snapshots also need review observations when upgrading an earlier seed.
+        const retained = await tx
+          .select()
+          .from(s.tagMatchingSnapshots)
+          .where(
+            and(
+              eq(s.tagMatchingSnapshots.rulebookId, rulebook.id),
+              inArray(
+                s.tagMatchingSnapshots.bookId,
+                rows.map((row) => row.bookId!),
+              ),
+            ),
+          );
+        for (const snapshot of retained) {
+          const result = await matching.resolve(tx, rulebook.id, snapshot.source, snapshot.labels);
+          const key = (label: IncomingLabel) => JSON.stringify([label.field, labelKey(label.value)]);
+          const pending = new Set(result.pending.map(key)),
+            ignored = new Set(result.ignored.map(key)),
+            suppressed = new Set(result.suppressed.map(key));
+          const observations = snapshot.labels
+            .filter((label) => labelKey(label.value))
+            .map((label) => ({
+              bookId: snapshot.bookId,
+              sourceKey: snapshot.sourceKey,
+              rulebookId: rulebook.id,
+              source: snapshot.source,
+              field: label.field,
+              key: labelKey(label.value),
+              value: label.value,
+              status: suppressed.has(key(label))
+                ? ('suppressed' as const)
+                : pending.has(key(label))
+                  ? ('pending' as const)
+                  : ignored.has(key(label))
+                    ? ('ignored' as const)
+                    : ('matched' as const),
+            }));
+          for (let offset = 0; offset < observations.length; offset += 250)
+            await tx
+              .insert(s.tagMatchingObservations)
+              .values(observations.slice(offset, offset + 250))
+              .onConflictDoNothing();
+        }
+      }
       return { rows, inserted: apply ? saved.length : values.length };
     });
     inserted += batch.inserted;
