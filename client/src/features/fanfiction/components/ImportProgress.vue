@@ -58,7 +58,7 @@ const lastStage = computed(() =>
     </div>
     <template v-if="job.kind === 'import' && (active || progress || succeeded)">
       <div
-        v-if="active || succeeded"
+        v-if="active"
         role="progressbar"
         :aria-label="status"
         :aria-valuenow="percentage"

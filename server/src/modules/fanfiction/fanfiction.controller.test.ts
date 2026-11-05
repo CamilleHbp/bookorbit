@@ -40,7 +40,7 @@ describe('Fanfiction HTTP contracts', () => {
   const discovery = { start: vi.fn(), list: vi.fn(), websites: vi.fn(), compare: vi.fn() };
   const adoption = { start: vi.fn() };
   const batches = { start: vi.fn(), listFailures: vi.fn() };
-  const activity = { list: vi.fn() };
+  const activity = { list: vi.fn(), summary: vi.fn() };
   const reviews = { decide: vi.fn(), importDecision: vi.fn() };
   const uuid = '97e5bb69-36e8-43a2-9e3b-0fb924d1ca2f';
   const base = '/api/v1/libraries/5/fanfiction';
@@ -318,6 +318,25 @@ describe('Fanfiction HTTP contracts', () => {
     expect(result.json()).toEqual(page);
     expect(activity.list).toHaveBeenCalledWith(5, expect.objectContaining({ limit: 50 }), undefined);
     expect((await app.inject({ method: 'GET', url: `${base}/activity?limit=101` })).statusCode).toBe(400);
+  });
+  it('filters activity by kind and validates the kind', async () => {
+    activity.list.mockResolvedValue({ items: [], nextCursor: null });
+    expect((await app.inject({ method: 'GET', url: `${base}/activity?kind=failed` })).statusCode).toBe(200);
+    expect(activity.list).toHaveBeenCalledWith(5, expect.objectContaining({ kind: 'failed', limit: 50 }), undefined);
+    expect((await app.inject({ method: 'GET', url: `${base}/activity?kind=deleted` })).statusCode).toBe(400);
+  });
+  it('returns a bounded activity summary', async () => {
+    const summary = {
+      since: new Date().toISOString(),
+      counts: { imported: 1, updated: 4, rolled_back: 0, attention: 0, failed: 2, batch_completed: 0 },
+      updatedStories: 3,
+    };
+    activity.summary.mockResolvedValue(summary);
+    const result = await app.inject({ method: 'GET', url: `${base}/activity/summary` });
+    expect(result.statusCode).toBe(200);
+    expect(result.json()).toEqual(summary);
+    expect(activity.summary).toHaveBeenCalledWith(5, expect.objectContaining({ days: 7 }), undefined);
+    expect((await app.inject({ method: 'GET', url: `${base}/activity/summary?days=365` })).statusCode).toBe(400);
   });
   it('requires explicit revision identities for rollback and validates book source filtering', async () => {
     const job = { id: uuid, state: 'queued', kind: 'rollback' };

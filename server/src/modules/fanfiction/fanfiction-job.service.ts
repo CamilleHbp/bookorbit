@@ -290,8 +290,25 @@ export class FanfictionJobService {
       )
       .orderBy(desc(jobs.createdAt), desc(jobs.id))
       .limit(dto.limit + 1);
-    const items = rows.slice(0, dto.limit).map((row) => this.view(row));
+    const page = rows.slice(0, dto.limit);
+    const titles = await this.sourceTitles(libraryId, page);
+    const items = page.map((row) => {
+      const view = this.view(row);
+      const sourceTitle = row.sourceId ? titles.get(row.sourceId) : undefined;
+      return sourceTitle ? { ...view, sourceTitle } : view;
+    });
     return { items, nextCursor: rows.length > dto.limit ? items[items.length - 1].id : null };
+  }
+
+  private async sourceTitles(libraryId: number, rows: (typeof jobs.$inferSelect)[]) {
+    const ids = [...new Set(rows.flatMap((row) => (row.sourceId ? [row.sourceId] : [])))];
+    if (!ids.length) return new Map<string, string>();
+    const sources = schema.fanfictionSources;
+    const found = await this.db
+      .select({ id: sources.id, title: sources.title })
+      .from(sources)
+      .where(and(eq(sources.libraryId, libraryId), inArray(sources.id, ids)));
+    return new Map(found.map((source) => [source.id, source.title]));
   }
 
   async get(libraryId: number, id: string, user: RequestUser) {

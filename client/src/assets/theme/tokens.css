@@ -39,7 +39,7 @@
   --accent: oklch(0.955 var(--tint-c-surface) var(--tint-h));
   --accent-foreground: oklch(0.21 var(--tint-c-surface) var(--tint-h));
 
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.55 0.235 27.325);
   --destructive-foreground: oklch(0.985 0 0);
 
   --success: oklch(0.52 0.14 148);

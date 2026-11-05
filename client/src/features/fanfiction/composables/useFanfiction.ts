@@ -10,7 +10,9 @@ import type {
   FanfictionSource,
   FanfictionSourcePage,
   FanfictionActivity,
+  FanfictionActivityKind,
   FanfictionActivityPage,
+  FanfictionActivitySummary,
   FanfictionMetadataReviewConflict,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
@@ -58,6 +60,8 @@ export function useFanfiction(
   const jobCursor = ref<string | null>(null)
   const activity = ref<FanfictionActivity[]>([])
   const activityCursor = ref<string | null>(null)
+  const activityKind = ref<FanfictionActivityKind | ''>('')
+  const activitySummary = ref<FanfictionActivitySummary | null>(null)
   const candidates = ref<Candidate[]>([])
   const importBatchTotal = ref(0)
   const importBatchStarted = computed(() => importBatchTotal.value > 0)
@@ -193,12 +197,34 @@ export function useFanfiction(
   }
   async function loadActivity(current: number, path: string, cursor: string | null) {
     const requestId = ++activityRequest
-    const page = await request<FanfictionActivityPage>(`${path}/activity?limit=50${cursor ? `&cursor=${cursor}` : ''}`)
+    const kind = activityKind.value
+    const page = await request<FanfictionActivityPage>(`${path}/activity?limit=50${kind ? `&kind=${kind}` : ''}${cursor ? `&cursor=${cursor}` : ''}`)
     if (!currentScope(current) || requestId !== activityRequest) return
     activity.value = page.items
     activityCursor.value = page.nextCursor
     activityPage = cursor
     return true
+  }
+  async function loadActivitySummary(current: number, path: string) {
+    try {
+      const summary = await request<FanfictionActivitySummary>(`${path}/activity/summary`)
+      if (currentScope(current)) activitySummary.value = summary?.counts ? summary : null
+    } catch {
+      if (currentScope(current)) activitySummary.value = null
+    }
+  }
+  async function filterActivity(kind: FanfictionActivityKind | '') {
+    if (busy.value || libraryId.value === null || kind === activityKind.value) return
+    const previous = activityKind.value
+    activityKind.value = kind
+    await perform(async (current, path) => {
+      try {
+        if (await loadActivity(current, path, null)) activityPagination.reset()
+      } catch (failure) {
+        if (currentScope(current)) activityKind.value = previous
+        throw failure
+      }
+    })
   }
   async function navigatePage(kind: 'sources' | 'jobs' | 'activity', direction: 'next' | 'previous') {
     if (busy.value || libraryId.value === null) return
@@ -255,6 +281,7 @@ export function useFanfiction(
     jobs.value = []
     activity.value = []
     activityCursor.value = null
+    activitySummary.value = null
     activityPage = null
     folders.value = []
     folderId.value = null
@@ -266,6 +293,7 @@ export function useFanfiction(
         loadSources(current, path, null),
         loadJobs(current, path, null),
         loadActivity(current, path, null),
+        loadActivitySummary(current, path),
       ])
       if (!currentScope(current)) return
       folders.value = folderPage.items
@@ -287,7 +315,12 @@ export function useFanfiction(
   async function refresh() {
     if (busy.value || libraryId.value === null) return
     await perform(async (current, path) => {
-      await Promise.all([loadSources(current, path, sourcePage), loadJobs(current, path, jobPage), loadActivity(current, path, activityPage)])
+      await Promise.all([
+        loadSources(current, path, sourcePage),
+        loadJobs(current, path, jobPage),
+        loadActivity(current, path, activityPage),
+        loadActivitySummary(current, path),
+      ])
     })
   }
   async function applyFilters() {
@@ -589,7 +622,12 @@ export function useFanfiction(
     try {
       if (!busy.value) {
         const path = base.value
-        await Promise.all([loadJobs(current, path, jobPage), loadSources(current, path, sourcePage), loadActivity(current, path, activityPage)])
+        await Promise.all([
+          loadJobs(current, path, jobPage),
+          loadSources(current, path, sourcePage),
+          loadActivity(current, path, activityPage),
+          ...(tab.value === 'activity' ? [loadActivitySummary(current, path)] : []),
+        ])
         const ids = [
           ...new Set([
             ...candidates.value.flatMap((candidate) =>
@@ -662,6 +700,9 @@ export function useFanfiction(
     jobCursor,
     activity,
     activityCursor,
+    activityKind,
+    activitySummary,
+    filterActivity,
     moreActivity,
     previousActivity,
     previousSources,

@@ -15,6 +15,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import type { FanfictionActivityKind } from '@bookorbit/types';
 
 export class FanfictionPreferencesDto {
   @IsOptional() @IsBoolean() isAdult?: boolean;
@@ -39,6 +40,14 @@ export class FanfictionTagRuleDto {
 export class FanfictionPageDto {
   @IsOptional() @IsUUID() cursor?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 50;
+}
+
+export class ListFanfictionActivityDto extends FanfictionPageDto {
+  @IsOptional() @IsIn(['imported', 'updated', 'rolled_back', 'attention', 'failed', 'batch_completed']) kind?: FanfictionActivityKind;
+}
+
+export class FanfictionActivitySummaryDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(90) days = 7;
 }
 
 export class PreviewFanfictionDto {

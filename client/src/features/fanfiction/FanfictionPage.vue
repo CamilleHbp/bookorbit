@@ -12,10 +12,12 @@ import ImportProgress from './components/ImportProgress.vue'
 import StoryImportReview from './components/StoryImportReview.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { BookOpen, Plus, Settings, RefreshCw, Search } from '@lucide/vue'
+import { BookOpen, ChevronRight, Plus, Settings, RefreshCw, Search } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
 import FanfictionStoryRow from './components/FanfictionStoryRow.vue'
 import FanfictionPagination from './components/FanfictionPagination.vue'
+import FanfictionTaskList from './components/FanfictionTaskList.vue'
+import FanfictionChangeLog from './components/FanfictionChangeLog.vue'
 import { useFanfictionNavigation } from './composables/useFanfictionNavigation'
 import { useI18n } from 'vue-i18n'
 import { Permission, type FanfictionJob, type FanfictionSource, type FanfictionConnection } from '@bookorbit/types'
@@ -63,6 +65,9 @@ const {
   jobCursor,
   activity,
   activityCursor,
+  activityKind,
+  activitySummary,
+  filterActivity,
   moreActivity,
   urls,
   search,
@@ -260,9 +265,6 @@ watch(
     }
   },
 )
-function dateLabel(value: string | null) {
-  return value ? new Date(value).toLocaleString() : t('fanfiction.never')
-}
 onMounted(() => {
   if (canManage.value) {
     void loadLibraries()
@@ -596,9 +598,13 @@ onMounted(() => {
         </div>
       </section>
       <ExistingStories v-else-if="tab === 'discovery'" :key="libraryId" :library-id="libraryId" />
-      <section v-else-if="tab === 'activity'" class="space-y-3" :aria-label="t('fanfiction.activity')">
-        <details v-if="bulk.job" :open="bulk.active" class="border-b border-border pb-4">
-          <summary class="min-h-11 cursor-pointer py-3 font-medium">{{ t('fanfiction.importInbox.lastCheck') }}</summary>
+      <section v-else-if="tab === 'activity'" class="space-y-6" :aria-label="t('fanfiction.activity')">
+        <details v-if="bulk.job" :open="bulk.active" class="group border-border rounded-xl border px-4">
+          <summary class="flex min-h-11 cursor-pointer list-none items-center gap-3 py-3 font-medium">
+            <ChevronRight class="size-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />{{
+              t('fanfiction.importInbox.lastCheck')
+            }}
+          </summary>
           <StoryBulkActions
             v-model:all-matching="bulk.allMatching"
             v-model:action="bulk.action"
@@ -610,92 +616,41 @@ onMounted(() => {
             @fix-login="fixSourceLogin"
           />
         </details>
-        <details class="border-b border-border pb-4">
-          <summary class="min-h-11 cursor-pointer py-3 font-medium">{{ t('fanfiction.maintenance.attention') }}</summary>
+        <div v-show="storyIssues?.needsAttention" class="border-border rounded-xl border p-4">
           <StoryAttentionList ref="storyIssues" :library-id="libraryId" />
-        </details>
-        <details class="border-b border-border pb-4">
-          <summary class="min-h-11 cursor-pointer py-3 font-medium">{{ t('fanfiction.connections.attention') }}</summary>
+        </div>
+        <div v-show="connectionIssues?.needsAttention" class="border-border rounded-xl border p-4">
           <WebsiteConnections ref="connectionIssues" :library-id="libraryId" repairs-only @saved="handleConnectionSaved" />
-        </details>
-        <h2 class="text-lg font-medium">{{ t('fanfiction.recentChanges') }}</h2>
-        <article v-for="event in activity" :key="event.id" class="border-b border-border py-3">
-          <p class="font-medium">{{ event.title }}</p>
-          <p class="text-muted-foreground text-sm">{{ t(`fanfiction.activityKinds.${event.kind}`) }} · {{ dateLabel(event.createdAt) }}</p>
-          <RouterLink v-if="event.bookId" :to="{ name: 'book-detail', params: { bookId: event.bookId } }" class="text-primary text-sm underline">{{
-            t('fanfiction.openBook')
-          }}</RouterLink>
-        </article>
-        <FanfictionPagination
+        </div>
+        <FanfictionTaskList
+          :jobs="jobs"
+          :page="jobPagination.number"
+          :previous="jobPagination.canPrevious"
+          :next="Boolean(jobCursor)"
+          :busy="busy"
+          :bulk-busy="bulk.busy"
+          :can-manage="canManage"
+          :scoped="Boolean(reviewSource())"
+          @cancel="cancelJob"
+          @retry="retryJob"
+          @review="reviewBatch"
+          @fix-login="fixSourceLogin"
+          @accepted="acceptImportReview"
+          @previous="previousJobs"
+          @next="moreJobs"
+        />
+        <FanfictionChangeLog
+          :items="activity"
+          :summary="activitySummary"
+          :kind="activityKind"
           :page="activityPagination.number"
           :previous="activityPagination.canPrevious"
           :next="Boolean(activityCursor)"
           :busy="busy"
-          :label="t('fanfiction.recentChanges')"
+          @filter="filterActivity"
           @previous="previousActivity"
           @next="moreActivity"
         />
-        <details :open="Boolean(reviewSource())" class="space-y-3 border-t border-border pt-3">
-          <summary class="min-h-11 cursor-pointer py-3 font-medium">{{ t('fanfiction.operations') }}</summary>
-          <RouterLink v-if="reviewSource()" :to="{ name: 'fanfiction', query: { tab: 'activity' } }" class="text-primary underline">{{
-            t('fanfiction.metadataReview.allActivity')
-          }}</RouterLink>
-          <p v-if="!jobs.length" class="text-muted-foreground text-sm">{{ t('fanfiction.noActivity') }}</p>
-          <article
-            v-for="job in jobs"
-            :key="job.id"
-            class="border-border bg-card flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
-          >
-            <div class="min-w-0 flex-1">
-              <p class="break-words text-sm">{{ job.url }}</p>
-              <p class="text-muted-foreground text-sm">{{ t(`fanfiction.kinds.${job.kind}`) }} · {{ dateLabel(job.updatedAt) }}</p>
-              <StoryImportReview
-                v-if="job.state === 'review_required' && job.result?.importReview"
-                :job="job"
-                :disabled="!canManage"
-                @updated="acceptImportReview"
-              />
-              <ImportProgress v-else :job="job" class="mt-3" />
-              <RouterLink
-                v-if="job.result?.bookId"
-                :to="{ name: 'book-detail', params: { bookId: job.result.bookId } }"
-                class="text-primary text-sm underline"
-                >{{ t('fanfiction.openBook') }}</RouterLink
-              >
-            </div>
-            <Button v-if="job.kind === 'source_batch'" variant="outline" :disabled="busy || bulk.busy" @click="reviewBatch(job)">{{
-              t('fanfiction.bulk.review')
-            }}</Button>
-            <Button
-              v-if="job.state === 'queued' || job.state === 'running'"
-              variant="outline"
-              :disabled="busy || job.cancellationRequested"
-              @click="cancelJob(job)"
-              >{{ t('fanfiction.cancel') }}</Button
-            >
-            <Button
-              v-else-if="
-                !job.result?.contentReview &&
-                !job.result?.metadataReview &&
-                (!job.result?.importReview || job.result.importReview.approved) &&
-                ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)
-              "
-              variant="outline"
-              :disabled="busy"
-              @click="retryJob(job)"
-              >{{ t('fanfiction.retry') }}</Button
-            >
-          </article>
-          <FanfictionPagination
-            :page="jobPagination.number"
-            :previous="jobPagination.canPrevious"
-            :next="Boolean(jobCursor)"
-            :busy="busy"
-            :label="t('fanfiction.operations')"
-            @previous="previousJobs"
-            @next="moreJobs"
-          />
-        </details>
       </section>
     </template>
   </main>
