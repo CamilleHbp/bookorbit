@@ -120,6 +120,33 @@ describe.skipIf(!configPath)('persistent tag matching', () => {
       db.transaction((tx) => matching.importLegacyRules(tx, { ...user, isSuperuser: false, permissions: [] }, 'site.test', legacy)),
     ).rejects.toThrow('permission');
   });
+  it('keeps fanfiction genres manual across sync, retries, and reapplication previews', async () => {
+    await save('tags', 'remote', [
+      { field: 'tags', id: tagId },
+      { field: 'genres', id: genreId },
+    ]);
+    await save('genres', 'source genre', [{ field: 'tags', id: tagId }]);
+    await db.insert(s.bookGenres).values({ bookId, genreId, managedOnly: true });
+    await db.insert(s.bookGenreSources).values({ bookId, genreId, sourceKey: 'fanfiction:test' });
+    const labels: IncomingLabel[] = [
+      { field: 'tags', value: 'remote' },
+      { field: 'genres', value: 'source genre' },
+      { field: 'genres', value: 'unknown genre' },
+    ];
+    const input = { source: 'file', sourceKey: 'fanfiction:test', labels };
+    expect(await matching.preview(libraryId, input)).toMatchObject({ tags: [tagName], genres: [], pending: [] });
+    for (let retry = 0; retry < 2; retry++) await db.transaction((tx) => matching.sync(tx, bookId, input, { overrideFields: ['genres'] }));
+    expect((await genres()).map((row) => row.genreId)).toEqual([genreId]);
+    expect((await tags()).map((row) => row.tagId)).toEqual([tagId]);
+    const own = await management.own(user);
+    expect(
+      await db.transaction((tx) => matching.resolve(tx, own!.id, 'file', [{ field: 'genres', value: 'source genre' }], 'fanfiction:test')),
+    ).toMatchObject({ targets: [], pending: [] });
+    const jobs = module.get(TagMatchingJobsService);
+    const preview = await jobs.create(user, ['genres']);
+    await jobs.advance(user, preview.id);
+    expect((await jobs.items(user, preview.id, 1, 25)).items[0].change).toMatchObject({ addedGenres: [], removedGenres: [], unresolved: 0 });
+  });
   it('requires a concrete preview and applies only the approved change', async () => {
     await sync([{ field: 'tags', value: 'remote' }]);
     await save('tags', 'remote', [{ field: 'tags', id: tagId }]);

@@ -87,7 +87,7 @@ export class FanfictionImportService {
             description: incoming.description,
             authors: incoming.authors,
             tags: incoming.tags,
-            ...(incoming.genres ? { genres: incoming.genres } : {}),
+            genres: [],
           },
           approved: false,
         },
