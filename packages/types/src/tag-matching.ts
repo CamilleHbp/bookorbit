@@ -8,6 +8,7 @@ export interface LabelTarget {
   id: number;
 }
 export interface LabelRule {
+  fandomTargets?: LabelTarget[];
   source: string | null;
   field: LabelField;
   value: string;

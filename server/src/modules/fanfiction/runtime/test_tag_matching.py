@@ -40,6 +40,17 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(result['categories']['relationships'], [])
         self.assertEqual(result['pendingLabelCount'], 0)
 
+    def test_character_rules_produce_only_canonical_fandoms(self):
+        labels = [{'field': 'characters', 'value': 'Alice (A)'}, {'field': 'tags', 'value': 'Alice (A)'}]
+        rule = {'source': None, 'field': 'characters', 'value': 'Alice (A)', 'targets': [
+            {'field': 'tags', 'name': 'fandom.a'}, {'field': 'tags', 'name': 'Alice'}, {'field': 'genres', 'name': 'Character'}]}
+        result = resolve('ao3', labels, [rule])
+        self.assertEqual(result['tags'], ['fandom.a'])
+        self.assertEqual(result['genres'], [])
+        self.assertEqual(result['categories']['fandoms'], ['fandom.a'])
+        self.assertEqual(result['categories']['characters'], [])
+        self.assertEqual(resolve('ao3', labels, [rule, {**rule, 'source': 'ao3', 'targets': []}])['tags'], [])
+
     def test_writer_includes_canonical_genres_without_changing_preview_tag_fields(self):
         class Story:
             def getSubjectTags(self): return ['source genre']
