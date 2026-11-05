@@ -72,3 +72,18 @@ export interface TagMatchingJobPage {
   page: number;
   pageSize: number;
 }
+
+export interface TagMatchingPreviewLabel extends IncomingLabel {
+  source: string;
+  sourceKey: string;
+  status: "matched" | "pending" | "ignored" | "suppressed" | "missing-fandom";
+  targets: Array<LabelTarget & { name: string; excluded: boolean }>;
+}
+export interface TagMatchingBookPreview {
+  change: TagMatchingChange;
+  protectedChanges: Pick<TagMatchingChange, "addedTags" | "removedTags" | "addedGenres" | "removedGenres">;
+  labels: TagMatchingPreviewLabel[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

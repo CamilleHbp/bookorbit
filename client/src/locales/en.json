@@ -16359,6 +16359,23 @@
         "running": "Updating books",
         "completed": "Finished",
         "failed": "Could not finish"
+      },
+      "noChanges": "No changes to apply. Open a book’s labels to review unmatched labels or changes protected by locks.",
+      "bookUnchanged": "No tag or genre changes proposed.",
+      "showDetails": "Review labels and matches",
+      "hideDetails": "Hide labels and matches",
+      "protectedChanges": "Changes prevented by locks",
+      "incomingLabels": "Incoming labels and matches",
+      "missingFandom": "Fandom missing from source",
+      "excluded": "Removed for this book",
+      "reviewLabel": "Match or ignore",
+      "labelPages": "Incoming label pages",
+      "labelStates": {
+        "matched": "Approved match",
+        "pending": "Needs a match or ignore decision",
+        "ignored": "Ignored",
+        "suppressed": "Character or named relationship suppressed",
+        "missing-fandom": "Choose fandoms or dismiss for this book"
       }
     },
     "book": "Book"
