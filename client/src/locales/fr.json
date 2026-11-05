@@ -13337,6 +13337,23 @@
         "running": "Mise à jour des livres",
         "completed": "Terminé",
         "failed": "Impossible de terminer"
+      },
+      "noChanges": "Aucune modification à appliquer. Ouvrez les étiquettes d’un livre pour examiner les correspondances manquantes ou les modifications bloquées par les verrous.",
+      "bookUnchanged": "Aucune modification d’étiquette ou de genre proposée.",
+      "showDetails": "Examiner les étiquettes et correspondances",
+      "hideDetails": "Masquer les étiquettes et correspondances",
+      "protectedChanges": "Modifications bloquées par les verrous",
+      "incomingLabels": "Étiquettes reçues et correspondances",
+      "missingFandom": "Fandom absent de la source",
+      "excluded": "Retiré pour ce livre",
+      "reviewLabel": "Associer ou ignorer",
+      "labelPages": "Pages des étiquettes reçues",
+      "labelStates": {
+        "matched": "Correspondance approuvée",
+        "pending": "À associer ou ignorer",
+        "ignored": "Ignoré",
+        "suppressed": "Personnage ou relation nominative supprimé",
+        "missing-fandom": "Choisir les fandoms ou ignorer pour ce livre"
       }
     },
     "book": "Livre"

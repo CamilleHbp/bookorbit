@@ -53,6 +53,17 @@ describe('tag matching previews', () => {
     await preview.apply()
     expect(api).not.toHaveBeenCalled()
   })
+  it('does not offer application when a ready preview has no changes', async () => {
+    const preview = setup()
+    vi.mocked(api)
+      .mockResolvedValueOnce(response({ ...job, changed: 0 }))
+      .mockResolvedValueOnce(response({ ...page(), job: { ...job, changed: 0 } }))
+    await preview.initialize()
+    expect(preview.canApply.value).toBe(false)
+    vi.mocked(api).mockClear()
+    await preview.apply()
+    expect(api).not.toHaveBeenCalled()
+  })
   it('finishes preview generation without automatically applying it', async () => {
     const preview = setup()
     vi.mocked(api)

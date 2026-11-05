@@ -1,9 +1,9 @@
-import { needsFandomReview } from './match-labels';
+import { labelKey, needsFandomReview } from './match-labels';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { and, asc, count, eq, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { TagMatchingChange } from '@bookorbit/types';
+import type { TagMatchingChange, TagMatchingPreviewLabel } from '@bookorbit/types';
 import { DB } from '../../db';
 import * as s from '../../db/schema';
 import type { DatabaseTransaction } from '../../db/transaction';
@@ -88,11 +88,35 @@ export class TagMatchingJobsService {
       return { job, items, total: total.count, page, pageSize };
     });
   }
+  async details(user: RequestUser, id: string, bookId: number, page: number, pageSize: number) {
+    const scope = await this.management.bookScope(user, true);
+    return this.db.transaction(async (tx) => {
+      const job = await this.owned(user, id, tx);
+      await this.current(job, tx);
+      const [item] = await tx
+        .select({ item: s.tagMatchingJobItems })
+        .from(s.tagMatchingJobItems)
+        .innerJoin(s.books, eq(s.books.id, s.tagMatchingJobItems.bookId))
+        .where(and(eq(s.tagMatchingJobItems.jobId, id), eq(s.tagMatchingJobItems.bookId, bookId), scope));
+      if (!item) throw new ForbiddenException('Book preview is not available');
+      const projected = await this.project(tx, bookId, job.rulebookId, item.item.overrideFields, true);
+      if (projected.fingerprint !== item.item.fingerprint) throw new ConflictException('Book changed. Create a new preview.');
+      return {
+        change: projected.change,
+        protectedChanges: projected.protectedChanges,
+        labels: projected.labels.slice((page - 1) * pageSize, page * pageSize),
+        total: projected.labels.length,
+        page,
+        pageSize,
+      };
+    });
+  }
   async apply(user: RequestUser, id: string) {
     return this.db.transaction(async (tx) => {
       const job = await this.owned(user, id, tx);
       await this.current(job, tx);
       if (job.state !== 'ready') throw new ConflictException('Wait for a complete preview before applying');
+      if (!job.changed) throw new BadRequestException('This preview has no changes to apply');
       const [updated] = await tx
         .update(s.tagMatchingJobs)
         .set({ state: 'running', approvedAt: new Date(), processed: job.skipped, changed: 0, skipped: job.skipped, updatedAt: new Date() })
@@ -201,7 +225,7 @@ export class TagMatchingJobsService {
   private hasChanges(change: TagMatchingChange) {
     return change.addedTags.length + change.removedTags.length + change.addedGenres.length + change.removedGenres.length > 0;
   }
-  private async project(tx: DatabaseTransaction, bookId: number, rulebookId: number, overrides: Field[]) {
+  private async project(tx: DatabaseTransaction, bookId: number, rulebookId: number, overrides: Field[], includeLabels = false) {
     const [metadata] = await tx
       .select({ title: s.bookMetadata.title, lockedFields: s.bookMetadata.lockedFields })
       .from(s.bookMetadata)
@@ -244,12 +268,51 @@ export class TagMatchingJobsService {
       .update(JSON.stringify({ metadata, snapshots, tags, genres, tagClaims, genreClaims, exclusions }))
       .digest('hex');
     const desired = { tags: new Map<number, string>(), genres: new Map<number, string>() };
+    const labels: TagMatchingPreviewLabel[] = [];
     let unresolved = 0;
     let missingFandom = false;
     const fandomReviewed = snapshots.some((snapshot) => snapshot.sourceKey === 'manual:fandom');
     for (const snapshot of snapshots) {
       const result = await this.matching.resolve(tx, rulebookId, snapshot.source, snapshot.labels);
       unresolved += result.pending.length;
+      if (includeLabels) {
+        for (const label of snapshot.labels) {
+          const key = labelKey(label.value);
+          const contains = (rows: typeof snapshot.labels) => rows.some((row) => row.field === label.field && labelKey(row.value) === key);
+          const status = contains(result.suppressed)
+            ? 'suppressed'
+            : contains(result.pending)
+              ? 'pending'
+              : contains(result.ignored)
+                ? 'ignored'
+                : 'matched';
+          const candidates = result.rules.filter((rule) => rule.field === label.field && labelKey(rule.value) === key);
+          const rule = candidates.find((rule) => rule.source === snapshot.source) ?? candidates.find((rule) => rule.source === null);
+          labels.push({
+            ...label,
+            source: snapshot.source,
+            sourceKey: snapshot.sourceKey,
+            status,
+            targets:
+              status === 'matched'
+                ? (rule?.targets ?? []).map((target) => ({
+                    ...target,
+                    name: result.names.get(`${target.field}:${target.id}`)!,
+                    excluded: exclusions.some((e) => (target.field === 'tags' ? e.tagId === target.id : e.genreId === target.id)),
+                  }))
+                : [],
+          });
+        }
+        if (!fandomReviewed && needsFandomReview(snapshot.labels, result.suppressed))
+          labels.push({
+            source: snapshot.source,
+            sourceKey: snapshot.sourceKey,
+            field: 'fandoms',
+            value: 'missing-fandom',
+            status: 'missing-fandom',
+            targets: [],
+          });
+      }
       if (!fandomReviewed && needsFandomReview(snapshot.labels, result.suppressed)) missingFandom = true;
       for (const target of result.targets) {
         if (exclusions.some((e) => (target.field === 'tags' ? e.tagId === target.id : e.genreId === target.id))) continue;
@@ -258,8 +321,8 @@ export class TagMatchingJobsService {
     }
     if (missingFandom) unresolved++;
     const sourceKeys = new Set(snapshots.map((snapshot) => snapshot.sourceKey));
-    const diff = (field: Field, current: typeof tags, claims: Array<{ id: number; sourceKey: string }>) => {
-      if (metadata.lockedFields.includes(field) && !overrides.includes(field)) return { added: [], removed: [] };
+    const diff = (field: Field, current: typeof tags, claims: Array<{ id: number; sourceKey: string }>, respectLocks = true) => {
+      if (respectLocks && metadata.lockedFields.includes(field) && !overrides.includes(field)) return { added: [], removed: [] };
       const next = new Map(desired[field]);
       const external = new Set(claims.filter((claim) => !sourceKeys.has(claim.sourceKey)).map((claim) => claim.id));
       const owned = new Set(claims.filter((claim) => sourceKeys.has(claim.sourceKey)).map((claim) => claim.id));
@@ -296,6 +359,40 @@ export class TagMatchingJobsService {
       lockedFields: metadata.lockedFields.filter((field) => field === 'tags' || field === 'genres'),
       unresolved,
     };
-    return { fingerprint, change, snapshots };
+    const protectedTags =
+      metadata.lockedFields.includes('tags') && !overrides.includes('tags')
+        ? diff(
+            'tags',
+            tags,
+            tagClaims.map((row) => ({ id: row.tagId, sourceKey: row.sourceKey })),
+            false,
+          )
+        : { added: [], removed: [] };
+    const protectedGenres =
+      metadata.lockedFields.includes('genres') && !overrides.includes('genres')
+        ? diff(
+            'genres',
+            genres,
+            genreClaims.map((row) => ({ id: row.genreId, sourceKey: row.sourceKey })),
+            false,
+          )
+        : { added: [], removed: [] };
+    labels.sort(
+      (a, b) =>
+        Number(['pending', 'missing-fandom'].includes(b.status)) - Number(['pending', 'missing-fandom'].includes(a.status)) ||
+        a.value.localeCompare(b.value),
+    );
+    return {
+      fingerprint,
+      change,
+      snapshots,
+      labels,
+      protectedChanges: {
+        addedTags: protectedTags.added,
+        removedTags: protectedTags.removed,
+        addedGenres: protectedGenres.added,
+        removedGenres: protectedGenres.removed,
+      },
+    };
   }
 }
