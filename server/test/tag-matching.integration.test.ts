@@ -376,6 +376,10 @@ describe.skipIf(!configPath)('persistent tag matching', () => {
       { field: 'characters', value: 'Named character' },
     ]);
     expect(snapshot.version).toBe(0);
+    expect((await management.review(user, new MatchingPageDto())).items).toEqual([
+      expect.objectContaining({ field: 'fandoms', value: 'Unknown fandom', bookCount: 1 }),
+    ]);
+    expect(await db.select().from(s.tagMatchingObservations).where(eq(s.tagMatchingObservations.bookId, bookId))).toHaveLength(2);
     expect(await tags()).toEqual([expect.objectContaining({ tagId, managedOnly: false })]);
     const jobs = module.get(TagMatchingJobsService);
     const preview = await jobs.create(user, []);
