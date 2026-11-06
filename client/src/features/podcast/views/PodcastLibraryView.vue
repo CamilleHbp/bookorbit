@@ -22,6 +22,7 @@ import { useLibraries } from '@/features/library/composables/useLibraries'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useViewDisplaySettings } from '@/composables/useViewDisplaySettings'
 import { useInfiniteScrollSentinel } from '@/composables/useInfiniteScrollSentinel'
+import { isSelectAllShortcut, useRangeSelection } from '@/composables/useRangeSelection'
 import { PODCAST_EPISODE_ACTIONS, usePodcastEpisodeListActions } from '../composables/usePodcastEpisodeListActions'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { Button } from '@/components/ui/button'
@@ -313,8 +314,26 @@ watch([page.currentView, page.missingOnly, page.searchQuery], () => {
   showSelection.setActive(false)
 })
 
-function toggleShowSelected(show: PodcastListItem) {
-  showSelection.toggle(show.id)
+const showRange = useRangeSelection<number>()
+
+function toggleShowSelected({ show, selected, extend }: { show: PodcastListItem; selected: boolean; extend: boolean }) {
+  const ids = showRange.targets(
+    show.id,
+    podcast.shows.value.map((item) => item.id),
+    extend,
+  )
+  showSelection.setSelected(ids, selected)
+}
+
+function handleShowsKeydown(event: KeyboardEvent) {
+  if (!showSelection.active.value || bulkDelete.preparing.value) return
+  if (isSelectAllShortcut(event)) {
+    event.preventDefault()
+    selectAllLoadedShows()
+  } else if (event.key === 'Escape' && showSelection.hasSelection.value) {
+    event.preventDefault()
+    showSelection.clear()
+  }
 }
 
 function selectAllLoadedShows() {
@@ -690,6 +709,7 @@ function handleLocalImportChanged() {
         @follow="followShow"
         @unfollow="unfollowShow"
         @toggle-select="toggleShowSelected"
+        @keydown="handleShowsKeydown"
         @clear-search="page.clearSearch"
         @add-feed="openAdd"
         @import-opml="openImport"

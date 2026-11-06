@@ -30,9 +30,38 @@ describe('PodcastQueueList', () => {
   it('reports selection changes without owning the selected set', async () => {
     const wrapper = mountList({ reorderable: true, selectable: true, selectedIds: new Set() })
 
-    await wrapper.findAll('input[type="checkbox"]')[0]!.setValue(true)
+    await wrapper.findAll('input[type="checkbox"]')[0]!.trigger('click')
 
-    expect(wrapper.emitted('toggleSelect')).toEqual([[1, true]])
+    expect(wrapper.emitted('toggleSelect')).toEqual([[[1], true]])
+  })
+
+  it('extends a Shift selection over the rows between the clicks, in display order', async () => {
+    const wrapper = mountList({ items: [queueItem(1), queueItem(2), queueItem(3)], selectable: true, selectedIds: new Set() })
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+
+    await checkboxes[2]!.trigger('click')
+    await checkboxes[0]!.trigger('click', { shiftKey: true })
+
+    expect(wrapper.emitted('toggleSelect')).toEqual([
+      [[3], true],
+      [[1, 2, 3], true],
+    ])
+  })
+
+  it('selects with Ctrl or Cmd on the row body only while selectable', async () => {
+    const wrapper = mountList({ selectable: true, selectedIds: new Set([2]) })
+    const rows = wrapper.findAll('[data-testid="podcast-queue-position"]')
+
+    await rows[0]!.trigger('click', { metaKey: true })
+    await rows[1]!.trigger('click', { ctrlKey: true })
+    await rows[0]!.trigger('click')
+    await wrapper.setProps({ selectable: false })
+    await rows[0]!.trigger('click', { metaKey: true })
+
+    expect(wrapper.emitted('toggleSelect')).toEqual([
+      [[1], true],
+      [[2], false],
+    ])
   })
 
   it('updates position numbers immediately during keyboard reordering', async () => {

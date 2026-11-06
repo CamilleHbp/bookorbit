@@ -11,6 +11,7 @@ import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { formatBytes } from '@/lib/formatting'
 import { formatNumber } from '@/i18n/formatters'
 import { useBookDuplicates } from '../../composables/useBookDuplicates'
+import { isSelectAllShortcut } from '@/composables/useRangeSelection'
 import { DUPLICATE_KEEP_RULES, type DuplicateKeepRule } from '../utils/duplicate-keeper'
 import DismissedDuplicatesSection from '../components/DismissedDuplicatesSection.vue'
 import DuplicateLedgerRow from '../components/DuplicateLedgerRow.vue'
@@ -103,8 +104,9 @@ function handleKeep(groupId: number, bookId: number): void {
   duplicates.setKeeper(groupId, bookId)
 }
 
-function handleSelect(groupId: number): void {
-  duplicates.toggleSelected(groupId)
+function handleSelect(groupId: number, { selected, extend }: { selected: boolean; extend: boolean }): void {
+  duplicates.setSelectedFrom(groupId, selected, extend)
+  focusedGroupId.value = groupId
 }
 
 function handleExpand(groupId: number): void {
@@ -143,6 +145,19 @@ async function focusRow(groupId: number): Promise<void> {
  * move, open, pick a keeper, select, and hand the selection to the review sheet.
  */
 function handleKeydown(event: KeyboardEvent): void {
+  if (isSelectAllShortcut(event)) {
+    event.preventDefault()
+    duplicates.setSelected(
+      groups.value.map((group) => group.id),
+      true,
+    )
+    return
+  }
+  if (event.key === 'Escape' && duplicates.selectedGroupIds.value.size > 0) {
+    event.preventDefault()
+    duplicates.clearSelection()
+    return
+  }
   const target = event.target as HTMLElement | null
   if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) && event.key !== 'Escape') return
   if (event.metaKey || event.ctrlKey || event.altKey) return

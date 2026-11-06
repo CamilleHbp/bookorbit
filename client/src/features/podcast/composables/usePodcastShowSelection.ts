@@ -26,6 +26,15 @@ export function usePodcastShowSelection() {
     selectedIds.value = next
   }
 
+  function setSelected(showIds: readonly number[], value: boolean): void {
+    const next = new Set(selectedIds.value)
+    for (const id of showIds) {
+      if (value) next.add(id)
+      else next.delete(id)
+    }
+    selectedIds.value = next
+  }
+
   function selectAll(showIds: number[]): void {
     selectedIds.value = new Set([...selectedIds.value, ...showIds])
   }
@@ -44,7 +53,7 @@ export function usePodcastShowSelection() {
     setActive(!active.value)
   }
 
-  return { active, selectedIds, count, hasSelection, ids, isSelected, toggle, selectAll, clear, setActive, toggleActive }
+  return { active, selectedIds, count, hasSelection, ids, isSelected, toggle, setSelected, selectAll, clear, setActive, toggleActive }
 }
 
 export type PodcastShowSelection = ReturnType<typeof usePodcastShowSelection>

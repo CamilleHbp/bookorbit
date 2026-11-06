@@ -17,6 +17,7 @@ import PodcastAddFeedSheet from '../components/PodcastAddFeedSheet.vue'
 import PodcastImportSheet from '../components/PodcastImportSheet.vue'
 import PodcastOpmlImportSheet from '../components/PodcastOpmlImportSheet.vue'
 import PodcastViewHeader from '../components/PodcastViewHeader.vue'
+import PodcastShowsPanel from '../components/PodcastShowsPanel.vue'
 import PodcastLibraryView from './PodcastLibraryView.vue'
 import { makeEpisodeListItem } from '../test/fixtures'
 import { createPodcastsStub } from '../test/stubs'
@@ -492,9 +493,31 @@ describe('PodcastLibraryView', () => {
     const checkboxes = wrapper.findAll('input[type="checkbox"]')
     expect(checkboxes).toHaveLength(2)
 
-    await checkboxes[0]!.setValue(true)
+    await checkboxes[0]!.trigger('click')
 
     expect(wrapper.findComponent(SelectionActionBar).props('count')).toBe(1)
+  })
+
+  it('Shift-selects the shows between two picks, selects all loaded with Cmd+A and clears with Escape', async () => {
+    const shows = [1, 2, 3, 4].map((id) => ({ ...showItem(), id, title: `Show ${id}` }))
+    const wrapper = await mountView({ view: 'shows' }, [], shows)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Select')!
+      .trigger('click')
+    await flushPromises()
+
+    const covers = wrapper.findAll('button[aria-pressed]').filter((button) => button.attributes('aria-label')?.startsWith('Select'))
+    await covers[0]!.trigger('click')
+    await covers[2]!.trigger('click', { shiftKey: true })
+    expect(wrapper.text()).toContain('3 selected')
+
+    const panel = wrapper.findComponent(PodcastShowsPanel)
+    await panel.trigger('keydown', { key: 'a', metaKey: true })
+    expect(wrapper.text()).toContain('4 selected')
+
+    await panel.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.text()).toContain('0 selected')
   })
 
   it('only offers display controls where a grid can use them', async () => {
@@ -650,7 +673,7 @@ describe('PodcastLibraryView', () => {
     const state = podcastMock.value as ReturnType<typeof createPodcastState>
 
     await toggleSelection(wrapper)
-    await wrapper.findAll('input[type="checkbox"]')[0]!.setValue(true)
+    await wrapper.findAll('input[type="checkbox"]')[0]!.trigger('click')
     vi.mocked(state.loadQueue).mockClear()
 
     await wrapper.get('[data-testid="podcast-bulk-remove-from-queue"]').trigger('click')

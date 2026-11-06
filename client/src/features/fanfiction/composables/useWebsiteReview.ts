@@ -159,6 +159,9 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
     } else if (selected.value.includes(book.id)) selected.value = selected.value.filter((id) => id !== book.id)
     else if (selected.value.length < 100) selected.value = [...selected.value, book.id]
   }
+  function setBooks(books: FanfictionDiscoveryCandidate[], value: boolean) {
+    for (const book of books) if (isSelected(book) !== value) toggleBook(book)
+  }
   function clearSelection() {
     selectionError.value = ''
     autoSelect = false
@@ -265,6 +268,7 @@ export function useWebsiteReview(source: () => FanfictionDiscoveryWebsite, cutof
     previousPage,
     toggleAll,
     toggleBook,
+    setBooks,
     clearSelection,
     changeBook,
     compareBook,

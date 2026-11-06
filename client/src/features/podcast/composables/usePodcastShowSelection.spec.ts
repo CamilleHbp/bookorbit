@@ -71,4 +71,15 @@ describe('usePodcastShowSelection', () => {
 
     expect(selection.selectedIds.value).not.toBe(before)
   })
+
+  it('sets a group of shows on or off together', () => {
+    const selection = usePodcastShowSelection()
+    selection.toggle(9)
+
+    selection.setSelected([1, 2, 3], true)
+    expect(selection.ids.value.sort()).toEqual([1, 2, 3, 9])
+
+    selection.setSelected([2, 9], false)
+    expect(selection.ids.value.sort()).toEqual([1, 3])
+  })
 })

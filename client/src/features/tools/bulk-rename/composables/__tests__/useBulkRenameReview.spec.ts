@@ -47,6 +47,31 @@ describe('useBulkRenameReview selection', () => {
     expect(review.selectionState.value).toBe('all')
   })
 
+  it('applies a Shift-click to every visible book since the last one clicked', () => {
+    const items = [renameable(1), renameable(2), heldBack(3), renameable(4), renameable(5)]
+    const review = setup(items)
+    review.selectNone()
+
+    review.setSelectedFrom(items[1]!, true, false)
+    review.setSelectedFrom(items[4]!, true, true)
+
+    expect(review.runSelection.value).toEqual({ includeBookIds: [2, 4, 5] })
+
+    review.setSelectedFrom(items[3]!, false, true)
+
+    expect(review.runSelection.value).toEqual({ includeBookIds: [2] })
+  })
+
+  it('selects every loaded book a run can rename', () => {
+    const items = [renameable(1), renameable(2), heldBack(3)]
+    const review = setup(items, 100)
+    review.selectNone()
+
+    review.selectVisible()
+
+    expect(review.runSelection.value).toEqual({ includeBookIds: [1, 2] })
+  })
+
   it('excludes a deselected book without needing the full candidate list', () => {
     const items = [renameable(1), renameable(2)]
     const review = setup(items, 5000)

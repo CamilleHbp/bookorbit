@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import type { PodcastListItem } from '@bookorbit/types'
 import PodcastShowsPanel from './PodcastShowsPanel.vue'
 
-function show(): PodcastListItem {
+function show(id = 4): PodcastListItem {
   return {
-    id: 4,
+    id,
     libraryId: 7,
     origin: 'feed',
     title: 'Orbit Radio',
@@ -61,5 +61,19 @@ describe('PodcastShowsPanel', () => {
 
     expect(wrapper.emitted('open')?.[0]?.[0]).toMatchObject({ id: 4 })
     expect(wrapper.emitted('follow')?.[0]?.[0]).toMatchObject({ id: 4 })
+  })
+
+  it('reports Shift on a card toggle and Ctrl or Cmd on the card body as selection changes', async () => {
+    const wrapper = mountPanel({ shows: [show(1), show(2)], selecting: true, selectedIds: new Set([2]) })
+    const cards = wrapper.findAll('article')
+
+    await cards[0]!.get('button').trigger('click', { shiftKey: true })
+    await cards[1]!.get('p').trigger('click', { ctrlKey: true })
+    await cards[1]!.get('p').trigger('click')
+
+    expect(wrapper.emitted('toggle-select')).toEqual([
+      [{ show: expect.objectContaining({ id: 1 }), selected: true, extend: true }],
+      [{ show: expect.objectContaining({ id: 2 }), selected: false, extend: false }],
+    ])
   })
 })

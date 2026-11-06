@@ -6,8 +6,9 @@ import type { PodcastListItem } from '@bookorbit/types'
 import EmptyState from '@/components/EmptyState.vue'
 import { Button } from '@/components/ui/button'
 import PodcastShowCard from './PodcastShowCard.vue'
+import { isRowSelectionClick, preventShiftTextSelection } from '@/composables/useRangeSelection'
 
-defineProps<{
+const props = defineProps<{
   shows: PodcastListItem[]
   gridStyle: CSSProperties
   refreshing: boolean
@@ -23,7 +24,7 @@ const emit = defineEmits<{
   play: [show: PodcastListItem]
   follow: [show: PodcastListItem]
   unfollow: [show: PodcastListItem]
-  'toggle-select': [show: PodcastListItem]
+  'toggle-select': [change: { show: PodcastListItem; selected: boolean; extend: boolean }]
   'clear-search': []
   'add-feed': []
   'import-opml': []
@@ -59,25 +60,39 @@ function unfollowShow(show: PodcastListItem) {
   emit('unfollow', show)
 }
 
-function toggleSelect(show: PodcastListItem) {
-  emit('toggle-select', show)
+function isSelected(show: PodcastListItem) {
+  return props.selectedIds?.has(show.id) ?? false
+}
+
+function toggleSelect(show: PodcastListItem, event: MouseEvent) {
+  emit('toggle-select', { show, selected: !isSelected(show), extend: event.shiftKey })
+}
+
+function handleCardClick(show: PodcastListItem, event: MouseEvent) {
+  if (!props.selecting || !isRowSelectionClick(event)) return
+  emit('toggle-select', { show, selected: !isSelected(show), extend: event.shiftKey })
+}
+
+function handleGridMousedown(event: MouseEvent) {
+  if (props.selecting) preventShiftTextSelection(event)
 }
 </script>
 
 <template>
   <section class="pt-4" :aria-busy="refreshing">
-    <div v-if="shows.length > 0" class="grid" :style="gridStyle">
+    <div v-if="shows.length > 0" class="grid" :style="gridStyle" @mousedown="handleGridMousedown">
       <PodcastShowCard
         v-for="show in shows"
         :key="show.id"
         :show="show"
         :selectable="selecting"
-        :selected="selectedIds?.has(show.id) ?? false"
+        :selected="isSelected(show)"
         @open="openShow"
         @play="playShow"
         @follow="followShow"
         @unfollow="unfollowShow"
         @toggle-select="toggleSelect"
+        @click="handleCardClick(show, $event)"
       />
     </div>
 

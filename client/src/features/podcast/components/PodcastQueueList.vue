@@ -7,6 +7,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import type { PodcastEpisodeListItem, PodcastQueueItem } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { useDraggableOrder } from '@/composables/useDraggableOrder'
+import { isRowSelectionClick, preventShiftTextSelection, useRangeSelection } from '@/composables/useRangeSelection'
 import { PODCAST_EPISODE_ACTIONS } from '../composables/usePodcastEpisodeListActions'
 import PodcastEpisodeRow from './PodcastEpisodeRow.vue'
 import { usePodcastQueue } from '../composables/usePodcastQueue'
@@ -44,7 +45,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  toggleSelect: [episodeId: number, selected: boolean]
+  toggleSelect: [episodeIds: number[], selected: boolean]
 }>()
 
 const actions = inject(PODCAST_EPISODE_ACTIONS)
@@ -94,8 +95,28 @@ function isActive(episode: PodcastEpisodeListItem) {
   return props.activeEpisodeId === episode.id
 }
 
-function handleSelectionChange(event: Event, episodeId: number) {
-  emit('toggleSelect', episodeId, (event.currentTarget as HTMLInputElement).checked)
+const range = useRangeSelection<number>()
+
+function selectEpisodes(episodeId: number, selected: boolean, extend: boolean) {
+  const ids = range.targets(
+    episodeId,
+    visibleItems.value.map((item) => item.id),
+    extend,
+  )
+  emit('toggleSelect', ids, selected)
+}
+
+function handleSelectionClick(event: MouseEvent, episodeId: number) {
+  selectEpisodes(episodeId, (event.target as HTMLInputElement).checked, event.shiftKey)
+}
+
+function handleRowClick(event: MouseEvent, episodeId: number) {
+  if (!props.selectable || !isRowSelectionClick(event)) return
+  selectEpisodes(episodeId, !(props.selectedIds?.has(episodeId) ?? false), event.shiftKey)
+}
+
+function handleRowMousedown(event: MouseEvent) {
+  if (props.selectable) preventShiftTextSelection(event)
 }
 
 /** Local move plus a single persist, so the shortcut costs one request rather than one per position. */
@@ -131,7 +152,13 @@ async function moveToTop(episode: PodcastEpisodeListItem) {
     >
       <!-- The number is where the row sits right now, read off the render order. Writing it back onto
            each item is what a self-retriggering deep watch used to do, once per row per mutation. -->
-      <div v-for="(episode, index) in visibleItems" :key="episode.id" class="flex items-center gap-2 pb-2.5">
+      <div
+        v-for="(episode, index) in visibleItems"
+        :key="episode.id"
+        class="flex items-center gap-2 pb-2.5"
+        @mousedown="handleRowMousedown"
+        @click="handleRowClick($event, episode.id)"
+      >
         <span class="w-6 shrink-0 text-right text-xs tabular-nums text-muted-foreground" data-testid="podcast-queue-position" aria-hidden="true">
           {{ index + 1 }}
         </span>
@@ -154,7 +181,7 @@ async function moveToTop(episode: PodcastEpisodeListItem) {
               type="checkbox"
               class="h-4 w-4 accent-primary"
               :checked="selectedIds?.has(episode.id) ?? false"
-              @change="handleSelectionChange($event, episode.id)"
+              @click="handleSelectionClick($event, episode.id)"
             />
           </label>
         </div>

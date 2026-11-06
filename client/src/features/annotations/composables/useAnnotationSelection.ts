@@ -1,8 +1,10 @@
 import { computed, ref, watch, type Ref } from 'vue'
+import { useRangeSelection } from '@/composables/useRangeSelection'
 
 /** Shared bulk-selection state for an annotation list. Prunes ids that leave the list. */
 export function useAnnotationSelection<T extends { id: number }>(items: Ref<T[]>) {
   const selectedIds = ref<Set<number>>(new Set())
+  const range = useRangeSelection<number>()
 
   const visibleIds = computed(() => items.value.map((item) => item.id))
   const hasSelection = computed(() => selectedIds.value.size > 0)
@@ -16,6 +18,20 @@ export function useAnnotationSelection<T extends { id: number }>(items: Ref<T[]>
     selectedIds.value = next
   }
 
+  function setSelected(ids: readonly number[], value: boolean) {
+    const next = new Set(selectedIds.value)
+    for (const id of ids) {
+      if (value) next.add(id)
+      else next.delete(id)
+    }
+    selectedIds.value = next
+  }
+
+  /** `orderedIds` is the display order, so a Shift range covers exactly the rows between the two clicks. */
+  function selectRange(change: { id: number; selected: boolean; extend: boolean }, orderedIds: readonly number[]) {
+    setSelected(range.targets(change.id, orderedIds, change.extend), change.selected)
+  }
+
   function selectAllOnPage() {
     const next = new Set(selectedIds.value)
     for (const id of visibleIds.value) next.add(id)
@@ -23,6 +39,7 @@ export function useAnnotationSelection<T extends { id: number }>(items: Ref<T[]>
   }
 
   function clearSelection() {
+    range.reset()
     if (selectedIds.value.size > 0) selectedIds.value = new Set()
   }
 
@@ -32,5 +49,5 @@ export function useAnnotationSelection<T extends { id: number }>(items: Ref<T[]>
     if (pruned.size !== selectedIds.value.size) selectedIds.value = pruned
   })
 
-  return { selectedIds, hasSelection, allVisibleSelected, selectedItems, toggleSelected, selectAllOnPage, clearSelection }
+  return { selectedIds, hasSelection, allVisibleSelected, selectedItems, toggleSelected, selectRange, selectAllOnPage, clearSelection }
 }

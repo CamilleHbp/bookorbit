@@ -20,7 +20,7 @@ const emit = defineEmits<{
   play: [show: PodcastListItem]
   follow: [show: PodcastListItem]
   unfollow: [show: PodcastListItem]
-  'toggle-select': [show: PodcastListItem]
+  'toggle-select': [show: PodcastListItem, event: MouseEvent]
 }>()
 const { t } = useI18n()
 
@@ -34,11 +34,11 @@ const playLabel = computed(() => {
     : t('podcast.actions.playLatestEpisode', { title: recommendation.title })
 })
 
-function handleOpen() {
+function handleOpen(event: MouseEvent) {
   // In select mode the whole cover is the checkbox: a grid you are picking from should not navigate
   // away the moment you aim slightly wrong.
   if (props.selectable) {
-    emit('toggle-select', props.show)
+    emit('toggle-select', props.show, event)
     return
   }
   emit('open', props.show)

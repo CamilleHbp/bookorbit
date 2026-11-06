@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { isRowSelectionClick, preventShiftTextSelection } from '@/composables/useRangeSelection'
 import type { OrphanedCoverDirEntry } from '@bookorbit/types'
 
 import { formatBytes } from '@/lib/formatting'
 
 const props = defineProps<{ entry: OrphanedCoverDirEntry; selected: boolean; disabled: boolean }>()
-const emit = defineEmits<{ toggle: [id: number] }>()
+const emit = defineEmits<{ toggle: [id: number, change: { selected: boolean; extend: boolean }] }>()
 
 const { t } = useI18n()
 
@@ -21,20 +22,25 @@ const mediaLabel = computed(() => {
   return null
 })
 
-function handleToggle(): void {
-  emit('toggle', props.entry.bookId)
+function handleToggle(event: MouseEvent): void {
+  emit('toggle', props.entry.bookId, { selected: (event.target as HTMLInputElement).checked, extend: event.shiftKey })
+}
+
+function handleRowClick(event: MouseEvent): void {
+  if (props.disabled || !isRowSelectionClick(event)) return
+  emit('toggle', props.entry.bookId, { selected: !props.selected, extend: event.shiftKey })
 }
 </script>
 
 <template>
-  <li class="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/30">
+  <li class="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/30" @mousedown="preventShiftTextSelection" @click="handleRowClick">
     <input
       type="checkbox"
       class="shrink-0 rounded-xs accent-primary"
       :checked="selected"
       :disabled="disabled"
       :aria-label="label"
-      @change="handleToggle"
+      @click="handleToggle"
     />
     <div class="min-w-0 flex-1">
       <p class="truncate text-sm font-medium text-foreground">{{ label }}</p>

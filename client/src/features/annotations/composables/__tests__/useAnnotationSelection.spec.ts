@@ -46,4 +46,28 @@ describe('useAnnotationSelection', () => {
     selection.selectAllOnPage()
     expect(selection.hasSelection.value).toBe(false)
   })
+
+  it('applies a Shift range in the display order it is given, not the load order', () => {
+    const items = ref([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }])
+    const selection = useAnnotationSelection(items)
+    const displayOrder = [3, 1, 4, 2]
+
+    selection.selectRange({ id: 3, selected: true, extend: false }, displayOrder)
+    selection.selectRange({ id: 4, selected: true, extend: true }, displayOrder)
+    expect([...selection.selectedIds.value].sort()).toEqual([1, 3, 4])
+
+    selection.selectRange({ id: 1, selected: false, extend: true }, displayOrder)
+    expect([...selection.selectedIds.value]).toEqual([3])
+  })
+
+  it('forgets the range anchor when the selection is cleared', () => {
+    const items = ref([{ id: 1 }, { id: 2 }, { id: 3 }])
+    const selection = useAnnotationSelection(items)
+
+    selection.selectRange({ id: 1, selected: true, extend: false }, [1, 2, 3])
+    selection.clearSelection()
+    selection.selectRange({ id: 3, selected: true, extend: true }, [1, 2, 3])
+
+    expect([...selection.selectedIds.value]).toEqual([3])
+  })
 })

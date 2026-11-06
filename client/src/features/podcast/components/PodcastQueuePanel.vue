@@ -10,6 +10,7 @@ import SelectionActionBar from '@/components/SelectionActionBar.vue'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import PodcastQueueList from './PodcastQueueList.vue'
+import { isSelectAllShortcut } from '@/composables/useRangeSelection'
 import { runBoundedBatch, type PodcastBulkOutcome } from '../lib/podcast-bulk'
 import { formatPodcastDuration } from '../lib/podcast-format'
 import {
@@ -62,15 +63,28 @@ watch(
   },
 )
 
-function setSelection(episodeId: number, selected: boolean) {
+function setSelection(episodeIds: number[], selected: boolean) {
   const next = new Set(selectedIds.value)
-  if (selected) next.add(episodeId)
-  else next.delete(episodeId)
+  for (const id of episodeIds) {
+    if (selected) next.add(id)
+    else next.delete(id)
+  }
   selectedIds.value = next
 }
 
 function selectAllLoaded() {
   selectedIds.value = new Set(props.items.map((item) => item.id))
+}
+
+function handleListKeydown(event: KeyboardEvent) {
+  if (!props.selectionMode || bulkPending.value || event.defaultPrevented) return
+  if (isSelectAllShortcut(event)) {
+    event.preventDefault()
+    selectAllLoaded()
+  } else if (event.key === 'Escape' && selectedIds.value.size > 0) {
+    event.preventDefault()
+    selectedIds.value = new Set()
+  }
 }
 
 function exitSelectionMode() {
@@ -181,6 +195,7 @@ function browseShows() {
       :is-playing="isPlaying"
       :download-progress="downloadProgress"
       @toggle-select="setSelection"
+      @keydown="handleListKeydown"
     />
     <EmptyState
       v-if="items.length === 0"

@@ -69,4 +69,14 @@ describe('story row feedback', () => {
     expect(wrapper.text()).not.toContain('source settings')
     wrapper.unmount()
   })
+
+  it('reports Shift on the checkbox and Ctrl or Cmd clicks on the row as selection', async () => {
+    const wrapper = mount(FanfictionStoryRow, { props, global })
+    await wrapper.get('input[type="checkbox"]').trigger('click', { shiftKey: true })
+    await wrapper.get('article').trigger('click', { metaKey: true })
+    await wrapper.get('article').trigger('click')
+    await wrapper.get('a').trigger('click', { ctrlKey: true })
+    expect(wrapper.emitted('select')).toEqual([[{ selected: true, extend: true }], [{ selected: true, extend: false }]])
+    wrapper.unmount()
+  })
 })

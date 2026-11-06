@@ -91,10 +91,21 @@ describe('PodcastQueuePanel', () => {
     apiMock.mockResolvedValue(new Response(null, { status: 204 }))
   })
 
+  it('selects every loaded episode with Ctrl or Cmd+A and clears with Escape', async () => {
+    const { wrapper } = mountPanel({ items: [item(1), item(2)] })
+    const list = wrapper.findComponent(PodcastQueueList)
+
+    await list.trigger('keydown', { key: 'a', metaKey: true })
+    expect(list.props('selectedIds')).toEqual(new Set([1, 2]))
+
+    await list.trigger('keydown', { key: 'Escape' })
+    expect(list.props('selectedIds')).toEqual(new Set())
+  })
+
   it('marks only the selected unfinished episodes as played', async () => {
     const { wrapper } = mountPanel({ items: [item(1, { finished: true }), item(2)] })
-    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', 1, true)
-    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', 2, true)
+    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', [1], true)
+    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', [2], true)
     await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="podcast-bulk-mark-played"]').trigger('click')
     await flushPromises()
@@ -106,7 +117,7 @@ describe('PodcastQueuePanel', () => {
   it('reports the failures in a bulk update rather than claiming success', async () => {
     apiMock.mockResolvedValueOnce(new Response(null, { status: 500 }))
     const { wrapper } = mountPanel({ items: [item(1)] })
-    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', 1, true)
+    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', [1], true)
     await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="podcast-bulk-mark-played"]').trigger('click')
     await flushPromises()
@@ -117,8 +128,8 @@ describe('PodcastQueuePanel', () => {
 
   it('downloads only the selected episodes that have no local file yet', async () => {
     const { wrapper } = mountPanel({ items: [item(1, { mediaStatus: 'local' }), item(2)] })
-    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', 1, true)
-    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', 2, true)
+    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', [1], true)
+    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', [2], true)
     await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="podcast-bulk-download"]').trigger('click')
     await flushPromises()
@@ -128,8 +139,8 @@ describe('PodcastQueuePanel', () => {
 
   it('removes a selected queue subset with bounded work and reloads the remaining rows', async () => {
     const { wrapper, removeFromQueue, reload } = mountPanel()
-    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', 1, true)
-    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', 2, true)
+    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', [1], true)
+    wrapper.findComponent(PodcastQueueList).vm.$emit('toggleSelect', [2], true)
     await wrapper.vm.$nextTick()
     await wrapper.get('[data-testid="podcast-bulk-remove-from-queue"]').trigger('click')
     await flushPromises()
