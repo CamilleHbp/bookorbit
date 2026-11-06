@@ -106,7 +106,7 @@ describe('MissingResourcesView', () => {
     const wrapper = await mountView()
 
     const rowCheckboxes = wrapper.findAll('li input[type="checkbox"]')
-    await rowCheckboxes[0]!.setValue(true)
+    await rowCheckboxes[0]!.trigger('click')
     await wrapper.get('button.bg-destructive').trigger('click')
     await flushPromises()
 
@@ -125,7 +125,7 @@ describe('MissingResourcesView', () => {
     demoRestricted.value = true
     const wrapper = await mountView()
 
-    await wrapper.findAll('li input[type="checkbox"]')[0]!.setValue(true)
+    await wrapper.findAll('li input[type="checkbox"]')[0]!.trigger('click')
 
     expect(wrapper.text()).toContain('Clear selection')
     expect(wrapper.find('button.bg-destructive').exists()).toBe(false)

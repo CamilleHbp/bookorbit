@@ -349,6 +349,7 @@ export function useBookHighlights(bookIdRef: Ref<number>) {
     allVisibleSelected: selection.allVisibleSelected,
     selectedItems: selection.selectedItems,
     toggleSelected: selection.toggleSelected,
+    selectRange: selection.selectRange,
     selectAllOnPage: selection.selectAllOnPage,
     clearSelection: selection.clearSelection,
     updateNote: mutations.updateNote,

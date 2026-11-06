@@ -23,6 +23,7 @@ import { useAnnotationsHub } from '../composables/useAnnotationsHub'
 import { useAnnotationsUrlSync } from '../composables/useAnnotationsUrlSync'
 import { useDensity } from '../composables/useDensity'
 import { annotationSourceKey } from '@/features/annotations/lib/source-label'
+import { isSelectAllShortcut } from '@/composables/useRangeSelection'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -102,6 +103,8 @@ const groups = computed<StreamGroup[]>(() =>
   }),
 )
 
+const orderedIds = computed(() => groups.value.flatMap((group) => group.items.map((item) => item.id)))
+
 const blank = computed(
   () =>
     !hub.loading.value && hub.items.value.length === 0 && !hub.hasActiveFilters.value && hub.status.value === 'active' && hub.overview.value != null,
@@ -114,6 +117,24 @@ function canJump(annotation: AnnotationHubItem): boolean {
 
 function handleOpen(id: number) {
   activeId.value = activeId.value === id ? null : id
+}
+
+function handleToggleSelect(change: { id: number; selected: boolean; extend: boolean }) {
+  hub.selectRange(change, orderedIds.value)
+}
+
+function isTextField(target: EventTarget | null) {
+  return target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'))
+}
+
+function handleStreamKeydown(event: KeyboardEvent) {
+  if (isSelectAllShortcut(event)) {
+    event.preventDefault()
+    hub.selectAllOnPage()
+  } else if (event.key === 'Escape' && hub.selectedIds.value.size > 0 && !isTextField(event.target)) {
+    event.preventDefault()
+    hub.clearSelection()
+  }
 }
 
 function handleCloseDetail() {
@@ -254,7 +275,8 @@ onMounted(() => {
         v-model:style-filter="hub.styleFilter.value"
         v-model:book-filter="hub.bookFilter.value"
         v-model:book-filter-label="hub.selectedBookLabel.value"
-        class="order-1"
+        class="order-1 outline-none"
+        tabindex="-1"
         :groups="groups"
         :loaded-count="hub.items.value.length"
         :total="hub.total.value"
@@ -290,6 +312,7 @@ onMounted(() => {
         @bulk-color="handleBulkColor"
         @bulk-trash="handleBulkTrash"
         @bulk-restore="handleBulkRestore"
+        @keydown="handleStreamKeydown"
       >
         <template #entry="{ item, showDay, showBook, showChapter }">
           <AnnotationEntry
@@ -304,7 +327,7 @@ onMounted(() => {
             :show-day="showDay"
             :show-book="showBook"
             :show-chapter="showChapter"
-            @toggle-select="hub.toggleSelected"
+            @toggle-select="handleToggleSelect"
             @open="handleOpen"
             @jump="handleJump"
             @restore="handleRestore"

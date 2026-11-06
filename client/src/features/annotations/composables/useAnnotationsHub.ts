@@ -356,6 +356,7 @@ export function useAnnotationsHub() {
     searchBooks,
     resolveSelectedBook,
     toggleSelected: selection.toggleSelected,
+    selectRange: selection.selectRange,
     clearSelection: selection.clearSelection,
     selectAllOnPage: selection.selectAllOnPage,
     toggleNotesOnly,

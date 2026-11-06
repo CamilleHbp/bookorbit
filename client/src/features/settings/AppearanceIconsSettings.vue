@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useCustomIcons } from '@/features/custom-icons/composables/useCustomIcons'
 import IconUploadDialog from '@/features/custom-icons/components/IconUploadDialog.vue'
+import { isSelectAllShortcut, useRangeSelection } from '@/composables/useRangeSelection'
 
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
@@ -99,7 +100,7 @@ async function loadPage() {
 function resetAndLoad() {
   page.value = 0
   expandedSlug.value = null
-  selected.value = new Set()
+  clearSelection()
   void loadPage()
 }
 
@@ -162,15 +163,41 @@ function refresh() {
   void loadPage()
 }
 
-function toggleSelect(slug: string) {
+const range = useRangeSelection<string>()
+
+function toggleSelect(slug: string, event: MouseEvent) {
+  const select = !selected.value.has(slug)
+  const slugs = range.targets(
+    slug,
+    items.value.map((icon) => icon.slug),
+    event.shiftKey,
+  )
   const next = new Set(selected.value)
-  if (next.has(slug)) next.delete(slug)
-  else next.add(slug)
+  for (const target of slugs) {
+    if (select) next.add(target)
+    else next.delete(target)
+  }
   selected.value = next
 }
 
 function clearSelection() {
   selected.value = new Set()
+  range.reset()
+}
+
+function handleGridKeydown(event: KeyboardEvent) {
+  if (!canManageIcons.value || bulkDeleting.value) return
+  if (isSelectAllShortcut(event)) {
+    event.preventDefault()
+    selected.value = new Set([...selected.value, ...items.value.map((icon) => icon.slug)])
+  } else if (event.key === 'Escape' && selected.value.size > 0 && !isTextEntry(event.target)) {
+    event.preventDefault()
+    clearSelection()
+  }
+}
+
+function isTextEntry(target: EventTarget | null) {
+  return target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'))
 }
 
 function collapseExpanded() {
@@ -388,7 +415,7 @@ function usageSummary(usage: CustomIconUsage): string {
       </div>
 
       <div v-else>
-        <div ref="gridRef" class="grid gap-2" :style="gridStyle">
+        <div ref="gridRef" class="grid gap-2" :style="gridStyle" @keydown="handleGridKeydown">
           <template v-for="(icon, index) in items" :key="icon.slug">
             <div
               class="group relative flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border p-2.5 text-center transition-colors"
@@ -407,7 +434,7 @@ function usageSummary(usage: CustomIconUsage): string {
                     ? 'border-primary bg-primary text-primary-foreground opacity-100'
                     : 'border-input opacity-0 group-hover:opacity-100'
                 "
-                @click.stop="toggleSelect(icon.slug)"
+                @click.stop="toggleSelect(icon.slug, $event)"
               >
                 <svg v-if="selected.has(icon.slug)" viewBox="0 0 24 24" class="size-3.5" fill="none" stroke="currentColor" stroke-width="3">
                   <path d="M5 12l5 5L20 7" stroke-linecap="round" stroke-linejoin="round" />

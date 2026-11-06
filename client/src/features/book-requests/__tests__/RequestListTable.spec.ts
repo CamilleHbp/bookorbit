@@ -180,3 +180,76 @@ describe('RequestListTable pairs', () => {
     expect((renderPair([]).get('table tbody input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
   })
 })
+
+describe('RequestListTable selection', () => {
+  const ebook = request({ id: 10, mediaKind: 'ebook', status: 'pending', title: 'Dune', companionRequestId: 11, matchedBookId: null })
+  const audiobook = request({ id: 11, mediaKind: 'audiobook', status: 'pending', title: 'Dune', companionRequestId: 10, matchedBookId: null })
+  const rows = [
+    request({ id: 1, status: 'pending', matchedBookId: null }),
+    { ...ebook, companion: audiobook },
+    request({ id: 2, status: 'pending', matchedBookId: null }),
+    request({ id: 3, status: 'pending', matchedBookId: null }),
+  ]
+
+  function renderRows(selectedIds: number[] = []) {
+    return mount(RequestListTable, {
+      props: {
+        requests: rows,
+        canManage: true,
+        canSelfFulfil: true,
+        currentUserId: 1,
+        busyIds: new Set<number>(),
+        progressByRequest: {},
+        density: 'comfortable',
+        sortBy: 'createdAt',
+        sortDir: 'desc',
+        selectedIds,
+      },
+      global: {
+        stubs: {
+          RouterLink: RouterLinkStub,
+          RequestCover: true,
+          RequestPairCover: true,
+          RequestPipeline: true,
+          RequestRowActions: true,
+          RequestPairRowActions: true,
+          RequestStatusBadge: true,
+        },
+      },
+    })
+  }
+
+  function checkboxes(wrapper: ReturnType<typeof renderRows>) {
+    return wrapper.findAll('table tbody input[type="checkbox"]')
+  }
+
+  it('selects every request in the range, unfolding pair rows into their halves', async () => {
+    const wrapper = renderRows()
+
+    await checkboxes(wrapper)[0]!.trigger('click')
+    await checkboxes(wrapper)[2]!.trigger('click', { shiftKey: true })
+
+    expect(wrapper.emitted('set-selected')).toEqual([
+      [[1], true],
+      [[1, 10, 11, 2], true],
+    ])
+  })
+
+  it('toggles a row on Ctrl-click outside its controls', async () => {
+    const wrapper = renderRows([3])
+
+    await wrapper.findAll('table tbody tr')[3]!.findAll('td')[3]!.trigger('click', { metaKey: true })
+
+    expect(wrapper.emitted('set-selected')).toEqual([[[3], false]])
+  })
+
+  it('selects every selectable request on Ctrl+A and clears on Escape', async () => {
+    const wrapper = renderRows([1])
+
+    await checkboxes(wrapper)[0]!.trigger('keydown', { key: 'a', metaKey: true })
+    await checkboxes(wrapper)[0]!.trigger('keydown', { key: 'Escape' })
+
+    expect(wrapper.emitted('set-selected')).toEqual([[[1, 10, 11, 2, 3], true]])
+    expect(wrapper.emitted('clear-selection')).toHaveLength(1)
+  })
+})

@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import StoryReadingActions from './StoryReadingActions.vue'
 import ImportProgress from './ImportProgress.vue'
+import { isRowSelectionClick, preventShiftTextSelection } from '@/composables/useRangeSelection'
 
 const props = defineProps<{
   source: FanfictionSource
@@ -19,7 +20,13 @@ const props = defineProps<{
   selectionDisabled: boolean
   selected: boolean
 }>()
-const emit = defineEmits<{ select: [selected: boolean]; check: []; refresh: []; pause: []; fixLogin: [sourceId: string] }>()
+const emit = defineEmits<{
+  select: [change: { selected: boolean; extend: boolean }]
+  check: []
+  refresh: []
+  pause: []
+  fixLogin: [sourceId: string]
+}>()
 const { t, locale } = useI18n()
 const active = computed(() => props.pending || ['queued', 'running'].includes(props.job?.state ?? ''))
 const canCheck = computed(() => props.source.bookFileId && ['active', 'paused'].includes(props.source.state))
@@ -43,8 +50,12 @@ const words = computed(() => (props.source.wordCount === null ? '' : new Intl.Nu
 const lastChecked = computed(() =>
   props.source.lastCheckedAt ? new Date(props.source.lastCheckedAt).toLocaleString(locale.value) : t('fanfiction.never'),
 )
-function handleSelect(event: Event) {
-  emit('select', (event.target as HTMLInputElement).checked)
+function handleSelect(event: MouseEvent) {
+  emit('select', { selected: (event.target as HTMLInputElement).checked, extend: event.shiftKey })
+}
+function handleRowClick(event: MouseEvent) {
+  if (props.selectionDisabled || !isRowSelectionClick(event)) return
+  emit('select', { selected: !props.selected, extend: event.shiftKey })
 }
 function handleCheck() {
   emit('check')
@@ -61,7 +72,12 @@ function handlePause() {
 </script>
 
 <template>
-  <article class="flex items-start gap-3 border-b border-border py-4 last:border-0 sm:gap-4">
+  <article
+    class="flex items-start gap-3 border-b border-border py-4 last:border-0 sm:gap-4"
+    :class="{ 'bg-primary/5': selected }"
+    @mousedown="preventShiftTextSelection"
+    @click="handleRowClick"
+  >
     <label class="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md has-focus-visible:ring-2 has-focus-visible:ring-ring">
       <input
         type="checkbox"
@@ -69,7 +85,7 @@ function handlePause() {
         :disabled="selectionDisabled"
         :aria-label="t('fanfiction.bulk.selectStory', { title: source.title })"
         class="size-4 accent-primary"
-        @change="handleSelect"
+        @click="handleSelect"
       />
     </label>
     <div class="min-w-0 flex-1 space-y-2">

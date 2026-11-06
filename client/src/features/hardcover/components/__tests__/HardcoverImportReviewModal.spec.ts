@@ -107,7 +107,7 @@ describe('HardcoverImportReviewModal', () => {
       .findAll('button')
       .find((button) => button.text().includes('Review'))!
       .trigger('click')
-    await wrapper.findAll('input[type="checkbox"]')[1]!.setValue(true)
+    await wrapper.findAll('input[type="checkbox"]')[1]!.trigger('click')
     await wrapper
       .findAll('button')
       .find((button) => button.text().includes('Import selected'))!
@@ -115,6 +115,36 @@ describe('HardcoverImportReviewModal', () => {
 
     expect(wrapper.emitted('update:importProgress')).toEqual([[false]])
     expect(wrapper.emitted('apply')).toEqual([[[1000, 1001]]])
+  })
+
+  it('selects a range of importable rows with Shift and the whole page with Ctrl+A', async () => {
+    const wrapper = mountModal(
+      makePreview([
+        makeRow({ hardcoverUserBookId: 1000, outcome: 'needs_review' }),
+        makeRow({ hardcoverUserBookId: 1001, outcome: 'unmatched' }),
+        makeRow({ hardcoverUserBookId: 1002, outcome: 'needs_review' }),
+        makeRow({ hardcoverUserBookId: 1003, outcome: 'needs_review' }),
+      ]),
+    )
+    const rowCheckboxes = () => wrapper.findAll('article input[type="checkbox"]')
+    const checked = () => rowCheckboxes().map((checkbox) => (checkbox.element as HTMLInputElement).checked)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().startsWith('All'))!
+      .trigger('click')
+
+    await rowCheckboxes()[0]!.trigger('click')
+    await rowCheckboxes()[2]!.trigger('click', { shiftKey: true })
+    expect(checked()).toEqual([true, false, true, false])
+
+    await wrapper.findAll('article')[3]!.trigger('click', { ctrlKey: true })
+    expect(checked()).toEqual([true, false, true, true])
+
+    await rowCheckboxes()[0]!.trigger('click', { shiftKey: true })
+    expect(checked()).toEqual([false, false, false, false])
+
+    await rowCheckboxes()[2]!.trigger('keydown', { key: 'a', ctrlKey: true })
+    expect(checked()).toEqual([true, false, true, true])
   })
 
   it('paginates large previews without rendering every row at once', async () => {

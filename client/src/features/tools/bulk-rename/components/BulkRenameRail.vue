@@ -6,6 +6,7 @@ import { ChevronDown, Library as LibraryIcon, Minus, Search, ShieldAlert, X } fr
 import type { BulkRenamePreviewItem, BulkRenameStatus, Library } from '@bookorbit/types'
 
 import { Button } from '@/components/ui/button'
+import { isRowSelectionClick, isSelectAllShortcut, preventShiftTextSelection } from '@/composables/useRangeSelection'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { BulkRenameScope } from '../../composables/useBulkRename'
 import type { ReviewGroup, TriState } from '../composables/useBulkRenameReview'
@@ -35,7 +36,9 @@ const emit = defineEmits<{
   'update:scope': [scope: BulkRenameScope]
   'update:search': [value: string]
   select: [bookId: number]
-  'toggle-selected': [item: BulkRenamePreviewItem]
+  'set-selected': [item: BulkRenamePreviewItem, change: { selected: boolean; extend: boolean }]
+  'select-visible': []
+  'clear-selection': []
   'toggle-group-selected': [key: string]
   'toggle-group': [key: string]
   'toggle-all': []
@@ -142,6 +145,29 @@ function handleToggleAll(): void {
   emit('toggle-all')
 }
 
+function handleItemToggle(item: BulkRenamePreviewItem, event: MouseEvent): void {
+  emit('set-selected', item, { selected: !props.isSelected(item), extend: event.shiftKey })
+}
+
+function handleRowClick(item: BulkRenamePreviewItem, event: MouseEvent): void {
+  if (item.status === 'will_rename' && isRowSelectionClick(event)) {
+    handleItemToggle(item, event)
+    return
+  }
+  emit('select', item.bookId)
+}
+
+function handleListKeydown(event: KeyboardEvent): void {
+  if (props.counts.will_rename === 0) return
+  if (isSelectAllShortcut(event)) {
+    event.preventDefault()
+    emit('select-visible')
+  } else if (event.key === 'Escape' && props.selectedCount > 0) {
+    event.preventDefault()
+    emit('clear-selection')
+  }
+}
+
 function handleScroll(): void {
   const el = listRef.value
   if (!el || !props.hasMore || props.loadingMore) return
@@ -245,6 +271,7 @@ defineExpose({
       :aria-activedescendant="currentId !== null ? `bulk-rename-row-${currentId}` : undefined"
       tabindex="0"
       @scroll.passive="handleScroll"
+      @keydown="handleListKeydown"
     >
       <div class="relative w-full" :style="{ height: `${totalSize}px` }">
         <template v-for="virtual in virtualRows" :key="virtualRowKey(virtual.key)">
@@ -298,13 +325,14 @@ defineExpose({
             :class="{ 'border-s-primary bg-primary/12': currentId === rowItem(virtual.index).bookId }"
             role="option"
             :aria-selected="currentId === rowItem(virtual.index).bookId"
-            @click="emit('select', rowItem(virtual.index).bookId)"
+            @mousedown="preventShiftTextSelection"
+            @click="handleRowClick(rowItem(virtual.index), $event)"
           >
             <SelectionCheckbox
               v-if="rowItem(virtual.index).status === 'will_rename'"
               :state="isSelected(rowItem(virtual.index)) ? 'all' : 'none'"
               :label="t('tools.bulkRename.select.toggleBook', { title: rowItem(virtual.index).title })"
-              @toggle="emit('toggle-selected', rowItem(virtual.index))"
+              @toggle="handleItemToggle(rowItem(virtual.index), $event)"
             />
             <span v-else class="grid size-4 shrink-0 place-items-center text-warning" :title="t('tools.bulkRename.group.heldBack')">
               <ShieldAlert v-if="rowItem(virtual.index).status === 'collision'" class="size-3" aria-hidden="true" />

@@ -9,6 +9,7 @@ import StorySchedule from './StorySchedule.vue'
 import type { DiscoveryReview } from '../composables/useDiscoveryReview'
 import { useWebsiteReview, comparisonMatches } from '../composables/useWebsiteReview'
 import { discoverySources } from '../composables/discoveryReview'
+import { isRowSelectionClick, isSelectAllShortcut, preventShiftTextSelection, useRangeSelection } from '@/composables/useRangeSelection'
 const props = defineProps<{
   source: FanfictionDiscoveryWebsite
   cutoff: string
@@ -41,7 +42,7 @@ const {
   nextPage,
   previousPage,
   toggleAll,
-  toggleBook,
+  setBooks,
   clearSelection,
   changeBook,
   compareBook,
@@ -57,6 +58,40 @@ const active = computed(() => targetJob.value && ['queued', 'running'].includes(
 function changeSource(book: FanfictionDiscoveryCandidate, event: Event) {
   sourceChoices.value[book.id] = (event.target as HTMLSelectElement).value
   changeBook(book)
+}
+const range = useRangeSelection<string>()
+function selectBooks(book: FanfictionDiscoveryCandidate, selected: boolean, extend: boolean) {
+  const ids = new Set(
+    range.targets(
+      book.id,
+      items.value.map((item) => item.id),
+      extend,
+    ),
+  )
+  setBooks(
+    items.value.filter((item) => ids.has(item.id)),
+    selected,
+  )
+}
+function selectionLocked(book: FanfictionDiscoveryCandidate) {
+  return busy.value || finished.value || !reviewable(book)
+}
+function handleBookCheckbox(book: FanfictionDiscoveryCandidate, event: MouseEvent) {
+  selectBooks(book, (event.target as HTMLInputElement).checked, event.shiftKey)
+}
+function handleBookRowClick(book: FanfictionDiscoveryCandidate, event: MouseEvent) {
+  if (selectionLocked(book) || !isRowSelectionClick(event)) return
+  selectBooks(book, !isSelected(book), event.shiftKey)
+}
+function handleListKeydown(event: KeyboardEvent) {
+  if (busy.value || finished.value) return
+  if (isSelectAllShortcut(event)) {
+    event.preventDefault()
+    setBooks(items.value, true)
+  } else if (event.key === 'Escape' && selectedCount.value) {
+    event.preventDefault()
+    clearSelection()
+  }
 }
 function cancel() {
   void props.review.cancel()
@@ -140,8 +175,8 @@ function retry() {
         <Button variant="outline" :disabled="busy" @click="remaining">{{ t('fanfiction.sourceReview.reviewRemaining', { count: total }) }}</Button>
       </div>
       <p v-if="!loading && !items.length" class="text-muted-foreground py-4 text-sm">{{ t('fanfiction.sourceReview.websiteDone') }}</p>
-      <ul class="divide-border divide-y">
-        <li v-for="book in items" :key="book.id" class="py-4">
+      <ul class="divide-border divide-y" @keydown="handleListKeydown">
+        <li v-for="book in items" :key="book.id" class="py-4" @mousedown="preventShiftTextSelection" @click="handleBookRowClick(book, $event)">
           <div class="flex items-start gap-3">
             <label class="flex min-h-11 min-w-8 items-center justify-center">
               <input
@@ -150,7 +185,7 @@ function retry() {
                 :disabled="busy || finished || !reviewable(book) || (!all && selectedCount >= 100 && !isSelected(book))"
                 :aria-label="t('fanfiction.discovery.selectBook', { title: book.title })"
                 class="accent-primary size-4"
-                @change="toggleBook(book)"
+                @click="handleBookCheckbox(book, $event)"
               />
             </label>
             <div class="min-w-0 flex-1 space-y-3">

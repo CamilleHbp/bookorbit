@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { BrokenCoverEntry, MissingBookEntry, MissingResourceCategory, OrphanedCoverDirEntry } from '@bookorbit/types'
 
+import { isSelectAllShortcut, useRangeSelection } from '@/composables/useRangeSelection'
 import { entryId, type MissingResourceEntry } from '../../composables/useMissingResources'
 import BrokenCoverRow from './BrokenCoverRow.vue'
 import MissingBookRow from './MissingBookRow.vue'
@@ -16,7 +17,12 @@ const props = defineProps<{
   allOnPageSelected: boolean
   disabled: boolean
 }>()
-const emit = defineEmits<{ toggle: [id: number]; togglePage: [] }>()
+const emit = defineEmits<{
+  toggle: [id: number]
+  togglePage: []
+  setSelection: [ids: number[], selected: boolean]
+  clearSelection: []
+}>()
 
 const { t } = useI18n()
 
@@ -32,13 +38,32 @@ function handleTogglePage(): void {
   emit('togglePage')
 }
 
-function handleToggle(id: number): void {
-  emit('toggle', id)
+const range = useRangeSelection<number>()
+
+/** "All matching" is not a list of ids, so a click there keeps the plain toggle that leaves that mode. */
+function handleToggle(id: number, { selected, extend }: { selected: boolean; extend: boolean }): void {
+  if (props.selectAllMatching) {
+    range.reset()
+    emit('toggle', id)
+    return
+  }
+  emit('setSelection', range.targets(id, props.items.map(entryId), extend), selected)
+}
+
+function handleKeydown(event: KeyboardEvent): void {
+  if (props.disabled) return
+  if (isSelectAllShortcut(event)) {
+    event.preventDefault()
+    if (!props.selectAllMatching) emit('setSelection', props.items.map(entryId), true)
+  } else if (event.key === 'Escape' && (props.selectAllMatching || props.selectedIds.size > 0)) {
+    event.preventDefault()
+    emit('clearSelection')
+  }
 }
 </script>
 
 <template>
-  <div class="overflow-hidden rounded-lg border border-border">
+  <div class="overflow-hidden rounded-lg border border-border" @keydown="handleKeydown">
     <div class="flex items-center gap-3 border-b border-border bg-muted/30 px-4 py-2.5">
       <label class="flex items-center gap-2 text-sm text-muted-foreground">
         <input
