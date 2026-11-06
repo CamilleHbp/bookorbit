@@ -2,6 +2,7 @@ import { computed, ref, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { BulkRenameExecuteRequest, BulkRenamePreviewItem, BulkRenameStatus } from '@bookorbit/types'
 
+import { useRangeSelection } from '@/composables/useRangeSelection'
 import { classifyChange, type ChangeKind } from '../utils/changeKind'
 
 export interface ReviewGroup {
@@ -41,6 +42,7 @@ export function useBulkRenameReview(items: Ref<BulkRenamePreviewItem[]>, totalRe
   const mode = ref<SelectionMode>('all-except')
   const marked = ref<Set<number>>(new Set())
   const collapsed = ref<Set<string>>(new Set())
+  const range = useRangeSelection<number>()
 
   /** Classification is pure but not free, so it is computed once per loaded page. */
   const kinds = computed(() => {
@@ -139,13 +141,38 @@ export function useBulkRenameReview(items: Ref<BulkRenamePreviewItem[]>, totalRe
   }
 
   /** Marking means "leave out" under `all-except` and "include" under `only`, so one set serves both. */
-  function setSelected(item: BulkRenamePreviewItem, selected: boolean): void {
-    if (item.status !== 'will_rename') return
+  function setItemsSelected(targets: readonly BulkRenamePreviewItem[], selected: boolean): void {
     const next = new Set(marked.value)
     const shouldMark = mode.value === 'all-except' ? !selected : selected
-    if (shouldMark) next.add(item.bookId)
-    else next.delete(item.bookId)
+    for (const item of targets) {
+      if (item.status !== 'will_rename') continue
+      if (shouldMark) next.add(item.bookId)
+      else next.delete(item.bookId)
+    }
     marked.value = next
+  }
+
+  function setSelected(item: BulkRenamePreviewItem, selected: boolean): void {
+    setItemsSelected([item], selected)
+  }
+
+  /** With `extend`, applies the clicked row's new state to every visible row since the last one clicked. */
+  function setSelectedFrom(item: BulkRenamePreviewItem, selected: boolean, extend: boolean): void {
+    const ids = new Set(
+      range.targets(
+        item.bookId,
+        visible.value.map((entry) => entry.bookId),
+        extend,
+      ),
+    )
+    setItemsSelected(
+      visible.value.filter((entry) => ids.has(entry.bookId)),
+      selected,
+    )
+  }
+
+  function selectVisible(): void {
+    setItemsSelected(visible.value, true)
   }
 
   function toggleSelected(item: BulkRenamePreviewItem): void {
@@ -207,6 +234,7 @@ export function useBulkRenameReview(items: Ref<BulkRenamePreviewItem[]>, totalRe
   }
 
   function reset(): void {
+    range.reset()
     selectedId.value = null
     mode.value = 'all-except'
     marked.value = new Set()
@@ -246,6 +274,8 @@ export function useBulkRenameReview(items: Ref<BulkRenamePreviewItem[]>, totalRe
     select,
     step,
     setSelected,
+    setSelectedFrom,
+    selectVisible,
     toggleSelected,
     selectAll,
     selectNone,

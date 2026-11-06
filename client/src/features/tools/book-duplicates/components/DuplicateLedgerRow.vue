@@ -21,6 +21,7 @@ import {
 } from '../utils/duplicate-keeper'
 import DuplicateCompareBench from './DuplicateCompareBench.vue'
 import DuplicateConfidenceChip from './DuplicateConfidenceChip.vue'
+import { isRowSelectionClick, preventShiftTextSelection } from '@/composables/useRangeSelection'
 
 const props = defineProps<{
   group: BookDuplicateGroup
@@ -32,7 +33,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  select: [groupId: number]
+  select: [groupId: number, change: { selected: boolean; extend: boolean }]
   expand: [groupId: number]
   keep: [groupId: number, bookId: number]
   dismiss: [groupId: number]
@@ -94,8 +95,13 @@ function formatChipStyle(format: string): Record<string, string> {
   return { color, backgroundColor: `color-mix(in oklch, ${color} 13%, transparent)` }
 }
 
-function handleSelect(): void {
-  emit('select', props.group.id)
+function handleSelect(event: MouseEvent): void {
+  emit('select', props.group.id, { selected: (event.target as HTMLInputElement).checked, extend: event.shiftKey })
+}
+
+function handleRowClick(event: MouseEvent): void {
+  if (!isRowSelectionClick(event)) return
+  emit('select', props.group.id, { selected: !props.selected, extend: event.shiftKey })
 }
 
 function handleExpand(): void {
@@ -121,9 +127,13 @@ function handleDelete(): void {
     :class="[selected ? 'bg-primary/6' : '', focused ? 'ring-1 ring-inset ring-primary/40' : '']"
     :data-group-id="group.id"
   >
-    <div class="duplicate-row items-center gap-2.5 px-3 py-2 transition-colors hover:bg-accent/60">
+    <div
+      class="duplicate-row items-center gap-2.5 px-3 py-2 transition-colors hover:bg-accent/60"
+      @mousedown="preventShiftTextSelection"
+      @click="handleRowClick"
+    >
       <label class="duplicate-cell-check grid size-8 cursor-pointer place-items-center">
-        <input type="checkbox" class="peer sr-only" :checked="selected" @change="handleSelect" />
+        <input type="checkbox" class="peer sr-only" :checked="selected" @click="handleSelect" />
         <span class="sr-only">{{ t('tools.bookDuplicates.selectGroup', { title }) }}</span>
         <span
           class="grid size-4 place-items-center rounded-xs border peer-focus-visible:ring-2 peer-focus-visible:ring-ring"

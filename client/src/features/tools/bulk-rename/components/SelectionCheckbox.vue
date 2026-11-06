@@ -14,12 +14,12 @@ const props = defineProps<{
   label: string
 }>()
 
-const emit = defineEmits<{ toggle: [] }>()
+const emit = defineEmits<{ toggle: [event: MouseEvent] }>()
 
 const ariaChecked = computed(() => (props.state === 'all' ? 'true' : props.state === 'some' ? 'mixed' : 'false'))
 
-function handleToggle(): void {
-  emit('toggle')
+function handleToggle(event: MouseEvent): void {
+  emit('toggle', event)
 }
 </script>
 

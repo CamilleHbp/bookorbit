@@ -19,6 +19,7 @@ import { HIGHLIGHT_VIEW_KEYS, type HighlightViewKey } from '@/features/book/lib/
 import HighlightsSideRail from '@/features/book/components/detail/highlights/HighlightsSideRail.vue'
 import HighlightsEmptyStage from '@/features/book/components/detail/highlights/HighlightsEmptyStage.vue'
 import { annotationSourceKey } from '@/features/annotations/lib/source-label'
+import { isSelectAllShortcut } from '@/composables/useRangeSelection'
 
 const props = defineProps<{ book: BookDetail }>()
 
@@ -83,6 +84,8 @@ const groups = computed<StreamGroup[]>(() =>
   }),
 )
 
+const orderedIds = computed(() => groups.value.flatMap((group) => group.items.map((item) => item.id)))
+
 const chips = computed(() => {
   const built = buildHubChips(
     { colors: hl.colors.value, styleFilter: 'all', originFilter: 'all', dateFrom: hl.dateFrom.value, dateTo: hl.dateTo.value },
@@ -96,6 +99,16 @@ const chips = computed(() => {
 function handleOpen(id: number) {
   if (hl.activeId.value === id) hl.closeInspector()
   else hl.openInspector(id)
+}
+
+function handleToggleSelect(change: { id: number; selected: boolean; extend: boolean }) {
+  hl.selectRange(change, orderedIds.value)
+}
+
+function handleStreamKeydown(event: KeyboardEvent) {
+  if (!isSelectAllShortcut(event)) return
+  event.preventDefault()
+  hl.selectAllOnPage()
 }
 
 function handleViewChange(value: string) {
@@ -190,7 +203,8 @@ function handleKeydown(event: KeyboardEvent) {
     hl.stepInspector(-1)
     event.preventDefault()
   } else if (event.key === 'Escape') {
-    hl.closeInspector()
+    if (hl.activeId.value != null) hl.closeInspector()
+    else hl.clearSelection()
   } else if (event.key === 'x' && hl.activeId.value != null) {
     hl.toggleSelected(hl.activeId.value)
   }
@@ -254,7 +268,8 @@ onActivated(() => {
         v-model:colors="hl.colors.value"
         v-model:date-from="hl.dateFrom.value"
         v-model:date-to="hl.dateTo.value"
-        class="order-1"
+        class="order-1 outline-none"
+        tabindex="-1"
         :groups="groups"
         :loaded-count="hl.items.value.length"
         :total="hl.total.value"
@@ -287,6 +302,7 @@ onActivated(() => {
         @clear-selection="hl.clearSelection"
         @bulk-color="handleBulkColor"
         @bulk-trash="handleBulkTrash"
+        @keydown="handleStreamKeydown"
       >
         <template #entry="{ item, showDay, showBook, showChapter }">
           <AnnotationEntry
@@ -303,7 +319,7 @@ onActivated(() => {
             :show-chapter="showChapter"
             :narrow-margin="true"
             :location-label="item.pageno == null ? null : t('annotations.listItem.pageNumber', { page: item.pageno })"
-            @toggle-select="hl.toggleSelected"
+            @toggle-select="handleToggleSelect"
             @open="handleOpen"
             @jump="handleJump"
             @trash="handleTrash"

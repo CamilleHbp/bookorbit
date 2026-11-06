@@ -27,6 +27,7 @@ import { fetchLogPage } from '../composables/useEmailSendLog'
 import { useEmailTemplates } from '../composables/useEmailTemplates'
 import { deliveryKind } from '../lib/email-delivery'
 import { deviceLook } from '../lib/email-devices'
+import { isSelectAllShortcut, useRangeSelection } from '@/composables/useRangeSelection'
 import { kindleAccepts, planFile, sendableFiles, sizeLimitExceeded } from '../lib/email-files'
 
 const props = defineProps<{
@@ -58,6 +59,7 @@ const { sendBook } = useEmailSend()
 const { lead } = useDeliveryWords()
 
 const selectedIds = ref<number[]>([])
+const recipientRange = useRangeSelection<number>()
 const providerId = ref<number | null>(null)
 const templateId = ref<number | null>(null)
 const chosenFormat = ref<string | null>(null)
@@ -106,6 +108,7 @@ watch(
     loaded.value = false
     await Promise.all([fetchRecipients(), fetchGroups(), fetchProviders(), fetchTemplates(), fetchPreferences()].map((p) => p.catch(() => undefined)))
     loaded.value = true
+    recipientRange.reset()
     selectedIds.value = initialRecipientIds()
     providerId.value = preferences.value?.defaultProviderId ?? providers.value[0]?.id ?? null
   },
@@ -167,8 +170,20 @@ function groupSelected(group: EmailGroup): boolean {
   const ids = memberIds(group)
   return ids.length > 0 && ids.every((id) => selectedIds.value.includes(id))
 }
-function toggleRecipient(id: number) {
-  selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter((x) => x !== id) : [...selectedIds.value, id]
+function handleRecipientClick(recipient: EmailRecipient, event: MouseEvent) {
+  const select = !selectedIds.value.includes(recipient.id)
+  const ids = recipientRange.targets(
+    recipient.id,
+    recipients.value.map((r) => r.id),
+    event.shiftKey,
+  )
+  const kept = selectedIds.value.filter((id) => !ids.includes(id))
+  selectedIds.value = select ? [...kept, ...ids] : kept
+}
+function handleRecipientsKeydown(event: KeyboardEvent) {
+  if (sending.value || !isSelectAllShortcut(event)) return
+  event.preventDefault()
+  selectedIds.value = [...new Set([...selectedIds.value, ...recipients.value.map((r) => r.id)])]
 }
 /** A group is a shortcut for its members, so the server only ever receives recipient ids. */
 function toggleGroup(group: EmailGroup) {
@@ -379,15 +394,15 @@ function deliveryLine(recipient: EmailRecipient): string {
           <template v-else-if="loaded">
             <div class="flex flex-col gap-2">
               <h3 class="text-xs font-semibold tracking-wider uppercase text-muted-foreground">{{ t('email.sheet.sendTo') }}</h3>
-              <ul class="flex flex-col gap-0.5" role="group" :aria-label="t('email.sheet.sendTo')">
+              <ul class="flex flex-col gap-0.5" role="group" :aria-label="t('email.sheet.sendTo')" @keydown="handleRecipientsKeydown">
                 <li v-for="recipient in recipients" :key="recipient.id">
                   <button
                     type="button"
                     role="checkbox"
                     :aria-checked="selectedIds.includes(recipient.id)"
-                    class="grid w-full grid-cols-[18px_28px_minmax(0,1fr)_auto] items-center gap-x-[11px] rounded-lg px-2 py-[7px] text-start transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    class="grid w-full grid-cols-[18px_28px_minmax(0,1fr)_auto] items-center gap-x-[11px] rounded-lg px-2 py-[7px] text-start transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     :class="selectedIds.includes(recipient.id) ? 'bg-primary/9' : 'hover:bg-foreground/4'"
-                    @click="toggleRecipient(recipient.id)"
+                    @click="handleRecipientClick(recipient, $event)"
                   >
                     <span
                       class="inline-flex size-4 items-center justify-center rounded-[4px] border-[1.5px]"

@@ -21,6 +21,7 @@ import { formatDate } from '@/i18n/formatters'
 import { formatChipStyle } from '@/features/book/lib/format-colors'
 import AnnotationBookThumb from '../AnnotationBookThumb.vue'
 import { annotationSourceKey } from '@/features/annotations/lib/source-label'
+import { isRowSelectionClick, preventShiftTextSelection } from '@/composables/useRangeSelection'
 
 type EntryAnnotation = AnnotationItem | AnnotationHubItem
 
@@ -53,7 +54,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  toggleSelect: [id: number]
+  toggleSelect: [change: { id: number; selected: boolean; extend: boolean }]
   open: [id: number]
   jump: [annotation: EntryAnnotation]
   restore: [id: number]
@@ -91,12 +92,21 @@ const coverClass = computed(() => {
   return props.compact ? 'h-12 w-8' : 'h-[66px] w-11'
 })
 
-function handleRowClick() {
+function emitToggleSelect(extend: boolean) {
+  emit('toggleSelect', { id: props.annotation.id, selected: !props.selected, extend })
+}
+
+function handleRowClick(event: MouseEvent) {
+  if (isRowSelectionClick(event)) emitToggleSelect(event.shiftKey)
+  else emit('open', props.annotation.id)
+}
+
+function handleOpen() {
   emit('open', props.annotation.id)
 }
 
-function handleToggleSelect() {
-  emit('toggleSelect', props.annotation.id)
+function handleToggleSelect(event: MouseEvent) {
+  emitToggleSelect(event.shiftKey)
 }
 
 function handleJump() {
@@ -128,6 +138,7 @@ function handlePurge() {
       compact ? 'py-2' : 'py-3',
       active ? 'bg-primary/10' : selected ? 'bg-primary/[0.08]' : 'hover:bg-muted/45',
     ]"
+    @mousedown="preventShiftTextSelection"
     @click="handleRowClick"
   >
     <!-- WHEN. In select mode the checkbox takes this same cell, so choosing rows shifts nothing. -->
@@ -206,7 +217,7 @@ function handlePurge() {
               type="button"
               class="grid size-6 place-items-center rounded-md text-foreground transition-colors hover:bg-muted hover:text-primary"
               :aria-label="t('annotations.listItem.editNote')"
-              @click.stop="handleRowClick"
+              @click.stop="handleOpen"
             >
               <StickyNote :size="14" />
             </button>
@@ -214,7 +225,7 @@ function handlePurge() {
               type="button"
               class="grid size-6 place-items-center rounded-md text-foreground transition-colors hover:bg-muted hover:text-primary"
               :aria-label="t('annotations.listItem.colorAndStyle')"
-              @click.stop="handleRowClick"
+              @click.stop="handleOpen"
             >
               <Palette :size="14" />
             </button>

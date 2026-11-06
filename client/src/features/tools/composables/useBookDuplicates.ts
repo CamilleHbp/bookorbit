@@ -1,6 +1,7 @@
 import { computed, onActivated, onDeactivated, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { toast } from 'vue-sonner'
+import { useRangeSelection } from '@/composables/useRangeSelection'
 import type {
   BookDuplicateDismissal,
   BookDuplicateGroup,
@@ -37,6 +38,7 @@ export function useBookDuplicates() {
   const keepRule = ref<DuplicateKeepRule>('metadata')
   const keeperOverrides = ref(new Map<number, number>())
   const selectedGroupIds = ref(new Set<number>())
+  const range = useRangeSelection<number>()
   const expandedGroupIds = ref(new Set<number>())
   const dismissals = ref<BookDuplicateDismissal[]>([])
   const loading = ref(false)
@@ -241,6 +243,27 @@ export function useBookDuplicates() {
     selectedGroupIds.value = next
   }
 
+  function setSelected(groupIds: readonly number[], selected: boolean): void {
+    const next = new Set(selectedGroupIds.value)
+    for (const groupId of groupIds) {
+      if (selected) next.add(groupId)
+      else next.delete(groupId)
+    }
+    selectedGroupIds.value = next
+  }
+
+  /** With `extend`, applies the clicked group's new state to every visible group since the last one clicked. */
+  function setSelectedFrom(groupId: number, selected: boolean, extend: boolean): void {
+    setSelected(
+      range.targets(
+        groupId,
+        visibleGroups.value.map((group) => group.id),
+        extend,
+      ),
+      selected,
+    )
+  }
+
   function toggleSelectAll(): void {
     selectedGroupIds.value = allVisibleSelected.value ? new Set() : new Set(visibleGroups.value.map((group) => group.id))
   }
@@ -344,6 +367,8 @@ export function useBookDuplicates() {
     setKeeper,
     toggleExpanded,
     toggleSelected,
+    setSelected,
+    setSelectedFrom,
     toggleSelectAll,
     clearSelection,
     hideGroup,

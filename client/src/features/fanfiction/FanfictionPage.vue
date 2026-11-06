@@ -29,6 +29,7 @@ import { useFanfictionSourceBatch } from './composables/useFanfictionSourceBatch
 import ExistingStories from './components/ExistingStories.vue'
 import { useFanfictionPreferences } from './composables/useFanfictionPreferences'
 import { useFanfiction } from './composables/useFanfiction'
+import { isSelectAllShortcut, useRangeSelection } from '@/composables/useRangeSelection'
 
 const { t } = useI18n()
 const { collections, fetchCollections } = useCollections()
@@ -250,8 +251,26 @@ function toggleSelection() {
   selecting.value = !selected
   if (selected) bulk.clearSelection()
 }
-function selectStory(id: string, selected: boolean) {
-  bulk.selectedIds = selected ? [...bulk.selectedIds, id] : bulk.selectedIds.filter((item) => item !== id)
+const storyRange = useRangeSelection<string>()
+function selectStory(id: string, { selected, extend }: { selected: boolean; extend: boolean }) {
+  const ids = storyRange.targets(
+    id,
+    sources.value.map((source) => source.id),
+    extend,
+  )
+  const changed = new Set(ids)
+  const kept = bulk.selectedIds.filter((item) => !changed.has(item))
+  bulk.selectedIds = selected ? [...kept, ...ids] : kept
+}
+function handleStoryListKeydown(event: KeyboardEvent) {
+  if (busy.value || bulk.busy || bulk.active || bulk.allMatching) return
+  if (isSelectAllShortcut(event)) {
+    event.preventDefault()
+    bulk.selectPage()
+  } else if (event.key === 'Escape' && bulk.selectedIds.length) {
+    event.preventDefault()
+    bulk.clearSelection()
+  }
 }
 watch(libraryId, () => {
   selecting.value = false
@@ -429,7 +448,7 @@ onMounted(() => {
           <Button v-if="filtered" variant="outline" @click="clearFilters">{{ t('fanfiction.clearFilters') }}</Button>
           <Button v-else @click="showAdd"><Plus aria-hidden="true" />{{ t('fanfiction.addStories') }}</Button>
         </div>
-        <div v-else>
+        <div v-else @keydown="handleStoryListKeydown">
           <FanfictionStoryRow
             v-for="source in sources"
             :key="source.id"
