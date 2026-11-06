@@ -78,7 +78,7 @@ const lastStage = computed(() =>
         ><span v-if="percentage !== undefined">{{ percentage }}%</span>
       </div>
     </template>
-    <TagReviewNotice :count="job.result?.preview?.pendingLabelCount ?? job.result?.importReview?.preview.pendingLabelCount" />
+    <TagReviewNotice :count="job.result?.preview?.pendingLabelCount ?? job.result?.importReview?.preview?.pendingLabelCount" />
     <StoryUpdateOutcome :job="job" />
     <p v-if="lastStage" class="text-muted-foreground text-xs">{{ lastStage }}</p>
     <p v-if="errorText" role="alert" class="text-destructive text-sm">{{ errorText }}</p>

@@ -35,6 +35,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        { path: '/tools/tag-matching', name: 'tools-tag-matching', component: { template: '<div />' } },
         { path: '/fanfiction', name: 'fanfiction', component: FanfictionPage },
         { path: '/website-logins', name: 'settings-website-logins', component: { template: '<div />' } },
         { path: '/settings', name: 'settings-fanfiction', component: { template: '<div />' } },
