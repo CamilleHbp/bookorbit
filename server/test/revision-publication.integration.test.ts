@@ -34,7 +34,7 @@ import { RevisionPublicationService } from '../src/modules/book-revision/revisio
 import { requireInspectedFile } from '../src/modules/book-revision/revision-publication.files';
 import { FanfictionJobService } from '../src/modules/fanfiction/fanfiction-job.service';
 import { FanfictionAccessService } from '../src/modules/fanfiction/fanfiction-access.service';
-import { FanfictionProfileService } from '../src/modules/fanfiction/fanfiction-profile.service';
+import { FanfictionConnectionService } from '../src/modules/fanfiction/fanfiction-connection.service';
 import type { RevisionPublicationAuthority } from '../src/modules/book-revision/revision-publication-authority';
 import { RevisionInterruptionService } from '../src/modules/book-revision/revision-interruption.service';
 import { FanfictionRecoveryService } from '../src/modules/fanfiction/fanfiction-recovery.service';
@@ -90,7 +90,7 @@ describe.skipIf(!configPath)('revision publication with PostgreSQL and real file
         RevisionInterruptionService,
         FanfictionRecoveryService,
         { provide: FanfictionAccessService, useValue: {} },
-        { provide: FanfictionProfileService, useValue: {} },
+        { provide: FanfictionConnectionService, useValue: {} },
         { provide: DB, useValue: db },
         { provide: storageConfig.KEY, useValue: storage },
       ],

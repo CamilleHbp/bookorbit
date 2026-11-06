@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onScopeDispose, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { FanfictionSource, FanfictionSourcePage } from '@bookorbit/types'
@@ -36,7 +36,8 @@ async function load(next?: string) {
 }
 const refresh = () => load()
 const next = () => load(cursor.value ?? undefined)
-defineExpose({ refresh })
+const needsAttention = computed(() => stories.value.length > 0 || error.value)
+defineExpose({ refresh, needsAttention })
 watch(() => props.libraryId, refresh, { immediate: true })
 onScopeDispose(() => {
   controller?.abort()

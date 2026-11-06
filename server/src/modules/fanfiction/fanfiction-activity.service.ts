@@ -1,15 +1,15 @@
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { and, asc, desc, eq, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, count, countDistinct, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { NotificationType, type FanfictionActivityPage } from '@bookorbit/types';
+import { NotificationType, type FanfictionActivityKind, type FanfictionActivityPage, type FanfictionActivitySummary } from '@bookorbit/types';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import type { RequestUser } from '../../common/types/request-user';
 import { NotificationService } from '../notification/notification.service';
 import { UserService } from '../user/user.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
-import { FanfictionPageDto } from './dto/fanfiction.dto';
+import { FanfictionActivitySummaryDto, ListFanfictionActivityDto } from './dto/fanfiction.dto';
 
 const activity = schema.fanfictionActivity;
 const notificationTypes = {
@@ -40,7 +40,7 @@ export class FanfictionActivityService {
     private readonly notifications: NotificationService,
   ) {}
 
-  async list(libraryId: number, dto: FanfictionPageDto, user: RequestUser): Promise<FanfictionActivityPage> {
+  async list(libraryId: number, dto: ListFanfictionActivityDto, user: RequestUser): Promise<FanfictionActivityPage> {
     await this.access.administer(user, libraryId);
     const [before] = dto.cursor
       ? await this.db
@@ -67,6 +67,7 @@ export class FanfictionActivityService {
       .where(
         and(
           eq(activity.libraryId, libraryId),
+          dto.kind ? eq(activity.kind, dto.kind) : undefined,
           before
             ? sql`(${activity.createdAt}, ${activity.id}) < (select ${activity.createdAt}, ${activity.id} from ${activity} where ${activity.id} = ${before.id} and ${activity.libraryId} = ${libraryId})`
             : undefined,
@@ -76,6 +77,19 @@ export class FanfictionActivityService {
       .limit(dto.limit + 1);
     const items = rows.slice(0, dto.limit).map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
     return { items, nextCursor: rows.length > dto.limit ? items.at(-1)!.id : null };
+  }
+
+  async summary(libraryId: number, dto: FanfictionActivitySummaryDto, user: RequestUser): Promise<FanfictionActivitySummary> {
+    await this.access.administer(user, libraryId);
+    const since = new Date(Date.now() - dto.days * 86_400_000);
+    const rows = await this.db
+      .select({ kind: activity.kind, total: count(), stories: countDistinct(activity.sourceId) })
+      .from(activity)
+      .where(and(eq(activity.libraryId, libraryId), gte(activity.createdAt, since)))
+      .groupBy(activity.kind);
+    const counts: Record<FanfictionActivityKind, number> = { imported: 0, updated: 0, rolled_back: 0, attention: 0, failed: 0, batch_completed: 0 };
+    for (const row of rows) if (row.kind in counts) counts[row.kind] = row.total;
+    return { since: since.toISOString(), counts, updatedStories: rows.find((row) => row.kind === 'updated')?.stories ?? 0 };
   }
 
   @Interval(5000)
