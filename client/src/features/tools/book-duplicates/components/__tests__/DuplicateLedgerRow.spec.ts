@@ -87,10 +87,19 @@ describe('DuplicateLedgerRow', () => {
   it('emits the group id when selected and when expanded', async () => {
     const wrapper = mountRow([candidate({ id: 1 }), candidate({ id: 2 })], 1)
 
-    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await wrapper.find('input[type="checkbox"]').trigger('click', { shiftKey: true })
     await wrapper.find('button[aria-expanded]').trigger('click')
 
-    expect(wrapper.emitted('select')?.[0]).toEqual([7])
+    expect(wrapper.emitted('select')).toEqual([[7, { selected: true, extend: true }]])
     expect(wrapper.emitted('expand')?.[0]).toEqual([7])
+  })
+
+  it('selects on a Ctrl-click on the row but not on a plain click', async () => {
+    const wrapper = mountRow([candidate({ id: 1 }), candidate({ id: 2 })], 1, { selected: true })
+
+    await wrapper.find('.duplicate-cell-free').trigger('click')
+    await wrapper.find('.duplicate-cell-free').trigger('click', { ctrlKey: true })
+
+    expect(wrapper.emitted('select')).toEqual([[7, { selected: false, extend: false }]])
   })
 })

@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { CheckCircle2, ChevronLeft, ChevronRight, Download, Search, X, XCircle } from '@lucide/vue'
 import type { HardcoverImportMatchMethod, HardcoverImportPreview, HardcoverImportPreviewOutcome, HardcoverImportPreviewRow } from '@bookorbit/types'
 import { useModal } from '@/composables/useModal'
+import { isRowSelectionClick, isSelectAllShortcut, preventShiftTextSelection, useRangeSelection } from '@/composables/useRangeSelection'
 
 const { t } = useI18n()
 
@@ -111,6 +112,8 @@ watch([activeTab, matchFilter, search], () => {
   page.value = 1
 })
 
+watch(page, () => range.reset())
+
 function handleClose(): void {
   if (!props.applying) emit('close')
 }
@@ -127,12 +130,39 @@ function goNext(): void {
   if (canGoNext.value) page.value++
 }
 
-function toggleRow(row: HardcoverImportPreviewRow): void {
-  if (!isImportableRow(row)) return
+const range = useRangeSelection<number>()
+
+function selectRows(row: HardcoverImportPreviewRow, selected: boolean, extend: boolean): void {
+  const ids = new Set(
+    range.targets(
+      row.hardcoverUserBookId,
+      pagedRows.value.map((item) => item.hardcoverUserBookId),
+      extend,
+    ),
+  )
   const next = new Set(selectedIds.value)
-  if (next.has(row.hardcoverUserBookId)) next.delete(row.hardcoverUserBookId)
-  else next.add(row.hardcoverUserBookId)
+  for (const item of pagedRows.value) {
+    if (!ids.has(item.hardcoverUserBookId) || !isImportableRow(item)) continue
+    if (selected) next.add(item.hardcoverUserBookId)
+    else next.delete(item.hardcoverUserBookId)
+  }
   selectedIds.value = next
+}
+
+function handleRowCheckbox(row: HardcoverImportPreviewRow, event: MouseEvent): void {
+  if (!isImportableRow(row) || props.applying) return
+  selectRows(row, (event.target as HTMLInputElement).checked, event.shiftKey)
+}
+
+function handleRowClick(row: HardcoverImportPreviewRow, event: MouseEvent): void {
+  if (!isImportableRow(row) || props.applying || !isRowSelectionClick(event)) return
+  selectRows(row, !selectedIds.value.has(row.hardcoverUserBookId), event.shiftKey)
+}
+
+function handleListKeydown(event: KeyboardEvent): void {
+  if (props.applying || !isSelectAllShortcut(event)) return
+  event.preventDefault()
+  handleSelectVisible()
 }
 
 function handleSelectSafe(): void {
@@ -386,11 +416,14 @@ function normalizeSearch(value: string): string {
         <div class="min-h-0 flex-1 overflow-y-auto">
           <div v-if="pagedRows.length === 0" class="px-4 py-10 text-center text-sm text-muted-foreground">{{ t('hardcover.review.noRows') }}</div>
 
-          <div v-else class="divide-y divide-border">
+          <div v-else class="divide-y divide-border" @keydown="handleListKeydown">
             <article
               v-for="row in pagedRows"
               :key="row.hardcoverUserBookId"
               class="grid gap-3 px-4 py-3 md:grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_auto] md:px-5"
+              :class="{ 'bg-primary/5': selectedIds.has(row.hardcoverUserBookId) }"
+              @mousedown="preventShiftTextSelection"
+              @click="handleRowClick(row, $event)"
             >
               <div class="flex items-start">
                 <input
@@ -399,7 +432,7 @@ function normalizeSearch(value: string): string {
                   :checked="selectedIds.has(row.hardcoverUserBookId)"
                   :disabled="!isImportableRow(row) || applying"
                   :aria-label="t('hardcover.review.selectRowAriaLabel', { title: rowTitle(row) })"
-                  @change="toggleRow(row)"
+                  @click="handleRowCheckbox(row, $event)"
                 />
               </div>
 

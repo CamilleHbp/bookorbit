@@ -208,6 +208,16 @@ export function useMissingResources() {
     selectAllMatching.value = false
   }
 
+  function setSelection(ids: readonly number[], selected: boolean): void {
+    const next = new Set(selectedIds.value)
+    for (const id of ids) {
+      if (selected) next.add(id)
+      else next.delete(id)
+    }
+    selectedIds.value = next
+    selectAllMatching.value = false
+  }
+
   function togglePageSelection(): void {
     const next = new Set(selectedIds.value)
     const shouldSelect = !allOnPageSelected.value
@@ -291,6 +301,7 @@ export function useMissingResources() {
     setCategory,
     setPage,
     toggleSelection,
+    setSelection,
     togglePageSelection,
     selectAll,
     clearSelection,

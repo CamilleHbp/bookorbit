@@ -13,7 +13,7 @@ import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useAuth } from '@/features/auth/composables/useAuth'
 import { formatCompactNumber, formatNumber } from '@/i18n/formatters'
 import { canBulkActRequest, canDismissRequest, cancelStopsATransfer } from './requestActions'
-import { flattenRequestRows, rowRequests } from './requestPair'
+import { flattenRequestRows } from './requestPair'
 import RequestDrawer from './components/RequestDrawer.vue'
 import NoRequestSourcesNotice from './components/NoRequestSourcesNotice.vue'
 import RequestEmptyState from './components/RequestEmptyState.vue'
@@ -201,13 +201,10 @@ function clearSelection() {
   selectedIds.value = []
 }
 
-/** A pair row's checkbox stands for every half of it a bulk action can reach. */
-function toggleSelect(row: BookRequestItem) {
-  const ids = rowRequests(row)
-    .filter((request) => canBulkActRequest(request, canManage.value))
-    .map((request) => request.id)
-  const allSelected = ids.every((id) => selectedIds.value.includes(id))
-  selectedIds.value = allSelected ? selectedIds.value.filter((id) => !ids.includes(id)) : [...new Set([...selectedIds.value, ...ids])]
+function setSelected(ids: number[], selected: boolean) {
+  const changed = new Set(ids)
+  const kept = selectedIds.value.filter((id) => !changed.has(id))
+  selectedIds.value = selected ? [...kept, ...ids] : kept
 }
 
 /** Tick-all covers the rows that can actually be approved, not every row on the page. */
@@ -804,7 +801,8 @@ function goToNextPage() {
           @pair-dismiss="handlePairDismiss"
           @pair-restore="handlePairRestore"
           @sort="handleSort"
-          @toggle-select="toggleSelect"
+          @set-selected="setSelected"
+          @clear-selection="clearSelection"
           @toggle-select-all="toggleSelectAll"
         />
       </div>

@@ -162,8 +162,16 @@ function handleToggleSelectedCurrent(): void {
   if (review.current.value) review.toggleSelected(review.current.value)
 }
 
-function handleToggleSelected(item: BulkRenamePreviewItem): void {
-  review.toggleSelected(item)
+function handleSetSelected(item: BulkRenamePreviewItem, { selected, extend }: { selected: boolean; extend: boolean }): void {
+  review.setSelectedFrom(item, selected, extend)
+}
+
+function handleSelectVisible(): void {
+  review.selectVisible()
+}
+
+function handleClearSelection(): void {
+  review.selectNone()
 }
 
 function handleToggleGroup(key: string): void {
@@ -300,7 +308,9 @@ function handleRetryPreview(): void {
         @update:scope="handleScopeChange"
         @update:search="handleSearchChange"
         @select="handleSelect"
-        @toggle-selected="handleToggleSelected"
+        @set-selected="handleSetSelected"
+        @select-visible="handleSelectVisible"
+        @clear-selection="handleClearSelection"
         @toggle-group-selected="handleToggleGroupSelected"
         @toggle-group="handleToggleGroup"
         @toggle-all="handleToggleAll"

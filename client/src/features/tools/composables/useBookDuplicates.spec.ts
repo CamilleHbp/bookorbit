@@ -184,4 +184,20 @@ describe('useBookDuplicates', () => {
     expect(getBookDuplicateGroups).not.toHaveBeenCalled()
     expect(duplicates.deleting.value).toBe(false)
   })
+
+  it('selects the visible range between the last clicked group and a Shift-clicked one', async () => {
+    const loaded = [1, 2, 3, 4, 5].map((id) => ({ id, books: [] }) as unknown as BookDuplicateGroup)
+    vi.mocked(getBookDuplicateGroups).mockResolvedValue({ groups: loaded, total: 5, page: 1, pageSize: 20 })
+    const { duplicates } = mountComposable()
+    duplicates.scan.value = completedScan
+    await duplicates.setPage(1)
+    duplicates.hideGroup(3)
+
+    duplicates.setSelectedFrom(4, true, false)
+    duplicates.setSelectedFrom(1, true, true)
+    expect([...duplicates.selectedGroupIds.value].sort()).toEqual([1, 2, 4])
+
+    duplicates.setSelectedFrom(2, false, true)
+    expect([...duplicates.selectedGroupIds.value]).toEqual([4])
+  })
 })

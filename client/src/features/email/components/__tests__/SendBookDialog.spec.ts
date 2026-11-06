@@ -166,6 +166,41 @@ describe('SendBookDialog', () => {
     expect(mockState.sendBook).toHaveBeenCalledWith(expect.objectContaining({ recipientIds: [10, 11] }))
   })
 
+  it('picks a range of recipients with Shift and all of them with Ctrl+A', async () => {
+    preferences.value = null
+    recipients.value = [
+      ...recipients.value,
+      { id: 12, name: 'Cleo Dunn', email: 'cleo@example.com', deviceType: null, preferredFormat: 'epub', readAloudDelivery: null },
+    ]
+    mountSheet()
+    await flushPromises()
+
+    recipientRow('Kindle Paperwhite').click()
+    recipientRow('Cleo Dunn').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    await flushPromises()
+    expect(['Kindle Paperwhite', 'Ana Beck', 'Cleo Dunn'].map((name) => recipientRow(name).getAttribute('aria-checked'))).toEqual([
+      'true',
+      'true',
+      'true',
+    ])
+
+    recipientRow('Ana Beck').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    await flushPromises()
+    expect(['Kindle Paperwhite', 'Ana Beck', 'Cleo Dunn'].map((name) => recipientRow(name).getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+      'false',
+    ])
+
+    recipientRow('Ana Beck').dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a', ctrlKey: true }))
+    await flushPromises()
+    expect(['Kindle Paperwhite', 'Ana Beck', 'Cleo Dunn'].map((name) => recipientRow(name).getAttribute('aria-checked'))).toEqual([
+      'true',
+      'true',
+      'true',
+    ])
+  })
+
   it('refuses to send a format a Kindle rejects', async () => {
     mountSheet()
     await flushPromises()

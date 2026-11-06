@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, ExternalLink, EyeOff, TriangleAlert
 import { isGrabbableBookRequestStatus } from '@bookorbit/types'
 import type { BookRequestItem, BookRequestProgressEvent, BookRequestSortDirection, BookRequestSortField } from '@bookorbit/types'
 import { formatPercent, formatRelativeFromNow } from '@/i18n/formatters'
+import { isRowSelectionClick, isSelectAllShortcut, preventShiftTextSelection, useRangeSelection } from '@/composables/useRangeSelection'
 import { formatBytes } from '@/lib/formatting'
 import type { RequestListDensity } from '../composables/useRequestListDensity'
 import { canBulkActRequest } from '../requestActions'
@@ -51,7 +52,9 @@ const emit = defineEmits<{
   'pair-dismiss': [requests: BookRequestItem[]]
   'pair-restore': [requests: BookRequestItem[]]
   sort: [field: BookRequestSortField]
-  'toggle-select': [request: BookRequestItem]
+  /** Request ids, with pair rows already unfolded into the halves a bulk action can reach. */
+  'set-selected': [ids: number[], selected: boolean]
+  'clear-selection': []
   'toggle-select-all': []
 }>()
 
@@ -193,8 +196,41 @@ function toggleSelectAll() {
   emit('toggle-select-all')
 }
 
-function handleToggleSelect(request: BookRequestItem) {
-  emit('toggle-select', request)
+const range = useRangeSelection<number>()
+
+function selectRows(row: BookRequestItem, selected: boolean, extend: boolean) {
+  const rowIds = new Set(
+    range.targets(
+      row.id,
+      props.requests.map((request) => request.id),
+      extend,
+    ),
+  )
+  const ids = props.requests
+    .filter((request) => rowIds.has(request.id))
+    .flatMap(selectableHalves)
+    .map((request) => request.id)
+  emit('set-selected', ids, selected)
+}
+
+function handleRowCheckbox(request: BookRequestItem, event: MouseEvent) {
+  selectRows(request, (event.target as HTMLInputElement).checked, event.shiftKey)
+}
+
+function handleRowClick(request: BookRequestItem, event: MouseEvent) {
+  if (!isSelectable(request) || !isRowSelectionClick(event)) return
+  selectRows(request, !isSelected(request), event.shiftKey)
+}
+
+function handleListKeydown(event: KeyboardEvent) {
+  if (isSelectAllShortcut(event)) {
+    if (!hasSelectableRows.value) return
+    event.preventDefault()
+    emit('set-selected', selectableIds.value, true)
+  } else if (event.key === 'Escape' && props.selectedIds.length > 0) {
+    event.preventDefault()
+    emit('clear-selection')
+  }
 }
 
 function handleOpen(request: BookRequestItem) {
@@ -279,7 +315,7 @@ function rowDismissed(row: BookRequestItem): boolean {
 </script>
 
 <template>
-  <div class="rounded-lg border border-border bg-card">
+  <div class="rounded-lg border border-border bg-card" @keydown="handleListKeydown">
     <!--
       One list, two shapes. The table needs roughly 900px of columns before anything truncates, so
       below `lg` the same rows stack rather than growing a horizontal scrollbar. Nothing wraps the
@@ -376,6 +412,8 @@ function rowDismissed(row: BookRequestItem): boolean {
           :key="request.id"
           class="border-b border-border/60 hover:bg-muted/40"
           :class="[isSelected(request) && 'bg-primary/8', rowDismissed(request) && 'opacity-60']"
+          @mousedown="preventShiftTextSelection"
+          @click="handleRowClick(request, $event)"
         >
           <td v-if="hasSelectableRows" class="px-3" :class="isCompact ? 'py-1.5' : 'py-2.5'">
             <input
@@ -384,7 +422,7 @@ function rowDismissed(row: BookRequestItem): boolean {
               class="h-3.5 w-3.5 rounded-xs border-border accent-primary"
               :checked="isSelected(request)"
               :aria-label="t('bookRequests.table.selectRow', { title: request.title })"
-              @change="handleToggleSelect(request)"
+              @click="handleRowCheckbox(request, $event)"
             />
           </td>
 
@@ -617,7 +655,14 @@ function rowDismissed(row: BookRequestItem): boolean {
 
     <!-- Below `lg` the same rows stack. Same data, same actions, no second component to keep in step. -->
     <ul class="divide-y divide-border/60 lg:hidden">
-      <li v-for="request in requests" :key="request.id" class="p-3" :class="rowDismissed(request) && 'opacity-60'">
+      <li
+        v-for="request in requests"
+        :key="request.id"
+        class="p-3"
+        :class="[isSelected(request) && 'bg-primary/8', rowDismissed(request) && 'opacity-60']"
+        @mousedown="preventShiftTextSelection"
+        @click="handleRowClick(request, $event)"
+      >
         <div class="flex min-w-0 gap-3">
           <input
             v-if="isSelectable(request)"
@@ -625,7 +670,7 @@ function rowDismissed(row: BookRequestItem): boolean {
             class="mt-1 h-3.5 w-3.5 shrink-0 rounded-xs border-border accent-primary"
             :checked="isSelected(request)"
             :aria-label="t('bookRequests.table.selectRow', { title: request.title })"
-            @change="handleToggleSelect(request)"
+            @click="handleRowCheckbox(request, $event)"
           />
           <RequestPairCover
             v-if="isPair(request)"

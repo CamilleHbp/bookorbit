@@ -66,10 +66,7 @@ export async function importMatchingSeed(
   return db.transaction(async (tx) => {
     const [user] = await tx.select({ active: s.users.active, isSuperuser: s.users.isSuperuser }).from(s.users).where(eq(s.users.id, userId));
     if (!user?.active || !user.isSuperuser) throw new ForbiddenException('The deployment seed requires an active superuser account');
-    const libraries = await tx
-      .select({ id: s.libraries.id })
-      .from(s.libraries)
-      .where(and(inArray(s.libraries.id, libraryIds), eq(s.libraries.type, 'books')));
+    const libraries = await tx.select({ id: s.libraries.id }).from(s.libraries).where(inArray(s.libraries.id, libraryIds));
     if (libraries.length !== new Set(libraryIds).size) throw new BadRequestException('A selected book library is unavailable');
     const [foreign] = await tx
       .select({ id: s.libraryTagRulebooks.libraryId })

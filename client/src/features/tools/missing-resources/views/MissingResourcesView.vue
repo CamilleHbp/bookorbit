@@ -49,6 +49,10 @@ function handleToggle(id: number): void {
   resources.toggleSelection(id)
 }
 
+function handleSetSelection(ids: number[], selected: boolean): void {
+  resources.setSelection(ids, selected)
+}
+
 function handleTogglePage(): void {
   resources.togglePageSelection()
 }
@@ -180,6 +184,8 @@ function handleNextPage(): void {
           :disabled="resources.cleaning.value"
           @toggle="handleToggle"
           @toggle-page="handleTogglePage"
+          @set-selection="handleSetSelection"
+          @clear-selection="handleClearSelection"
         />
       </div>
 
