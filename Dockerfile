@@ -73,6 +73,8 @@ ENV PORT=3000
 
 COPY --from=server-builder --chown=node:node /deploy ./
 COPY --from=client-builder --chown=node:node /app/client/dist ./public
+# The server reads its own translated text (achievements, monthly challenges) from the web's catalogs.
+COPY --from=client-builder --chown=node:node /app/client/src/locales ./locales
 COPY --from=server-builder --chown=node:node /app/server/entrypoint.sh /app/server/file-env.sh ./
 COPY --chown=node:node LICENSE NOTICE ADDITIONAL_TERMS.md ./
 COPY --chown=node:node server/bin/kepubify/ ./bin/kepubify/
@@ -97,3 +99,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 
 ENTRYPOINT ["/sbin/tini", "-s", "--"]
 CMD ["sh", "/app/entrypoint.sh"]
+
+LABEL org.opencontainers.image.title="BookOrbit" \
+      org.opencontainers.image.description="Self-hosted library management and reading platform for ebooks, PDFs, audiobooks, and comics" \
+      org.opencontainers.image.url="https://bookorbit.app" \
+      org.opencontainers.image.documentation="https://github.com/bookorbit/bookorbit#quick-start-docker" \
+      org.opencontainers.image.source="https://github.com/bookorbit/bookorbit" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.version="${APP_VERSION}"
