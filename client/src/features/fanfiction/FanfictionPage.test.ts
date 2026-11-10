@@ -168,7 +168,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await wrapper!.get('input[id$="-tags"]').setValue('pending.tag')
     await wrapper!
       .findAll('button')
-      .find((button) => button.text() === 'Review later')!
+      .find((button) => button.text() === 'Save for later')!
       .trigger('click')
     await flushPromises()
     expect(api).toHaveBeenCalledWith(
@@ -198,7 +198,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     })
     await open('/fanfiction?tab=review')
     expect(wrapper!.text()).toContain('Saved story')
-    expect(wrapper!.text()).toContain('Your approved tags and metadata are saved.')
+    expect(wrapper!.text()).toContain('Review saved.')
     await wrapper!
       .findAll('button')
       .find((button) => button.text() === 'Retry download')!

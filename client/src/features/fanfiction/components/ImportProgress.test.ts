@@ -33,6 +33,15 @@ describe('import progress', () => {
     expect(wrapper.text()).not.toContain('Check your source settings')
     wrapper.unmount()
   })
+  it('shows the saved decision and the actual error when an approved download stops', () => {
+    const approved = { approved: true } as NonNullable<NonNullable<FanfictionJob['result']>['importReview']>
+    const wrapper = mount(ImportProgress, {
+      props: { job: job({ state: 'review_required', errorCode: 'import_source_changed', result: { importReview: approved } }) },
+    })
+    expect(wrapper.text()).toContain('Review saved.')
+    expect(wrapper.get('[role="alert"]').text()).toContain('story URL or chapter count changed')
+    wrapper.unmount()
+  })
   it('shows actual chapter counts and accessible download progress', () => {
     const wrapper = mount(ImportProgress, { props: { job: job() } })
     expect(wrapper.text()).toContain('12 of 40 chapters downloaded')

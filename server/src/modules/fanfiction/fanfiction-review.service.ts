@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { isDeepStrictEqual } from 'node:util';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { FanfictionMetadataField } from '@bookorbit/types';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -391,6 +392,13 @@ export class FanfictionReviewService {
         .from(jobs)
         .where(and(eq(jobs.id, jobId), eq(jobs.libraryId, libraryId)))
         .for('update');
+      if (job && job.userId !== user.id) throw new ForbiddenException('This import belongs to another user');
+      if (
+        dto.action === 'apply' &&
+        job?.result?.importReview?.approved &&
+        (!dto.values || isDeepStrictEqual({ ...dto.values }, job.result.importReview.values))
+      )
+        return;
       if (!job?.result?.importReview || job.result.importReview.approved || job.state !== 'review_required')
         throw new ConflictException('Refresh the import review before continuing');
       const review = job.result.importReview;
