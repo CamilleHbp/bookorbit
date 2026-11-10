@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Search, X, ChevronLeft, ChevronRight } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,15 @@ import { useTagMatching, type MatchingRow } from './composables/useTagMatching'
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
 const matching = reactive(useTagMatching())
+const listId = useId()
+const activeOptionId = computed(() => (matching.activeOption ? listId + '-' + matching.activeOption : undefined))
+watch(
+  activeOptionId,
+  (id) => {
+    if (id) document.getElementById(id)?.scrollIntoView({ block: 'nearest' })
+  },
+  { flush: 'post' },
+)
 const showingPreview = ref(false)
 function openPreview() {
   showingPreview.value = true
@@ -145,17 +154,37 @@ onMounted(initialize)
                 type="search"
                 maxlength="200"
                 :class="inputClass"
+                role="combobox"
+                aria-autocomplete="list"
+                :aria-controls="listId"
+                :aria-expanded="matching.canCreateTarget || !!matching.suggestions.length"
+                :aria-activedescendant="activeOptionId"
                 :aria-busy="matching.suggestionsLoading"
+                @blur="matching.clearActiveOption"
+                @keydown.down="matching.moveTargetSelection"
+                @keydown.up="matching.moveTargetSelection"
                 @keydown.enter="matching.acceptTargetSearch"
             /></label>
           </div>
           <p v-if="matching.suggestionsLoading" role="status" class="text-sm text-muted-foreground">{{ t('tagMatching.searching') }}</p>
           <p v-else-if="matching.suggestionsError" role="alert" class="text-sm text-destructive">{{ matching.suggestionsError }}</p>
-          <ul v-if="matching.canCreateTarget || matching.suggestions.length" class="divide-y divide-border rounded-md border border-border">
-            <li v-if="matching.canCreateTarget">
+          <ul
+            :id="listId"
+            role="listbox"
+            :aria-label="t('tagMatching.searchTarget')"
+            v-show="matching.canCreateTarget || matching.suggestions.length"
+            class="divide-y divide-border rounded-md border border-border"
+          >
+            <li v-if="matching.canCreateTarget" role="presentation">
               <button
                 type="button"
                 class="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-start text-sm font-medium hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                :id="listId + '-' + 'create'"
+                role="option"
+                tabindex="-1"
+                :aria-selected="matching.activeOption === 'create'"
+                :class="{ 'bg-accent text-accent-foreground': matching.activeOption === 'create' }"
+                @mousedown.prevent
                 @click="matching.createTarget"
               >
                 <Plus class="size-4 shrink-0" aria-hidden="true" />
@@ -164,10 +193,16 @@ onMounted(initialize)
                 }}</span>
               </button>
             </li>
-            <li v-for="suggestion in matching.suggestions" :key="`${suggestion.field}:${suggestion.id}`">
+            <li role="presentation" v-for="suggestion in matching.suggestions" :key="`${suggestion.field}:${suggestion.id}`">
               <button
                 type="button"
                 class="min-h-11 w-full px-3 py-2 text-start text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                :id="listId + '-' + matching.optionKey(suggestion)"
+                role="option"
+                tabindex="-1"
+                :aria-selected="matching.activeOption === matching.optionKey(suggestion)"
+                :class="{ 'bg-accent text-accent-foreground': matching.activeOption === matching.optionKey(suggestion) }"
+                @mousedown.prevent
                 @click="matching.addTarget(suggestion)"
               >
                 {{ suggestion.name }}

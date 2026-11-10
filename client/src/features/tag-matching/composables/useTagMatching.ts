@@ -38,6 +38,29 @@ export function useTagMatching() {
   const canCreateTarget = computed(
     () => searchReady.value && !exactSuggestion.value && !targets.value.some(matchesSearch) && !newTargets.value.some(matchesSearch),
   )
+  const optionKey = (target: LabelTarget) => target.field + '-' + target.id
+  const optionKeys = computed(() => [...(canCreateTarget.value ? ['create'] : []), ...suggestions.value.map(optionKey)])
+  const activeOption = ref<string>()
+  function clearActiveOption() {
+    activeOption.value = undefined
+  }
+  watch([targetSearch, targetField], clearActiveOption)
+  watch(optionKeys, (keys) => {
+    if (activeOption.value && !keys.includes(activeOption.value)) clearActiveOption()
+  })
+  function moveTargetSelection(event: KeyboardEvent) {
+    if (event.isComposing || !optionKeys.value.length) return
+    event.preventDefault()
+    const keys = optionKeys.value
+    const down = event.key === 'ArrowDown'
+    const index = keys.indexOf(activeOption.value ?? '')
+    if (index < 0) {
+      const firstTag = suggestions.value[0]
+      activeOption.value = down && firstTag ? optionKey(firstTag) : keys[keys.length - 1]
+    } else {
+      activeOption.value = keys[(index + (down ? 1 : -1) + keys.length) % keys.length]
+    }
+  }
   function resetSuggestions() {
     suggestionRevision++
     clearTimeout(suggestTimer)
@@ -160,7 +183,9 @@ export function useTagMatching() {
     if (event.isComposing) return
     event.preventDefault()
     if (!searchReady.value || event.repeat) return
-    if (exactSuggestion.value) addTarget(exactSuggestion.value)
+    const selected = suggestions.value.find((item) => optionKey(item) === activeOption.value)
+    if (selected) addTarget(selected)
+    else if (exactSuggestion.value) addTarget(exactSuggestion.value)
     else createTarget()
   }
   async function save(action: 'match' | 'ignore') {
@@ -302,6 +327,10 @@ export function useTagMatching() {
     createTarget,
     canCreateTarget,
     acceptTargetSearch,
+    optionKey,
+    activeOption,
+    clearActiveOption,
+    moveTargetSelection,
     saveMatch,
     ignore,
   }
