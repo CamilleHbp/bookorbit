@@ -31,6 +31,13 @@ export function useTagMatching() {
   const suggestionCache = new Map<string, { items: TagMatchingSuggestion[]; expires: number }>()
   let suggestionController: AbortController | undefined
   const suggestionKey = (value: string) => value.normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
+  const matchesSearch = (item: { field: string; name: string }) =>
+    item.field === targetField.value && suggestionKey(item.name) === suggestionKey(targetSearch.value)
+  const exactSuggestion = computed(() => suggestions.value.find(matchesSearch))
+  const searchReady = computed(() => !!targetSearch.value.trim() && !saving.value && !suggestionsLoading.value && !suggestionsError.value)
+  const canCreateTarget = computed(
+    () => searchReady.value && !exactSuggestion.value && !targets.value.some(matchesSearch) && !newTargets.value.some(matchesSearch),
+  )
   function resetSuggestions() {
     suggestionRevision++
     clearTimeout(suggestTimer)
@@ -144,11 +151,17 @@ export function useTagMatching() {
     newTargets.value.splice(index, 1)
   }
   function createTarget() {
-    const name = targetSearch.value.trim()
-    if (name && !newTargets.value.some((item) => item.name === name && item.field === targetField.value))
-      newTargets.value.push({ field: targetField.value, name })
+    if (!canCreateTarget.value) return
+    newTargets.value.push({ field: targetField.value, name: targetSearch.value.trim() })
     targetSearch.value = ''
     suggestions.value = []
+  }
+  function acceptTargetSearch(event: KeyboardEvent) {
+    if (event.isComposing) return
+    event.preventDefault()
+    if (!searchReady.value || event.repeat) return
+    if (exactSuggestion.value) addTarget(exactSuggestion.value)
+    else createTarget()
   }
   async function save(action: 'match' | 'ignore') {
     if (!draft.value || saving.value) return
@@ -214,7 +227,7 @@ export function useTagMatching() {
     const field = targetField.value
     const cacheKey = `${field}:${search}`
     suggestionsLoading.value = false
-    if (search.length < 2 || !draft.value) {
+    if (!search || !draft.value) {
       suggestions.value = []
       return
     }
@@ -287,6 +300,8 @@ export function useTagMatching() {
     removeTarget,
     removeNewTarget,
     createTarget,
+    canCreateTarget,
+    acceptTargetSearch,
     saveMatch,
     ignore,
   }
