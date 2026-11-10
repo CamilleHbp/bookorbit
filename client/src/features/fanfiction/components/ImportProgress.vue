@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { needsImportReview } from '../composables/useImportReview'
 import TagReviewNotice from './TagReviewNotice.vue'
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import { computed } from 'vue'
@@ -12,7 +13,7 @@ const { t, te } = useI18n()
 const progress = computed(() => props.job.result?.progress)
 const active = computed(() => ['queued', 'running'].includes(props.job.state))
 const succeeded = computed(() => ['succeeded', 'no_change'].includes(props.job.state))
-const reviewing = computed(() => props.job.state === 'review_required' && !!(props.job.result?.metadataReview || props.job.result?.importReview))
+const reviewing = computed(() => needsImportReview(props.job) || (props.job.state === 'review_required' && !!props.job.result?.metadataReview))
 const failed = computed(() => !reviewing.value && ['failed', 'configuration_blocked', 'review_required'].includes(props.job.state))
 const status = computed(() => {
   if (props.job.cancellationRequested && active.value) return t('fanfiction.progress.cancelling')
@@ -78,7 +79,10 @@ const lastStage = computed(() =>
         ><span v-if="percentage !== undefined">{{ percentage }}%</span>
       </div>
     </template>
-    <TagReviewNotice :count="job.result?.preview?.pendingLabelCount ?? job.result?.importReview?.preview?.pendingLabelCount" />
+    <p v-if="job.result?.importReview?.approved && (active || failed)" class="flex items-center gap-2 text-sm text-muted-foreground">
+      <CircleCheck class="size-4 shrink-0" aria-hidden="true" />{{ t('fanfiction.importInbox.saved') }}
+    </p>
+    <TagReviewNotice v-else :count="job.result?.preview?.pendingLabelCount ?? job.result?.importReview?.preview?.pendingLabelCount" />
     <StoryUpdateOutcome :job="job" />
     <p v-if="lastStage" class="text-muted-foreground text-xs">{{ lastStage }}</p>
     <p v-if="errorText" role="alert" class="text-destructive text-sm">{{ errorText }}</p>

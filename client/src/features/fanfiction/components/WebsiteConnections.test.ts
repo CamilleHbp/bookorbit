@@ -81,7 +81,7 @@ it('loads and saves advanced FanFicFare settings from the login repair form', as
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     const request = vi.mocked(api).mock.calls.find(([, options]) => options?.method === 'POST')!
-    expect(JSON.parse(request[1]!.body as string)).toEqual({ site: website.id, version: 3, configuration: edited, tagRules: [] })
+    expect(JSON.parse(request[1]!.body as string)).toEqual({ site: website.id, version: 3, configuration: edited })
     expect(wrapper.emitted('saved')).toHaveLength(1)
   } finally {
     wrapper.unmount()

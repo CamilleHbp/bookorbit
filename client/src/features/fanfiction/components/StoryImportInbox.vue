@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { needsImportReview } from '../composables/useImportReview'
 import { computed, nextTick, ref, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
@@ -28,11 +29,8 @@ function site(job: FanfictionJob) {
     return job.url
   }
 }
-function needsReview(job: FanfictionJob) {
-  return job.state === 'review_required' && !!job.result?.importReview && !job.result.importReview.approved
-}
 function canRetry(job: FanfictionJob) {
-  return ['failed', 'configuration_blocked'].includes(job.state) && (!job.result?.importReview || job.result.importReview.approved)
+  return ['failed', 'configuration_blocked', 'review_required'].includes(job.state) && (!job.result?.importReview || job.result.importReview.approved)
 }
 async function open(job: FanfictionJob) {
   selectedId.value = job.id
@@ -73,7 +71,7 @@ defineExpose({ canLeave, reload })
       <p class="text-sm text-destructive">{{ t('fanfiction.importInbox.loadFailed') }}</p>
       <Button variant="outline" :disabled="busy" @click="reload">{{ t('fanfiction.refresh') }}</Button>
     </div>
-    <template v-if="selected && needsReview(selected)">
+    <template v-if="selected && needsImportReview(selected)">
       <Button variant="ghost" :disabled="!!actionId" @click="back"
         ><ArrowLeft class="size-4" aria-hidden="true" />{{ t('fanfiction.importInbox.back') }}</Button
       >
@@ -107,7 +105,7 @@ defineExpose({ canLeave, reload })
                 >{{ site(job) }}</a
               >
             </div>
-            <Button v-if="needsReview(job)" :disabled="disabled || !!actionId" @click="open(job)">{{ t('fanfiction.previewStory') }}</Button>
+            <Button v-if="needsImportReview(job)" :disabled="disabled || !!actionId" @click="open(job)">{{ t('fanfiction.previewStory') }}</Button>
             <Button v-else-if="canRetry(job)" :disabled="disabled || !!actionId" @click="retry(job)">{{ t('fanfiction.importInbox.retry') }}</Button>
             <Button
               v-else-if="['queued', 'running'].includes(job.state)"
@@ -117,11 +115,8 @@ defineExpose({ canLeave, reload })
               >{{ t('fanfiction.cancel') }}</Button
             >
           </div>
-          <p v-if="needsReview(job)" class="text-sm text-muted-foreground">{{ t('fanfiction.importInbox.ready') }}</p>
+          <p v-if="needsImportReview(job)" class="text-sm text-muted-foreground">{{ t('fanfiction.importInbox.ready') }}</p>
           <ImportProgress v-else :job="job" />
-          <p v-if="job.result?.importReview?.approved && canRetry(job)" class="text-sm text-muted-foreground">
-            {{ t('fanfiction.importInbox.saved') }}
-          </p>
           <Button v-if="job.state === 'configuration_blocked'" variant="outline" as-child>
             <RouterLink to="/settings/website-logins">{{ t('fanfiction.configureSource') }}</RouterLink>
           </Button>

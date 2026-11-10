@@ -797,7 +797,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     ).toEqual(['Reviewed legacy tag']);
   }, 180_000);
 
-  it('retains the matching version when reserving an initial import', async () => {
+  it('keeps approval through a rulebook change and matches the downloaded labels at completion', async () => {
     const [rulebook] = await db
       .insert(schema.tagRulebooks)
       .values({ userId: user.id })
@@ -828,13 +828,25 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     const reservation = await sources.reserve(job, incoming, user);
     expect(reservation.owned).toBe(true);
     expect(reservation.source).toMatchObject({ labelMappingVersion: 1, rawLabels: incoming.rawLabels });
-    await sources.recordImportMetadata(job, reservation.source.id, incoming, user);
-    await expect(db.transaction((tx) => sources.assertImportable(job, reservation.source.id, tx))).resolves.toMatchObject({ labelMappingVersion: 1 });
+    expect(await sources.pendingImport(libraryId, reservation.source.id, user.id)).toBe(job.id);
+    expect(await sources.pendingImport(libraryId, reservation.source.id, user.id + 1)).toBeUndefined();
+    const reviews = module.get(FanfictionReviewService);
+    await expect(reviews.importDecision(libraryId, job.id, { action: 'apply', values: incoming }, user)).resolves.toMatchObject({
+      id: job.id,
+      state: 'running',
+    });
+    await expect(reviews.importDecision(libraryId, job.id, { action: 'apply', values: { ...incoming, title: 'Other edit' } }, user)).rejects.toThrow(
+      'Refresh',
+    );
     await db.update(schema.tagRulebooks).set({ version: 2 }).where(eq(schema.tagRulebooks.id, rulebook.id));
-    await sources.refreshImportPreview(job, reservation.source.id, { ...incoming, labelMappingVersion: 2 }, user);
-    expect(job.result).toBeNull();
-    const [refreshed] = await db.select().from(schema.fanfictionSources).where(eq(schema.fanfictionSources.id, reservation.source.id));
-    expect(refreshed.labelMappingVersion).toBe(2);
+    await sources.recordImportMetadata(job, reservation.source.id, incoming, user);
+    await db.delete(schema.fanfictionSources).where(eq(schema.fanfictionSources.id, source.id));
+    const completed = await sources.completeImport(job, reservation.source.id, { bookId: source.bookId!, bookFileId: fileId });
+    expect(completed).toMatchObject({ state: 'active', labelMappingVersion: 2 });
+    const persisted = await jobs.get(libraryId, job.id, user);
+    expect(persisted.result?.importReview).toMatchObject({ approved: true, preview: { labelMappingVersion: 1 } });
+    const [snapshot] = await db.select().from(schema.tagMatchingSnapshots).where(eq(schema.tagMatchingSnapshots.bookId, source.bookId!));
+    expect(snapshot).toMatchObject({ version: 2, labels: incoming.rawLabels });
   }, 60000);
 
   it('discards stale prepared bytes and asks for a fresh metadata review before publishing', async () => {

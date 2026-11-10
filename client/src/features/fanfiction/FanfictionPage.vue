@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { needsImportReview } from './composables/useImportReview'
 import WebsiteConnections from './components/WebsiteConnections.vue'
 import StoryAttentionList from './components/StoryAttentionList.vue'
 import StoryReviewQueue from './components/StoryReviewQueue.vue'
@@ -571,7 +572,7 @@ onMounted(() => {
           </p>
           <p v-if="candidate.preview" class="break-all text-sm text-muted-foreground">{{ candidate.url }}</p>
           <StoryImportReview
-            v-if="candidate.job?.state === 'review_required' && candidate.job.result?.importReview"
+            v-if="candidate.job && needsImportReview(candidate.job)"
             :job="candidate.job"
             :disabled="!canManage"
             @updated="acceptImportReview"

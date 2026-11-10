@@ -53,9 +53,9 @@ function handleLater() {
       <StoryCategories :categories="job.result.importReview.preview.categories" />
     </details>
     <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
-    <div class="sticky bottom-0 flex flex-wrap gap-2 border-t border-border bg-background py-3">
+    <div class="sticky bottom-0 grid gap-2 border-t border-border bg-background py-3 sm:flex sm:flex-wrap">
       <Button type="submit" :disabled="busy || disabled">{{ t('fanfiction.confirmImport') }}</Button>
-      <Button type="button" variant="outline" :disabled="busy || disabled" @click="handleLater">{{ t('fanfiction.metadataReview.later') }}</Button>
+      <Button type="button" variant="outline" :disabled="busy || disabled" @click="handleLater">{{ t('fanfiction.importInbox.saveDraft') }}</Button>
       <Button type="button" variant="ghost" :disabled="busy || disabled" @click="discard">{{ t('fanfiction.metadataReview.discardImport') }}</Button>
     </div>
   </form>

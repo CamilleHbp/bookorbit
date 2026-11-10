@@ -59,7 +59,7 @@ describe('initial story review', () => {
     wrapper.getComponent(RichDescriptionEditor).vm.$emit('update:modelValue', '<p>My <em>description</em></p>')
     await wrapper
       .findAll('button')
-      .find((button) => button.text() === 'Review later')!
+      .find((button) => button.text() === 'Save for later')!
       .trigger('click')
     await flushPromises()
     const request = vi.mocked(api).mock.calls.at(-1)!

@@ -38,14 +38,14 @@ export class FanfictionImportService {
     if (job.input?.collectionId) await this.collections.verifyWriteAccess(job.input.collectionId, user);
     await reportProgress({ stage: 'metadata' });
     const resumed = await this.sources.resume(job, user);
-    let preview = job.result?.importReview?.preview ?? (resumed ? null : await this.runtime.preview(job.url, document, signal, saveCookies));
+    const preview = job.result?.importReview?.preview ?? (resumed ? null : await this.runtime.preview(job.url, document, signal, saveCookies));
     const { source, owned } = resumed ?? (await this.sources.reserve(job, preview!, user));
     if (!owned && source.bookId && source.bookFileId && job.sourceId === source.id && job.result?.importReview?.approved)
       return { sourceId: source.id, bookId: source.bookId, bookFileId: source.bookFileId, preview: job.result.importReview.preview };
     if (!owned)
       return {
         sourceId: source.id,
-        ...(!source.bookFileId ? { existingImportId: await this.sources.pendingImport(job.libraryId, source.id) } : {}),
+        ...(!source.bookFileId ? { existingImportId: await this.sources.pendingImport(job.libraryId, source.id, user.id) } : {}),
         ...(source.bookId && source.bookFileId
           ? {
               bookId: source.bookId,
@@ -54,27 +54,6 @@ export class FanfictionImportService {
             }
           : {}),
       };
-    if (job.result?.importReview && document.tagMatching && job.result.importReview.preview.labelMappingVersion !== document.tagMatching.version) {
-      const staged = await this.dock.resetPrepared(
-        {
-          operationId: source.importOperationId,
-          libraryId: source.libraryId,
-          folderId: source.folderId!,
-          userId: source.createdBy,
-          sourcePath: '',
-          relativePath: source.relativePath,
-        },
-        async (tx) => {
-          await authorize();
-          if (signal.aborted) throw new BadRequestException('Story import was cancelled');
-          await this.sources.assertImportable(job, source.id, tx, false);
-        },
-      );
-      preview = staged.published
-        ? await this.sources.rematchImportPreview(job.libraryId, job.result.importReview.preview)
-        : await this.runtime.preview(source.canonicalUrl, document, signal, saveCookies);
-      await this.sources.refreshImportPreview(job, source.id, preview, user, true);
-    }
     if (!job.result?.importReview?.approved) {
       const incoming = preview ?? (await this.runtime.preview(source.canonicalUrl, document, signal, saveCookies));
       return {

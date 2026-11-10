@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { needsImportReview } from '../composables/useImportReview'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -52,7 +53,7 @@ const canRetry = computed(
     (!props.job.result?.importReview || props.job.result.importReview.approved) &&
     retryStates.includes(props.job.state),
 )
-const reviewingImport = computed(() => props.job.state === 'review_required' && Boolean(props.job.result?.importReview))
+const reviewingImport = computed(() => needsImportReview(props.job))
 const bookId = computed(() => props.job.result?.bookId)
 const updatedAt = computed(() => relativeTimestamp(props.job.updatedAt))
 const updatedAtFull = computed(() => new Date(props.job.updatedAt).toLocaleString())

@@ -17,7 +17,7 @@ describe('review before importing a story', () => {
     [true, false, false],
     [true, true, false],
     [true, true, true],
-  ])('requires current approval before ingesting: approved=%s stale=%s', async (approved, stale, published) => {
+  ])('preserves the review across rule changes: approved=%s stale=%s prepared=%s', async (approved, stale, prepared) => {
     const preview: FanfictionPreview = {
       canonicalUrl: 'https://example.org/story',
       site: 'example.org',
@@ -36,15 +36,10 @@ describe('review before importing a story', () => {
       assertImportable: vi.fn(),
       recordImportMetadata: vi.fn(),
       completeImport: vi.fn(),
-      rematchImportPreview: vi.fn().mockResolvedValue({ ...preview, labelMappingVersion: 2 }),
-      refreshImportPreview: vi.fn().mockImplementation((job) => {
-        job.result = null;
-      }),
     };
     const dock = {
-      resetPrepared: vi.fn().mockResolvedValue({ published }),
       ingest: vi.fn().mockResolvedValue({ bookId: 4, bookFileId: 5 }),
-      isPrepared: vi.fn().mockResolvedValue(false),
+      isPrepared: vi.fn().mockResolvedValue(prepared),
     };
     const runtime = {
       preview: vi.fn().mockResolvedValue({ ...preview, labelMappingVersion: stale ? 2 : 1 }),
@@ -80,18 +75,15 @@ describe('review before importing a story', () => {
           new AbortController().signal,
         );
       expect(collections.verifyWriteAccess).toHaveBeenCalledWith(8, {});
-      if (!approved || stale) {
+      if (!approved) {
         expect(collections.addBooks).not.toHaveBeenCalled();
         expect(result?.importReview?.approved).toBe(false);
-        if (stale) {
-          expect(sources.refreshImportPreview).toHaveBeenCalled();
-          if (published) expect(runtime.preview).not.toHaveBeenCalled();
-          expect(result?.importReview?.preview.labelMappingVersion).toBe(2);
-        }
         expect(runtime.download).not.toHaveBeenCalled();
         expect(dock.ingest).not.toHaveBeenCalled();
         expect(sources.completeImport).not.toHaveBeenCalled();
       } else {
+        expect(runtime.preview).not.toHaveBeenCalled();
+        expect(runtime.download).toHaveBeenCalledTimes(prepared ? 0 : 1);
         expect(dock.ingest).toHaveBeenCalledWith(expect.objectContaining({ finalMetadata: values }), expect.any(Function));
         expect(result?.bookId).toBe(4);
         expect(collections.addBooks).toHaveBeenCalledWith(8, { bookIds: [4] }, {});
