@@ -140,6 +140,7 @@ export type FanfictionJobState =
 export interface FanfictionImportProgress {
   stage: "metadata" | "downloading" | "packaging" | "validating" | "importing" | "finalizing";
   completedChapters?: number;
+  reusedChapters?: number;
   totalChapters?: number;
 }
 
@@ -152,12 +153,14 @@ export interface FanfictionJob {
   state: FanfictionJobState;
   url: string;
   attempts: number;
+  nextAttemptAt?: string;
   cancellationRequested: boolean;
   result: {
     contentReview?: { approved: boolean; previousState: "active" | "paused" };
     metadataDeferred?: boolean;
     changes?: FanfictionChapterChanges;
     progress?: FanfictionImportProgress;
+    chapterRestartId?: string;
     existingStory?: FanfictionExistingStory;
     existingImportId?: string;
     preview?: FanfictionPreview;
@@ -392,6 +395,7 @@ export interface FanfictionLibraryPage {
 }
 
 export interface FanfictionJobPage {
+  recentDownloads?: Array<{ id: string; title: string; bookId: number }>;
   items: FanfictionJob[];
   nextCursor: string | null;
 }

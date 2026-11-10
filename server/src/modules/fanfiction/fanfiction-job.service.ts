@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, lt, lte, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, lt, lte, notInArray, or, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -17,6 +17,8 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { PreviewFanfictionDto } from './dto/fanfiction.dto';
 import { recordFanfictionActivity } from './fanfiction-activity';
+
+import { chapterDownloadKinds, retryDelaySeconds } from './fanfiction-download-retry';
 
 const jobs = schema.fanfictionJobs;
 
@@ -264,15 +266,18 @@ export class FanfictionJobService {
       .where(
         and(
           eq(jobs.libraryId, libraryId),
-          dto.pendingImportsOnly
+          dto.pendingImportsOnly || dto.pendingDownloadsOnly
             ? and(
-                eq(jobs.kind, 'import'),
+                dto.pendingDownloadsOnly ? inArray(jobs.kind, ['import', 'update', 'refresh']) : eq(jobs.kind, 'import'),
                 eq(jobs.userId, user.id),
-                inArray(jobs.state, ['queued', 'running', 'review_required', 'failed', 'configuration_blocked']),
+                or(
+                  inArray(jobs.state, ['queued', 'running', 'review_required', 'failed', 'configuration_blocked']),
+                  dto.pendingDownloadsOnly ? and(eq(jobs.state, 'cancelled'), sql`${jobs.result} #>> '{importReview,approved}' = 'true'`) : undefined,
+                ),
                 sql`not exists (
                   select 1 from ${jobs} as newer
                   where newer.library_id = ${jobs.libraryId} and newer.user_id = ${jobs.userId}
-                    and newer.kind = 'import'
+                    and (newer.kind = ${jobs.kind} or (newer.kind in ('update','refresh') and ${jobs.kind} in ('update','refresh')))
                     and (newer.source_id = ${jobs.sourceId} or newer.url = ${jobs.url})
                     and (newer.created_at, newer.id) > (${jobs.createdAt}, ${jobs.id})
                     and newer.result->>'existingImportId' is null
@@ -297,7 +302,26 @@ export class FanfictionJobService {
       const sourceTitle = row.sourceId ? titles.get(row.sourceId) : undefined;
       return sourceTitle ? { ...view, sourceTitle } : view;
     });
-    return { items, nextCursor: rows.length > dto.limit ? items[items.length - 1].id : null };
+    const recentDownloads = dto.pendingDownloadsOnly && !dto.cursor ? await this.recentDownloads(libraryId, user.id) : undefined;
+    return { items, nextCursor: rows.length > dto.limit ? items[items.length - 1].id : null, ...(recentDownloads ? { recentDownloads } : {}) };
+  }
+
+  private recentDownloads(libraryId: number, userId: number) {
+    const activity = schema.fanfictionActivity;
+    return this.db
+      .select({ id: activity.id, title: activity.title, bookId: schema.books.id })
+      .from(activity)
+      .innerJoin(schema.books, and(eq(schema.books.id, activity.bookId), eq(schema.books.libraryId, libraryId)))
+      .where(
+        and(
+          eq(activity.libraryId, libraryId),
+          eq(activity.userId, userId),
+          inArray(activity.kind, ['imported', 'updated']),
+          isNotNull(activity.bookId),
+        ),
+      )
+      .orderBy(desc(activity.createdAt), desc(activity.id))
+      .limit(3);
   }
 
   private async sourceTitles(libraryId: number, rows: (typeof jobs.$inferSelect)[]) {
@@ -344,7 +368,7 @@ export class FanfictionJobService {
     return this.get(libraryId, id, user);
   }
 
-  async retry(libraryId: number, id: string, user: RequestUser, transaction?: DatabaseTransaction) {
+  async retry(libraryId: number, id: string, user: RequestUser, transaction?: DatabaseTransaction, restart = false) {
     await this.access.administer(user, libraryId);
     const operation = async (tx: DatabaseTransaction) => {
       const [job] = await tx
@@ -358,6 +382,14 @@ export class FanfictionJobService {
       if (job.kind === 'source_batch' && job.userId !== user.id && !user.isSuperuser)
         throw new ForbiddenException('This story check belongs to another user');
       if (['queued', 'running', 'succeeded', 'no_change'].includes(job.state)) return this.view(job);
+      if (
+        restart &&
+        (job.kind !== 'import' ||
+          !['failed', 'cancelled'].includes(job.state) ||
+          !job.result?.importReview?.approved ||
+          ['importing', 'finalizing'].includes(job.result.progress?.stage ?? ''))
+      )
+        throw new ConflictException('Stop this chapter download before restarting it');
       if (
         (job.result?.metadataReview?.beforeUpdate || job.result?.importReview) &&
         !(job.result.preparedUpdate?.approved || job.result.importReview?.approved)
@@ -395,6 +427,7 @@ export class FanfictionJobService {
           state: 'queued',
           userId: user.id,
           tokenVersion: user.tokenVersion,
+          ...(restart ? { result: { ...job.result, progress: undefined, chapterRestartId: randomUUID() } } : {}),
           scheduled: false,
           cancellationRequested: false,
           attempts: 0,
@@ -514,7 +547,11 @@ export class FanfictionJobService {
         .select({ id: jobs.id })
         .from(jobs)
         .where(
-          and(eq(jobs.state, 'running'), lte(jobs.leaseExpiresAt, sql`now()`), or(eq(jobs.cancellationRequested, true), sql`${jobs.attempts} >= 3`)),
+          and(
+            eq(jobs.state, 'running'),
+            lte(jobs.leaseExpiresAt, sql`now()`),
+            or(eq(jobs.cancellationRequested, true), and(notInArray(jobs.kind, chapterDownloadKinds), sql`${jobs.attempts} >= 3`)),
+          ),
         )
         .limit(100)
         .for('update', { skipLocked: true });
@@ -537,6 +574,25 @@ export class FanfictionJobService {
           .returning();
         for (const job of failed) await this.recordFailure(tx, job);
       }
+      // A lost worker leaves its checkpoints on disk. Schedule recovery just like a transport failure.
+      await tx
+        .update(jobs)
+        .set({
+          state: 'queued',
+          errorCode: 'worker_lease_expired',
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          runAfter: sql`now() + least(3600, 15 * power(2, least(${jobs.attempts}, 8)) + floor(random() * 15)) * interval '1 second'`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            inArray(jobs.kind, chapterDownloadKinds),
+            eq(jobs.state, 'running'),
+            eq(jobs.cancellationRequested, false),
+            lte(jobs.leaseExpiresAt, sql`now()`),
+          ),
+        );
       const active = await tx
         .select({ site: jobs.site })
         .from(jobs)
@@ -550,7 +606,7 @@ export class FanfictionJobService {
           and(
             inArray(jobs.kind, ['preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch', 'replacement']),
             eq(jobs.cancellationRequested, false),
-            lt(jobs.attempts, 3),
+            or(inArray(jobs.kind, chapterDownloadKinds), lt(jobs.attempts, 3)),
             active.length
               ? notInArray(
                   jobs.site,
@@ -569,6 +625,7 @@ export class FanfictionJobService {
         .update(jobs)
         .set({
           state: 'running',
+          errorCode: null,
           leaseOwner: randomUUID(),
           leaseExpiresAt: sql`now() + interval '60 seconds'`,
           attempts: candidate.attempts + 1,
@@ -636,9 +693,7 @@ export class FanfictionJobService {
           leaseOwner: null,
           leaseExpiresAt: null,
           updatedAt: sql`now()`,
-          ...(state === 'queued'
-            ? { runAfter: sql`now() + (${Math.min(300, 15 * 2 ** job.attempts) + Math.floor(Math.random() * 15)} * interval '1 second')` }
-            : {}),
+          ...(state === 'queued' ? { runAfter: sql`now() + (${retryDelaySeconds(job.kind, job.attempts)} * interval '1 second')` } : {}),
         })
         .where(this.owned(job))
         .returning();
@@ -764,6 +819,7 @@ export class FanfictionJobService {
       state: row.state,
       url: row.url,
       attempts: row.attempts,
+      ...(row.state === 'queued' && row.attempts > 0 && row.errorCode ? { nextAttemptAt: row.runAfter.toISOString() } : {}),
       cancellationRequested: row.cancellationRequested,
       result: row.result,
       errorCode: row.errorCode,

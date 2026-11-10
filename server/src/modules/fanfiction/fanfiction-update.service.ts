@@ -3,7 +3,7 @@ import { FanfictionReviewService } from './fanfiction-review.service';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import type { FanfictionJob, FanfictionPreview, FanfictionConnectionDocument } from '@bookorbit/types';
+import type { FanfictionJob, FanfictionPreview, FanfictionConnectionDocument, FanfictionImportProgress } from '@bookorbit/types';
 import type * as schema from '../../db/schema';
 import { BookRevisionService } from '../book-revision/book-revision.service';
 import { EpubManifestService } from '../book-revision/epub-manifest.service';
@@ -39,6 +39,7 @@ export class FanfictionUpdateService {
     authorize: () => Promise<unknown>,
     signal: AbortSignal,
     saveCookies?: FanfictionCookieSink,
+    reportProgress?: (progress: FanfictionImportProgress) => Promise<void>,
   ): Promise<FanfictionJob['result']> {
     if (job.result?.revisionId) return job.result;
     const source = await this.sources.updateContext(job);
@@ -169,6 +170,8 @@ export class FanfictionUpdateService {
       signal,
       saveCookies,
       source.updatePolicy === 'safe',
+      { libraryId: job.libraryId, userId: job.userId, sourceId: source.id, restartId: job.kind === 'refresh' ? job.id : undefined },
+      reportProgress,
     );
   }
 }

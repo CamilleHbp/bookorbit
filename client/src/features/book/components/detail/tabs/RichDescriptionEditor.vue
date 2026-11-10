@@ -30,6 +30,7 @@ import { normalizeDescriptionHtml } from '@/features/book/lib/description-html'
 const props = defineProps<{
   modelValue: string | null
   disabled?: boolean
+  collapsibleToolbar?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -42,6 +43,10 @@ const linkPanelOpen = ref(false)
 const linkUrl = ref('')
 const linkError = ref<string | null>(null)
 const previewOpen = ref(false)
+const formattingOpen = ref(false)
+function toggleFormatting() {
+  formattingOpen.value = !formattingOpen.value
+}
 
 const editor = useEditor({
   content: props.modelValue ?? '',
@@ -253,7 +258,19 @@ function isAllowedLinkUrl(value: string): boolean {
 
 <template>
   <div class="overflow-hidden rounded-lg border border-input bg-background transition-shadow focus-within:ring-1 focus-within:ring-ring">
-    <div class="flex min-h-10 flex-wrap items-center gap-1 border-b border-border bg-muted/30 px-1.5 py-1">
+    <button
+      v-if="collapsibleToolbar"
+      type="button"
+      class="min-h-11 px-3 text-sm font-medium text-primary"
+      :aria-expanded="formattingOpen"
+      @click="toggleFormatting"
+    >
+      {{ t('book.detail.richDescription.formatting') }}
+    </button>
+    <div
+      v-if="!collapsibleToolbar || formattingOpen"
+      class="flex min-h-10 flex-wrap items-center gap-1 border-b border-border bg-muted/30 px-1.5 py-1"
+    >
       <Tooltip>
         <TooltipTrigger as-child>
           <button type="button" :class="boldButtonClass" :disabled="!canEdit" :aria-label="t('book.detail.richDescription.bold')" @click="toggleBold">

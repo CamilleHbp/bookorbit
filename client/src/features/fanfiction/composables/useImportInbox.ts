@@ -4,6 +4,7 @@ import { api } from '@/lib/api'
 
 export function useImportInbox(libraryId: MaybeRefOrGetter<number>) {
   const jobs = ref<FanfictionJob[]>([])
+  const recentDownloads = ref<NonNullable<FanfictionJobPage['recentDownloads']>>([])
   const busy = ref(false)
   const error = ref(false)
   const actionId = ref<string | null>(null)
@@ -29,13 +30,14 @@ export function useImportInbox(libraryId: MaybeRefOrGetter<number>) {
     error.value = false
     const timeout = setTimeout(() => request.abort(), 20000)
     try {
-      const query = new URLSearchParams({ pendingImportsOnly: 'true', limit: '20' })
+      const query = new URLSearchParams({ pendingDownloadsOnly: 'true', limit: '20' })
       const cursor = cursors[target - 1]
       if (cursor) query.set('cursor', cursor)
       const response = await api(`/api/v1/libraries/${toValue(libraryId)}/fanfiction/jobs?${query}`, { signal: request.signal })
       if (!response.ok) throw new Error()
       const result = (await response.json()) as FanfictionJobPage
       if (current !== generation || controller !== request || request.signal.aborted) return
+      recentDownloads.value = result.recentDownloads ?? []
       jobs.value = result.items
       nextCursor.value = result.nextCursor
       page.value = target
@@ -58,7 +60,7 @@ export function useImportInbox(libraryId: MaybeRefOrGetter<number>) {
   async function previous() {
     if (page.value > 1 && !busy.value) await load(page.value - 1)
   }
-  async function act(job: FanfictionJob, action: 'retry' | 'cancel') {
+  async function act(job: FanfictionJob, action: 'retry' | 'cancel' | 'restart') {
     if (actionId.value) return
     const current = generation
     const request = new AbortController()
@@ -67,11 +69,11 @@ export function useImportInbox(libraryId: MaybeRefOrGetter<number>) {
     actionId.value = job.id
     error.value = false
     try {
-      const response = await api(`/api/v1/libraries/${toValue(libraryId)}/fanfiction/jobs/${job.id}/${action}`, {
+      const response = await api(`/api/v1/libraries/${toValue(libraryId)}/fanfiction/jobs/${job.id}/${action === 'restart' ? 'retry' : action}`, {
         signal: request.signal,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}',
+        body: action === 'restart' ? JSON.stringify({ restart: true }) : '{}',
       })
       if (!response.ok) throw new Error()
       const result = (await response.json()) as FanfictionJob
@@ -89,7 +91,7 @@ export function useImportInbox(libraryId: MaybeRefOrGetter<number>) {
     busy.value = false
     jobs.value = jobs.value
       .map((item) => (item.id === job.id ? job : item))
-      .filter((item) => !['cancelled', 'succeeded', 'no_change'].includes(item.state))
+      .filter((item) => !['succeeded', 'no_change'].includes(item.state) && (item.state !== 'cancelled' || !!item.result?.importReview?.approved))
     poll()
   }
   watch(
@@ -97,6 +99,7 @@ export function useImportInbox(libraryId: MaybeRefOrGetter<number>) {
     () => {
       generation++
       actionController?.abort()
+      recentDownloads.value = []
       jobs.value = []
       page.value = 1
       cursors = [null]
@@ -114,6 +117,7 @@ export function useImportInbox(libraryId: MaybeRefOrGetter<number>) {
   })
   return {
     jobs,
+    recentDownloads,
     busy,
     error,
     actionId,
@@ -121,6 +125,7 @@ export function useImportInbox(libraryId: MaybeRefOrGetter<number>) {
     page,
     next,
     previous,
+    restart: (job: FanfictionJob) => act(job, 'restart'),
     retry: (job: FanfictionJob) => act(job, 'retry'),
     cancel: (job: FanfictionJob) => act(job, 'cancel'),
     updated,

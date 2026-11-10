@@ -5,16 +5,21 @@ import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import { CircleAlert, CircleCheck, LoaderCircle } from '@lucide/vue'
+import { CircleAlert, CircleCheck, Clock, LoaderCircle } from '@lucide/vue'
 import type { FanfictionJob } from '@bookorbit/types'
 
 const props = defineProps<{ job: FanfictionJob }>()
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const progress = computed(() => props.job.result?.progress)
 const active = computed(() => ['queued', 'running'].includes(props.job.state))
 const succeeded = computed(() => ['succeeded', 'no_change'].includes(props.job.state))
 const reviewing = computed(() => needsImportReview(props.job) || (props.job.state === 'review_required' && !!props.job.result?.metadataReview))
 const failed = computed(() => !reviewing.value && ['failed', 'configuration_blocked', 'review_required'].includes(props.job.state))
+const nextAttempt = computed(() =>
+  props.job.state === 'queued' && props.job.nextAttemptAt && !props.job.cancellationRequested
+    ? new Date(props.job.nextAttemptAt).toLocaleString(locale.value, { dateStyle: 'short', timeStyle: 'short' })
+    : null,
+)
 const status = computed(() => {
   if (props.job.cancellationRequested && active.value) return t('fanfiction.progress.cancelling')
   if (props.job.state === 'queued' && props.job.attempts > 0) return t('fanfiction.progress.retrying')
@@ -24,7 +29,11 @@ const status = computed(() => {
 })
 const chapterLabel = computed(() =>
   progress.value?.totalChapters
-    ? t('fanfiction.progress.chapters', { completed: progress.value.completedChapters ?? 0, total: progress.value.totalChapters })
+    ? t(progress.value.reusedChapters ? 'fanfiction.progress.reused' : 'fanfiction.progress.chapters', {
+        completed: progress.value.completedChapters ?? 0,
+        total: progress.value.totalChapters,
+        reused: progress.value.reusedChapters ?? 0,
+      })
     : '',
 )
 const percentage = computed(() => {
@@ -35,7 +44,7 @@ const percentage = computed(() => {
 const barStyle = computed(() => ({ width: percentage.value === undefined ? '35%' : `${percentage.value}%` }))
 const errorText = computed(() => {
   const key = `fanfiction.errors.${props.job.errorCode}`
-  return !reviewing.value && props.job.errorCode ? t(te(key) ? key : 'fanfiction.errors.runtime_failed') : ''
+  return !active.value && !reviewing.value && props.job.errorCode ? t(te(key) ? key : 'fanfiction.errors.runtime_failed') : ''
 })
 const lastStage = computed(() =>
   failed.value && progress.value ? t('fanfiction.progress.failedDuring', { stage: t(`fanfiction.progress.${progress.value.stage}`) }) : '',
@@ -45,21 +54,27 @@ const lastStage = computed(() =>
 <template>
   <div class="space-y-2">
     <RouterLink
-      v-if="job.result?.metadataReview && job.result.bookId"
+      v-if="(job.result?.metadataReview || job.result?.contentReview) && job.result.bookId"
       :to="{ name: 'book-detail', params: { bookId: job.result.bookId }, query: { tab: 'story-updates' } }"
       class="text-primary block font-medium underline"
-      >{{ t('fanfiction.metadataReview.title') }}</RouterLink
+      >{{
+        t(job.result?.contentReview && !job.result.contentReview.approved ? 'fanfiction.storyUpdates' : 'fanfiction.metadataReview.title')
+      }}</RouterLink
     >
     <div class="flex items-center gap-2 text-sm" role="status" aria-live="polite">
-      <LoaderCircle v-if="active" class="text-primary size-4 shrink-0 motion-safe:animate-spin" aria-hidden="true" />
+      <Clock v-if="nextAttempt" class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+      <LoaderCircle v-else-if="active" class="text-primary size-4 shrink-0 motion-safe:animate-spin" aria-hidden="true" />
       <CircleCheck v-else-if="succeeded" class="text-primary size-4 shrink-0" aria-hidden="true" />
       <CircleAlert v-else-if="failed" class="text-destructive size-4 shrink-0" aria-hidden="true" />
       <span class="font-medium">{{ status }}</span>
       <span v-if="job.attempts > 1" class="text-muted-foreground ml-auto">{{ t('fanfiction.progress.attempt', { count: job.attempts }) }}</span>
     </div>
-    <template v-if="job.kind === 'import' && (active || progress || succeeded)">
+    <p v-if="nextAttempt" class="text-muted-foreground text-sm">
+      <time :datetime="job.nextAttemptAt">{{ t('fanfiction.progress.nextAttempt', { time: nextAttempt }) }}</time>
+    </p>
+    <template v-if="['import', 'update', 'refresh'].includes(job.kind) && (progress || (job.kind === 'import' && (active || succeeded)))">
       <div
-        v-if="active"
+        v-if="active && !nextAttempt"
         role="progressbar"
         :aria-label="status"
         :aria-valuenow="percentage"

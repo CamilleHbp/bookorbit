@@ -474,6 +474,38 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     await jobs.finish(resumed, 'succeeded', result);
   });
 
+  it('backs off after a lost lease and resumes a download past its third attempt', async () => {
+    const [expired] = await db
+      .insert(schema.fanfictionJobs)
+      .values({
+        libraryId,
+        userId,
+        tokenVersion: requestUser.tokenVersion,
+        kind: 'update',
+        site: 'example.org',
+        url: 'https://example.org/interrupted',
+        idempotencyKey: randomUUID(),
+        state: 'running',
+        leaseOwner: randomUUID(),
+        leaseExpiresAt: new Date(0),
+        attempts: 12,
+      })
+      .returning();
+    expect(await jobs.claim()).toBeNull();
+    const waiting = await jobs.get(libraryId, expired.id, requestUser);
+    expect(waiting).toMatchObject({ state: 'queued', attempts: 12, errorCode: 'worker_lease_expired' });
+    expect(Date.parse(waiting.nextAttemptAt!)).toBeGreaterThan(Date.now());
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ runAfter: new Date(0) })
+      .where(eq(schema.fanfictionJobs.id, expired.id));
+    const claimed = (await jobs.claim())!;
+    expect(claimed).toMatchObject({ id: expired.id, attempts: 13, state: 'running' });
+    await jobs.finish(claimed, 'queued', null, 'source_rate_limited');
+    expect((await jobs.cancel(libraryId, expired.id, requestUser)).state).toBe('cancelled');
+    expect(await jobs.claim()).toBeNull();
+  });
+
   it('pages unfinished imports by owner without history noise or superseded attempts', async () => {
     const [otherUser] = await db
       .insert(schema.users)
@@ -509,6 +541,17 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
       await db
         .insert(schema.fanfictionJobs)
         .values({ ...base, idempotencyKey: randomUUID(), url: latest.url, state: 'succeeded', result: { existingImportId: latest.id } });
+      const [update] = await db
+        .insert(schema.fanfictionJobs)
+        .values({ ...base, idempotencyKey: randomUUID(), kind: 'update', state: 'running', url: 'https://example.org/updated' })
+        .returning();
+      const inbox = await jobs.list(libraryId, { limit: 20, pendingDownloadsOnly: 'true' }, requestUser);
+      expect(inbox.items.map((job) => job.id)).toContain(update.id);
+      expect(inbox.items.every((job) => job.url !== 'https://example.org/private')).toBe(true);
+      expect(inbox.recentDownloads).toBeDefined();
+      expect((await jobs.list(libraryId, { limit: 20, pendingDownloadsOnly: 'true' }, { ...requestUser, id: otherUser.id })).recentDownloads).toEqual(
+        [],
+      );
       const first = await jobs.list(libraryId, { limit: 2, pendingImportsOnly: 'true' }, requestUser);
       expect(first.items.map((job) => job.id)).toEqual([queued.id, failed.id]);
       const second = await jobs.list(libraryId, { limit: 2, pendingImportsOnly: 'true', cursor: first.nextCursor! }, requestUser);
@@ -546,6 +589,11 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
       .update(schema.fanfictionJobs)
       .set({ leaseExpiresAt: sql`now() - interval '1 second'` })
       .where(eq(schema.fanfictionJobs.id, first.id));
+    expect(await jobs.claim()).toBeNull();
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ runAfter: new Date(0) })
+      .where(eq(schema.fanfictionJobs.id, first.id));
     const retry = (await jobs.claim())!;
     await jobs.reportProgress(first, { stage: 'metadata' });
     const [fenced] = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, first.id));
@@ -569,6 +617,11 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     await db
       .update(schema.fanfictionJobs)
       .set({ leaseExpiresAt: sql`now() - interval '1 second'` })
+      .where(eq(schema.fanfictionJobs.id, first.id));
+    expect(await jobs.claim()).toBeNull();
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ runAfter: new Date(0) })
       .where(eq(schema.fanfictionJobs.id, first.id));
     const retry = (await jobs.claim())!;
     const result = await imports.run(retry, requestUser, { configuration: '', cookies: [] }, authorize, new AbortController().signal);

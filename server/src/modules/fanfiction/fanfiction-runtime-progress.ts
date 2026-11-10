@@ -22,7 +22,7 @@ export class FanfictionRuntimeProgress {
       try {
         const value = JSON.parse(line.slice(19)) as FanfictionImportProgress;
         if (!['metadata', 'downloading', 'packaging', 'validating'].includes(value.stage)) continue;
-        const { completedChapters, totalChapters } = value;
+        const { completedChapters, totalChapters, reusedChapters } = value;
         if (
           value.stage !== 'metadata' &&
           (!Number.isInteger(totalChapters) ||
@@ -33,7 +33,13 @@ export class FanfictionRuntimeProgress {
             completedChapters! > totalChapters!)
         )
           continue;
-        this.pending = { stage: value.stage, ...(value.stage !== 'metadata' ? { completedChapters, totalChapters } : {}) };
+        if (reusedChapters !== undefined && (!Number.isInteger(reusedChapters) || reusedChapters < 0 || reusedChapters > (completedChapters ?? 0)))
+          continue;
+        this.pending = {
+          stage: value.stage,
+          ...(reusedChapters !== undefined ? { reusedChapters } : {}),
+          ...(value.stage !== 'metadata' ? { completedChapters, totalChapters } : {}),
+        };
         this.start();
       } catch {
         /* Ignore non-protocol diagnostics without exposing their contents. */

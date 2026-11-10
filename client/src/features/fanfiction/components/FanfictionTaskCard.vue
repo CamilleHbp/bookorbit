@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { needsImportReview } from '../composables/useImportReview'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { FanfictionJob } from '@bookorbit/types'
@@ -9,6 +9,8 @@ import { relativeTimestamp } from '@/lib/relative-time'
 import ImportProgress from './ImportProgress.vue'
 import StoryImportReview from './StoryImportReview.vue'
 
+const editor = ref<InstanceType<typeof StoryImportReview>>()
+defineExpose({ canLeave: () => editor.value?.canLeave() ?? true })
 const props = defineProps<{ job: FanfictionJob; busy: boolean; bulkBusy: boolean; canManage: boolean }>()
 const emit = defineEmits<{
   cancel: [job: FanfictionJob]
@@ -92,7 +94,7 @@ function handleAccepted(job: FanfictionJob) {
         <time :datetime="job.updatedAt" :title="updatedAtFull">{{ updatedAt }}</time>
       </p>
     </header>
-    <StoryImportReview v-if="reviewingImport" :job="job" :disabled="!canManage" @updated="handleAccepted" />
+    <StoryImportReview ref="editor" v-if="reviewingImport" :job="job" :disabled="!canManage" @updated="handleAccepted" />
     <ImportProgress v-else :job="job" />
     <div v-if="active || canRetry || needsLogin || job.kind === 'source_batch'" class="flex flex-wrap gap-2">
       <Button v-if="job.kind === 'source_batch'" variant="outline" :disabled="busy || bulkBusy" @click="handleReview">{{
