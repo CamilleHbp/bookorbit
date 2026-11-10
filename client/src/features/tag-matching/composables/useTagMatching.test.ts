@@ -20,6 +20,32 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 describe('tag matching editor', () => {
+  it('moves through visible results in both directions and accepts the highlighted tag', async () => {
+    vi.useFakeTimers()
+    const editor = setup()
+    editor.addRule()
+    vi.mocked(api).mockResolvedValue(
+      response([
+        { field: 'tags', id: 4, name: 'fandom.avatar', score: 1 },
+        { field: 'tags', id: 9, name: 'fandom.angel', score: 0.5 },
+      ]),
+    )
+    editor.targetSearch.value = 'fandom.a'
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(100)
+    const arrow = (key: string) => editor.moveTargetSelection(new KeyboardEvent('keydown', { key }))
+    arrow('ArrowDown')
+    expect(editor.activeOption.value).toBe('tags-4')
+    arrow('ArrowUp')
+    expect(editor.activeOption.value).toBe('create')
+    arrow('ArrowUp')
+    expect(editor.activeOption.value).toBe('tags-9')
+    editor.acceptTargetSearch(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await nextTick()
+    expect(editor.targets.value.map((item) => item.id)).toEqual([9])
+    expect(editor.newTargets.value).toEqual([])
+    expect(editor.activeOption.value).toBeUndefined()
+  })
   it('uses Enter to stage an exact result or a new name after search completes', async () => {
     vi.useFakeTimers()
     const editor = setup()
