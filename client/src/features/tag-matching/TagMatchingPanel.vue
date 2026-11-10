@@ -51,8 +51,8 @@ onMounted(initialize)
     <header class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-xl font-semibold">{{ t('tagMatching.title') }}</h1>
       <div v-if="canEdit" class="flex flex-wrap gap-2">
-        <Button variant="outline" :disabled="!!matching.draft" @click="openPreview">{{ t('tagMatching.preview.title') }}</Button>
-        <Button variant="outline" :disabled="!!matching.draft" @click="matching.addRule"
+        <Button variant="outline" :disabled="!!matching.draft || matching.saving" @click="openPreview">{{ t('tagMatching.preview.title') }}</Button>
+        <Button variant="outline" :disabled="!!matching.draft || matching.saving" @click="matching.addRule"
           ><Plus class="size-4" aria-hidden="true" />{{ t('tagMatching.add') }}</Button
         >
       </div>
@@ -65,7 +65,7 @@ onMounted(initialize)
           :key="tab"
           :variant="matching.view === tab ? 'secondary' : 'ghost'"
           :aria-pressed="matching.view === tab"
-          :disabled="!!matching.draft"
+          :disabled="!!matching.draft || matching.saving"
           @click="matching.switchView(tab)"
           >{{ t(`tagMatching.${tab}`) }}</Button
         >
@@ -240,7 +240,7 @@ onMounted(initialize)
         </div>
         <div class="flex items-center justify-between gap-2">
           <p class="text-sm tabular-nums text-muted-foreground" aria-live="polite">{{ t('tagMatching.count', { count: matching.total }) }}</p>
-          <Button v-if="matching.selection.length" variant="outline" @click="matching.editSelected">{{
+          <Button v-if="matching.selection.length" :disabled="matching.saving" variant="outline" @click="matching.editSelected">{{
             t('tagMatching.editCount', { count: matching.selection.length })
           }}</Button>
         </div>
@@ -254,11 +254,13 @@ onMounted(initialize)
                 class="mt-2 size-4 shrink-0 accent-primary"
                 :aria-label="t('tagMatching.select', { name: row.value })"
                 :checked="matching.selection.includes(matching.key(row))"
+                :disabled="matching.saving"
                 @change="matching.toggle(row)"
               />
               <button
                 type="button"
                 class="min-w-0 flex-1 rounded-sm text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                :disabled="matching.saving"
                 @click="matching.edit(row)"
               >
                 <span class="block break-words text-sm font-medium">{{
@@ -269,7 +271,12 @@ onMounted(initialize)
                   {{ t('tagMatching.books', { count: row.bookCount }) }}</span
                 ><span v-if="row.targetNames?.length" class="mt-2 block break-words text-sm">{{ row.targetNames.join(', ') }}</span>
               </button>
-              <Button variant="ghost" @click="matching.edit(row)">{{ t('common.edit') }}</Button>
+              <div class="flex shrink-0 flex-col items-end sm:flex-row">
+                <Button variant="ghost" :disabled="matching.saving" @click="matching.edit(row)">{{ t('common.edit') }}</Button>
+                <Button v-if="matching.view === 'review'" variant="outline" :disabled="matching.saving" @click="matching.ignoreRow(row)">{{
+                  t('tagMatching.ignore')
+                }}</Button>
+              </div>
             </li>
           </ul>
         </div>
