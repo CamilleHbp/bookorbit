@@ -9,11 +9,13 @@ import type {
 } from '@bookorbit/types';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { validateFanfictionPreview } from './fanfiction-preview';
 import { validateRuntimeCookies, type FanfictionCookieSink } from './fanfiction-cookies';
 import { FanfictionRuntimeProgress, type FanfictionProgressSink } from './fanfiction-runtime-progress';
+
+export type ChapterScope = { libraryId: number; userId: number; sourceId: string; restartId?: string };
 
 type RuntimeRequest = {
   operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
@@ -26,6 +28,7 @@ type RuntimeRequest = {
   edits?: { section?: string; username?: string; password?: string; isAdult?: boolean };
   redact?: boolean;
   reviewChanges?: boolean;
+  chapterDirectory?: string;
 };
 type RuntimeResponse =
   { ok: true; result: unknown; cookies?: unknown } | { ok: false; code: string; errorClass: string; errorLocation?: string; httpStatus?: number };
@@ -112,6 +115,32 @@ export class FanficfareRuntimeService {
     return validateFanfictionPreview(await this.temporary({ operation: 'preview', url, ...document }, signal, saveCookies));
   }
 
+  private chapterDirectory(scope?: ChapterScope) {
+    if (!scope) return undefined;
+    const { libraryId, userId, sourceId, restartId } = scope;
+    const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+    if (
+      !Number.isSafeInteger(libraryId) ||
+      libraryId < 1 ||
+      !Number.isSafeInteger(userId) ||
+      userId < 1 ||
+      !uuid.test(sourceId) ||
+      (restartId && !uuid.test(restartId))
+    )
+      throw new BadRequestException('Invalid story download identity');
+    return join(this.storage.appDataPath, 'fanfiction', 'chapters', String(libraryId), String(userId), sourceId, restartId ?? 'incremental');
+  }
+
+  async releaseChapters(scope: ChapterScope) {
+    try {
+      await rm(dirname(this.chapterDirectory(scope)!), { recursive: true, force: true });
+    } catch {
+      this.logger.warn(
+        `[fanfiction.chapter_cleanup] [fail] libraryId=${scope.libraryId} sourceId=${scope.sourceId} - saved chapter cleanup deferred`,
+      );
+    }
+  }
+
   async download<T>(
     url: string,
     document: FanfictionConnectionDocument,
@@ -119,9 +148,16 @@ export class FanficfareRuntimeService {
     signal?: AbortSignal,
     saveCookies?: FanfictionCookieSink,
     reportProgress?: FanfictionProgressSink,
+    scope?: ChapterScope,
   ): Promise<T> {
     return this.workspace(async (directory) => {
-      const result = (await this.execute({ operation: 'download', url, ...document }, directory, signal, saveCookies, reportProgress)) as {
+      const result = (await this.execute(
+        { operation: 'download', url, ...document, chapterDirectory: this.chapterDirectory(scope) },
+        directory,
+        signal,
+        saveCookies,
+        reportProgress,
+      )) as {
         output?: string;
         preview?: FanfictionPreview;
       };
@@ -139,14 +175,17 @@ export class FanficfareRuntimeService {
     signal?: AbortSignal,
     saveCookies?: FanfictionCookieSink,
     reviewChanges = false,
+    scope?: ChapterScope,
+    reportProgress?: FanfictionProgressSink,
   ): Promise<T> {
     return this.workspace(async (directory) => {
       await prepare(join(directory, 'input.epub'));
       const result = (await this.execute(
-        { operation: reviewChanges ? 'refresh' : operation, url, ...document, reviewChanges },
+        { operation, url, ...document, reviewChanges, chapterDirectory: this.chapterDirectory(scope) },
         directory,
         signal,
         saveCookies,
+        reportProgress,
       )) as {
         output?: string;
         reviewRequired?: string;

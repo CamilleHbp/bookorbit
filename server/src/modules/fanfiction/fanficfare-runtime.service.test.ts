@@ -46,6 +46,21 @@ describe('private FanFicFare runtime session output', () => {
     service = module.get(FanficfareRuntimeService);
     output.response = { ok: true, result: { title: 'Public preview' }, cookies: [cookie] };
   });
+  it('keeps an incremental update incremental when chapter changes require review', async () => {
+    output.response = { ok: true, result: { reviewRequired: 'identity_mismatch' } };
+    await expect(
+      service.update('update', 'https://example.org/story', { configuration: '', cookies: [] }, async () => {}, vi.fn(), undefined, undefined, true, {
+        libraryId: 3,
+        userId: 4,
+        sourceId: '11111111-1111-4111-8111-111111111111',
+      }),
+    ).rejects.toThrow();
+    expect(output.request).toMatchObject({
+      operation: 'update',
+      reviewChanges: true,
+      chapterDirectory: expect.stringContaining('/3/4/11111111-1111-4111-8111-111111111111/incremental'),
+    });
+  });
   it('accepts a large personal rulebook while keeping input bounded', async () => {
     const rules = Array.from({ length: 6000 }, (_, index) => ({
       source: null,

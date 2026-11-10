@@ -42,6 +42,21 @@ describe('import progress', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('story URL or chapter count changed')
     wrapper.unmount()
   })
+  it('shows reused chapters and fresh progress for a running update', () => {
+    const wrapper = mount(ImportProgress, {
+      props: {
+        job: job({
+          kind: 'update',
+          errorCode: 'source_failed',
+          result: { progress: { stage: 'downloading', completedChapters: 39, totalChapters: 40, reusedChapters: 36 } },
+        }),
+      },
+    })
+    expect(wrapper.text()).toContain('39 of 40 chapters ready (36 reused)')
+    expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('98')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('shows actual chapter counts and accessible download progress', () => {
     const wrapper = mount(ImportProgress, { props: { job: job() } })
     expect(wrapper.text()).toContain('12 of 40 chapters downloaded')
@@ -65,9 +80,11 @@ describe('import progress', () => {
     wrapper.unmount()
   })
   it('distinguishes automatic retries from running downloads', () => {
-    const wrapper = mount(ImportProgress, { props: { job: job({ state: 'queued', attempts: 2 }) } })
+    const wrapper = mount(ImportProgress, { props: { job: job({ state: 'queued', attempts: 19, nextAttemptAt: '2026-11-11T09:00:00.000Z' }) } })
     expect(wrapper.text()).toContain('Waiting to retry automatically')
-    expect(wrapper.text()).toContain('Attempt 2 of 3')
+    expect(wrapper.text()).toContain('Attempt 19')
+    expect(wrapper.get('time').attributes('datetime')).toBe('2026-11-11T09:00:00.000Z')
+    expect(wrapper.text()).toContain('Next automatic attempt')
     wrapper.unmount()
   })
 })

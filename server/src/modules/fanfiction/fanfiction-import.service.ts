@@ -124,6 +124,7 @@ export class FanfictionImportService {
       signal,
       saveCookies,
       reportProgress,
+      { libraryId: job.libraryId, userId: job.userId, sourceId: source.id, restartId: job.result?.chapterRestartId },
     );
   }
 }

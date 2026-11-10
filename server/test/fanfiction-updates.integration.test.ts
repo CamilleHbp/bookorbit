@@ -1118,16 +1118,16 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect(await db.select().from(schema.notifications).where(eq(schema.notifications.userId, user.id))).toHaveLength(0);
     expect((await module.get(FanfictionActivityService).list(libraryId, { limit: 50 }, user)).items).toHaveLength(1);
   });
-  it('records an actionable failure when the last worker lease expires', async () => {
+  it('reschedules interrupted updates without asking the reader to intervene', async () => {
     const job = await claim();
     await db
       .update(schema.fanfictionJobs)
       .set({ attempts: 3, leaseExpiresAt: sql`now() - interval '1 second'` })
       .where(eq(schema.fanfictionJobs.id, job.id));
     expect(await jobs.claim()).toBeNull();
-    const [event] = await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.jobId, job.id));
-    expect(event).toMatchObject({ kind: 'failed', errorCode: 'worker_lease_expired', sourceId: source.id });
-    expect((await sources.get(libraryId, source.id, user)).attentionCode).toBe('worker_lease_expired');
+    expect(await jobs.get(libraryId, job.id, user)).toMatchObject({ state: 'queued', attempts: 3, errorCode: 'worker_lease_expired' });
+    expect(await db.select().from(schema.fanfictionActivity).where(eq(schema.fanfictionActivity.jobId, job.id))).toHaveLength(0);
+    expect((await sources.get(libraryId, source.id, user)).attentionCode).toBeNull();
   });
   it('records failed imports even when authentication fails before a source is reserved', async () => {
     await jobs.importStory(libraryId, { url: 'https://example.org/story/unknown', folderId: source.folderId!, idempotencyKey: randomUUID() }, user);

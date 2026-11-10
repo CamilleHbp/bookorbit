@@ -1,8 +1,9 @@
 import { TagMatchingService } from '../tag-matching/tag-matching.service';
-import { ForbiddenException, HttpException, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { ForbiddenException, ServiceUnavailableException, HttpException, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import type { FanfictionJob } from '@bookorbit/types';
 import { UserService } from '../user/user.service';
+import { shouldRetryJob } from './fanfiction-download-retry';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { withFanfictionDefaults } from './fanfiction-defaults';
@@ -101,7 +102,8 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       const user = await this.authorized(job);
       const authorizeCookies = async () => {
         const current = await this.authorized(job);
-        if (controller.signal.aborted || !(await this.jobs.renew(job))) throw new ForbiddenException('Queued operation lease was lost');
+        if (controller.signal.aborted || !(await this.jobs.renew(job)))
+          throw new ServiceUnavailableException({ errorCode: 'worker_lease_expired', message: 'Queued operation lease was lost' });
         return current;
       };
       const stalePrepared =
@@ -140,7 +142,14 @@ export class FanfictionWorkerService implements OnModuleDestroy {
                         (progress) => this.jobs.reportProgress(job, progress),
                       )
                     : job.kind === 'update' || job.kind === 'refresh'
-                      ? await this.updates.run(job, document, () => this.authorized(job), controller.signal, saveCookies)
+                      ? await this.updates.run(
+                          job,
+                          document,
+                          () => this.authorized(job),
+                          controller.signal,
+                          saveCookies,
+                          (progress) => this.jobs.reportProgress(job, progress),
+                        )
                       : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
       await this.authorized(job);
       if (connection) await this.connections.outcome(connection, job.userId);
@@ -154,6 +163,10 @@ export class FanfictionWorkerService implements OnModuleDestroy {
               ? 'import_review_required'
               : null;
       const needsReview = !!storyReview || (result?.selection?.failed ?? 0) > 0;
+      if (job.sourceId && result?.bookFileId && !needsReview && ['import', 'update', 'refresh'].includes(job.kind)) {
+        const scope = { libraryId: job.libraryId, userId: job.userId, sourceId: job.sourceId };
+        if (await this.jobs.renew(job)) await this.runtime.releaseChapters(scope);
+      }
       const committed = continuation
         ? await this.jobs.yieldBatch(job, result)
         : await this.jobs.finish(
@@ -195,15 +208,13 @@ export class FanfictionWorkerService implements OnModuleDestroy {
                 'replacement_upload_missing',
               ].includes(code)
             ? 'review_required'
-            : job.attempts < 3 &&
-                ![
-                  'download_limit',
-                  'response_too_large',
-                  'source_policy_blocked',
-                  'invalid_epub',
-                  'source_not_found',
-                  'tag_matches_changed_after_publication',
-                ].includes(code)
+            : shouldRetryJob(
+                  job.kind,
+                  job.attempts,
+                  code,
+                  (code === 'import_failed' || code === 'runtime_failed') &&
+                    (controller.signal.aborted || !(error instanceof HttpException) || error.getStatus() >= 500),
+                )
               ? 'queued'
               : 'failed',
         null,

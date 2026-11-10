@@ -28,7 +28,7 @@ describe('unfinished import inbox', () => {
     vi.mocked(api).mockResolvedValueOnce(response({ items: [job], nextCursor: null }))
     state = scope.run(() => useImportInbox(ref(1)))!
     await settle()
-    expect(String(vi.mocked(api).mock.calls[0]![0])).toContain('pendingImportsOnly=true&limit=20')
+    expect(String(vi.mocked(api).mock.calls[0]![0])).toContain('pendingDownloadsOnly=true&limit=20')
     expect(state.jobs.value[0]?.result?.importReview?.values.tags).toEqual(['custom.tag'])
     vi.mocked(api).mockResolvedValueOnce(response({ ...job, state: 'queued' }))
     await state.retry(state.jobs.value[0]!)

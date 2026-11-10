@@ -109,7 +109,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
       },
     }
     vi.mocked(api).mockImplementation(async (url, options) => {
-      if (String(url).includes('pendingImportsOnly=true')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
+      if (String(url).includes('pendingDownloadsOnly=true')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
       if (String(url).endsWith('/import-review')) return new Response(JSON.stringify({ ...job, state: 'queued' }))
       return base(url, options)
     })
@@ -146,7 +146,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
       },
     }
     vi.mocked(api).mockImplementation(async (url, options) => {
-      if (String(url).includes('pendingImportsOnly=true')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
+      if (String(url).includes('pendingDownloadsOnly=true')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
       if (String(url).endsWith('/import-review')) return new Response(JSON.stringify(job))
       return base(url, options)
     })
@@ -192,7 +192,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
       result: { importReview: { approved: true, values: { title: 'Saved story', tags: ['custom.saved-tag'] } } },
     }
     vi.mocked(api).mockImplementation(async (url, options) => {
-      if (String(url).includes('pendingImportsOnly=true')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
+      if (String(url).includes('pendingDownloadsOnly=true')) return new Response(JSON.stringify({ items: [job], nextCursor: null }))
       if (String(url).endsWith('/retry')) return new Response(JSON.stringify({ ...job, state: 'queued' }))
       return base(url, options)
     })
@@ -201,11 +201,11 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.text()).toContain('Review saved.')
     await wrapper!
       .findAll('button')
-      .find((button) => button.text() === 'Retry download')!
+      .find((button) => button.text() === 'Resume download')!
       .trigger('click')
     await flushPromises()
     expect(api).toHaveBeenCalledWith('/api/v1/libraries/5/fanfiction/jobs/failed-import/retry', expect.objectContaining({ body: '{}' }))
-    expect(wrapper!.findAll('button').some((button) => button.text() === 'Retry download')).toBe(false)
+    expect(wrapper!.findAll('button').some((button) => button.text() === 'Resume download')).toBe(false)
   })
 
   it('keeps multiple pending reviews accessible without a confirmation modal', async () => {

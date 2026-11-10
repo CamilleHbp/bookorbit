@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from chapter_store import recover_chapters
 from tag_matching import install as install_tag_matching, matched_preview
 
 
@@ -11,8 +12,10 @@ import json
 import logging
 import os
 import resource
+import sqlite3
 import time
 import traceback
+from zipfile import BadZipFile
 
 from website_catalog import website_catalog
 from controlled_config import make_configuration, merge_configuration, validate_ini
@@ -107,6 +110,7 @@ class ProgressReporter:
         self.emit = emit
         self.last_sent = 0
         self.total = 0
+        self.downloaded = None
 
     def chapters(self, fraction, _url):
         completed = min(self.total, max(0, round(fraction * self.total)))
@@ -114,9 +118,12 @@ class ProgressReporter:
         if completed < self.total and now - self.last_sent < 1:
             return
         self.last_sent = now
-        self.emit({'stage': 'downloading', 'completedChapters': completed, 'totalChapters': self.total})
+        counts = {'completedChapters': completed, 'totalChapters': self.total}
+        if self.downloaded is not None:
+            counts['reusedChapters'] = max(0, completed - self.downloaded())
+        self.emit({'stage': 'downloading', **counts})
         if completed == self.total:
-            self.emit({'stage': 'packaging', 'completedChapters': completed, 'totalChapters': self.total})
+            self.emit({'stage': 'packaging', **counts})
 
 
 def run(request, save_cookies=None, report_progress=lambda progress: None):
@@ -162,6 +169,13 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
             raise ConfigurationError('FlareSolverr is not configured on this server')
         transport.enable_for(url)
         transport.deadline = time.monotonic() + min(7200, max(1, request.get('browserTimeoutSeconds', request.get('timeoutSeconds', 1800))))
+    # A normal update adds missing chapters. Only an explicit refresh replaces saved text.
+    if operation in ('download', 'update', 'refresh'):
+        if not configuration.has_section('overrides'):
+            configuration.add_section('overrides')
+        for option in ('always_reload_first_chapter', 'continue_on_chapter_error'):
+            configuration.set('overrides', option, 'false')
+        configuration.set('overrides', 'update_check_recent_chapters', '0')
     adapter = adapters.getAdapter(configuration, url)
     report_progress({'stage': 'metadata'})
     login_scribblehub(adapter)
@@ -191,7 +205,9 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         progress = ProgressReporter(report_progress)
         progress.total = chapter_count
         report_progress({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
-        writers.getWriter('epub', configuration, adapter).writeStory(outstream=output, notification=progress.chapters)
+        with recover_chapters(adapter, request.get('chapterDirectory'), canonical, transport) as downloaded:
+            progress.downloaded = downloaded
+            writers.getWriter('epub', configuration, adapter).writeStory(outstream=output, notification=progress.chapters)
         if transport.failure is not None:
             raise transport.failure
         output.flush()
@@ -229,6 +245,14 @@ def failure_code(error):
         return 'authentication_required'
     if name == 'PersonalIniFailed':
         return 'configuration_blocked'
+    if isinstance(error, BadZipFile):
+        return 'invalid_epub'
+    if name in ('InvalidStoryURL', 'UnknownSite'):
+        return 'unsupported_story_url'
+    if isinstance(error, sqlite3.Error) and getattr(error, 'sqlite_errorcode', None) in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB):
+        return 'chapter_storage_damaged'
+    if isinstance(error, sqlite3.Error) or isinstance(error, OSError) and error.errno in (28, 30):
+        return 'chapter_storage_failed'
     if isinstance(error, PolicyError):
         return error.code
     if isinstance(error, TimeoutError):

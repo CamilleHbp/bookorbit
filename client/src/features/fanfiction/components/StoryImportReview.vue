@@ -36,6 +36,9 @@ onBeforeRouteUpdate(canLeave)
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 defineExpose({ canLeave })
+function handleDiscard() {
+  if (window.confirm(t('fanfiction.importInbox.confirmDiscard', { title: values.value.title }))) void discard()
+}
 function handleApply() {
   if (fields.value?.commitPending()) void apply()
 }
@@ -53,10 +56,14 @@ function handleLater() {
       <StoryCategories :categories="job.result.importReview.preview.categories" />
     </details>
     <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
-    <div class="sticky bottom-0 grid gap-2 border-t border-border bg-background py-3 sm:flex sm:flex-wrap">
-      <Button type="submit" :disabled="busy || disabled">{{ t('fanfiction.confirmImport') }}</Button>
-      <Button type="button" variant="outline" :disabled="busy || disabled" @click="handleLater">{{ t('fanfiction.importInbox.saveDraft') }}</Button>
-      <Button type="button" variant="ghost" :disabled="busy || disabled" @click="discard">{{ t('fanfiction.metadataReview.discardImport') }}</Button>
+    <div class="grid grid-cols-2 gap-2 border-t border-border bg-background py-3 sm:sticky sm:bottom-0 sm:flex sm:flex-wrap">
+      <Button class="col-span-2 min-h-11" type="submit" :disabled="busy || disabled">{{ t('fanfiction.confirmImport') }}</Button>
+      <Button class="min-h-11" type="button" variant="outline" :disabled="busy || disabled" @click="handleLater">{{
+        t('fanfiction.importInbox.saveDraft')
+      }}</Button>
+      <Button class="min-h-11" type="button" variant="ghost" :disabled="busy || disabled" @click="handleDiscard">{{
+        t('fanfiction.metadataReview.discardImport')
+      }}</Button>
     </div>
   </form>
 </template>

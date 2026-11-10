@@ -76,8 +76,10 @@
       "cancelling": "Cancelling…",
       "retrying": "Waiting to retry automatically",
       "chapters": "{completed} of {total} chapters downloaded",
-      "attempt": "Attempt {count} of 3",
-      "failedDuring": "Stopped while: {stage}"
+      "attempt": "Attempt {count}",
+      "failedDuring": "Stopped while: {stage}",
+      "reused": "{completed} of {total} chapters ready ({reused} reused)",
+      "nextAttempt": "Next automatic attempt {time}"
     },
     "errors": {
       "profile_deleted": "This profile was deleted. Start again with another profile or the website login.",
@@ -120,7 +122,10 @@
       "import_review_required": "Review the story before importing it.",
       "profile_ambiguous": "More than one profile matches. Choose a profile before continuing.",
       "content_review_required": "Existing chapters changed. Review before replacing your saved copy.",
-      "maintainer_required": "This story uses another manager’s website login. Ask them to check it, or choose your own login in story settings."
+      "maintainer_required": "This story uses another manager’s website login. Ask them to check it, or choose your own login in story settings.",
+      "unsupported_story_url": "Check the story URL. This address could not be imported.",
+      "chapter_storage_damaged": "The saved download is damaged. Download the story from the beginning.",
+      "chapter_storage_failed": "BookOrbit could not save chapter progress. Check the server storage."
     },
     "title": "Fanfiction",
     "pageNumber": "Page {page}",
@@ -551,19 +556,23 @@
       "noAttention": "No stories need your attention."
     },
     "importInbox": {
-      "title": "Story imports",
-      "description": "Finish reviewing a story or retry a download. Your saved edits stay with the import.",
-      "back": "All imports",
-      "retry": "Retry download",
+      "title": "Story downloads",
+      "description": "Follow new imports and chapter updates.",
+      "back": "All downloads",
+      "retry": "Resume download",
       "ready": "Waiting for your review.",
       "saveDraft": "Save for later",
       "saved": "Review saved.",
-      "empty": "No unfinished imports",
-      "emptyHint": "New imports and downloads that need attention will appear here.",
-      "loadFailed": "Could not load or update your imports. Try again.",
+      "empty": "No unfinished downloads",
+      "emptyHint": "New imports and chapter updates will appear here.",
+      "loadFailed": "Could not update the download list. Try again.",
       "metadata": "Library metadata",
       "lastCheck": "Last library check",
-      "sourceDetails": "Details from the website"
+      "sourceDetails": "Details from the website",
+      "recent": "Recently added or updated",
+      "restart": "Download from the beginning",
+      "confirmRestart": "Download every chapter of {title} again? Your review will stay saved.",
+      "confirmDiscard": "Discard the import of {title} and its saved edits?"
     },
     "reviewQueue": {
       "nav": "Review",
@@ -14474,7 +14483,8 @@
         "applyLink": "Apply link",
         "apply": "Apply",
         "cancelLink": "Cancel link",
-        "noDescription": "No description available."
+        "noDescription": "No description available.",
+        "formatting": "Formatting"
       },
       "seriesMembership": {
         "addSeries": "Add series",

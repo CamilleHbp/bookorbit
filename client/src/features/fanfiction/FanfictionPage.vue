@@ -86,7 +86,7 @@ const {
   moreJobs,
   importStories,
   importBatchStarted,
-  importBatchPending,
+  hasUnqueuedImports,
   importBatchFinished,
   importBatchTotal,
   importBatchCompleted,
@@ -129,9 +129,16 @@ function showMetadataReviews() {
   if (importInbox.value?.canLeave() === false) return
   reviewView.value = 'metadata'
 }
+const inlineReviews = ref<InstanceType<typeof StoryImportReview>[]>([])
+const taskList = ref<InstanceType<typeof FanfictionTaskList>>()
 function handleLibraryChange(event: Event) {
   const select = event.target as HTMLSelectElement
-  if (reviewQueue.value?.canLeave() === false || importInbox.value?.canLeave() === false) {
+  if (
+    reviewQueue.value?.canLeave() === false ||
+    importInbox.value?.canLeave() === false ||
+    inlineReviews.value.some((editor) => !editor.canLeave()) ||
+    taskList.value?.canLeave() === false
+  ) {
     select.value = String(libraryId.value)
     return
   }
@@ -489,7 +496,7 @@ onMounted(() => {
             {{ t('fanfiction.importBatch.progress', { completed: importBatchCompleted, total: importBatchTotal }) }}
           </p>
           <progress class="block h-2 w-full accent-primary" :value="importBatchCompleted" :max="importBatchTotal" :aria-label="importBatchTitle" />
-          <Button v-if="importBatchPending && !busy" variant="outline" @click="importStories">{{ t('fanfiction.importBatch.resume') }}</Button>
+          <Button v-if="hasUnqueuedImports && !busy" variant="outline" @click="importStories">{{ t('fanfiction.importBatch.resume') }}</Button>
         </header>
         <form v-else class="space-y-4" @submit.prevent="importStories">
           <h2 class="text-lg font-medium">{{ t('fanfiction.addStories') }}</h2>
@@ -572,6 +579,7 @@ onMounted(() => {
           </p>
           <p v-if="candidate.preview" class="break-all text-sm text-muted-foreground">{{ candidate.url }}</p>
           <StoryImportReview
+            ref="inlineReviews"
             v-if="candidate.job && needsImportReview(candidate.job)"
             :job="candidate.job"
             :disabled="!canManage"
@@ -643,6 +651,7 @@ onMounted(() => {
           <WebsiteConnections ref="connectionIssues" :library-id="libraryId" repairs-only @saved="handleConnectionSaved" />
         </div>
         <FanfictionTaskList
+          ref="taskList"
           :jobs="jobs"
           :page="jobPagination.number"
           :previous="jobPagination.canPrevious"
