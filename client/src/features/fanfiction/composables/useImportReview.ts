@@ -2,6 +2,10 @@ import { ref, watch, type MaybeRefOrGetter, toValue } from 'vue'
 import type { FanfictionJob, FanfictionMetadataValues } from '@bookorbit/types'
 import { api } from '@/lib/api'
 
+export function needsImportReview(job: FanfictionJob) {
+  return job.state === 'review_required' && job.result?.importReview?.approved === false
+}
+
 export function useImportReview(job: MaybeRefOrGetter<FanfictionJob>, updated: (job: FanfictionJob) => void) {
   const values = ref<FanfictionMetadataValues>({ title: '', description: '', authors: [], tags: [] })
   const busy = ref(false)

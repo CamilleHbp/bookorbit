@@ -41,7 +41,10 @@ export function useImportInbox(libraryId: MaybeRefOrGetter<number>) {
       page.value = target
       poll()
     } catch {
-      if (current === generation && controller === request) error.value = true
+      if (current === generation && controller === request) {
+        error.value = true
+        poll()
+      }
     } finally {
       clearTimeout(timeout)
       if (controller === request) busy.value = false

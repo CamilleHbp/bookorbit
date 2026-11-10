@@ -16,10 +16,10 @@ describe('existing story import confirmation', () => {
   const user = { id: 7 } as RequestUser;
   const dto = { url: 'https://archiveofourown.org/works/123#chapter', folderId: 8, idempotencyKey: 'request' };
   const access = { administer: vi.fn() };
-  const jobs = { importStory: vi.fn() };
+  const jobs = { importStory: vi.fn(), get: vi.fn() };
   const libraries = { importDestination: vi.fn() };
   const validator = { validateFormat: vi.fn() };
-  const query = { from: vi.fn(), where: vi.fn(), limit: vi.fn() };
+  const query = { from: vi.fn(), where: vi.fn(), orderBy: vi.fn(), limit: vi.fn() };
   const db = { select: vi.fn() };
   let service: FanfictionSourceService;
   beforeEach(async () => {
@@ -27,6 +27,7 @@ describe('existing story import confirmation', () => {
     db.select.mockReturnValue(query);
     query.from.mockReturnValue(query);
     query.where.mockReturnValue(query);
+    query.orderBy.mockReturnValue(query);
     query.limit.mockResolvedValue([]);
     libraries.importDestination.mockResolvedValue({ library: { allowedFormats: ['epub'] } });
     const module = await Test.createTestingModule({
@@ -132,10 +133,18 @@ describe('existing story import confirmation', () => {
       await module.close();
     }
   });
+  it.each(['queued', 'running', 'review_required', 'failed'])('reopens the same %s import when the URL is entered again', async (state) => {
+    const job = { id: 'original', state };
+    query.limit.mockResolvedValueOnce([{ id: 'pending', bookFileId: null }]).mockResolvedValueOnce([job]);
+    jobs.get.mockResolvedValue(job);
+    await expect(service.create(5, dto, user)).resolves.toEqual(job);
+    expect(jobs.get).toHaveBeenCalledWith(5, job.id, user);
+    expect(jobs.importStory).not.toHaveBeenCalled();
+  });
   it('continues new and unfinished imports through the existing job service', async () => {
     jobs.importStory.mockResolvedValue({ id: 'job' });
     await expect(service.create(5, dto, user)).resolves.toEqual({ id: 'job' });
-    query.limit.mockResolvedValue([{ id: 'pending', title: 'A story', bookFileId: null }]);
+    query.limit.mockResolvedValueOnce([{ id: 'pending', title: 'A story', bookFileId: null }]);
     await service.create(5, dto, user);
     expect(jobs.importStory).toHaveBeenCalledTimes(2);
     expect(jobs.importStory).toHaveBeenLastCalledWith(5, dto, user);
