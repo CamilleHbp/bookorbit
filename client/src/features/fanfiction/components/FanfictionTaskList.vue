@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ChevronRight } from '@lucide/vue'
@@ -7,6 +7,8 @@ import type { FanfictionJob } from '@bookorbit/types'
 import FanfictionTaskCard from './FanfictionTaskCard.vue'
 import FanfictionPagination from './FanfictionPagination.vue'
 
+const cards = ref<InstanceType<typeof FanfictionTaskCard>[]>([])
+defineExpose({ canLeave: () => cards.value.every((card) => card.canLeave()) })
 const props = defineProps<{
   jobs: FanfictionJob[]
   page: number
@@ -66,6 +68,7 @@ function handleNext() {
     <ul v-if="pending.length" class="space-y-3">
       <li v-for="job in pending" :key="job.id">
         <FanfictionTaskCard
+          ref="cards"
           :job="job"
           :busy="busy"
           :bulk-busy="bulkBusy"
@@ -87,6 +90,7 @@ function handleNext() {
       <ul class="space-y-3 pt-1">
         <li v-for="job in finished" :key="job.id">
           <FanfictionTaskCard
+            ref="cards"
             :job="job"
             :busy="busy"
             :bulk-busy="bulkBusy"

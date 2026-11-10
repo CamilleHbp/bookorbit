@@ -8,7 +8,7 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionActivitySummaryDto, ListFanfictionActivityDto, PreviewFanfictionDto, FanfictionJobsStatusDto } from './dto/fanfiction.dto';
 import { FanfictionJobService } from './fanfiction-job.service';
-import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
+import { ListFanfictionJobsDto, RetryFanfictionJobDto } from './dto/fanfiction-job.dto';
 import { FanfictionActivityService } from './fanfiction-activity.service';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { ImportStoryReviewDto, ReviewFanfictionContentDto } from './dto/fanfiction-source.dto';
@@ -91,8 +91,13 @@ export class FanfictionController {
 
   @Post('jobs/:jobId/retry')
   @HttpCode(202)
-  retryJob(@Param('libraryId', ParseIntPipe) libraryId: number, @Param('jobId', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
-    return this.jobs.retry(libraryId, id, user);
+  retryJob(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('jobId', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+    @Body() dto: RetryFanfictionJobDto,
+  ) {
+    return dto?.restart ? this.jobs.retry(libraryId, id, user, undefined, true) : this.jobs.retry(libraryId, id, user);
   }
 
   @Get('sites')

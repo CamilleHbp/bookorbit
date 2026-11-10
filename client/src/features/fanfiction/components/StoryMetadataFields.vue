@@ -51,6 +51,7 @@ defineExpose({ commitPending })
     <div class="space-y-1 text-sm">
       <p :id="`${id}-description`">{{ t('fanfiction.storyDescription') }}</p>
       <RichDescriptionEditor
+        collapsible-toolbar
         :model-value="values.description"
         :disabled="disabled"
         role="group"

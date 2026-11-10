@@ -736,7 +736,7 @@ export function useFanfiction(
     importStories,
     importBatchStarted,
     importBatchActive,
-    importBatchPending,
+    hasUnqueuedImports: computed(() => candidates.value.some((candidate) => !candidate.job && !candidate.existingStory)),
     importBatchFinished,
     importBatchTotal,
     importBatchCompleted,
