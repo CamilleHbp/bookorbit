@@ -106,6 +106,10 @@ export function useTagMatching() {
       total.value = data.total
       version.value = data.version
       selection.value = []
+      if (page.value > pages.value) {
+        page.value = pages.value
+        await load()
+      }
     } catch (cause) {
       if (current === revision) error.value = (cause as Error).message
     } finally {
@@ -188,19 +192,19 @@ export function useTagMatching() {
     else if (exactSuggestion.value) addTarget(exactSuggestion.value)
     else createTarget()
   }
-  async function save(action: 'match' | 'ignore') {
-    if (!draft.value || saving.value) return
-    if (draft.value.some((row) => !row.value.trim()) || (action === 'match' && !targets.value.length && !newTargets.value.length)) {
+  async function save(action: 'match' | 'ignore', entries = draft.value) {
+    if (!entries || saving.value) return
+    if (entries.some((row) => !row.value.trim()) || (action === 'match' && !targets.value.length && !newTargets.value.length)) {
       error.value = t('tagMatching.chooseTarget')
       return
     }
     saving.value = true
     error.value = ''
-    const bookDecision = draft.value.some((row) => row.bookId)
+    const bookDecision = entries.some((row) => row.bookId)
     let completed = 0
     try {
       if (!version.value) version.value = (await request<{ version: number }>('initialize', {})).version
-      for (const row of draft.value) {
+      for (const row of entries) {
         const result = await request<{ version: number }>(
           'rules',
           {
@@ -221,10 +225,10 @@ export function useTagMatching() {
       }
       resetSuggestions()
       draft.value = null
-      notice.value = t(bookDecision ? 'tagMatching.decisionsSaved' : 'tagMatching.saved', { count: completed })
+      notice.value = t(bookDecision || action === 'ignore' ? 'tagMatching.decisionsSaved' : 'tagMatching.saved', { count: completed })
       await load()
     } catch (cause) {
-      if (draft.value) draft.value = draft.value.slice(completed)
+      if (draft.value === entries) draft.value = entries.slice(completed)
       error.value = (cause as Error).message
     } finally {
       saving.value = false
@@ -232,6 +236,9 @@ export function useTagMatching() {
   }
   function saveMatch() {
     void save('match')
+  }
+  function ignoreRow(row: MatchingRow) {
+    if (view.value === 'review' && !draft.value) return save('ignore', [row])
   }
   function ignore() {
     void save('ignore')
@@ -333,5 +340,6 @@ export function useTagMatching() {
     moveTargetSelection,
     saveMatch,
     ignore,
+    ignoreRow,
   }
 }

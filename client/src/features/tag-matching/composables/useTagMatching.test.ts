@@ -168,6 +168,29 @@ describe('tag matching editor', () => {
     })
     expect(editor.notice.value).toBe('tagMatching.decisionsSaved')
   })
+  it('ignores just the chosen review row and refreshes the queue without opening the editor', async () => {
+    const editor = setup()
+    const row = { source: 'ao3', field: 'tags' as const, value: 'Unwanted label', bookCount: 2 }
+    vi.mocked(api).mockResolvedValueOnce(response({ items: [row], total: 1, version: 3 }))
+    await editor.load()
+    vi.mocked(api).mockClear()
+    vi.mocked(api)
+      .mockResolvedValueOnce(response({ version: 4 }))
+      .mockResolvedValueOnce(response({ items: [], total: 0, version: 4 }))
+    const pending = editor.ignoreRow(row)
+    expect(editor.draft.value).toBeNull()
+    await pending
+    expect(JSON.parse(vi.mocked(api).mock.calls[0]![1]!.body as string)).toEqual({
+      source: 'ao3',
+      field: 'tags',
+      value: 'Unwanted label',
+      action: 'ignore',
+      targets: [],
+      newTargets: [],
+      version: 3,
+    })
+    expect(editor.total.value).toBe(0)
+  })
   it('preserves the draft after a stale save and refreshes when cancelled', async () => {
     const editor = setup()
     vi.mocked(api).mockResolvedValueOnce(response({ items: [], total: 0, version: 3 }))
