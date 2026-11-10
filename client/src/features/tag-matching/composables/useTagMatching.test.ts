@@ -20,6 +20,32 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 describe('tag matching editor', () => {
+  it('uses Enter to stage an exact result or a new name after search completes', async () => {
+    vi.useFakeTimers()
+    const editor = setup()
+    editor.addRule()
+    vi.mocked(api).mockImplementation(async () => response([{ id: 7, field: 'tags', name: 'A', score: 1 }]))
+    const enter = () => editor.acceptTargetSearch(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    editor.targetSearch.value = ' a '
+    await nextTick()
+    enter()
+    expect(editor.newTargets.value).toEqual([])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(editor.canCreateTarget.value).toBe(false)
+    enter()
+    expect(editor.targets.value).toEqual([{ field: 'tags', id: 7, name: 'A' }])
+    editor.targetSearch.value = 'A new tag'
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(editor.canCreateTarget.value).toBe(true)
+    enter()
+    expect(editor.newTargets.value).toEqual([{ field: 'tags', name: 'A new tag' }])
+    editor.targetSearch.value = 'a  NEW tag'
+    await nextTick()
+    expect(editor.canCreateTarget.value).toBe(false)
+    enter()
+    expect(editor.newTargets.value).toHaveLength(1)
+  })
   it('returns suggestions after 100ms and reuses recent searches immediately', async () => {
     vi.useFakeTimers()
     const editor = setup()
