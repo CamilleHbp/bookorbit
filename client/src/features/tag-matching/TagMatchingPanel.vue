@@ -140,12 +140,30 @@ onMounted(initialize)
             >
             <label class="space-y-1 text-sm"
               ><span>{{ t('tagMatching.searchTarget') }}</span
-              ><input v-model="matching.targetSearch" type="search" maxlength="200" :class="inputClass" :aria-busy="matching.suggestionsLoading"
+              ><input
+                v-model="matching.targetSearch"
+                type="search"
+                maxlength="200"
+                :class="inputClass"
+                :aria-busy="matching.suggestionsLoading"
+                @keydown.enter="matching.acceptTargetSearch"
             /></label>
           </div>
           <p v-if="matching.suggestionsLoading" role="status" class="text-sm text-muted-foreground">{{ t('tagMatching.searching') }}</p>
           <p v-else-if="matching.suggestionsError" role="alert" class="text-sm text-destructive">{{ matching.suggestionsError }}</p>
-          <ul v-if="matching.suggestions.length" class="divide-y divide-border rounded-md border border-border">
+          <ul v-if="matching.canCreateTarget || matching.suggestions.length" class="divide-y divide-border rounded-md border border-border">
+            <li v-if="matching.canCreateTarget">
+              <button
+                type="button"
+                class="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-start text-sm font-medium hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                @click="matching.createTarget"
+              >
+                <Plus class="size-4 shrink-0" aria-hidden="true" />
+                <span class="break-all">{{
+                  t(matching.targetField === 'tags' ? 'tagMatching.createTag' : 'tagMatching.createGenre', { name: matching.targetSearch.trim() })
+                }}</span>
+              </button>
+            </li>
             <li v-for="suggestion in matching.suggestions" :key="`${suggestion.field}:${suggestion.id}`">
               <button
                 type="button"
@@ -156,15 +174,6 @@ onMounted(initialize)
               </button>
             </li>
           </ul>
-          <Button
-            v-if="matching.targetSearch.trim() && !matching.suggestionsLoading && !matching.suggestionsError"
-            variant="outline"
-            type="button"
-            @click="matching.createTarget"
-            >{{
-              t(matching.targetField === 'tags' ? 'tagMatching.createTag' : 'tagMatching.createGenre', { name: matching.targetSearch.trim() })
-            }}</Button
-          >
         </fieldset>
         <div class="sticky bottom-0 flex flex-wrap gap-2 border-t border-border bg-background py-3">
           <Button type="submit" :disabled="matching.saving">{{ t('tagMatching.save') }}</Button
