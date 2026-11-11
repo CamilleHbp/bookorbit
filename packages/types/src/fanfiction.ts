@@ -524,3 +524,34 @@ export interface FanfictionLabelEdits {
   tags?: { added: string[]; removed: string[] };
   genres?: { added: string[]; removed: string[] };
 }
+
+export type FanfictionDownloadSection = "running" | "queued" | "retrying" | "attention";
+export type FanfictionDownloadIssue = "website" | "login" | "chapter" | "metadata" | "import" | "story" | "stopped" | "unknown";
+
+export interface FanfictionDownloadRow {
+  id: string;
+  section: FanfictionDownloadSection;
+  issue: FanfictionDownloadIssue | null;
+  groupKey: string | null;
+  count: number;
+  jobId: string | null;
+  sourceId: string | null;
+  bookId: number | null;
+  site: string;
+  title: string;
+  kind: FanfictionJobKind | null;
+  code: string | null;
+  nextAttemptAt: string | null;
+  progress: FanfictionImportProgress | null;
+  removed: number;
+  changed: number;
+  reordered: boolean;
+  currentChapters: number | null;
+  proposedChapters: number | null;
+}
+
+export interface FanfictionDownloadQueue {
+  items: FanfictionDownloadRow[];
+  totals: Record<FanfictionDownloadSection, number>;
+  recent: NonNullable<FanfictionJobPage["recentDownloads"]>;
+}

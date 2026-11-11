@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { chapterDecision } from '../composables/downloadIssue'
 import type { BookFileRevisionSummary } from '@bookorbit/types'
 import WebsiteConnections from './WebsiteConnections.vue'
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
@@ -58,6 +59,7 @@ const {
   olderRevisions,
   moreSources,
 } = props.state
+const decision = computed(() => chapterDecision(job.value?.result?.changes))
 const connecting = ref(false)
 function showLogin() {
   connecting.value = true
@@ -205,14 +207,15 @@ onMounted(() => {
       <div v-if="job" role="status" class="border-border rounded-xl border p-4 text-sm">
         {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }}
         <StoryUpdateOutcome :job="job" />
-        <p v-if="job.errorCode" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
+        <p v-if="job.errorCode && !job.result?.contentReview" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
         <Button v-if="['review_required', 'source_chapter_reduction'].includes(job.errorCode ?? '')" variant="outline" as-child>
           <RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.maintenance.defaultPolicy') }}</RouterLink>
         </Button>
         <div v-if="job.result?.contentReview && !job.result.contentReview.approved" class="space-y-3 py-3">
-          <p>{{ t('fanfiction.maintenance.contentReview') }}</p>
+          <p class="font-semibold">{{ t('fanfiction.downloads.' + decision.key, { count: decision.count }) }}</p>
+          <p>{{ t('fanfiction.downloads.keepHint') }}</p>
           <div class="flex flex-wrap gap-2">
-            <Button :disabled="updating" @click="approveContent">{{ t('fanfiction.maintenance.acceptContent') }}</Button
+            <Button :disabled="updating" @click="approveContent">{{ t('fanfiction.downloads.useWebsite') }}</Button
             ><Button variant="outline" :disabled="updating" @click="discardContent">{{ t('fanfiction.maintenance.keepCopy') }}</Button>
           </div>
         </div>

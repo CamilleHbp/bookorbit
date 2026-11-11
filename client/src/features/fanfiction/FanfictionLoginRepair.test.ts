@@ -46,7 +46,7 @@ describe('story login repair through the fanfiction page', () => {
   it('keeps the save event connected and opens the shared website repair using explicit personal access', async () => {
     vi.useFakeTimers()
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/fanfiction', name: 'fanfiction', component: FanfictionPage }] })
-    await router.push('/fanfiction')
+    await router.push('/fanfiction?tab=stories')
     await router.isReady()
     const writes: { url: string; body: Record<string, unknown> }[] = []
     let saved = false

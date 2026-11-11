@@ -1,5 +1,6 @@
-import { IsBoolean, IsIn, IsOptional, IsUUID } from 'class-validator';
-import type { FanfictionJobKind } from '@bookorbit/types';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsInt, Max, Min, Matches, IsIn, IsOptional, IsUUID } from 'class-validator';
+import type { FanfictionDownloadSection, FanfictionJobKind } from '@bookorbit/types';
 import { FanfictionPageDto } from './fanfiction.dto';
 
 export class ListFanfictionJobsDto extends FanfictionPageDto {
@@ -14,4 +15,10 @@ export class ListFanfictionJobsDto extends FanfictionPageDto {
 
 export class RetryFanfictionJobDto {
   @IsOptional() @IsBoolean() restart?: boolean;
+}
+
+export class FanfictionDownloadsDto {
+  @IsOptional() @IsIn(['running', 'queued', 'retrying', 'attention']) section?: FanfictionDownloadSection;
+  @IsOptional() @Matches(/^[a-f0-9]{32}$/) group?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(2147483647) offset = 0;
 }

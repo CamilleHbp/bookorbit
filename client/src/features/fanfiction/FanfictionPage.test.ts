@@ -16,6 +16,8 @@ describe('Fanfiction navigation and story hierarchy', () => {
   beforeEach(() => {
     vi.mocked(api).mockImplementation(async (url) => {
       const path = String(url)
+      if (path.includes('/fanfiction/downloads'))
+        return Response.json({ items: [], recent: [], totals: { running: 0, queued: 0, attention: 0, retrying: 0 } })
       const items = path.startsWith('/api/v1/fanfiction/libraries')
         ? [{ id: 5, name: 'Stories' }]
         : path.includes('/sources/folders')
@@ -35,6 +37,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        { path: '/library/:id', component: { template: '<div/>' } },
         { path: '/tools/tag-matching', name: 'tools-tag-matching', component: { template: '<div />' } },
         { path: '/fanfiction', name: 'fanfiction', component: FanfictionPage },
         { path: '/website-logins', name: 'settings-website-logins', component: { template: '<div />' } },
@@ -305,7 +308,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await wrapper!.get('form').trigger('submit')
     await flushPromises()
     expect(wrapper!.find('textarea').exists()).toBe(false)
-    expect(wrapper!.find('details').exists()).toBe(false)
+    expect(wrapper!.find('section form details').exists()).toBe(false)
     expect(wrapper!.text()).toContain('0 of 1 stories processed')
     expect(wrapper!.text()).toContain('https://archiveofourown.org/works/1')
     expect(wrapper!.text()).not.toContain('Import another batch')
@@ -374,17 +377,69 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.findAll('button').filter((button) => button.text() === 'Import another batch')).toHaveLength(2)
   })
 
-  it('falls back to Stories when an old profile tab URL is opened', async () => {
+  it('falls back to Downloads when an old profile tab URL is opened', async () => {
     await open('/fanfiction?tab=profiles')
     expect(wrapper!.find('source-profiles-stub').exists()).toBe(false)
     expect(wrapper!.text()).not.toContain('Recent story changes')
     expect(wrapper!.text()).not.toContain('No activity yet.')
-    expect(wrapper!.findAll('nav a').map((link) => link.text())).toEqual(['Stories', 'Review', 'Updates'])
+    expect(wrapper!.findAll('nav a').map((link) => link.text())).toEqual(['Downloads', 'History'])
   })
 
+  it('keeps running downloads, grouped website failures and chapter decisions distinct through a failed refresh', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    const totals = { running: 1, retrying: 0, queued: 0, attention: 2 }
+    const row = {
+      id: 'group',
+      groupKey: 'abc',
+      count: 37,
+      section: 'attention',
+      issue: 'website',
+      site: 'example.org',
+      code: 'source_failed',
+      title: 'Member one',
+    }
+    const rows = [
+      {
+        ...row,
+        id: 'active',
+        groupKey: null,
+        section: 'running',
+        issue: null,
+        title: 'Active import',
+        jobId: 'job',
+        progress: { stage: 'downloading', completedChapters: 68, totalChapters: 100, reusedChapters: 60 },
+      },
+      row,
+      { ...row, id: 'decision', groupKey: null, title: 'Chapter decision', issue: 'chapter', removed: 1 },
+    ]
+    let failed = false
+    vi.mocked(api).mockImplementation(async (url, opts) => {
+      if (!String(url).includes('/fanfiction/downloads')) return base(url, opts)
+      if (failed) return new Response(null, { status: 503 })
+      return Response.json({ items: String(url).includes('group=') ? [{ ...row, id: 'one', groupKey: null }] : rows, totals, recent: [] })
+    })
+    await open()
+    expect(wrapper!.get('progress').attributes('value')).toBe('68')
+    expect(wrapper!.text()).not.toContain('Member one')
+    const group = wrapper!.findAll('button').find((item) => item.text().includes('37 stories'))!
+    await group.trigger('click')
+    await flushPromises()
+    expect(wrapper!.text()).toContain('Member one')
+    expect(wrapper!.text()).toContain('Updating would remove one saved chapter.')
+    const fold = wrapper!.findAll('h2 button').find((item) => item.text().includes('Needs your attention'))!
+    await fold.trigger('click')
+    expect(fold.attributes('aria-expanded')).toBe('false')
+    failed = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(wrapper!.text()).toContain('Showing downloads as of')
+    expect(wrapper!.text()).toContain('Active import')
+    expect(wrapper!.text()).not.toContain('No downloads running.')
+    await fold.trigger('click')
+  })
   it('starts with an actionable empty state instead of bulk configuration', async () => {
     await open()
-    expect(wrapper!.text()).toContain('No stories yet.')
+    expect(wrapper!.text()).toContain('No downloads running.')
     expect(wrapper!.text()).not.toContain('No stories match your filters.')
     expect(wrapper!.text()).not.toContain('Bulk story actions')
   })
@@ -399,9 +454,9 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(router.currentRoute.value.query.search).toBeUndefined()
     expect(router.currentRoute.value.query.state).toBeUndefined()
     expect(wrapper!.text()).toContain('No stories yet.')
-    await router.push('/fanfiction?tab=activity')
+    await router.push('/fanfiction?tab=history')
     await flushPromises()
-    expect(wrapper!.get('nav a[aria-current="page"]').text()).toBe('Updates')
+    expect(wrapper!.get('nav a[aria-current="page"]').text()).toBe('History')
     expect(wrapper!.text()).toContain('Recent story changes')
   })
 })
