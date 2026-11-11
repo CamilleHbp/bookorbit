@@ -16,7 +16,7 @@ import * as schema from '../../db/schema';
 import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { isConnectionAccessError } from './fanfiction-website';
-import { downloadQueue, retryGroupMembers, type RetryScope } from './fanfiction-download-queue';
+import { actionableDownloadJob, downloadQueue, retryGroupMembers, type RetryScope } from './fanfiction-download-queue';
 import { FanfictionDownloadsDto, ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { PreviewFanfictionDto } from './dto/fanfiction.dto';
 import { recordFanfictionActivity } from './fanfiction-activity';
@@ -295,7 +295,7 @@ export class FanfictionJobService {
                     and (newer.kind = ${jobs.kind} or (newer.kind in ('update','refresh') and ${jobs.kind} in ('update','refresh')))
                     and (newer.source_id = ${jobs.sourceId} or newer.url = ${jobs.url})
                     and (newer.created_at, newer.id) > (${jobs.createdAt}, ${jobs.id})
-                    and newer.result->>'existingImportId' is null
+                    and ${actionableDownloadJob('newer')}
                 )`,
               )
             : undefined,

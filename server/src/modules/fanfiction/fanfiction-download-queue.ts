@@ -4,12 +4,19 @@ import { sql } from 'drizzle-orm';
 import * as schema from '../../db/schema';
 import type { FanfictionDownloadsDto } from './dto/fanfiction-job.dto';
 
+export function actionableDownloadJob(alias: 'j' | 'newer') {
+  const job = sql.identifier(alias);
+  return sql`(${job}.result->>'existingImportId' is null and not (
+    ${job}.kind='import' and ${job}.state='succeeded' and ${job}.source_id is null
+    and ${job}.result->>'sourceId' is not null and ${job}.result->>'bookId' is null))`;
+}
+
 function downloadEntries(libraryId: number, userId: number) {
   return sql`with latest as (
       select distinct on (j.url) j.id
       from ${schema.fanfictionJobs} j
       where j.library_id=${libraryId} and j.user_id=${userId} and j.kind in ('import','update','refresh')
-        and j.result->>'existingImportId' is null
+        and ${actionableDownloadJob('j')}
       order by j.url, (j.state='running') desc, (j.state='queued') desc, j.created_at desc, j.id desc
     ), pending as (
       select distinct on (coalesce(j.source_id::text, j.url))
