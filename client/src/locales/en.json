@@ -15358,6 +15358,7 @@
       "skipped": "not checked",
       "policy": "Use safe automatic updates"
     },
+    "browserExtension": "Download the FanFiction.net browser extension",
     "replacementTitle": "Replace from an EPUB",
     "replacementHelp": "Upload an EPUB, up to 128 MiB. Your book details and reading history are kept. Updates will pause. Review the upload within 7 days.",
     "replacementFile": "EPUB file",

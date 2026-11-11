@@ -42,6 +42,7 @@ RUN pnpm --config.verify-deps-before-run=false --filter server run build
 # pnpm deploy prunes to prod deps; dist/ is gitignored so copy it in after.
 RUN pnpm --config.allow-unused-patches=true --filter server deploy --prod --legacy /deploy
 RUN cp -r /app/server/dist /deploy/dist
+RUN node server/browser-extension/package.mjs /app/bookorbit-story-updates.zip
 RUN mkdir -p /deploy/migrations && cp -r /app/server/src/db/migrations/. /deploy/migrations/
 
 # Stage 3: Runtime image
@@ -73,6 +74,7 @@ ENV PORT=3000
 
 COPY --from=server-builder --chown=node:node /deploy ./
 COPY --from=client-builder --chown=node:node /app/client/dist ./public
+COPY --from=server-builder --chown=node:node /app/bookorbit-story-updates.zip ./public/bookorbit-story-updates.zip
 # The server reads its own translated text (achievements, monthly challenges) from the web's catalogs.
 COPY --from=client-builder --chown=node:node /app/client/src/locales ./locales
 COPY --from=server-builder --chown=node:node /app/server/entrypoint.sh /app/server/file-env.sh ./
