@@ -23,7 +23,7 @@ export function fanfictionWebsite(site: FanficfareSite): FanfictionWebsite {
   };
 }
 
-export const connectionAccessErrors = ['authentication_required', 'access_denied'] as const;
+export const connectionAccessErrors = ['authentication_required', 'access_denied', 'storiesonline_membership_expired'] as const;
 
 export function isConnectionAccessError(code: string | null | undefined): boolean {
   return connectionAccessErrors.some((value) => value === code);
