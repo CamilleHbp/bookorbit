@@ -340,6 +340,11 @@ export interface FanfictionSourceBatchStatus {
   trackingAvailable: boolean;
 }
 
+export interface IgnoreMissingStoryWarningRequest {
+  version: number;
+  ignoreWarning: "source_not_found";
+}
+
 export interface FanfictionSource {
   tracking?: FanfictionStoryTracking;
   sourceTitle?: string;

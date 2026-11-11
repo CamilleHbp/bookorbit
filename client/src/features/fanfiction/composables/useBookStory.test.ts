@@ -38,6 +38,31 @@ describe('book story administration', () => {
       return response({ items: [{ revision: 'previous', canRollback: true }], currentRevisionId: 'current', nextCursor: null })
     return response({ items: [], nextCursor: null })
   }
+  it('dismisses the current missing-source warning for this story and reloads its paused state', async () => {
+    let dismissed = false
+    mockApi.mockImplementation(async (url, options) => {
+      const path = String(url)
+      if (options?.method === 'PATCH') {
+        expect(path).toMatch(/\/sources\/story$/)
+        expect(JSON.parse(String(options.body))).toEqual({ version: 2, ignoreWarning: 'source_not_found' })
+        dismissed = true
+        return response({})
+      }
+      if (path.includes('/sources?'))
+        return response({
+          items: [{ ...source, state: dismissed ? 'paused' : 'active', attentionCode: dismissed ? null : 'source_not_found' }],
+          nextCursor: null,
+        })
+      if (path.endsWith('/metadata-review')) return response(null)
+      return pages(path)
+    })
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    await model.ignoreMissingWarning()
+    expect(model.error.value).toBe('')
+    expect(model.source.value?.attentionCode).toBeNull()
+    expect(model.keepUpdated.value).toBe(false)
+  })
   it('recovers metadata review after reopening and submits explicit merge choices', async () => {
     const review = {
       current: { title: 'Story', description: '', authors: [], tags: ['Custom'] },
