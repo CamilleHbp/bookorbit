@@ -8,7 +8,7 @@ import RetryDownloadsButton from './RetryDownloadsButton.vue'
 import DownloadGroupMembers from './DownloadGroupMembers.vue'
 const props = defineProps<{ row: FanfictionDownloadRow; libraryId: number }>()
 const emit = defineEmits<{ retried: []; inspect: [row: FanfictionDownloadRow] }>()
-const { t, te, locale } = useI18n()
+const { t, locale } = useI18n()
 const open = ref(false)
 const id = useId()
 const decision = computed(() => chapterDecision(props.row))
@@ -19,8 +19,8 @@ const reason = computed(() => {
     return t(row.code === 'source_rate_limited' ? 'fanfiction.downloads.throttled' : 'fanfiction.downloads.tryLater')
   if (row.issue === 'chapter') return t(`fanfiction.downloads.${decision.value.key}`, { count: decision.value.count })
   if (row.code === 'source_failed') return t('fanfiction.downloads.checkFailed')
-  if (row.code && te(`fanfiction.errors.${row.code}`)) return t(`fanfiction.errors.${row.code}`)
-  return row.issue ? t(`fanfiction.downloads.issue.${row.issue}`) : ''
+  const fallback = row.issue ? t(`fanfiction.downloads.issue.${row.issue}`) : t('fanfiction.errors.runtime_failed')
+  return row.code ? t(`fanfiction.errors.${row.code}`, fallback) : row.issue ? fallback : ''
 })
 const progress = computed(() => props.row.progress)
 const percent = computed(() =>

@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { FanfictionJob } from '@bookorbit/types'
+import { setI18nLocale } from '@/i18n'
 import ImportProgress from './ImportProgress.vue'
 
 const job = (overrides: Partial<FanfictionJob> = {}): FanfictionJob => ({
@@ -23,7 +24,7 @@ describe('import progress', () => {
     ['response_too_large', 'A chapter or image is too large'],
     ['download_timeout', 'The story took too long'],
     ['source_policy_blocked', 'A source request was blocked for safety'],
-    ['storiesonline_membership_expired', 'Your StoriesOnline Premier membership has expired'],
+    ['storiesonline_membership_expired', 'Do Not Renew to keep free access'],
     ['invalid_epub', 'The downloaded EPUB could not be safely opened'],
   ])('explains %s without blaming source settings', (errorCode, message) => {
     const wrapper = mount(ImportProgress, {
@@ -33,6 +34,18 @@ describe('import progress', () => {
     expect(wrapper.text()).toContain('17 of 219 chapters ready')
     expect(wrapper.text()).not.toContain('Check your source settings')
     wrapper.unmount()
+  })
+  it('shows the account decision when the current language lacks the StoriesOnline message', async () => {
+    await setI18nLocale('fr')
+    try {
+      const wrapper = mount(ImportProgress, {
+        props: { job: job({ state: 'configuration_blocked', errorCode: 'storiesonline_membership_expired' }) },
+      })
+      expect(wrapper.get('[role="alert"]').text()).toContain('Do Not Renew')
+      wrapper.unmount()
+    } finally {
+      await setI18nLocale('en')
+    }
   })
   it('shows the saved decision and the actual error when an approved download stops', () => {
     const approved = { approved: true } as NonNullable<NonNullable<FanfictionJob['result']>['importReview']>
