@@ -195,6 +195,11 @@ export class ManagedMetadataService {
           changed = true;
         }
       } else if (personalTags.length) await this.tags.keepPersonal(tx, bookId, source, personalTags, { reviewed: reviewedFields.includes('tags') });
+      // Website genres are never synchronized; the import editor's explicit additions are personal library data.
+      if (source.key.startsWith('fanfiction:') && source.userId && labelEdits?.genres?.added.length) {
+        await this.matching.editManualLabels(tx, bookId, 'genres', { added: labelEdits.genres.added, removed: [] }, source.userId);
+        changed = true;
+      }
       if (changed) await tx.update(books).set({ updatedAt: new Date() }).where(eq(books.id, bookId));
       this.logger.log(
         `[metadata.managed_story] [end] bookId=${bookId} libraryId=${source.libraryId} durationMs=${Date.now() - startedAt} changed=${changed} - story metadata processed`,

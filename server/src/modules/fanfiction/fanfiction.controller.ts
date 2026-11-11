@@ -8,7 +8,7 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionActivitySummaryDto, ListFanfictionActivityDto, PreviewFanfictionDto, FanfictionJobsStatusDto } from './dto/fanfiction.dto';
 import { FanfictionJobService } from './fanfiction-job.service';
-import { ListFanfictionJobsDto, RetryFanfictionJobDto } from './dto/fanfiction-job.dto';
+import { FanfictionDownloadsDto, ListFanfictionJobsDto, RetryFanfictionJobDto } from './dto/fanfiction-job.dto';
 import { FanfictionActivityService } from './fanfiction-activity.service';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { ImportStoryReviewDto, ReviewFanfictionContentDto } from './dto/fanfiction-source.dto';
@@ -34,6 +34,11 @@ export class FanfictionController {
   @Get('jobs')
   listJobs(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: ListFanfictionJobsDto, @CurrentUser() user: RequestUser) {
     return this.jobs.list(libraryId, dto, user);
+  }
+
+  @Get('downloads')
+  downloads(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: FanfictionDownloadsDto, @CurrentUser() user: RequestUser) {
+    return this.jobs.downloads(libraryId, dto, user);
   }
 
   @Get('activity')

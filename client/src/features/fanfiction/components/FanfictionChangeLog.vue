@@ -14,17 +14,18 @@ const props = defineProps<{
   page: number
   previous: boolean
   next: boolean
+  standalone?: boolean
   busy: boolean
 }>()
 const emit = defineEmits<{ filter: [kind: FanfictionActivityKind | '']; previous: []; next: [] }>()
 const { t, locale } = useI18n()
 
-const storageKey = 'bookorbit.fanfiction.changeLogOpen'
+const storageKey = props.standalone ? 'bookorbit.fanfiction.historyOpen' : 'bookorbit.fanfiction.changeLogOpen'
 function readOpen() {
   try {
-    return localStorage.getItem(storageKey) === 'true'
+    return (localStorage.getItem(storageKey) ?? String(!!props.standalone)) === 'true'
   } catch {
-    return false
+    return !!props.standalone
   }
 }
 const open = ref(readOpen())

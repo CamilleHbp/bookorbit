@@ -506,6 +506,51 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     expect(await jobs.claim()).toBeNull();
   });
 
+  it('keeps old active transfers visible, groups all affected stories and pages members within one owner', async () => {
+    const [other] = await db
+      .insert(schema.users)
+      .values({ username: 'queue-' + randomUUID(), name: 'Other reader', passwordHash: 'not-a-login-hash' })
+      .returning();
+    try {
+      const sample = (url: string) => ({
+        libraryId,
+        userId,
+        tokenVersion: requestUser.tokenVersion,
+        site: 'example.org',
+        kind: 'import' as const,
+        idempotencyKey: randomUUID(),
+        url: 'https://example.org/' + url,
+      });
+      const [running] = await db
+        .insert(schema.fanfictionJobs)
+        .values({ ...sample('active'), state: 'running', createdAt: new Date(0) })
+        .returning();
+      await db
+        .insert(schema.fanfictionJobs)
+        .values(Array.from({ length: 27 }, (_, i) => ({ ...sample(String(i)), state: 'failed' as const, errorCode: 'source_failed' })));
+      await db.insert(schema.fanfictionJobs).values([
+        { ...sample('private'), userId: other.id, state: 'failed', errorCode: 'source_failed' },
+        { ...sample('missing'), state: 'failed', errorCode: 'source_not_found' },
+        { ...sample('waiting'), state: 'queued', attempts: 4, runAfter: new Date(Date.now() + 60000), errorCode: 'source_failed' },
+        { ...sample('active'), state: 'succeeded', result: { existingImportId: running.id } },
+      ]);
+      const page = await jobs.downloads(libraryId, { offset: 0 }, requestUser);
+      const group = page.items.find((row) => row.section === 'attention' && row.groupKey && row.site === 'example.org')!;
+      expect(group.count).toBe(27);
+      expect(page.items.find((row) => row.section === 'running')?.jobId).toBe(running.id);
+      expect(page.items.find((row) => row.section === 'retrying')?.nextAttemptAt).toBeTruthy();
+      expect(page.items.find((row) => row.code === 'source_not_found')?.groupKey).toBeNull();
+      const first = await jobs.downloads(libraryId, { section: 'attention', group: group.groupKey!, offset: 0 }, requestUser);
+      const last = await jobs.downloads(libraryId, { section: 'attention', group: group.groupKey!, offset: 20 }, requestUser);
+      expect(first.items).toHaveLength(20);
+      expect(last.items).toHaveLength(7);
+      expect(new Set([...first.items, ...last.items].map((row) => row.id)).size).toBe(27);
+      expect((await jobs.downloads(libraryId, { offset: 0, group: group.groupKey! }, { ...requestUser, id: other.id })).items).toHaveLength(1);
+    } finally {
+      await db.delete(schema.users).where(eq(schema.users.id, other.id));
+    }
+  });
+
   it('pages unfinished imports by owner without history noise or superseded attempts', async () => {
     const [otherUser] = await db
       .insert(schema.users)
