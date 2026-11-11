@@ -137,7 +137,19 @@ export class FanfictionUpdateService {
               this.sources.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl ? 'source_identity_mismatch' : 'source_chapter_reduction',
           });
         const next = await this.manifests.inspect(path);
-        if (current.contentHash === next.contentHash && current.metadataHash === next.metadataHash && current.coverHash === next.coverHash) {
+        const safety = storyUpdateSafety(previousManifest, next);
+        const removedPlaceholder =
+          previousManifest.chapters.some((c) => c.generated && c.sourceUrl && c.title === 'Home') &&
+          !next.chapters.some((c) => c.generated && c.sourceUrl && c.title === 'Home');
+        if (
+          !removedPlaceholder &&
+          !safety.reordered &&
+          !safety.inserted &&
+          !safety.removed &&
+          current.contentHash === next.contentHash &&
+          current.metadataHash === next.metadataHash &&
+          current.coverHash === next.coverHash
+        ) {
           await this.revisions.observeFile(fileId, {});
           if ((await this.catalog.current(fileId, source.libraryId)).id !== expected)
             throw new ConflictException('Installed EPUB changed during update');
@@ -146,17 +158,7 @@ export class FanfictionUpdateService {
           return finish(expected, true, preview);
         }
         job.result = await this.reviews.prepare(job, preview, false, false, source.updatePolicy === 'safe');
-        job.result.changes = storyChapterChanges(
-          {
-            version: 1,
-            chapters: current.chapters ?? [],
-            contentHash: current.contentHash ?? '',
-            metadataHash: current.metadataHash ?? '',
-            coverHash: current.coverHash,
-          },
-          next,
-        );
-        const safety = storyUpdateSafety(previousManifest, next);
+        job.result.changes = storyChapterChanges(previousManifest, next);
         job.result.changes = { ...job.result.changes, ...safety };
         if (source.updatePolicy === 'safe' && safety.safety === 'review_required')
           job.result.contentReview = { approved: false, previousState: source.state === 'paused' ? 'paused' : 'active' };

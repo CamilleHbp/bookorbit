@@ -134,17 +134,28 @@ export class EpubManifestService {
       const html = (await read(href)).toString();
       const $ = load(html);
       const sourceUrl = $('meta[name="chapterurl"]').first().attr('content') ?? $('a.chapterurl').first().attr('href');
+      const emptyFictionHome =
+        fanficfare &&
+        /^https:\/\/fiction\.live\/api\/anonkun\/chapters\/[\w-]+\/\d+\/\d+\/?$/.test(sourceUrl ?? '') &&
+        posix.basename(href) === 'file0001.xhtml' &&
+        $('meta[name="chapterorigtitle"]').attr('content') === 'Home' &&
+        $('body.fff_chapter > h3.fff_chapter_title').length === 1 &&
+        $('body')
+          .find('*')
+          .toArray()
+          .every((el) => el.name === 'h3' || (['div', 'br'].includes(el.name) && !Object.keys(el.attribs).length)) &&
+        $('body').text().trim() === $('h3.fff_chapter_title').text().trim();
       $('script, style, head, [hidden]').remove();
       const title = boundAnchorText(normalizeAnchorText($('h1,h2,h3').first().text()), 512);
       const generated =
         fanficfare && ['title_page', 'toc_page', 'log_page', 'cover'].includes(item['@_id']!) && posix.basename(href) === `${item['@_id']}.xhtml`;
       const text = visibleChapterText($);
       const textHash = digest(text);
-      if (!generated) contentChapters.push(textHash);
-      else if (item['@_id'] !== 'log_page' && item['@_id'] !== 'cover')
+      if (!generated && !emptyFictionHome) contentChapters.push(textHash);
+      else if (generated && item['@_id'] !== 'log_page' && item['@_id'] !== 'cover')
         generatedMetadata.push(digest(generatedPageText(html, item['@_id'] === 'title_page')));
       chapters.push({
-        ...(generated ? { generated: true } : {}),
+        ...(generated || emptyFictionHome ? { generated: true } : {}),
         href,
         title,
         ...(sourceUrl && sourceUrl.length <= 2048 && /^https?:\/\//i.test(sourceUrl) ? { sourceUrl } : {}),

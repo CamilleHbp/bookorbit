@@ -514,6 +514,7 @@ export interface FanfictionLinkRequest {
 export interface FanfictionChapterChanges {
   safety?: "append_only" | "unchanged" | "review_required";
   removed?: number;
+  inserted?: boolean;
   reordered?: boolean;
   added: { href: string; title: string }[];
   changed: number;
@@ -545,6 +546,7 @@ export interface FanfictionDownloadRow {
   progress: FanfictionImportProgress | null;
   removed: number;
   changed: number;
+  inserted?: boolean;
   reordered: boolean;
   currentChapters: number | null;
   proposedChapters: number | null;

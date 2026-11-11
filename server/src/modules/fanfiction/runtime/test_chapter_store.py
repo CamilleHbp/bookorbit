@@ -13,6 +13,21 @@ from safe_transport import SafeTransport
 
 
 class ChapterRecoveryTest(unittest.TestCase):
+    def test_synthetic_home_is_omitted_only_for_an_empty_fictionlive_range(self):
+        from fanficfare_wrapper import omit_empty_fictionlive_home
+        adapter = Mock()
+        adapter.getSiteDomain.return_value = 'fiction.live'
+        adapter.chapter_id_to_api = {'home': 'intro'}
+        adapter.get_chapters.return_value = [{'url': 'intro'}, {'url': 'chapter'}]
+        adapter.get_request.side_effect = ['[{"nt":"chapter"}]', '[]']
+        self.assertIsNone(omit_empty_fictionlive_home(adapter))
+        adapter.del_chapter.assert_not_called()
+        self.assertEqual(omit_empty_fictionlive_home(adapter), 'intro')
+        adapter.del_chapter.assert_called_once_with(0)
+        adapter.getSiteDomain.return_value = 'another.example'
+        self.assertIsNone(omit_empty_fictionlive_home(adapter))
+        self.assertEqual(adapter.get_request.call_count, 2)
+
     def test_empty_fictionlive_ranges_are_rechecked_and_other_empty_downloads_fail(self):
         from chapter_store import recover_chapters
         from safe_transport import SourceResponseError

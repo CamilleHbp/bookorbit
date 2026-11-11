@@ -44,3 +44,33 @@ it('separates new chapters, edited chapters and metadata from generated pages', 
   };
   expect(storyChapterChanges(previous, next)).toEqual({ added: [{ href: 'two', title: 'two' }], changed: 1, metadataChanged: true });
 });
+
+it('compares the relative order of shared chapters for every adapter', () => {
+  const manifest = (...ids: string[]): EpubRevisionManifest => ({
+    version: 1,
+    contentHash: '',
+    metadataHash: '',
+    coverHash: null,
+    chapters: ids.map((id) => chapter(id, 'https://example.org/' + id)),
+  });
+  const old = manifest('a', 'b', 'c');
+  expect(storyUpdateSafety(old, manifest('a', 'x', 'b', 'c'))).toEqual({ inserted: true, reordered: false, removed: 0, safety: 'review_required' });
+  expect(storyUpdateSafety(old, manifest('b', 'c'))).toEqual({ reordered: false, removed: 1, safety: 'review_required' });
+  expect(storyUpdateSafety(old, manifest('x', 'c', 'a'))).toEqual({ inserted: true, reordered: true, removed: 1, safety: 'review_required' });
+});
+
+it('identifies fiction.live ranges by story and start while preserving ordinary URLs', () => {
+  const manifest = (site: string, end: number, hash: string): EpubRevisionManifest => ({
+    version: 1,
+    contentHash: '',
+    metadataHash: '',
+    coverHash: null,
+    chapters: [chapter('one', `https://${site}/api/anonkun/chapters/story/10/${end}/`, hash)],
+  });
+  const old = manifest('fiction.live', 20, 'old');
+  const next = manifest('fiction.live', 30, 'new');
+  expect(storyChapterChanges(old, next)).toMatchObject({ changed: 1, added: [] });
+  expect(storyUpdateSafety(old, next)).toEqual({ removed: 0, reordered: false, safety: 'review_required' });
+  expect(storyUpdateSafety(old, manifest('fiction.live', 30, 'old')).safety).toBe('unchanged');
+  expect(storyUpdateSafety(manifest('example.org', 20, 'old'), manifest('example.org', 30, 'new')).removed).toBe(1);
+});

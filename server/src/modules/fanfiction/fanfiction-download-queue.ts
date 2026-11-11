@@ -103,7 +103,7 @@ export async function downloadQueue(db: NodePgDatabase<typeof schema>, libraryId
       'site',site,'title',title,'kind',kind,'jobId',job_id,'sourceId',source_id,'bookId',book_id,'code',code,
       'nextAttemptAt',${dto.group ? sql`retry_at` : sql`first_retry`},'progress',progress,
       'removed',coalesce((changes->>'removed')::int,0),'changed',coalesce((changes->>'changed')::int,0),
-      'reordered',coalesce((changes->>'reordered')::boolean,false),'currentChapters',current_chapters,'proposedChapters',proposed_chapters
+      'inserted',coalesce((changes->>'inserted')::boolean,false),'reordered',coalesce((changes->>'reordered')::boolean,false),'currentChapters',current_chapters,'proposedChapters',proposed_chapters
     ) as item,total from ranked
     where position between least(${dto.offset}, ((total-1)/20)*20)+1 and least(${dto.offset}, ((total-1)/20)*20)+20
     order by section,position
