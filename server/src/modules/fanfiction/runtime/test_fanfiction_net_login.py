@@ -22,6 +22,25 @@ class FanFictionLoginTest(unittest.TestCase):
         adapter = adapters.getAdapter(make_configuration(self.url, ini, self.story), self.url)
         login_fanfiction_net(adapter, self.story)
 
+    def test_story_access_precedes_login_and_does_not_retry_denied_pages(self):
+        from fanficfare_wrapper import run_story
+        from unittest.mock import Mock
+        adapter = Mock()
+        adapter.getSiteDomain.return_value = HOST
+        for status, attempts in [(401, 2), (403, 1), (200, 1)]:
+            with self.subTest(status=status), patch('fanficfare.adapters.getAdapter', return_value=adapter), patch('fanficfare_wrapper.login_fanfiction_net') as login, patch('fanficfare_wrapper.install_tag_matching'), patch('fanficfare_wrapper.story_preview'), patch('fanficfare_wrapper.matched_preview', return_value={'canonicalUrl': self.url, 'chapterCount': 1}):
+                adapter.getStoryMetadataOnly.reset_mock()
+                adapter.getStoryMetadataOnly.side_effect = [exceptions.HTTPErrorFFF(self.url, status, 'fixture'), Mock()] if status != 200 else [Mock()]
+                def preview():
+                    return run_story({}, self.story, 'preview', self.url, self.ini, None, lambda _: None)
+                if status == 403:
+                    with self.assertRaises(exceptions.HTTPErrorFFF):
+                        preview()
+                else:
+                    self.assertEqual(preview()['chapterCount'], 1)
+                self.assertEqual(adapter.getStoryMetadataOnly.call_count, attempts)
+                self.assertEqual(login.call_count, int(status == 401))
+
     def test_credentials_are_optional(self):
         with patch.object(SafeTransport, 'request') as request:
             self.run_login('')

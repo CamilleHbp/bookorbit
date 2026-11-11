@@ -147,7 +147,9 @@ function date(value: string) {
       @submit.prevent="save"
     >
       <h3 class="font-semibold">{{ websiteLabel(website.name) }}</h3>
-      <p v-if="source" class="text-sm text-muted-foreground">{{ t('fanfiction.connections.takeOver', { title: source.title }) }}</p>
+      <p v-if="source && state.needsTakeover(source)" class="text-sm text-muted-foreground">
+        {{ t('fanfiction.connections.takeOver', { title: source.title }) }}
+      </p>
       <p v-if="connection" class="text-sm text-muted-foreground">{{ t('fanfiction.connections.savedHelp') }}</p>
       <template v-if="website.access === 'login'">
         <label class="block space-y-1 text-sm"

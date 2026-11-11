@@ -39,8 +39,10 @@ export class FanfictionConnectionController {
 
   @Post()
   @HttpCode(200)
-  save(@Body() dto: SaveFanfictionConnectionDto, @CurrentUser() user: RequestUser) {
-    return this.connections.save(dto, user);
+  async save(@Body() dto: SaveFanfictionConnectionDto, @CurrentUser() user: RequestUser) {
+    const saved = await this.connections.save(dto, user);
+    await this.jobs.retryWebsite(saved.website.id, user, undefined, true);
+    return saved;
   }
 
   @Delete(':id')

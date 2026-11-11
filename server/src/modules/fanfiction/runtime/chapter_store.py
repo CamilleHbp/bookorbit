@@ -70,6 +70,11 @@ def recover_chapters(adapter, directory, canonical, transport):
             html = original(url, index)
             if transport.failure is not None:
                 raise transport.failure
+            # FictionLiveAdapter returns exactly '' for a successful empty JSON range.
+            # Keep the chapter in the spine but recheck it on a later download.
+            if html == '' and adapter.getSiteDomain() == 'fiction.live':
+                downloaded += 1
+                return '<div></div>'
             if not isinstance(html, str) or not html.strip():
                 raise SourceResponseError('Empty chapter returned by the source')
             body = html.encode('utf-8')

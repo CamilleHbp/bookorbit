@@ -214,7 +214,7 @@ describe('Fanfiction queued execution', () => {
         FanfictionWorkerService,
         {
           provide: FanfictionConnectionService,
-          useValue: { session: vi.fn().mockResolvedValue({ document: { configuration: '', cookies: [] }, connection: null }) },
+          useValue: { session: vi.fn().mockResolvedValue({ site: 'fiction.live', document: { configuration: '', cookies: [] }, connection: null }) },
         },
         { provide: FanfictionJobService, useValue: jobs },
         { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
@@ -238,7 +238,7 @@ describe('Fanfiction queued execution', () => {
     try {
       await worker.tick();
       const state = ['adult_confirmation_required', 'access_denied', 'authentication_required'].includes(code) ? 'configuration_blocked' : 'failed';
-      await vi.waitFor(() => expect(jobs.finish).toHaveBeenCalledWith(job, state, null, code));
+      await vi.waitFor(() => expect(jobs.finish).toHaveBeenCalledWith(job, state, null, code, { site: 'fiction.live', connection: null }));
     } finally {
       await worker.onModuleDestroy();
       await module.close();

@@ -134,6 +134,48 @@ describe('existing story import confirmation', () => {
       await module.close();
     }
   });
+  it('starts a fresh update with current source settings when retrying an older access failure', async () => {
+    const source = {
+      id: 'source',
+      libraryId: 5,
+      version: 3,
+      maintainerUserId: user.id,
+      state: 'configuration_blocked',
+      attentionCode: 'access_denied',
+    };
+    const job = {
+      id: 'old-job',
+      userId: user.id,
+      libraryId: 5,
+      kind: 'update',
+      sourceId: source.id,
+      sourceVersion: 1,
+      state: 'configuration_blocked',
+      errorCode: 'access_denied',
+    };
+    const locked = vi.fn().mockResolvedValueOnce([job]).mockResolvedValueOnce([source]);
+    const select = { from: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), for: locked };
+    const tx = { select: () => select };
+    const module = await Test.createTestingModule({
+      providers: [
+        FanfictionJobService,
+        { provide: DB, useValue: { transaction: (run: (tx: unknown) => unknown) => run(tx) } },
+        { provide: FanfictionAccessService, useValue: access },
+      ],
+    }).compile();
+    try {
+      const service = module.get(FanfictionJobService);
+      const fresh = vi.spyOn(service, 'updateStory').mockResolvedValue({ id: 'fresh' } as Awaited<ReturnType<typeof service.updateStory>>);
+      expect(await service.retry(5, job.id, user)).toMatchObject({ id: 'fresh' });
+      expect(fresh).toHaveBeenCalledWith(source, 'update', job.id, user, false, undefined, tx);
+      locked.mockResolvedValueOnce([{ ...job, result: { preparedUpdate: { approved: true } } }]).mockResolvedValueOnce([source]);
+      await expect(service.retry(5, job.id, user)).rejects.toThrow(ConflictException);
+      expect(fresh).toHaveBeenCalledTimes(1);
+    } finally {
+      await module.close();
+    }
+  });
+
   it('returns a structured review conflict instead of scheduling another update', async () => {
     const source = {
       id: 'existing',

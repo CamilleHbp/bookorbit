@@ -478,6 +478,13 @@ export class FanfictionSourceService {
   async update(libraryId: number, id: string, dto: UpdateFanfictionSourceDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
     const previous = await this.find(libraryId, id);
+    // Saving this maintainer's website login does not edit the story itself.
+    if (
+      dto.takeOverMaintenance &&
+      previous.maintainerUserId === user.id &&
+      Object.entries(dto).every(([field, value]) => value === undefined || ['version', 'takeOverMaintenance'].includes(field))
+    )
+      return this.view(previous);
     if (
       previous.attentionCode === 'metadata_review_required' &&
       previous.updatePolicy !== 'safe' &&

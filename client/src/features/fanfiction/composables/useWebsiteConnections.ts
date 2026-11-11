@@ -8,9 +8,12 @@ import type {
   FanfictionSource,
   FanfictionWebsite,
 } from '@bookorbit/types'
+import { useAuth } from '@/features/auth/composables/useAuth'
 import { api } from '@/lib/api'
 
 export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undefined>) {
+  const { user } = useAuth()
+  const needsTakeover = (source: FanfictionSource) => source.tracking?.maintainerUserId !== user.value?.id
   const websites = ref<FanfictionWebsite[]>([])
   const connections = ref<FanfictionConnection[]>([])
   const issues = ref<FanfictionConnectionIssue[]>([])
@@ -137,10 +140,11 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
       username.value = ''
       cookieValue.value = ''
       cookieName.value = ''
-      if (source && id)
+      const takeOver = source && id && needsTakeover(source)
+      if (takeOver)
         await request(`/api/v1/libraries/${id}/fanfiction/sources/${source.id}`, { version: source.version, takeOverMaintenance: true }, 'PATCH')
       const job =
-        id && (affected.value > 0 || (source && (source.tracking?.enabled ?? source.state !== 'paused')))
+        takeOver && (source.tracking?.enabled ?? source.state !== 'paused')
           ? await request<FanfictionJob>(`${base}/${result.id}/retry`, { libraryId: id })
           : undefined
       if (disposed || current !== generation) return
@@ -181,6 +185,7 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
     settingsLoaded,
     settingsLoading,
     loadSettings,
+    needsTakeover,
     websites,
     signInUrl,
     connections,

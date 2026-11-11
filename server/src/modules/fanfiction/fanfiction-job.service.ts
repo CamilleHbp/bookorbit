@@ -82,7 +82,10 @@ export class FanfictionJobService {
           errorMeta: { sourceId: current.id, bookId: current.bookId },
         } satisfies FanfictionMetadataReviewConflict & { message: string });
       const retryAccess =
-        !scheduled && kind === 'update' && current?.state === 'configuration_blocked' && isConnectionAccessError(current.attentionCode);
+        !scheduled &&
+        kind === 'update' &&
+        current?.state === 'configuration_blocked' &&
+        (isConnectionAccessError(current.attentionCode) || current.attentionCode === 'configuration_blocked');
       if (
         !current ||
         current.version !== source.version ||
@@ -327,14 +330,15 @@ export class FanfictionJobService {
     return { ...page, recent };
   }
 
-  async retryWebsite(site: string, user: RequestUser, libraryId?: number) {
-    if (libraryId !== undefined) return this.retryGroup(libraryId, { site }, user);
+  async retryWebsite(site: string, user: RequestUser, libraryId?: number, settingsChanged = false) {
+    const scope = { site, settingsChanged };
+    if (libraryId !== undefined) return this.retryGroup(libraryId, scope, user);
     const total = { queued: 0, skipped: 0 };
     let after = 0;
     for (;;) {
       const page = await this.access.librariesFor(user, after, 50);
       for (const library of page.items) {
-        const result = await this.retryGroup(library.id, { site }, user);
+        const result = await this.retryGroup(library.id, scope, user);
         total.queued += result.queued;
         total.skipped += result.skipped;
       }
@@ -533,6 +537,24 @@ export class FanfictionJobService {
           .from(schema.fanfictionSources)
           .where(and(eq(schema.fanfictionSources.id, job.sourceId), eq(schema.fanfictionSources.libraryId, libraryId)))
           .for('update');
+        // Retry the current settings after a login repair instead of resuming work prepared for an older source.
+        if (
+          source?.state === 'configuration_blocked' &&
+          source.maintainerUserId === user.id &&
+          source.attentionCode === job.errorCode &&
+          (isConnectionAccessError(job.errorCode) || job.errorCode === 'configuration_blocked') &&
+          job.kind === 'update' &&
+          job.state === 'configuration_blocked' &&
+          job.sourceVersion !== null &&
+          source.version !== job.sourceVersion &&
+          !source.metadataReviewPending &&
+          !job.result?.revisionId &&
+          !job.result?.preparedUpdate &&
+          !job.result?.contentReview &&
+          !job.result?.metadataReview
+        ) {
+          return this.updateStory(source, 'update', job.id, user, false, undefined, tx);
+        }
         if (!source || source.state === 'unlinked' || (job.sourceVersion !== null && source.version !== job.sourceVersion && !job.result?.revisionId))
           throw new ConflictException('Source settings changed; review the pending operation before retrying');
         const [other] = await tx
@@ -814,8 +836,27 @@ export class FanfictionJobService {
     state: FanfictionJobState,
     result: FanfictionJob['result'] = null,
     errorCode: string | null = null,
+    websiteAttempt?: { site: string; connection: { id: string; generation: number } | null },
   ): Promise<boolean> {
     return this.db.transaction(async (tx) => {
+      if (
+        websiteAttempt !== undefined &&
+        state === 'configuration_blocked' &&
+        (isConnectionAccessError(errorCode) || errorCode === 'configuration_blocked')
+      ) {
+        // Serialize the failed attempt with a settings save so an old login cannot re-block the story.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`fanfiction-connection:${job.userId}:${websiteAttempt.site}`}, 0))`);
+        const connections = schema.fanfictionConnections;
+        const [current] = await tx
+          .select({ id: connections.id, generation: connections.credentialGeneration })
+          .from(connections)
+          .where(and(eq(connections.userId, job.userId), eq(connections.site, websiteAttempt.site)))
+          .limit(1);
+        if (current?.id !== websiteAttempt.connection?.id || current?.generation !== websiteAttempt.connection?.generation) {
+          state = 'queued';
+          errorCode = null;
+        }
+      }
       const rows = await tx
         .update(jobs)
         .set({
