@@ -212,7 +212,7 @@ onMounted(() => {
           <RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.maintenance.defaultPolicy') }}</RouterLink>
         </Button>
         <div v-if="job.result?.contentReview && !job.result.contentReview.approved" class="space-y-3 py-3">
-          <p class="font-semibold">{{ t('fanfiction.downloads.' + decision.key, { count: decision.count }) }}</p>
+          <p class="font-semibold">{{ t(`fanfiction.downloads.${decision.key}`, { count: decision.count }) }}</p>
           <p>{{ t('fanfiction.downloads.keepHint') }}</p>
           <div class="flex flex-wrap gap-2">
             <Button :disabled="updating" @click="approveContent">{{ t('fanfiction.downloads.useWebsite') }}</Button

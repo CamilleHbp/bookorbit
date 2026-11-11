@@ -45,7 +45,7 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
         :key="key"
         :library-id="libraryId"
         :section="key"
-        :title="t('fanfiction.downloads.' + key)"
+        :title="t(`fanfiction.downloads.${key}`)"
         :count="snapshot.totals[key]"
       >
         <p v-if="key === 'running' && !snapshot.totals.running" class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
@@ -59,7 +59,7 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
           @inspect="inspect"
         />
         <FanfictionPagination
-          :label="t('fanfiction.downloads.' + key)"
+          :label="t(`fanfiction.downloads.${key}`)"
           :busy="busy"
           :page="offsets[key] / 20 + 1"
           :previous="offsets[key] > 0"

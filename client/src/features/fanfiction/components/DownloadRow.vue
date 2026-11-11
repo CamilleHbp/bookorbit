@@ -43,7 +43,7 @@ function inspectMember(row: FanfictionDownloadRow) {
 <template>
   <article v-if="row.section === 'running'" class="my-3 space-y-4 rounded-xl bg-primary px-5 py-5 text-primary-foreground sm:px-7">
     <div class="flex items-center gap-2 text-sm">
-      <Download class="size-4" aria-hidden="true" />{{ t(row.progress ? 'fanfiction.progress.' + row.progress.stage : 'fanfiction.states.running')
+      <Download class="size-4" aria-hidden="true" />{{ t(row.progress ? `fanfiction.progress.${row.progress.stage}` : 'fanfiction.states.running')
       }}<span class="ms-auto">{{ row.site }}</span>
     </div>
     <div class="flex items-baseline justify-between gap-3">
@@ -82,14 +82,14 @@ function inspectMember(row: FanfictionDownloadRow) {
           @click="toggle"
         >
           <span class="min-w-0 flex-1 break-words"
-            ><span class="block text-xs font-semibold text-muted-foreground">{{ t('fanfiction.downloads.issue.' + row.issue) }}</span
+            ><span class="block text-xs font-semibold text-muted-foreground">{{ t(`fanfiction.downloads.issue.${row.issue}`) }}</span
             ><span class="font-semibold">{{ row.site }}</span></span
           ><span class="shrink-0 text-sm tabular-nums">{{ t('fanfiction.downloads.stories', { count: row.count }) }}</span
           ><ChevronRight class="size-4 shrink-0" :class="{ 'rotate-90': open }" aria-hidden="true" />
         </button>
         <template v-else
           ><p class="text-xs font-semibold text-muted-foreground">
-            {{ row.issue ? t('fanfiction.downloads.issue.' + row.issue) + ' · ' : '' }}{{ row.site }}
+            {{ row.issue ? t(`fanfiction.downloads.issue.${row.issue}`) + ' · ' : '' }}{{ row.site }}
           </p>
           <button
             v-if="row.jobId"
