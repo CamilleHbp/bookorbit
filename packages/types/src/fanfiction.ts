@@ -512,7 +512,7 @@ export interface FanfictionLinkRequest {
 }
 
 export interface FanfictionChapterChanges {
-  safety?: "append_only" | "unchanged" | "review_required";
+  safety?: "insert_only" | "append_only" | "unchanged" | "review_required";
   removed?: number;
   inserted?: boolean;
   reordered?: boolean;
