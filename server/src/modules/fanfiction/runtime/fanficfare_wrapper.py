@@ -101,6 +101,16 @@ def omit_empty_fictionlive_home(adapter):
     return None
 
 
+def empty_saved_home_url(adapter, saved):
+    if adapter.getSiteDomain() == 'fiction.live' and saved:
+        home = adapter.chapter_id_to_api.get('home')
+        body = saved.get(home)
+        if body is not None and not body.get_text(strip=True) and all(
+                tag.name in ('html', 'body', 'div', 'br') for tag in body.find_all(True)):
+            return home
+    return None
+
+
 def story_preview(adapter, story):
     canonical = story.getMetadata('storyUrl').replace('http://', 'https://', 1)
     validate_url(canonical)
@@ -223,16 +233,20 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         previous_url, previous_count = old[:2]
         if adapters.getNormalStoryURL(previous_url) != adapters.getNormalStoryURL(canonical):
             return finish({'reviewRequired': 'identity_mismatch', 'preview': preview})
-        if empty_home and old[7]:
-            home_body = old[7].get(empty_home)
-            if home_body is not None and not home_body.get_text(strip=True) and all(
-                    tag.name in ('html', 'body', 'div', 'br') for tag in home_body.find_all(True)):
-                previous_count -= 1
+        saved_placeholder = empty_saved_home_url(adapter, old[7])
+        if empty_home and empty_home == saved_placeholder:
+            previous_count -= 1
         if previous_count > chapter_count and request.get('reviewChanges') is not True:
             return finish({'reviewRequired': 'chapter_reduction', 'preview': preview})
         if operation == 'update':
             (adapter.oldchapters, adapter.oldimgs, adapter.oldcover, adapter.calibrebookmark,
              adapter.logfile, adapter.oldchaptersmap, adapter.oldchaptersdata) = old[2:9]
+            if saved_placeholder:
+                del adapter.oldchaptersmap[saved_placeholder]
+                # Once the empty page is gone, positional fallback could reuse it
+                # for a different chapter or conceal newly published intro content.
+                if not adapter.oldchaptersmap:
+                    adapter.oldchapters = None
     with open('output.epub', 'xb') as output:
         progress = ProgressReporter(report_progress)
         progress.total = chapter_count

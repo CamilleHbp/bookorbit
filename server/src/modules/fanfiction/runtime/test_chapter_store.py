@@ -28,6 +28,16 @@ class ChapterRecoveryTest(unittest.TestCase):
         self.assertIsNone(omit_empty_fictionlive_home(adapter))
         self.assertEqual(adapter.get_request.call_count, 2)
 
+    def test_old_home_is_rechecked_without_dropping_illustrated_introductions(self):
+        from bs4 import BeautifulSoup
+        from fanficfare_wrapper import empty_saved_home_url
+        adapter = Mock()
+        adapter.getSiteDomain.return_value = 'fiction.live'
+        adapter.chapter_id_to_api = {'home': 'intro'}
+        for html, expected in [('<div></div>', 'intro'), ('<p>First scene</p>', None),
+                               ('<div><img src="intro.jpg"/></div>', None)]:
+            self.assertEqual(empty_saved_home_url(adapter, {'intro': BeautifulSoup(html, 'html.parser')}), expected)
+
     def test_empty_fictionlive_ranges_are_rechecked_and_other_empty_downloads_fail(self):
         from chapter_store import recover_chapters
         from safe_transport import SourceResponseError
