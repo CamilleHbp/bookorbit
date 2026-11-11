@@ -2,6 +2,8 @@ import type { ReadingAnchor, ResolvedReadingAnchor, RevisionChapter } from '@boo
 import { BadRequestException } from '@nestjs/common';
 import { ANCHOR_CONTEXT_LIMIT, ANCHOR_QUOTE_LIMIT, scalarLength } from './anchor-text';
 
+import { chapterSourceId } from '../../common/utils/chapter-source-id';
+
 const MATCH_FIELDS = ['sourceUrl', 'textHash', 'href', 'title'] as const;
 type ChapterLookup = Map<(typeof MATCH_FIELDS)[number], Map<string, number[]>>;
 
@@ -10,7 +12,7 @@ function indexChapters(chapters: RevisionChapter[]): ChapterLookup {
   for (const field of MATCH_FIELDS) {
     const values = new Map<string, number[]>();
     for (let index = 0; index < chapters.length; index++) {
-      const value = chapters[index][field];
+      const value = field === 'sourceUrl' ? chapterSourceId(chapters[index].sourceUrl) : chapters[index][field];
       if (!value) continue;
       const matches = values.get(value);
       if (matches) matches.push(index);
@@ -27,12 +29,18 @@ export function clampFraction(value: number): number {
 
 function chapterMatch(source: Partial<RevisionChapter>, chapters: RevisionChapter[], hint: number, lookup: ChapterLookup): number {
   for (const field of MATCH_FIELDS) {
-    if (!source[field]) continue;
-    const candidates = lookup.get(field)?.get(source[field]!) ?? [];
+    const key = field === 'sourceUrl' ? chapterSourceId(source.sourceUrl) : source[field];
+    if (!key) continue;
+    const candidates = lookup.get(field)?.get(key) ?? [];
     if (field === 'title' && candidates.length !== 1) continue;
     const matches = candidates.filter((index) => {
       const chapter = chapters[index];
-      return !((field === 'href' || field === 'title') && source.sourceUrl && chapter.sourceUrl && source.sourceUrl !== chapter.sourceUrl);
+      return !(
+        (field === 'href' || field === 'title') &&
+        source.sourceUrl &&
+        chapter.sourceUrl &&
+        chapterSourceId(source.sourceUrl) !== chapterSourceId(chapter.sourceUrl)
+      );
     });
     if (field === 'title' && matches.length !== 1) continue;
     if (matches.length) return matches.reduce((a, b) => (Math.abs(a - hint) <= Math.abs(b - hint) ? a : b));

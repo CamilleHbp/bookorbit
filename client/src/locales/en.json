@@ -588,6 +588,7 @@
       "removed": "{count, plural, one {Updating would remove one saved chapter.} other {Updating would remove # saved chapters.}}",
       "changed": "{count, plural, one {The website changed one saved chapter.} other {The website changed # saved chapters.}}",
       "reordered": "The website lists your saved chapters in a different order.",
+      "inserted": "The website added chapters before or between saved chapters.",
       "unmatched": "BookOrbit could not match the website chapters to your saved copy.",
       "issue": {
         "website": "Website access",
