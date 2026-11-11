@@ -19,7 +19,7 @@ from zipfile import BadZipFile
 
 from website_catalog import website_catalog
 from controlled_config import make_configuration, merge_configuration, validate_ini
-from epub_policy import validate_epub
+from epub_policy import LIBRARY_EPUB_LIMIT, NEW_EPUB_LIMIT, validate_epub
 from image_processing import install_image_processing
 from safe_transport import ConfigurationError, PolicyError, SafeTransport, install_network_guard, validate_url
 from fanfiction_net_login import login_fanfiction_net
@@ -66,9 +66,10 @@ def recognize_urls(urls):
     return result
 
 
-def limits():
+def limits(operation):
     resource.setrlimit(resource.RLIMIT_CPU, (600, 600))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024 * 1024, 256 * 1024 * 1024))
+    size_limit = LIBRARY_EPUB_LIMIT if operation in ('update', 'refresh') else NEW_EPUB_LIMIT
+    resource.setrlimit(resource.RLIMIT_FSIZE, (size_limit, size_limit))
     resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
     if sys.platform == 'linux':
         resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
@@ -201,7 +202,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         raise PolicyError('Unsupported integration operation')
     if operation in ('update', 'refresh'):
         from fanficfare.epubutils import get_update_data
-        validate_epub('input.epub')
+        validate_epub('input.epub', LIBRARY_EPUB_LIMIT)
         old = get_update_data('input.epub')
         previous_url, previous_count = old[:2]
         if adapters.getNormalStoryURL(previous_url) != adapters.getNormalStoryURL(canonical):
@@ -223,7 +224,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         output.flush()
         os.fsync(output.fileno())
     report_progress({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
-    validate_epub('output.epub')
+    validate_epub('output.epub', LIBRARY_EPUB_LIMIT if operation in ('update', 'refresh') else NEW_EPUB_LIMIT)
     return finish({'preview': matched_preview(adapter.story, story_preview(adapter, adapter.story)), 'output': 'output.epub'})
 
 
@@ -277,7 +278,6 @@ def failure_code(error):
 
 
 def main():
-    limits()
     logging.disable(logging.CRITICAL)
     install_network_guard()
     try:
@@ -287,6 +287,7 @@ def main():
         request = json.loads(raw)
         if not isinstance(request, dict):
             raise PolicyError('Invalid integration request')
+        limits(request.get('operation'))
         def report_progress(progress):
             sys.stderr.write('BOOKORBIT_PROGRESS ' + json.dumps(progress) + '\n')
             sys.stderr.flush()

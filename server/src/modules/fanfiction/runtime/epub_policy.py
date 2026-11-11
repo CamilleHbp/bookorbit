@@ -8,7 +8,11 @@ class EpubPolicyError(PolicyError):
     code = 'invalid_epub'
 
 
-def validate_epub(path):
+NEW_EPUB_LIMIT = 256 * 1024 * 1024
+LIBRARY_EPUB_LIMIT = 512 * 1024 * 1024
+
+
+def validate_epub(path, expanded_limit=NEW_EPUB_LIMIT):
     with ZipFile(path) as archive:
         entries = archive.infolist()
         if not entries or len(entries) > 10_000:
@@ -24,7 +28,7 @@ def validate_epub(path):
             expanded += entry.file_size
             if entry.flag_bits & 1 or (entry.external_attr >> 16) & 0o170000 == 0o120000:
                 raise EpubPolicyError('Encrypted entries and links are disabled')
-            if entry.file_size > 16 * 1024 * 1024 or expanded > 256 * 1024 * 1024 or entry.file_size > max(1, entry.compress_size) * 500:
+            if entry.file_size > 16 * 1024 * 1024 or expanded > expanded_limit or entry.file_size > max(1, entry.compress_size) * 500:
                 raise EpubPolicyError('Archive expansion limit exceeded')
         if 'mimetype' not in names or 'META-INF/container.xml' not in names or archive.read('mimetype') != b'application/epub+zip':
             raise EpubPolicyError('Invalid EPUB structure')
