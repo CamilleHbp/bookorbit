@@ -15132,8 +15132,7 @@
       "finalizing": "Finishing import",
       "cancelling": "Cancelling…",
       "retrying": "Waiting to retry automatically",
-      "chapters": "{completed} of {total} chapters downloaded",
-      "reused": "{completed} of {total} chapters ready ({reused} reused)",
+      "ready": "{completed} of {total} chapters ready",
       "attempt": "Attempt {count}",
       "nextAttempt": "Next automatic attempt {time}",
       "failedDuring": "Stopped while: {stage}"
