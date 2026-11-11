@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { chapterDecision } from '../composables/downloadIssue'
+import { canRetryWebsiteAccess, chapterDecision } from '../composables/downloadIssue'
 import type { BookFileRevisionSummary } from '@bookorbit/types'
 import WebsiteConnections from './WebsiteConnections.vue'
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
@@ -148,7 +148,7 @@ onMounted(() => {
           </div>
         </dl>
         <div class="flex flex-wrap gap-2">
-          <Button v-if="canUpdate" :disabled="updating" @click="checkNow">{{ t('fanfiction.checkNow') }}</Button>
+          <Button v-if="canUpdate || canRetryWebsiteAccess(source)" :disabled="updating" @click="checkNow">{{ t('fanfiction.checkNow') }}</Button>
           <Button v-if="canUpdate" variant="outline" :disabled="updating" @click="refreshChapters">{{ t('fanfiction.refreshChapters') }}</Button>
           <Button v-if="canUpdate" variant="outline" :disabled="busy" @click="pause">{{
             !(source.tracking?.enabled ?? source.state !== 'paused') ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates')

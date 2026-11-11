@@ -217,10 +217,10 @@ class SafeTransport:
                 if response.status in (301, 302, 303, 307, 308):
                     target = urllib.parse.urljoin(url, response.getheader('Location') or '')
                     _, target_host = validate_url(target)
-                    if body is not None and target_host != hostname:
-                        raise PolicyError('Authenticated redirects cannot forward request bodies across sites')
                     if response.status in (301, 302, 303):
                         method, body = 'GET', None
+                    elif body is not None and target_host != hostname:
+                        raise PolicyError('Authenticated redirects cannot forward request bodies across sites')
                     url = target
                     continue
                 return response.status, self.read_body(response), url

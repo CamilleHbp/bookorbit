@@ -162,6 +162,25 @@ class HttpResponseTest(unittest.TestCase):
         with self.assertRaises(PolicyError):
             self.request(FakeResponse(b'', status=302, headers={'Location': 'https://localhost/private'}))
 
+    def test_cross_site_redirect_discards_post_credentials_or_stops(self):
+        for status in (301, 302, 303, 307, 308):
+            with self.subTest(status=status), patch('safe_transport.PinnedConnection') as connection:
+                connection.return_value.getresponse.side_effect = [
+                    FakeResponse(b'', status=status, headers={'Location': 'https://other.example.org/done'}),
+                    FakeResponse(b'ok'),
+                ]
+                transport = SafeTransport()
+                if status in (307, 308):
+                    with self.assertRaises(PolicyError):
+                        transport.request('POST', 'https://example.org/login', {'password': 'example'})
+                    self.assertEqual(connection.call_count, 1)
+                else:
+                    result = transport.request('POST', 'https://example.org/login', {'password': 'example'})
+                    self.assertEqual(result[:2], (200, b'ok'))
+                    method, path, body, headers = connection.return_value.request.call_args.args
+                    self.assertEqual((method, path, body), ('GET', '/done', None))
+                    self.assertNotIn('Content-type', headers)
+
     def test_authentication_status_reaches_the_pinned_adapter(self):
         for status in [401, 403]:
             self.assertEqual(self.request(FakeResponse(gzip.compress(b'Denied'), 'gzip', status=status))[:2], (status, b'Denied'))

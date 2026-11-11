@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { canRetryWebsiteAccess } from '../composables/downloadIssue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -148,6 +149,9 @@ function handlePause() {
       <ImportProgress v-else-if="job" :job="job" />
       <StoryUpdateOutcome v-if="succeeded && job" :job="job" />
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Button v-if="canRetryWebsiteAccess(source)" variant="outline" :disabled="disabled || active" @click="handleCheck">{{
+          t('fanfiction.retry')
+        }}</Button>
         <Button
           v-if="source.attentionCode === 'authentication_required' || canFixLogin"
           variant="outline"
