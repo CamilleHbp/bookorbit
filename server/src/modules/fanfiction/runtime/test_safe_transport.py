@@ -181,6 +181,41 @@ class HttpResponseTest(unittest.TestCase):
                     self.assertEqual((method, path, body), ('GET', '/done', None))
                     self.assertNotIn('Content-type', headers)
 
+    def test_membership_notice_requires_both_storiesonline_page_markers(self):
+        from controlled_config import check_storiesonline_notice, StoriesOnlineMembershipExpired
+        title = b'<title>Storiesonline: Membership Expired!</title>'
+        heading = b'<h3>Your Paid Premier Membership has Expired</h3>'
+        with self.assertRaises(StoriesOnlineMembershipExpired):
+            check_storiesonline_notice('https://storiesonline.net/', title + heading)
+        check_storiesonline_notice('https://other.example/', title + heading)
+        check_storiesonline_notice('https://storiesonline.net/', title + b'<h1>Story</h1>')
+        check_storiesonline_notice('https://storiesonline.net/', heading)
+
+    def test_storiesonline_callback_uses_get_without_login_form_or_provider_cookie(self):
+        callback = 'https://storiesonline.net/sol-secure/login.php?rr=example'
+        for origin, target, allowed in [
+            ('https://login.wlpc.com/', callback, True),
+            ('https://login.wlpc.com/', callback.replace('storiesonline.net', 'other.example'), False),
+            ('https://other.example/', callback, False),
+            ('https://login.wlpc.com/', callback.replace('login.php', 'other.php'), False),
+        ]:
+            with self.subTest(origin=origin, target=target), patch('safe_transport.PinnedConnection') as conn:
+                conn.return_value.getresponse.side_effect = [
+                    FakeResponse(b'', status=307, headers={'Location': target, 'Set-Cookie': 'login=test; Secure; Path=/'}),
+                    FakeResponse(b'ok'),
+                ]
+                transport = SafeTransport()
+                if allowed:
+                    self.assertEqual(transport.request('POST', origin, {'password': 'example'})[:2], (200, b'ok'))
+                    method, path, body, headers = conn.return_value.request.call_args.args
+                    self.assertEqual((method, path, body), ('GET', '/sol-secure/login.php?rr=example', None))
+                    self.assertNotIn('Cookie', headers)
+                    self.assertNotIn('Content-type', headers)
+                else:
+                    with self.assertRaises(PolicyError):
+                        transport.request('POST', origin, {'password': 'example'})
+                    self.assertEqual(conn.call_count, 1)
+
     def test_authentication_status_reaches_the_pinned_adapter(self):
         for status in [401, 403]:
             self.assertEqual(self.request(FakeResponse(gzip.compress(b'Denied'), 'gzip', status=status))[:2], (status, b'Denied'))

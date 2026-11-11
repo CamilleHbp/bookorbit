@@ -1,6 +1,7 @@
 import configparser
 import io
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from safe_transport import ConfigurationError, PolicyError, validate_url
 
@@ -78,6 +79,21 @@ def validate_ini(text):
     return text
 
 
+class StoriesOnlineMembershipExpired(ConfigurationError):
+    code = 'storiesonline_membership_expired'
+
+
+def check_storiesonline_notice(url, content):
+    if urlsplit(url).hostname != 'storiesonline.net' or b'Membership Expired' not in content[:8192]:
+        return
+    from bs4 import BeautifulSoup
+    page = BeautifulSoup(content, 'html.parser')
+    if (page.title and page.title.get_text(strip=True).casefold() == 'storiesonline: membership expired!'
+            and any(h.get_text(' ', strip=True).casefold() == 'your paid premier membership has expired'
+                    for h in page.find_all('h3'))):
+        raise StoriesOnlineMembershipExpired('StoriesOnline requires a membership decision')
+
+
 def make_configuration(url, ini, transport):
     import fanficfare
     from fanficfare import adapters, exceptions
@@ -99,6 +115,7 @@ def make_configuration(url, ini, transport):
             status, content, redirected = transport.request(method, url, parameters, headers)
             if status >= 400:
                 raise exceptions.HTTPErrorFFF(url, status, 'Source request failed', content)
+            check_storiesonline_notice(redirected, content)
             return FetcherResponse(content, redirected)
 
     class ControlledConfiguration(Configuration):

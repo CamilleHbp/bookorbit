@@ -42,7 +42,7 @@ function downloadEntries(libraryId: number, userId: number) {
     ), classified as (
       select *, case when state='running' then 'running' when retry_at is not null then 'retrying' when state='queued' then 'queued' else 'attention' end as section,
         case when code in ('source_failed','source_unavailable','source_rate_limited','download_timeout') then 'website'
-          when code in ('authentication_required','access_denied') then 'login'
+          when code in ('authentication_required','access_denied','storiesonline_membership_expired') then 'login'
           when code in ('content_review_required','source_chapter_reduction') then 'chapter'
           when code in ('source_not_found','unsupported_story_url') then 'story' when state='cancelled' then 'stopped'
           when code='metadata_review_required' then 'metadata' when code='import_review_required' then 'import'
@@ -72,7 +72,7 @@ export function retryGroupMembers(
     where group_key is not null and ${'group' in scope ? sql`group_key=${scope.group}` : sql`site=${scope.site}`} and updated_at <= ${cutoff}::timestamptz
       and ${
         'site' in scope && scope.settingsChanged
-          ? sql`code in ('access_denied','authentication_required','configuration_blocked') and not exists (
+          ? sql`code in ('access_denied','authentication_required','configuration_blocked','storiesonline_membership_expired') and not exists (
         select 1 from ${schema.fanfictionSources} s where s.id=keyed.source_id and s.library_id=${libraryId}
           and s.book_file_id is not null and (not s.updates_enabled or s.metadata_review_pending))`
           : sql`true`
