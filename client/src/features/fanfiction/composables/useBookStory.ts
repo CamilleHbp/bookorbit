@@ -1,3 +1,4 @@
+import type { IgnoreMissingStoryWarningRequest } from '@bookorbit/types'
 import { createUuid } from '@/lib/uuid'
 import { computed, onScopeDispose, ref, shallowRef, toValue, watch, type InjectionKey, type MaybeRefOrGetter, type Ref } from 'vue'
 import type {
@@ -338,6 +339,17 @@ export function useBookStory(
     keepUpdated.value = !(source.value?.tracking?.enabled ?? source.value?.state !== 'paused')
     await updateSettings()
   }
+  async function ignoreMissingWarning() {
+    await perform(async (id) => {
+      const current = source.value
+      if (!current || current.attentionCode !== 'source_not_found') return
+      const body: IgnoreMissingStoryWarningRequest = { version: current.version, ignoreWarning: current.attentionCode }
+      await request(`${base.value}/sources/${current.id}`, body, 'PATCH')
+      if (!valid(id)) return
+      if (job.value?.sourceId === current.id && job.value.errorCode === current.attentionCode && job.value.state === 'failed') job.value = null
+      await loadSources(id)
+    })
+  }
   const unlink = () => setState('unlinked')
   async function enqueue(kind: 'update' | 'refresh' | 'rollback', revisionId?: string) {
     await perform(async (id) => {
@@ -537,6 +549,7 @@ export function useBookStory(
     refresh,
     selectSource,
     updateSettings,
+    ignoreMissingWarning,
     pause,
     unlink,
     checkNow,

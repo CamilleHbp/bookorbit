@@ -14,7 +14,13 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import type { FanfictionImportRequest, FanfictionSourceState, FanfictionMetadataResolution, FanfictionReviewScope } from '@bookorbit/types';
+import type {
+  IgnoreMissingStoryWarningRequest,
+  FanfictionImportRequest,
+  FanfictionSourceState,
+  FanfictionMetadataResolution,
+  FanfictionReviewScope,
+} from '@bookorbit/types';
 import { PreviewFanfictionDto } from './fanfiction.dto';
 
 export class ImportFanfictionDto extends PreviewFanfictionDto implements FanfictionImportRequest {
@@ -80,6 +86,7 @@ export class ListFanfictionSourcesDto {
 }
 
 export class UpdateFanfictionSourceDto {
+  @IsOptional() @IsIn(['source_not_found']) ignoreWarning?: IgnoreMissingStoryWarningRequest['ignoreWarning'];
   @IsOptional() @IsBoolean() keepUpdated?: boolean;
   @IsOptional() @IsIn(['review', 'safe']) updatePolicy?: 'review' | 'safe';
   @IsOptional() @IsBoolean() takeOverMaintenance?: boolean;

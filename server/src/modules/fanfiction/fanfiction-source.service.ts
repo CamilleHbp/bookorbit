@@ -2,7 +2,7 @@ import { TagMatchingService, storyLabels } from '../tag-matching/tag-matching.se
 import { personalAccessIssueFilter, storyStateFilter } from './fanfiction-source-filters';
 import { FanfictionReaderService } from './fanfiction-reader.service';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -478,6 +478,36 @@ export class FanfictionSourceService {
   async update(libraryId: number, id: string, dto: UpdateFanfictionSourceDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
     const previous = await this.find(libraryId, id);
+    if (dto.ignoreWarning) {
+      if (Object.entries(dto).some(([key, value]) => value !== undefined && !['version', 'ignoreWarning'].includes(key)))
+        throw new BadRequestException('Dismiss the warning separately from other changes');
+      const [updated] = await this.db
+        .update(sources)
+        .set({
+          attentionCode: null,
+          state: 'paused',
+          updatesEnabled: false,
+          nextCheckAt: null,
+          version: sql`${sources.version} + 1`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(sources.libraryId, libraryId),
+            eq(sources.id, id),
+            eq(sources.version, dto.version),
+            eq(sources.attentionCode, dto.ignoreWarning),
+            inArray(sources.state, ['active', 'paused']),
+            eq(sources.metadataReviewPending, false),
+            sql`coalesce(${sources.maintainerUserId}, ${sources.createdBy}) = ${user.id}`,
+            sql`${sources.bookFileId} is not null`,
+            sql`not exists (select 1 from ${schema.fanfictionJobs} j where j.source_id = ${sources.id} and j.state in ('queued','running'))`,
+          ),
+        )
+        .returning();
+      if (!updated) throw new ConflictException('Reload this story to see its current warning');
+      return this.view(updated);
+    }
     // Saving this maintainer's website login does not edit the story itself.
     if (
       dto.takeOverMaintenance &&
