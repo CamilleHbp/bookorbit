@@ -226,6 +226,26 @@ scheduler:drain()
 assertEqual(#downloads, 0, "a cancelled generation downloads nothing")
 assertEqual(Catalog.rebuilds, 0, "a cancelled generation does not repaint")
 
+-- A dashboard warms all its shelves in batches, including off-page shelves.
+Catalog.current_context = { kind = "dashboard" }
+Catalog.rebuilds = 0
+Catalog:scheduleThumbnailDownloads({ book(71), book(72), book(73), book(74), book(75), book(76), book(77) })
+scheduler:runOne()
+scheduler:runOne()
+assertEqual(Catalog.rebuilds, 0, "intermediate dashboard batches leave the screen alone")
+download_result = false
+scheduler:drain()
+assertEqual(Catalog.rebuilds, 1, "earlier covers appear even when the last transfer fails")
+download_result = true
+Catalog:scheduleThumbnailDownloads({ book(81), book(82), book(83), book(84) })
+scheduler:runOne()
+Catalog:cancelThumbnailJobs()
+scheduler:drain()
+assertEqual(Catalog.rebuilds, 1, "leaving a dashboard discards its pending repaint")
+Catalog.current_context = nil
+downloads = {}
+Catalog.rebuilds = 0
+
 -- A failed cover is remembered so the worker does not retry it every repaint.
 download_result = false
 Catalog:scheduleThumbnailDownloads({ book(40) })

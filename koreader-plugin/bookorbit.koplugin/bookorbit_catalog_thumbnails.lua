@@ -110,6 +110,7 @@ function CatalogThumbnails:initThumbnailCache()
     self.thumbnail_generation = 0
     self.thumbnail_failures = {}
     self.thumbnail_memo = {}
+    self.dashboard_covers_changed = false
     self.thumbnail_queue = newQueue()
     self.thumbnail_prefetch_queue = newQueue()
     self.thumbnail_worker_running = false
@@ -248,6 +249,7 @@ end
 
 function CatalogThumbnails:cancelThumbnailJobs()
     self.thumbnail_generation = self.thumbnail_generation + 1
+    self.dashboard_covers_changed = false
     self.thumbnail_queue = newQueue()
     self.thumbnail_prefetch_queue = newQueue()
     self.thumbnail_worker_running = false
@@ -300,6 +302,12 @@ function CatalogThumbnails:stopThumbnailWorker(generation)
     self.thumbnail_worker_generation = nil
 end
 
+function CatalogThumbnails:flushDashboardCovers()
+    if not self.dashboard_covers_changed then return end
+    self.dashboard_covers_changed = false
+    self:updateItems(nil, true)
+end
+
 function CatalogThumbnails:runThumbnailWorker(generation)
     if generation ~= self.thumbnail_generation then
         self:stopThumbnailWorker(generation)
@@ -330,6 +338,7 @@ function CatalogThumbnails:runThumbnailWorker(generation)
             -- the worker so the next page is not stuck behind it.
             if not ok then logger.dbg("BookOrbit: thumbnail batch failed", results) end
             self:stopThumbnailWorker(generation)
+            self:flushDashboardCovers()
             return
         end
 
@@ -348,9 +357,14 @@ function CatalogThumbnails:runThumbnailWorker(generation)
         end
         if written then self.thumbnail_cache_written = true end
 
-        -- One coalesced rebuild per completed visible batch. Prefetch never
-        -- repaints, so warming the next page costs no e-ink refresh.
-        if visible and written then
+        -- The dashboard queues shelves from every board page together.
+        -- Publish their covers in one redraw when the visible queue drains.
+        if visible and self.current_context and self.current_context.kind == "dashboard" then
+            self.dashboard_covers_changed = self.dashboard_covers_changed or written
+            if self.thumbnail_queue.head > self.thumbnail_queue.tail then
+                self:flushDashboardCovers()
+            end
+        elseif visible and written then
             self:updateItems(nil, true)
         end
 
