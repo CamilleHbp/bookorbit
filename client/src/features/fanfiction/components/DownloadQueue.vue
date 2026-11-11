@@ -56,6 +56,7 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
           :key="row.id"
           :library-id="libraryId"
           :row="row"
+          @retried="refresh"
           @inspect="inspect"
         />
         <FanfictionPagination
