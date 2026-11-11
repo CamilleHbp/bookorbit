@@ -1,0 +1,38 @@
+--- writer_epub.py
++++ writer_epub.py
+@@ -335,24 +335,9 @@
+         else:
+             self.use_oldcover = False
+ 
+-        ## Python 2.5 ZipFile is rather more primative than later
+-        ## versions.  It can operate on a file, or on a BytesIO, but
+-        ## not on an open stream.  OTOH, I suspect we would have had
+-        ## problems with closing and opening again to change the
+-        ## compression type anyway.
+-        zipio = BytesIO()
+-
+-        ## mimetype must be first file and uncompressed.  Python 2.5
+-        ## ZipFile can't change compression type file-by-file, so we
+-        ## have to close and re-open
+-        outputepub = ZipFile(zipio, 'w', compression=ZIP_STORED)
++        outputepub = ZipFile(out, 'w', compression=ZIP_DEFLATED)
+         outputepub.debug=3
+-        outputepub.writestr('mimetype','application/epub+zip')
+-        outputepub.close()
+-
+-        ## Re-open file for content.
+-        outputepub = ZipFile(zipio, 'a', compression=ZIP_DEFLATED)
+-        outputepub.debug=3
++        outputepub.writestr('mimetype', 'application/epub+zip', compress_type=ZIP_STORED)
+ 
+         epub3 = self.getConfig("epub_version",default="2.0").startswith("3")
+         # epub3 wants manifest items that have <svg> tags marked.  I
+@@ -969,8 +954,6 @@
+         for zf in outputepub.filelist:
+             zf.create_system = 0
+         outputepub.close()
+-        out.write(zipio.getvalue())
+-        zipio.close()
+ 
+ ## Utility method for creating new tags.
+ def newTag(dom,name,attrs=None,text=None):

@@ -69,6 +69,12 @@ RUN apk upgrade --no-cache && \
     rm -f /tmp/kobo-cloudscraper-requirements.txt /tmp/fanficfare-requirements.txt && \
     rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
+# FanFicFare buffers the complete archive alongside the existing book's images.
+COPY server/requirements/fanficfare-stream-epub.patch /tmp/fanficfare-stream-epub.patch
+RUN apk add --no-cache patch && \
+    cd "$(/opt/bookorbit-python/bin/python -c 'from fanficfare import writers; print(writers.__path__[0])')" && \
+    dos2unix writer_epub.py && patch --fuzz=0 -p0 < /tmp/fanficfare-stream-epub.patch && rm /tmp/fanficfare-stream-epub.patch && apk del patch
+
 ENV NODE_ENV=production
 ENV PORT=3000
 
