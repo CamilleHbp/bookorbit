@@ -88,14 +88,14 @@ it('loads and saves advanced FanFicFare settings from the login repair form', as
   }
 })
 
-it('saves Royal Road email and password while leaving browser cookies optional', async () => {
-  const website = { id: 'royalroad.com', name: 'Royal Road', access: 'login', usernameKind: 'email', examples: [] }
+it.each(['royalroad.com', 'fanfiction.net'])('saves %s email and password while leaving browser cookies optional', async (site) => {
+  const website = { id: site, name: site, access: 'login', usernameKind: 'email', examples: [] }
   vi.mocked(api).mockImplementation((url, options) => {
     if (String(url).endsWith('/websites')) return Promise.resolve(response([website]))
     if (options?.method === 'POST') return Promise.resolve(response({ id: 'connection', website, hasPassword: true, version: 1 }))
     return Promise.resolve(response([]))
   })
-  const wrapper = mount(WebsiteConnections, { props: { focusSite: 'www.royalroad.com', repairsOnly: true } })
+  const wrapper = mount(WebsiteConnections, { props: { focusSite: site, repairsOnly: true } })
   try {
     await flushPromises()
     expect(wrapper.get('input[type="email"]').element).toBeTruthy()
@@ -105,7 +105,7 @@ it('saves Royal Road email and password while leaving browser cookies optional',
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     const request = vi.mocked(api).mock.calls.find(([, options]) => options?.method === 'POST')!
-    expect(JSON.parse(request[1]!.body as string)).toEqual({ site: 'royalroad.com', username: 'reader@example.com', password: 'private-password' })
+    expect(JSON.parse(request[1]!.body as string)).toEqual({ site, username: 'reader@example.com', password: 'private-password' })
     expect(wrapper.emitted('saved')).toHaveLength(1)
   } finally {
     wrapper.unmount()

@@ -22,6 +22,7 @@ from controlled_config import make_configuration, merge_configuration, validate_
 from epub_policy import validate_epub
 from image_processing import install_image_processing
 from safe_transport import ConfigurationError, PolicyError, SafeTransport, install_network_guard, validate_url
+from fanfiction_net_login import login_fanfiction_net
 from scribblehub_login import login_scribblehub
 from flaresolverr_transport import FlareSolverrTransport
 
@@ -178,6 +179,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         configuration.set('overrides', 'update_check_recent_chapters', '0')
     adapter = adapters.getAdapter(configuration, url)
     report_progress({'stage': 'metadata'})
+    login_fanfiction_net(adapter, transport)
     login_scribblehub(adapter)
     # FanFicFare caches metadata, so the writer cannot fetch a skipped cover later.
     story = adapter.getStoryMetadataOnly(get_cover=operation in ('download', 'update', 'refresh'))

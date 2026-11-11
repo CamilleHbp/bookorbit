@@ -139,9 +139,6 @@ function date(value: string) {
       <h3 class="font-semibold">{{ websiteLabel(website.name) }}</h3>
       <p v-if="source" class="text-sm text-muted-foreground">{{ t('fanfiction.connections.takeOver', { title: source.title }) }}</p>
       <p v-if="connection" class="text-sm text-muted-foreground">{{ t('fanfiction.connections.savedHelp') }}</p>
-      <Button v-if="signInUrl" variant="outline" as-child>
-        <a :href="signInUrl.href" target="_blank" rel="noopener noreferrer">{{ website.name }} · {{ t('auth.login.signIn') }}</a>
-      </Button>
       <template v-if="website.access === 'login'">
         <label class="block space-y-1 text-sm"
           >{{ t(website.usernameKind === 'email' ? 'auth.fields.email' : 'fanfiction.connections.username')
@@ -166,6 +163,9 @@ function date(value: string) {
       </template>
       <details :open="website.access === 'cookies'" class="space-y-3">
         <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">{{ t('fanfiction.connections.cookies') }}</summary>
+        <Button v-if="signInUrl" variant="outline" as-child>
+          <a :href="signInUrl.href" target="_blank" rel="noopener noreferrer">{{ website.name }} · {{ t('auth.login.signIn') }}</a>
+        </Button>
         <p class="text-sm text-muted-foreground">{{ t('fanfiction.connections.cookieHelp') }}</p>
         <label class="block space-y-1 text-sm"
           >{{ t('fanfiction.connections.cookieName')
