@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>BookOrbit story updates</title>
+    <style>
+      body {
+        font: 14px/1.5 system-ui;
+        width: 290px;
+        margin: 16px;
+        color: CanvasText;
+        background: Canvas;
+        color-scheme: light dark;
+      }
+      h1 {
+        font-size: 18px;
+      }
+      button,
+      a {
+        font: inherit;
+      }
+      button {
+        margin: 4px 0;
+        padding: 7px 10px;
+      }
+      button[hidden] {
+        display: none;
+      }
+      p {
+        margin: 10px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>BookOrbit story updates</h1>
+    <p id="help"></p>
+    <button hidden id="action"></button> <button hidden id="forget">Clear saved chapters</button>
+    <p role="status" id="status"></p>
+    <a id="login" target="_blank" rel="noopener" href="https://www.fanfiction.net/login.php">Open FanFiction.net sign-in</a>
+    <script src="popup.js"></script>
+  </body>
+</html>

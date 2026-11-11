@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "BookOrbit story updates",
+  "version": "1.0.0",
+  "description": "Collect FanFiction.net chapters you open and update the matching book in BookOrbit.",
+  "minimum_chrome_version": "130",
+  "permissions": ["storage", "unlimitedStorage"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "BookOrbit story updates"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.fanfiction.net/s/*", "https://fanfiction.net/s/*"],
+      "js": ["story.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://books.camille.studio/*"],
+      "js": ["zip-native.min.js", "prepare.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
