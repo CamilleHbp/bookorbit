@@ -9,7 +9,7 @@ import { CircleAlert, CircleCheck, Clock, LoaderCircle } from '@lucide/vue'
 import type { FanfictionJob } from '@bookorbit/types'
 
 const props = defineProps<{ job: FanfictionJob }>()
-const { t, te, locale } = useI18n()
+const { t, locale } = useI18n()
 const progress = computed(() => props.job.result?.progress)
 const active = computed(() => ['queued', 'running'].includes(props.job.state))
 const succeeded = computed(() => ['succeeded', 'no_change'].includes(props.job.state))
@@ -43,7 +43,7 @@ const percentage = computed(() => {
 const barStyle = computed(() => ({ width: percentage.value === undefined ? '35%' : `${percentage.value}%` }))
 const errorText = computed(() => {
   const key = `fanfiction.errors.${props.job.errorCode}`
-  return !active.value && !reviewing.value && props.job.errorCode ? t(te(key) ? key : 'fanfiction.errors.runtime_failed') : ''
+  return !active.value && !reviewing.value && props.job.errorCode ? t(key, t('fanfiction.errors.runtime_failed')) : ''
 })
 const lastStage = computed(() =>
   failed.value && progress.value ? t('fanfiction.progress.failedDuring', { stage: t(`fanfiction.progress.${progress.value.stage}`) }) : '',
