@@ -26,6 +26,7 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
   const busy = ref(false)
   const saved = ref(false)
   const website = computed(() => websites.value.find((item) => item.id === site.value))
+  const signInUrl = computed(() => (site.value === 'fanfiction.net' ? new URL('https://www.fanfiction.net/login.php') : undefined))
   const connection = computed(() => connections.value.find((item) => item.website.id === site.value))
   const affected = computed(() => issues.value.find((item) => item.site === site.value)?.count ?? 0)
   const controllers = new Set<AbortController>()
@@ -121,7 +122,13 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
         version: connection.value?.version,
         ...(username.value ? { username: username.value } : {}),
         ...(password.value ? { password: password.value } : {}),
-        ...(cookieName.value ? { cookies: [{ name: cookieName.value, value: cookieValue.value, domain: site.value, path: '/', secure: true }] } : {}),
+        ...(cookieName.value
+          ? {
+              cookies: [
+                { name: cookieName.value, value: cookieValue.value, domain: signInUrl.value?.hostname ?? site.value, path: '/', secure: true },
+              ],
+            }
+          : {}),
       }
       const result = await request<FanfictionConnection>(base, body)
       if (disposed || current !== generation) return
@@ -175,6 +182,7 @@ export function useWebsiteConnections(libraryId: MaybeRefOrGetter<number | undef
     settingsLoading,
     loadSettings,
     websites,
+    signInUrl,
     connections,
     issues,
     site,
