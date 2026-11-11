@@ -346,7 +346,7 @@ export function useBookStory(
       const body: IgnoreMissingStoryWarningRequest = { version: current.version, ignoreWarning: current.attentionCode }
       await request(`${base.value}/sources/${current.id}`, body, 'PATCH')
       if (!valid(id)) return
-      if (job.value?.sourceId === current.id && job.value.errorCode === current.attentionCode && job.value.state === 'failed') job.value = null
+      if (source.value?.id === current.id && job.value?.errorCode === current.attentionCode && job.value.state === 'failed') job.value = null
       await loadSources(id)
     })
   }
