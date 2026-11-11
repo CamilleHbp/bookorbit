@@ -29,10 +29,9 @@ const status = computed(() => {
 })
 const chapterLabel = computed(() =>
   progress.value?.totalChapters
-    ? t(progress.value.reusedChapters ? 'fanfiction.progress.reused' : 'fanfiction.progress.chapters', {
+    ? t('fanfiction.progress.ready', {
         completed: progress.value.completedChapters ?? 0,
         total: progress.value.totalChapters,
-        reused: progress.value.reusedChapters ?? 0,
       })
     : '',
 )

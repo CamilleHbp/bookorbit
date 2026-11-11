@@ -59,10 +59,9 @@ function inspectMember(row: FanfictionDownloadRow) {
     />
     <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
       <span v-if="progress?.totalChapters">{{
-        t(progress.reusedChapters ? 'fanfiction.progress.reused' : 'fanfiction.progress.chapters', {
+        t('fanfiction.progress.ready', {
           completed: progress.completedChapters ?? 0,
           total: progress.totalChapters,
-          reused: progress.reusedChapters ?? 0,
         })
       }}</span
       ><button v-if="row.jobId" class="min-h-9 underline underline-offset-4" @click="inspect">{{ t('fanfiction.downloads.details') }}</button>

@@ -420,6 +420,8 @@ describe('Fanfiction navigation and story hierarchy', () => {
     })
     await open()
     expect(wrapper!.get('progress').attributes('value')).toBe('68')
+    expect(wrapper!.text()).toContain('68 of 100 chapters ready')
+    expect(wrapper!.text()).not.toContain('reused')
     expect(wrapper!.text()).not.toContain('Member one')
     const group = wrapper!.findAll('button').find((item) => item.text().includes('37 stories'))!
     await group.trigger('click')
