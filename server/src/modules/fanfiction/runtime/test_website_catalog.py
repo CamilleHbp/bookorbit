@@ -15,13 +15,13 @@ class WebsiteLoginTest(unittest.TestCase):
     def test_catalog_exposes_native_and_inherited_password_logins(self):
         sites = {site['id']: site for site in website_catalog()}
         for site in ('www.royalroad.com', 'www.fimfiction.net', 'archiveofourown.org',
-                     'www.scribblehub.com', 'forums.spacebattles.com', 'www.giantessworld.net',
+                     'www.fanfiction.net', 'www.scribblehub.com', 'forums.spacebattles.com', 'www.giantessworld.net',
                      'voracity2.e-fic.com', 'storiesonline.net'):
             self.assertTrue(sites[site]['supportsPasswordLogin'], site)
-        for site in ('www.fanfiction.net', 'www.fictionpress.com', 'fiction.live'):
+        for site in ('www.fictionpress.com', 'fiction.live'):
             self.assertFalse(sites[site]['supportsPasswordLogin'], site)
         self.assertFalse(any(site.startswith('test') for site in sites))
-        self.assertEqual(sum(site['supportsPasswordLogin'] for site in sites.values()), 60)
+        self.assertEqual(sum(site['supportsPasswordLogin'] for site in sites.values()), 61)
 
     def test_credentials_remain_literal_through_save_redaction_and_runtime_loading(self):
         url = 'https://www.royalroad.com/fiction/123/story'

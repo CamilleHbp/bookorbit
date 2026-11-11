@@ -19,7 +19,7 @@ export function fanfictionWebsite(site: FanficfareSite): FanfictionWebsite {
     examples: site.examples,
     name: websiteNames[site.id] ?? site.id,
     access: site.supportsPasswordLogin ? 'login' : 'cookies',
-    ...(site.id === 'www.royalroad.com' ? { usernameKind: 'email' as const } : {}),
+    ...(['www.royalroad.com', 'www.fanfiction.net'].includes(site.id) && site.supportsPasswordLogin ? { usernameKind: 'email' as const } : {}),
   };
 }
 

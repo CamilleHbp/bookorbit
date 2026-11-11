@@ -7,7 +7,7 @@ def website_catalog():
 
     # Adapter login methods include inherited eFiction, XenForo and OTW support.
     # Use the installed adapters rather than a second, incomplete website list.
-    logins = {'www.scribblehub.com'}  # BookOrbit supplies this login implementation.
+    logins = {'www.fanfiction.net', 'www.scribblehub.com'}  # BookOrbit supplies this login implementation.
     for module in pkgutil.iter_modules(adapters.__path__):
         if not module.name.startswith('adapter_'):
             continue
