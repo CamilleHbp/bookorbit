@@ -43,8 +43,6 @@ describe('book story administration', () => {
     mockApi.mockImplementation(async (url, options) => {
       const path = String(url)
       if (options?.method === 'PATCH') {
-        expect(path).toMatch(/\/sources\/story$/)
-        expect(JSON.parse(String(options.body))).toEqual({ version: 2, ignoreWarning: 'source_not_found' })
         dismissed = true
         return response({})
       }
@@ -59,6 +57,9 @@ describe('book story administration', () => {
     const model = scope.run(() => useBookStory(7, 5, true))!
     await flush()
     await model.ignoreMissingWarning()
+    const patch = mockApi.mock.calls.find(([, options]) => options?.method === 'PATCH')
+    expect(String(patch?.[0])).toMatch(/\/sources\/story$/)
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ version: 2, ignoreWarning: 'source_not_found' })
     expect(model.error.value).toBe('')
     expect(model.source.value?.attentionCode).toBeNull()
     expect(model.keepUpdated.value).toBe(false)
