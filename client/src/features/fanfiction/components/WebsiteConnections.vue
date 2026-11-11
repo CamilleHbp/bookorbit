@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { FanfictionConnection, FanfictionJob, FanfictionSource } from '@bookorbit/types'
+import RetryDownloadsButton from './RetryDownloadsButton.vue'
 import { Button } from '@/components/ui/button'
 import { useWebsiteConnections } from '../composables/useWebsiteConnections'
 const props = defineProps<{ libraryId?: number; focusSite?: string; source?: FanfictionSource; repairsOnly?: boolean }>()
@@ -119,7 +120,16 @@ function date(value: string) {
             }}
           </p>
         </div>
-        <Button variant="outline" :disabled="busy" @click="edit(row.site)">{{ t(row.count ? 'fanfiction.bulk.fixLogin' : 'common.edit') }}</Button>
+        <div class="flex items-center gap-2">
+          <RetryDownloadsButton
+            v-if="row.login"
+            :url="`/api/v1/fanfiction/connections/${row.login.id}/retry-downloads`"
+            :body="{ libraryId }"
+            :subject="row.name"
+            @retried="reload"
+          />
+          <Button variant="outline" :disabled="busy" @click="edit(row.site)">{{ t(row.count ? 'fanfiction.bulk.fixLogin' : 'common.edit') }}</Button>
+        </div>
       </li>
     </ul>
     <label v-if="!repairsOnly" class="block max-w-lg space-y-1 text-sm"

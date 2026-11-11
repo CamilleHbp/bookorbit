@@ -4,9 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { ChevronRight, ArrowUpRight, Download } from '@lucide/vue'
 import type { FanfictionDownloadRow } from '@bookorbit/types'
 import { chapterDecision, issueStyle } from '../composables/downloadIssue'
+import RetryDownloadsButton from './RetryDownloadsButton.vue'
 import DownloadGroupMembers from './DownloadGroupMembers.vue'
 const props = defineProps<{ row: FanfictionDownloadRow; libraryId: number }>()
-const emit = defineEmits<{ inspect: [row: FanfictionDownloadRow] }>()
+const emit = defineEmits<{ retried: []; inspect: [row: FanfictionDownloadRow] }>()
 const { t, te, locale } = useI18n()
 const open = ref(false)
 const id = useId()
@@ -30,6 +31,9 @@ const percent = computed(() =>
 const time = computed(() =>
   props.row.nextAttemptAt ? new Date(props.row.nextAttemptAt).toLocaleString(locale.value, { dateStyle: 'short', timeStyle: 'short' }) : '',
 )
+function retried() {
+  emit('retried')
+}
 function toggle() {
   open.value = !open.value
 }
@@ -114,6 +118,13 @@ function inspectMember(row: FanfictionDownloadRow) {
           {{ t('fanfiction.downloads.noRetry') }}
         </p>
       </div>
+      <RetryDownloadsButton
+        v-if="row.groupKey"
+        :url="`/api/v1/libraries/${libraryId}/fanfiction/downloads/retry`"
+        :body="{ group: row.groupKey }"
+        :subject="[row.site, reason].filter(Boolean).join(' · ')"
+        @retried="retried"
+      />
     </div>
     <div v-if="row.groupKey && open" :id="id" class="ms-4 border-s-2 border-border ps-4 pb-4 sm:ms-7">
       <RouterLink

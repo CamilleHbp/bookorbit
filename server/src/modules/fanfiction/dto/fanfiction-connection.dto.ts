@@ -12,6 +12,10 @@ export class SaveFanfictionConnectionDto {
   @IsOptional() @IsArray() @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => FanfictionCookieDto) cookies?: FanfictionCookieDto[];
 }
 
+export class RetryWebsiteDownloadsDto {
+  @IsOptional() @IsInt() @Min(1) libraryId?: number;
+}
+
 export class RetryFanfictionConnectionDto {
   @IsInt() @Min(1) libraryId!: number;
 }

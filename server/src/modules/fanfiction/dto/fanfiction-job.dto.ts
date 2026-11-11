@@ -22,3 +22,7 @@ export class FanfictionDownloadsDto {
   @IsOptional() @Matches(/^[a-f0-9]{32}$/) group?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(2147483647) offset = 0;
 }
+
+export class RetryFanfictionGroupDto {
+  @Matches(/^[a-f0-9]{32}$/) group!: string;
+}

@@ -8,7 +8,7 @@ import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionActivitySummaryDto, ListFanfictionActivityDto, PreviewFanfictionDto, FanfictionJobsStatusDto } from './dto/fanfiction.dto';
 import { FanfictionJobService } from './fanfiction-job.service';
-import { FanfictionDownloadsDto, ListFanfictionJobsDto, RetryFanfictionJobDto } from './dto/fanfiction-job.dto';
+import { FanfictionDownloadsDto, ListFanfictionJobsDto, RetryFanfictionGroupDto, RetryFanfictionJobDto } from './dto/fanfiction-job.dto';
 import { FanfictionActivityService } from './fanfiction-activity.service';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { ImportStoryReviewDto, ReviewFanfictionContentDto } from './dto/fanfiction-source.dto';
@@ -39,6 +39,12 @@ export class FanfictionController {
   @Get('downloads')
   downloads(@Param('libraryId', ParseIntPipe) libraryId: number, @Query() dto: FanfictionDownloadsDto, @CurrentUser() user: RequestUser) {
     return this.jobs.downloads(libraryId, dto, user);
+  }
+
+  @Post('downloads/retry')
+  @HttpCode(200)
+  retryGroup(@Param('libraryId', ParseIntPipe) libraryId: number, @Body() dto: RetryFanfictionGroupDto, @CurrentUser() user: RequestUser) {
+    return this.jobs.retryGroup(libraryId, { group: dto.group }, user);
   }
 
   @Get('activity')
