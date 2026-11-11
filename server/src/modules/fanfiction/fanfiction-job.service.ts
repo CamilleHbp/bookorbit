@@ -14,7 +14,8 @@ import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
-import { ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
+import { downloadQueue } from './fanfiction-download-queue';
+import { FanfictionDownloadsDto, ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { PreviewFanfictionDto } from './dto/fanfiction.dto';
 import { recordFanfictionActivity } from './fanfiction-activity';
 
@@ -304,6 +305,15 @@ export class FanfictionJobService {
     });
     const recentDownloads = dto.pendingDownloadsOnly && !dto.cursor ? await this.recentDownloads(libraryId, user.id) : undefined;
     return { items, nextCursor: rows.length > dto.limit ? items[items.length - 1].id : null, ...(recentDownloads ? { recentDownloads } : {}) };
+  }
+
+  async downloads(libraryId: number, dto: FanfictionDownloadsDto, user: RequestUser) {
+    await this.access.administer(user, libraryId);
+    const [page, recent] = await Promise.all([
+      downloadQueue(this.db, libraryId, user.id, dto),
+      dto.section || dto.group ? Promise.resolve([]) : this.recentDownloads(libraryId, user.id),
+    ]);
+    return { ...page, recent };
   }
 
   private recentDownloads(libraryId: number, userId: number) {

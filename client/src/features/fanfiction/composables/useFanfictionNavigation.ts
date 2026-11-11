@@ -1,8 +1,8 @@
 import { computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import type { useFanfiction } from './useFanfiction'
 
-const tabs = ['stories', 'add', 'discovery', 'activity', 'review'] as const
+const tabs = ['downloads', 'history', 'stories', 'add', 'discovery', 'activity', 'review'] as const
 type Tab = (typeof tabs)[number]
 
 export function useFanfictionNavigation(page: ReturnType<typeof useFanfiction>) {
@@ -21,7 +21,12 @@ export function useFanfictionNavigation(page: ReturnType<typeof useFanfiction>) 
   watch(
     () => [route.query.tab, route.query.search, route.query.state, ...filterKeys.map((key) => route.query[key])],
     () => {
-      const tab = typeof route.query.tab === 'string' && tabs.includes(route.query.tab as Tab) ? (route.query.tab as Tab) : 'stories'
+      const tab =
+        typeof route.query.tab === 'string' && tabs.includes(route.query.tab as Tab)
+          ? (route.query.tab as Tab)
+          : !route.query.tab && ['search', 'state', ...filterKeys].some((key) => route.query[key])
+            ? 'stories'
+            : 'downloads'
       const search = typeof route.query.search === 'string' ? route.query.search.slice(0, 200) : ''
       const state =
         typeof route.query.state === 'string' && ['active', 'paused', 'review_required', 'configuration_blocked'].includes(route.query.state)
@@ -48,7 +53,10 @@ export function useFanfictionNavigation(page: ReturnType<typeof useFanfiction>) 
     void page.applyFilters()
   }
   function destination(tab: Tab) {
-    return { name: 'fanfiction', query: { ...route.query, tab } }
+    const query: LocationQueryRaw = { ...route.query, tab, libraryId: page.libraryId.value ?? route.query.libraryId }
+    if (tab !== 'activity') delete query.sourceId
+    if (tab !== 'review') delete query.review
+    return { name: 'fanfiction', query }
   }
   function selectTab(tab: Tab) {
     void router.push(destination(tab))

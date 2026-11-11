@@ -101,7 +101,7 @@ export function useFanfiction(
   const schedule = ref('1440')
   const busy = ref(false)
   const error = ref('')
-  const tab = ref<'stories' | 'add' | 'discovery' | 'activity' | 'review'>('stories')
+  const tab = ref<'downloads' | 'history' | 'stories' | 'add' | 'discovery' | 'activity' | 'review'>('stories')
   const base = computed(() => `/api/v1/libraries/${libraryId.value}/fanfiction`)
   const canImport = computed(
     () =>
@@ -290,10 +290,9 @@ export function useFanfiction(
     await perform(async (current, path) => {
       const [folderPage] = await Promise.all([
         request<FanfictionFolderPage>(`${path}/sources/folders?limit=50`),
-        loadSources(current, path, null),
-        loadJobs(current, path, null),
-        loadActivity(current, path, null),
-        loadActivitySummary(current, path),
+        ...(tab.value === 'downloads'
+          ? []
+          : [loadSources(current, path, null), loadJobs(current, path, null), loadActivity(current, path, null), loadActivitySummary(current, path)]),
       ])
       if (!currentScope(current)) return
       folders.value = folderPage.items
@@ -620,13 +619,13 @@ export function useFanfiction(
   async function poll(current: number) {
     if (!currentScope(current)) return
     try {
-      if (!busy.value) {
+      if (!busy.value && tab.value !== 'downloads') {
         const path = base.value
         await Promise.all([
           loadJobs(current, path, jobPage),
           loadSources(current, path, sourcePage),
           loadActivity(current, path, activityPage),
-          ...(tab.value === 'activity' ? [loadActivitySummary(current, path)] : []),
+          ...(['activity', 'history'].includes(tab.value) ? [loadActivitySummary(current, path)] : []),
         ])
         const ids = [
           ...new Set([
