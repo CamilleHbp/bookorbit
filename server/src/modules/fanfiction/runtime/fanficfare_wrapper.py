@@ -86,6 +86,21 @@ def metadata_count(story, key, maximum):
     return number if 0 <= number <= maximum else None
 
 
+def omit_empty_fictionlive_home(adapter):
+    if adapter.getSiteDomain() != 'fiction.live':
+        return None
+    home = adapter.chapter_id_to_api.get('home')
+    chapters = adapter.get_chapters()
+    if not home or not chapters or chapters[0]['url'] != home:
+        return None
+    # The adapter synthesizes Home for the time before the first bookmark.
+    # That range can hold real story chunks, including illustrations without text.
+    if json.loads(adapter.get_request(home)) == []:
+        adapter.del_chapter(0)
+        return home
+    return None
+
+
 def story_preview(adapter, story):
     canonical = story.getMetadata('storyUrl').replace('http://', 'https://', 1)
     validate_url(canonical)
@@ -192,6 +207,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         login_fanfiction_net(adapter, transport)
         adapter = adapters.getAdapter(configuration, url)
         story = adapter.getStoryMetadataOnly(get_cover=get_cover)
+    empty_home = omit_empty_fictionlive_home(adapter)
     install_tag_matching(story, adapter.getConfigSection(), request.get('tagMatching') or {'version': 0, 'rules': []})
     preview = matched_preview(story, story_preview(adapter, story))
     canonical = preview['canonicalUrl']
@@ -207,6 +223,11 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         previous_url, previous_count = old[:2]
         if adapters.getNormalStoryURL(previous_url) != adapters.getNormalStoryURL(canonical):
             return finish({'reviewRequired': 'identity_mismatch', 'preview': preview})
+        if empty_home and old[7]:
+            home_body = old[7].get(empty_home)
+            if home_body is not None and not home_body.get_text(strip=True) and all(
+                    tag.name in ('html', 'body', 'div', 'br') for tag in home_body.find_all(True)):
+                previous_count -= 1
         if previous_count > chapter_count and request.get('reviewChanges') is not True:
             return finish({'reviewRequired': 'chapter_reduction', 'preview': preview})
         if operation == 'update':

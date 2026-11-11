@@ -34,14 +34,16 @@ async function epub(
     metadata?: string;
     titlepage?: string;
     chapterHead?: string;
+    fanficfareChapters?: boolean;
   } = {},
 ) {
   const path = join(dir, name);
   const output = createWriteStream(path);
   const archive = new ZipArchive({ zlib: { level: options.pretty ? 0 : 6 } });
+  const chapterPath = (i: number) => (options.fanficfareChapters ? `file${String(i + 1).padStart(4, '0')}.xhtml` : `c${i}.xhtml`);
   const items =
     (options.titlepage ? '<item id="title_page" href="title_page.xhtml" media-type="application/xhtml+xml"/>' : '') +
-    chapters.map((_, i) => `<item id="c${i}" href="${options.href ?? `c${i}.xhtml`}" media-type="application/xhtml+xml"/>`).join('');
+    chapters.map((_, i) => `<item id="c${i}" href="${options.href ?? chapterPath(i)}" media-type="application/xhtml+xml"/>`).join('');
   const refs = (options.titlepage ? '<itemref idref="title_page"/>' : '') + chapters.map((_, i) => `<itemref idref="c${i}"/>`).join('');
   const opf = `<package><metadata><title>${options.title ?? 'Story'}</title>${options.metadata ?? ''}</metadata><manifest>${items}<item id="cover" href="cover.png" media-type="image/png" properties="cover-image"/></manifest><spine>${refs}</spine></package>`;
   await new Promise<void>((resolve, reject) => {
@@ -53,7 +55,10 @@ async function epub(
     archive.append('<container><rootfiles><rootfile full-path="OPS/book.opf"/></rootfiles></container>', { name: 'META-INF/container.xml' });
     archive.append(options.pretty ? opf.replaceAll('><', '>\n  <') : opf, { name: 'OPS/book.opf' });
     chapters.forEach((content, i) =>
-      archive.append(`<html><head>${options.chapterHead ?? ''}</head><body>${content}</body></html>`, { name: `OPS/c${i}.xhtml` }),
+      archive.append(
+        `<html><head>${options.chapterHead ?? ''}</head><body${options.fanficfareChapters ? ' class="fff_chapter"' : ''}>${content}</body></html>`,
+        { name: `OPS/${chapterPath(i)}` },
+      ),
     );
     if (options.titlepage) archive.append(`<html><body class="fff_titlepage">${options.titlepage}</body></html>`, { name: 'OPS/title_page.xhtml' });
     archive.append(options.cover ?? 'cover', { name: 'OPS/cover.png' });
@@ -64,6 +69,24 @@ async function epub(
 }
 
 describe('EPUB revision manifests', () => {
+  it('recognizes legacy empty fiction.live Home pages and preserves introductions and illustrations', async () => {
+    const options = {
+      fanficfareChapters: true,
+      metadata: '<contributor>FanFicFare [https://github.com/JimmXinu/FanFicFare]</contributor>',
+      chapterHead:
+        '<meta name="chapterorigtitle" content="Home"/><meta name="chapterurl" content="https://fiction.live/api/anonkun/chapters/story/1/2/"/>',
+    };
+    const title = '<h3 class="fff_chapter_title">Home</h3>';
+    for (const [body, generated] of [
+      ['<div></div>', true],
+      ['<div>Introduction</div>', false],
+      ['<div><img src="a.jpg"/></div>', false],
+    ] as const) {
+      const path = await epub('home.epub', [title + body, '<p>Chapter one</p>'], options);
+      expect(!!(await service.inspect(path)).chapters[0].generated).toBe(generated);
+    }
+  });
+
   it('extracts bounded source evidence without using a title as story identity', async () => {
     const path = await epub('source.epub', undefined, {
       metadata:
