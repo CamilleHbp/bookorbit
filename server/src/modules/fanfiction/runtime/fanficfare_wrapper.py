@@ -95,7 +95,9 @@ def omit_empty_fictionlive_home(adapter):
         return None
     # The adapter synthesizes Home for the time before the first bookmark.
     # That range can hold real story chunks, including illustrations without text.
-    if json.loads(adapter.get_request(home)) == []:
+    chunks = json.loads(adapter.get_request(home))
+    # FictionLiveAdapter renders #special entries as separate appendix chapters.
+    if isinstance(chunks, list) and all(str(chunk.get('t', '')).startswith('#special') for chunk in chunks):
         adapter.del_chapter(0)
         return home
     return None

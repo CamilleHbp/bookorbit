@@ -19,14 +19,19 @@ class ChapterRecoveryTest(unittest.TestCase):
         adapter.getSiteDomain.return_value = 'fiction.live'
         adapter.chapter_id_to_api = {'home': 'intro'}
         adapter.get_chapters.return_value = [{'url': 'intro'}, {'url': 'chapter'}]
-        adapter.get_request.side_effect = ['[{"nt":"chapter"}]', '[]']
+        adapter.get_request.side_effect = ['[{"nt":"chapter"}]', '[{"t":"#special art"},{"nt":"choice"}]',
+                                           '[{"t":"#special appendix"}]', '[]']
+        self.assertIsNone(omit_empty_fictionlive_home(adapter))
         self.assertIsNone(omit_empty_fictionlive_home(adapter))
         adapter.del_chapter.assert_not_called()
         self.assertEqual(omit_empty_fictionlive_home(adapter), 'intro')
         adapter.del_chapter.assert_called_once_with(0)
+        adapter.del_chapter.reset_mock()
+        self.assertEqual(omit_empty_fictionlive_home(adapter), 'intro')
+        adapter.del_chapter.assert_called_once_with(0)
         adapter.getSiteDomain.return_value = 'another.example'
         self.assertIsNone(omit_empty_fictionlive_home(adapter))
-        self.assertEqual(adapter.get_request.call_count, 2)
+        self.assertEqual(adapter.get_request.call_count, 4)
 
     def test_old_home_is_rechecked_without_dropping_illustrated_introductions(self):
         from bs4 import BeautifulSoup
