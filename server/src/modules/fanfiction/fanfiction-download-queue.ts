@@ -49,7 +49,7 @@ function downloadEntries(libraryId: number, userId: number) {
     )`;
 }
 
-export type RetryScope = { group: string } | { site: string };
+export type RetryScope = { group: string } | { site: string; settingsChanged?: boolean };
 
 export function retryGroupMembers(
   db: NodePgDatabase<typeof schema>,
@@ -63,6 +63,13 @@ export function retryGroupMembers(
     ${downloadEntries(libraryId, userId)}
     select coalesce(job_id,source_id) as id, job_id, source_id, code, state from keyed
     where group_key is not null and ${'group' in scope ? sql`group_key=${scope.group}` : sql`site=${scope.site}`} and updated_at <= ${cutoff}::timestamptz
+      and ${
+        'site' in scope && scope.settingsChanged
+          ? sql`code in ('access_denied','authentication_required','configuration_blocked') and not exists (
+        select 1 from ${schema.fanfictionSources} s where s.id=keyed.source_id and s.library_id=${libraryId}
+          and s.book_file_id is not null and (not s.updates_enabled or s.metadata_review_pending))`
+          : sql`true`
+      }
       and ${cursor ? sql`coalesce(job_id,source_id) > ${cursor}::uuid` : sql`true`}
     order by coalesce(job_id,source_id) limit 50
   `);
