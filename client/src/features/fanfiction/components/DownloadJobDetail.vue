@@ -114,7 +114,7 @@ defineExpose({ canLeave })
     <template v-if="job">
       <StoryImportReview ref="editor" v-if="needsImportReview(job)" :job="job" @updated="updated" />
       <div v-else-if="content" class="space-y-3 border-s-2 border-primary bg-muted/50 p-4">
-        <h3 class="font-semibold">{{ t('fanfiction.downloads.' + decision.key, { count: decision.count }) }}</h3>
+        <h3 class="font-semibold">{{ t(`fanfiction.downloads.${decision.key}`, { count: decision.count }) }}</h3>
         <p v-if="row.currentChapters !== null && row.proposedChapters !== null">
           {{ t('fanfiction.downloads.compare', { saved: row.currentChapters, website: row.proposedChapters }) }}
         </p>
