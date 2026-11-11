@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gt, inArray, isNotNull, lt, lte, notInArray, or, sq
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { randomUUID } from 'node:crypto';
 import type {
+  FanfictionGroupRetryResult,
   FanfictionJob,
   FanfictionJobState,
   FanfictionImportRequest,
@@ -15,7 +16,7 @@ import * as schema from '../../db/schema';
 import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { isConnectionAccessError } from './fanfiction-website';
-import { downloadQueue } from './fanfiction-download-queue';
+import { downloadQueue, retryGroupMembers, type RetryScope } from './fanfiction-download-queue';
 import { FanfictionDownloadsDto, ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { PreviewFanfictionDto } from './dto/fanfiction.dto';
 import { recordFanfictionActivity } from './fanfiction-activity';
@@ -324,6 +325,117 @@ export class FanfictionJobService {
       dto.section || dto.group ? Promise.resolve([]) : this.recentDownloads(libraryId, user.id),
     ]);
     return { ...page, recent };
+  }
+
+  async retryWebsite(site: string, user: RequestUser, libraryId?: number) {
+    if (libraryId !== undefined) return this.retryGroup(libraryId, { site }, user);
+    const total = { queued: 0, skipped: 0 };
+    let after = 0;
+    for (;;) {
+      const page = await this.access.librariesFor(user, after, 50);
+      for (const library of page.items) {
+        const result = await this.retryGroup(library.id, { site }, user);
+        total.queued += result.queued;
+        total.skipped += result.skipped;
+      }
+      if (page.nextCursor === null) return total;
+      after = page.nextCursor;
+    }
+  }
+
+  async retryGroup(libraryId: number, scope: RetryScope, user: RequestUser): Promise<FanfictionGroupRetryResult> {
+    await this.access.administer(user, libraryId);
+    const started = Date.now();
+    const {
+      rows: [clock],
+    } = await this.db.execute<{ cutoff: string }>(sql`select clock_timestamp()::text as cutoff`);
+    let cursor: string | null = null;
+    let queued = 0;
+    let skipped = 0;
+    this.logger.log(
+      `[fanfiction.retry_group] [start] libraryId=${libraryId} userId=${user.id} scope=${'group' in scope ? 'group' : 'website'} - retrying affected downloads`,
+    );
+    try {
+      for (;;) {
+        const { rows } = await retryGroupMembers(this.db, libraryId, user.id, scope, clock.cutoff, cursor);
+        for (const member of rows) {
+          try {
+            const applied = await this.db.transaction(async (tx) => {
+              if (member.job_id) {
+                const match = and(
+                  eq(jobs.id, member.job_id),
+                  eq(jobs.libraryId, libraryId),
+                  eq(jobs.userId, user.id),
+                  eq(jobs.errorCode, member.code),
+                  sql`${jobs.state} = ${member.state} and ${jobs.updatedAt} <= ${clock.cutoff}::timestamptz`,
+                );
+                const [current] = await tx.select({ id: jobs.id }).from(jobs).where(match).for('update');
+                if (!current) return false;
+                if (member.source_id) {
+                  const sources = schema.fanfictionSources;
+                  const [owned] = await tx
+                    .select({ id: sources.id })
+                    .from(sources)
+                    .where(
+                      and(
+                        eq(sources.id, member.source_id),
+                        eq(sources.libraryId, libraryId),
+                        sql`coalesce(${sources.maintainerUserId},${sources.createdBy})=${user.id}`,
+                      ),
+                    )
+                    .for('update');
+                  if (!owned) return false;
+                }
+                if (member.state === 'queued') {
+                  await this.access.administer(user, libraryId);
+                  const updated = await tx
+                    .update(jobs)
+                    .set({ runAfter: sql`now()`, errorCode: null, updatedAt: sql`now()` })
+                    .where(match)
+                    .returning({ id: jobs.id });
+                  return updated.length > 0;
+                }
+                await this.retry(libraryId, current.id, user, tx);
+              } else {
+                const sources = schema.fanfictionSources;
+                const [source] = await tx
+                  .select()
+                  .from(sources)
+                  .where(
+                    and(
+                      eq(sources.id, member.source_id!),
+                      eq(sources.libraryId, libraryId),
+                      eq(sources.maintainerUserId, user.id),
+                      eq(sources.attentionCode, member.code),
+                      sql`${sources.updatedAt} <= ${clock.cutoff}::timestamptz`,
+                    ),
+                  )
+                  .for('update');
+                if (!source) return false;
+                await this.updateStory(source, 'update', randomUUID(), user, false, undefined, tx);
+              }
+              return true;
+            });
+            if (applied) queued++;
+            else skipped++;
+          } catch (error) {
+            if (!(error instanceof ConflictException || error instanceof NotFoundException)) throw error;
+            skipped++;
+          }
+        }
+        if (rows.length < 50) break;
+        cursor = rows[rows.length - 1].id;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `[fanfiction.retry_group] [fail] libraryId=${libraryId} userId=${user.id} durationMs=${Date.now() - started} errorClass=RetryGroupError error="group retry interrupted"`,
+      );
+      throw error;
+    }
+    this.logger.log(
+      `[fanfiction.retry_group] [end] libraryId=${libraryId} userId=${user.id} durationMs=${Date.now() - started} queued=${queued} skipped=${skipped} - group retry finished`,
+    );
+    return { queued, skipped };
   }
 
   private recentDownloads(libraryId: number, userId: number) {

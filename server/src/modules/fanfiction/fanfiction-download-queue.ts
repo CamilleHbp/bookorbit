@@ -4,10 +4,8 @@ import { sql } from 'drizzle-orm';
 import * as schema from '../../db/schema';
 import type { FanfictionDownloadsDto } from './dto/fanfiction-job.dto';
 
-export async function downloadQueue(db: NodePgDatabase<typeof schema>, libraryId: number, userId: number, dto: FanfictionDownloadsDto) {
-  // Jobs own active transfers. Source attention also covers library data created before durable jobs.
-  const result = await db.execute<{ item: FanfictionDownloadRow; total: number }>(sql`
-    with latest as (
+function downloadEntries(libraryId: number, userId: number) {
+  return sql`with latest as (
       select distinct on (j.url) j.id
       from ${schema.fanfictionJobs} j
       where j.library_id=${libraryId} and j.user_id=${userId} and j.kind in ('import','update','refresh')
@@ -44,10 +42,36 @@ export async function downloadQueue(db: NodePgDatabase<typeof schema>, libraryId
           when state not in ('running','queued') or code is not null then 'unknown' end as issue
       from entries
     ), keyed as (
-      select *, case when issue in ('website','login') and section in ('retrying','attention')
+      select *, case when section in ('retrying','attention') and issue in ('website','login','story','unknown')
+        and state not in ('review_required','cancelled') and code is not null
         then md5(concat_ws('|',section,site,code)) end as group_key
       from classified
-    ), grouped as (
+    )`;
+}
+
+export type RetryScope = { group: string } | { site: string };
+
+export function retryGroupMembers(
+  db: NodePgDatabase<typeof schema>,
+  libraryId: number,
+  userId: number,
+  scope: RetryScope,
+  cutoff: string,
+  cursor: string | null,
+) {
+  return db.execute<{ id: string; job_id: string | null; source_id: string | null; code: string; state: string }>(sql`
+    ${downloadEntries(libraryId, userId)}
+    select coalesce(job_id,source_id) as id, job_id, source_id, code, state from keyed
+    where group_key is not null and ${'group' in scope ? sql`group_key=${scope.group}` : sql`site=${scope.site}`} and updated_at <= ${cutoff}::timestamptz
+      and ${cursor ? sql`coalesce(job_id,source_id) > ${cursor}::uuid` : sql`true`}
+    order by coalesce(job_id,source_id) limit 50
+  `);
+}
+
+export async function downloadQueue(db: NodePgDatabase<typeof schema>, libraryId: number, userId: number, dto: FanfictionDownloadsDto) {
+  // Jobs own active transfers. Source attention also covers library data created before durable jobs.
+  const result = await db.execute<{ item: FanfictionDownloadRow; total: number }>(sql`
+    ${downloadEntries(libraryId, userId)}, grouped as (
       select *, count(*) over grp as members, min(retry_at) over grp as first_retry,
         row_number() over (partition by coalesce(group_key,job_id::text,source_id::text) order by updated_at desc, coalesce(job_id,source_id)) as representative
       from keyed

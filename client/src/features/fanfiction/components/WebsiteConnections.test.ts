@@ -160,3 +160,35 @@ it('orders websites by their visible labels and keeps archive paths and connecti
     wrapper.unmount()
   }
 })
+
+it('retries only the selected saved website and prevents repeated clicks while the request is pending', async () => {
+  const website = { id: 'fanfiction.net', name: 'FanFiction.net', access: 'login', examples: [] }
+  let finish!: (res: Response) => void
+  vi.mocked(api).mockImplementation((url, options) => {
+    if (options?.method === 'POST')
+      return new Promise((resolve) => {
+        finish = resolve
+      })
+    if (String(url).endsWith('/websites')) return Promise.resolve(response([website]))
+    return Promise.resolve(response([{ id: 'saved-login', website, version: 1 }]))
+  })
+  const wrapper = mount(WebsiteConnections)
+  try {
+    await flushPromises()
+    const retry = wrapper.get('button[title]')
+    expect(retry.attributes('aria-label')).toBe(retry.attributes('title'))
+    expect(retry.attributes('title')).toContain('FanFiction.net')
+    await retry.trigger('click')
+    await retry.trigger('click')
+    const requests = vi.mocked(api).mock.calls.filter(([, options]) => options?.method === 'POST')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]![0]).toBe('/api/v1/fanfiction/connections/saved-login/retry-downloads')
+    expect(JSON.parse(requests[0]![1]!.body as string)).toEqual({})
+    expect(retry.attributes('disabled')).toBeDefined()
+    finish(response({ queued: 42, skipped: 0 }))
+    await flushPromises()
+    expect(retry.attributes('disabled')).toBeUndefined()
+  } finally {
+    wrapper.unmount()
+  }
+})

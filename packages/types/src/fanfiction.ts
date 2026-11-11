@@ -550,6 +550,11 @@ export interface FanfictionDownloadRow {
   proposedChapters: number | null;
 }
 
+export interface FanfictionGroupRetryResult {
+  queued: number;
+  skipped: number;
+}
+
 export interface FanfictionDownloadQueue {
   items: FanfictionDownloadRow[];
   totals: Record<FanfictionDownloadSection, number>;

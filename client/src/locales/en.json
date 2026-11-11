@@ -15612,6 +15612,7 @@
       "noAttention": "No stories need your attention."
     },
     "downloads": {
+      "retryResult": "{queued} queued, {skipped} skipped.",
       "title": "Downloads",
       "history": "History",
       "manage": "Manage",
@@ -15633,6 +15634,7 @@
       "tryLater": "The last download attempt did not finish.",
       "noRetry": "No download retry scheduled.",
       "loadError": "Could not refresh downloads.",
+      "retryError": "Could not retry these downloads. Try again.",
       "asOf": "Showing downloads as of {time}.",
       "actionError": "Could not complete the request. Refresh to check the current status.",
       "keepHint": "Your library copy stays unchanged until you choose. Keeping it pauses future updates for this story.",

@@ -5,13 +5,15 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import type { RequestUser } from '../../common/types/request-user';
 import { FanfictionConnectionService } from './fanfiction-connection.service';
 import { FanfictionSourceBatchService } from './fanfiction-source-batch.service';
-import { RetryFanfictionConnectionDto, SaveFanfictionConnectionDto } from './dto/fanfiction-connection.dto';
+import { FanfictionJobService } from './fanfiction-job.service';
+import { RetryWebsiteDownloadsDto, RetryFanfictionConnectionDto, SaveFanfictionConnectionDto } from './dto/fanfiction-connection.dto';
 
 @Controller('fanfiction/connections')
 @RequirePermission(Permission.ManageLibraries)
 export class FanfictionConnectionController {
   constructor(
     private readonly connections: FanfictionConnectionService,
+    private readonly jobs: FanfictionJobService,
     private readonly batches: FanfictionSourceBatchService,
   ) {}
 
@@ -45,6 +47,13 @@ export class FanfictionConnectionController {
   @HttpCode(204)
   remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
     return this.connections.remove(id, user);
+  }
+
+  @Post(':id/retry-downloads')
+  @HttpCode(200)
+  async retryDownloads(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RetryWebsiteDownloadsDto, @CurrentUser() user: RequestUser) {
+    const connection = await this.connections.owned(id, user);
+    return this.jobs.retryWebsite(connection.site, user, dto.libraryId);
   }
 
   @Post(':id/retry')
