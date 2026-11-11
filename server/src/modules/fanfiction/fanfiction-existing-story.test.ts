@@ -94,6 +94,46 @@ describe('existing story import confirmation', () => {
       await module.close();
     }
   });
+  it.each([true, false])('retries a blocked connection manually and preserves enabled=%s', async (updatesEnabled) => {
+    const source = {
+      id: 'story',
+      libraryId: 5,
+      bookFileId: 9,
+      state: 'configuration_blocked',
+      attentionCode: 'access_denied',
+      maintainerUserId: user.id,
+      updatesEnabled,
+    } as typeof schema.fanfictionSources.$inferSelect;
+    const select = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      for: vi.fn().mockResolvedValue([source]),
+      limit: vi.fn().mockResolvedValue([]),
+    };
+    const insert = {
+      values: vi.fn().mockReturnThis(),
+      onConflictDoNothing: vi.fn().mockReturnThis(),
+      returning: vi.fn().mockResolvedValue([{ state: 'queued', createdAt: new Date(), updatedAt: new Date() }]),
+    };
+    const update = { set: vi.fn().mockReturnThis(), where: vi.fn() };
+    const tx = { select: () => select, insert: () => insert, update: () => update };
+    const module = await Test.createTestingModule({
+      providers: [
+        FanfictionJobService,
+        { provide: DB, useValue: { transaction: (operation: (tx: unknown) => Promise<unknown>) => operation(tx) } },
+        { provide: FanfictionAccessService, useValue: access },
+      ],
+    }).compile();
+    try {
+      const service = module.get(FanfictionJobService);
+      await expect(service.updateStory(source, 'update', 'scheduled', user, true)).rejects.toThrow(ConflictException);
+      expect(update.set).not.toHaveBeenCalled();
+      await expect(service.updateStory(source, 'update', 'manual', user)).resolves.toMatchObject({ state: 'queued' });
+      expect(update.set).toHaveBeenCalledWith(expect.objectContaining({ state: updatesEnabled ? 'active' : 'paused', attentionCode: null }));
+    } finally {
+      await module.close();
+    }
+  });
   it('returns a structured review conflict instead of scheduling another update', async () => {
     const source = {
       id: 'existing',

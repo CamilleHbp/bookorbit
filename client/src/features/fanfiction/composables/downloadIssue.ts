@@ -1,3 +1,4 @@
+import type { FanfictionSource } from '@bookorbit/types'
 import { Link2Off, Pause, CircleHelp, Globe, KeyRound, BookOpenCheck, ListChecks, PencilLine } from '@lucide/vue'
 export const issueStyle = {
   website: { icon: Globe, color: 'text-info bg-info/10' },
@@ -14,4 +15,12 @@ export function chapterDecision(changes?: { removed?: number; changed?: number; 
   if (changes?.changed) return { key: 'changed', count: changes.changed }
   if (changes?.reordered) return { key: 'reordered', count: 0 }
   return { key: 'unmatched', count: 0 }
+}
+
+export function canRetryWebsiteAccess(source: FanfictionSource) {
+  return Boolean(
+    source.bookFileId &&
+    source.state === 'configuration_blocked' &&
+    ['authentication_required', 'access_denied'].includes(source.attentionCode ?? ''),
+  )
 }

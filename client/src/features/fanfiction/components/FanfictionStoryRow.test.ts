@@ -70,6 +70,19 @@ describe('story row feedback', () => {
     wrapper.unmount()
   })
 
+  it('retries a previous website denial using the current connection', async () => {
+    const wrapper = mount(FanfictionStoryRow, {
+      props: { ...props, source: { ...source, site: 'royalroad.com', state: 'configuration_blocked', attentionCode: 'access_denied' } },
+      global,
+    })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Retry')!
+      .trigger('click')
+    expect(wrapper.emitted('check')).toEqual([[]])
+    wrapper.unmount()
+  })
+
   it('reports Shift on the checkbox and Ctrl or Cmd clicks on the row as selection', async () => {
     const wrapper = mount(FanfictionStoryRow, { props, global })
     await wrapper.get('input[type="checkbox"]').trigger('click', { shiftKey: true })
