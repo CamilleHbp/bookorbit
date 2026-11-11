@@ -150,6 +150,7 @@
     "nextCheck": "Next check",
     "manualOnly": "Manual only",
     "pauseUpdates": "Pause updates",
+    "ignoreMissingWarning": "Ignore warning and pause checks",
     "resumeUpdates": "Resume updates",
     "nextPage": "Next page",
     "folder": "Destination folder",

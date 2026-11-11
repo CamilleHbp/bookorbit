@@ -50,6 +50,7 @@ const {
   refresh,
   selectSource,
   updateSettings,
+  ignoreMissingWarning,
   pause,
   unlink,
   checkNow,
@@ -133,6 +134,13 @@ onMounted(() => {
           <span v-if="source.wordCount !== null"> · {{ t('fanfiction.wordCount', { count: source.wordCount }) }}</span>
         </p>
         <p v-if="source.attentionCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
+        <Button
+          v-if="source.attentionCode === 'source_not_found' && canUpdate && source.bookFileId && !source.metadataReviewPending"
+          variant="outline"
+          :disabled="updating"
+          @click="ignoreMissingWarning"
+          >{{ t('fanfiction.ignoreMissingWarning') }}</Button
+        >
         <dl class="text-muted-foreground grid gap-2 text-sm sm:grid-cols-2">
           <div>
             <dt>{{ t('fanfiction.lastChecked') }}</dt>
