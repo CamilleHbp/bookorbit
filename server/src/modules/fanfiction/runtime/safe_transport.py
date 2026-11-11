@@ -216,8 +216,16 @@ class SafeTransport:
                     raise PolicyError('Cookie storage limit exceeded')
                 if response.status in (301, 302, 303, 307, 308):
                     target = urllib.parse.urljoin(url, response.getheader('Location') or '')
-                    _, target_host = validate_url(target)
-                    if response.status in (301, 302, 303):
+                    target_url, target_host = validate_url(target)
+                    # WLPC returns a 307 after sign-in. StoriesOnline accepts its
+                    # callback as a GET, without replaying the login form.
+                    storiesonline_callback = (
+                        response.status == 307 and method == 'POST' and hostname == 'login.wlpc.com'
+                        and parsed.path == '/' and target_host == 'storiesonline.net'
+                        and target_url.path == '/sol-secure/login.php'
+                        and bool(urllib.parse.parse_qs(target_url.query).get('rr'))
+                    )
+                    if response.status in (301, 302, 303) or storiesonline_callback:
                         method, body = 'GET', None
                     elif body is not None and target_host != hostname:
                         raise PolicyError('Authenticated redirects cannot forward request bodies across sites')

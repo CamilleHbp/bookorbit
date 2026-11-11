@@ -190,7 +190,13 @@ export class FanfictionWorkerService implements OnModuleDestroy {
             : 'runtime_failed';
       const blocked =
         error instanceof ForbiddenException ||
-        ['configuration_blocked', 'authentication_required', 'adult_confirmation_required', 'access_denied'].includes(code);
+        [
+          'configuration_blocked',
+          'authentication_required',
+          'adult_confirmation_required',
+          'access_denied',
+          'storiesonline_membership_expired',
+        ].includes(code);
       if (connection) await this.connections.outcome(connection, job.userId, code);
       await this.jobs.finish(
         job,

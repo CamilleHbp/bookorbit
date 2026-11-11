@@ -23,6 +23,7 @@ describe('import progress', () => {
     ['response_too_large', 'A chapter or image is too large'],
     ['download_timeout', 'The story took too long'],
     ['source_policy_blocked', 'A source request was blocked for safety'],
+    ['storiesonline_membership_expired', 'Your StoriesOnline Premier membership has expired'],
     ['invalid_epub', 'The downloaded EPUB could not be safely opened'],
   ])('explains %s without blaming source settings', (errorCode, message) => {
     const wrapper = mount(ImportProgress, {
