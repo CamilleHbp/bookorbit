@@ -35,12 +35,12 @@ export function storyUpdateSafety(
   const sharedBefore = oldIds.filter((id) => id && newSet.has(id));
   const sharedAfter = newIds.filter((id) => id && oldSet.has(id));
   const reordered = identifiable && sharedBefore.some((id, i) => id !== sharedAfter[i]);
-  const unchangedPrefix = before.every((c, i) => oldIds[i] === newIds[i] && c.textHash === after[i]?.textHash);
+  const retained = after.filter((_, i) => oldSet.has(newIds[i]));
+  const unchanged = identifiable && !removed && !reordered && before.every((chapter, i) => chapter.textHash === retained[i]?.textHash);
+  const inserted = identifiable && sharedAfter.length > 0 && newIds.slice(0, newIds.lastIndexOf(sharedAfter.at(-1))).some((id) => !oldSet.has(id));
   return {
-    safety: !identifiable || !unchangedPrefix ? 'review_required' : after.length > before.length ? 'append_only' : 'unchanged',
-    ...(identifiable && sharedAfter.length > 0 && newIds.slice(0, newIds.lastIndexOf(sharedAfter.at(-1))).some((id) => !oldSet.has(id))
-      ? { inserted: true }
-      : {}),
+    safety: !unchanged ? 'review_required' : inserted ? 'insert_only' : after.length > before.length ? 'append_only' : 'unchanged',
+    ...(inserted ? { inserted: true } : {}),
     removed,
     reordered,
   };
