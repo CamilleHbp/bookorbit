@@ -14,6 +14,7 @@ import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
+import { isConnectionAccessError } from './fanfiction-website';
 import { downloadQueue } from './fanfiction-download-queue';
 import { FanfictionDownloadsDto, ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { PreviewFanfictionDto } from './dto/fanfiction.dto';
@@ -79,14 +80,17 @@ export class FanfictionJobService {
           errorCode: 'metadata_review_required',
           errorMeta: { sourceId: current.id, bookId: current.bookId },
         } satisfies FanfictionMetadataReviewConflict & { message: string });
+      const retryAccess =
+        !scheduled && kind === 'update' && current?.state === 'configuration_blocked' && isConnectionAccessError(current.attentionCode);
       if (
         !current ||
         current.version !== source.version ||
         !current.bookFileId ||
         (current.attentionCode === 'metadata_review_required' && current.updatePolicy !== 'safe') ||
-        !(
-          ['rollback', 'replacement'].includes(kind) ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']
-        ).includes(current.state) ||
+        (!retryAccess &&
+          !(
+            ['rollback', 'replacement'].includes(kind) ? ['active', 'paused', 'configuration_blocked', 'review_required'] : ['active', 'paused']
+          ).includes(current.state)) ||
         (scheduled && current.state !== 'active')
       )
         throw new ConflictException('Story source changed or requires attention before updating');
@@ -119,6 +123,12 @@ export class FanfictionJobService {
         .onConflictDoNothing()
         .returning();
       if (!row) throw new ConflictException('An operation for this story is already active');
+      if (retryAccess) {
+        await tx
+          .update(schema.fanfictionSources)
+          .set({ state: current.updatesEnabled ? 'active' : 'paused', attentionCode: null, updatedAt: sql`now()` })
+          .where(eq(schema.fanfictionSources.id, current.id));
+      }
       return this.view(row);
     };
     return transaction ? operation(transaction) : this.db.transaction(operation);
