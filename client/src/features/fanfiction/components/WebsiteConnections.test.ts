@@ -111,3 +111,29 @@ it('saves Royal Road email and password while leaving browser cookies optional',
     wrapper.unmount()
   }
 })
+
+it('opens FanFiction.net sign-in and saves the login cookie for its story host', async () => {
+  const website = { id: 'fanfiction.net', name: 'FanFiction.net', access: 'cookies', examples: [] }
+  vi.mocked(api).mockImplementation((url, options) => {
+    if (String(url).endsWith('/websites')) return Promise.resolve(response([website]))
+    if (options?.method === 'POST') return Promise.resolve(response({ id: 'connection', website, version: 1 }))
+    return Promise.resolve(response([]))
+  })
+  const wrapper = mount(WebsiteConnections, { props: { focusSite: website.id } })
+  try {
+    await flushPromises()
+    expect(wrapper.get('form a').attributes('href')).toBe('https://www.fanfiction.net/login.php')
+    const fields = wrapper.get('details').findAll('input')
+    await fields[0]!.setValue('session')
+    await fields[1]!.setValue('example')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const request = vi.mocked(api).mock.calls.find(([, options]) => options?.method === 'POST')!
+    expect(JSON.parse(request[1]!.body as string)).toEqual({
+      site: 'fanfiction.net',
+      cookies: [{ name: 'session', value: 'example', domain: 'www.fanfiction.net', path: '/', secure: true }],
+    })
+  } finally {
+    wrapper.unmount()
+  }
+})
