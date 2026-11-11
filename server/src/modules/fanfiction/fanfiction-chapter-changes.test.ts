@@ -9,7 +9,7 @@ const chapter = (href: string, sourceUrl?: string, textHash = 'same'): RevisionC
   length: 0,
 });
 
-it('accepts only an identifiable unchanged prefix, ignoring explicitly generated pages', () => {
+it('accepts identifiable unchanged chapters, ignoring explicitly generated pages', () => {
   const original: EpubRevisionManifest = {
     version: 1,
     contentHash: '',
@@ -54,7 +54,14 @@ it('compares the relative order of shared chapters for every adapter', () => {
     chapters: ids.map((id) => chapter(id, 'https://example.org/' + id)),
   });
   const old = manifest('a', 'b', 'c');
-  expect(storyUpdateSafety(old, manifest('a', 'x', 'b', 'c'))).toEqual({ inserted: true, reordered: false, removed: 0, safety: 'review_required' });
+  expect(storyUpdateSafety(old, manifest('a', 'x', 'b', 'c'))).toEqual({ inserted: true, reordered: false, removed: 0, safety: 'insert_only' });
+  const mixed = manifest('first', 'a', 'middle', 'b', 'c', 'last');
+  expect(storyUpdateSafety(old, mixed).safety).toBe('insert_only');
+  mixed.chapters[3].textHash = 'edited';
+  expect(storyUpdateSafety(old, mixed).safety).toBe('review_required');
+  expect(storyUpdateSafety(old, manifest('a', 'x', 'c')).safety).toBe('review_required');
+  expect(storyUpdateSafety(old, manifest('a', 'x', 'c', 'b')).safety).toBe('review_required');
+  expect(storyUpdateSafety(old, manifest('a', 'x', 'b', 'x', 'c')).safety).toBe('review_required');
   expect(storyUpdateSafety(old, manifest('b', 'c'))).toEqual({ reordered: false, removed: 1, safety: 'review_required' });
   expect(storyUpdateSafety(old, manifest('x', 'c', 'a'))).toEqual({ inserted: true, reordered: true, removed: 1, safety: 'review_required' });
 });
