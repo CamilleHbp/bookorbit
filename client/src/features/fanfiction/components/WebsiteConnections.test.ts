@@ -137,3 +137,26 @@ it('opens FanFiction.net sign-in and saves the login cookie for its story host',
     wrapper.unmount()
   }
 })
+
+it('orders websites by their visible labels and keeps archive paths and connection IDs', async () => {
+  const catalog = ['www.Zebra.org', 'https://www.alpha.org/fiction/', 'http://alpha.org/archive', 'Royal Road'].map((name, index) => ({
+    name,
+    id: 'site-' + index,
+    examples: [],
+    access: 'cookies',
+  }))
+  vi.mocked(api).mockImplementation((url) => Promise.resolve(response(String(url).endsWith('/websites') ? catalog : [])))
+  const wrapper = mount(WebsiteConnections)
+  try {
+    await flushPromises()
+    const options = wrapper.findAll('select option').slice(1)
+    expect(options.map((item) => [item.text(), item.attributes('value')])).toEqual([
+      ['alpha.org/archive', 'site-2'],
+      ['alpha.org/fiction', 'site-1'],
+      ['Royal Road', 'site-3'],
+      ['Zebra.org', 'site-0'],
+    ])
+  } finally {
+    wrapper.unmount()
+  }
+})

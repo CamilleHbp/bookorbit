@@ -42,16 +42,25 @@ function cancelRemoval() {
   removing.value = false
 }
 const editor = ref<HTMLElement | null>(null)
-const rows = computed(() =>
-  props.repairsOnly
+function websiteLabel(name: string) {
+  return name.replace(/^(?:https?:\/\/|\/\/)?(?:www\.)?/i, '').replace(/\/$/, '')
+}
+const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
+function byName(a: { name: string }, b: { name: string }) {
+  return collator.compare(a.name, b.name)
+}
+const options = computed(() => websites.value.map((item) => ({ id: item.id, name: websiteLabel(item.name) })).sort(byName))
+const rows = computed(() => {
+  const items = props.repairsOnly
     ? issues.value.map((issue) => ({
         site: issue.site,
         count: issue.count,
         login: connections.value.find((item) => item.website.id === issue.site),
         name: websites.value.find((item) => item.id === issue.site)?.name ?? issue.site,
       }))
-    : connections.value.map((login) => ({ site: login.website.id, count: 0, login, name: login.website.name })),
-)
+    : connections.value.map((login) => ({ site: login.website.id, count: 0, login, name: login.website.name }))
+  return items.map((item) => ({ ...item, name: websiteLabel(item.name) })).sort(byName)
+})
 const focusRequested = ref(false)
 watch(
   [editor, focusRequested],
@@ -117,7 +126,7 @@ function date(value: string) {
       >{{ t('fanfiction.connections.website') }}
       <select v-model="site" :disabled="busy" class="border-input bg-background block min-h-11 w-full rounded-md border px-3">
         <option value="">{{ t('fanfiction.connections.choose') }}</option>
-        <option v-for="item in websites" :key="item.id" :value="item.id">{{ item.name }}</option>
+        <option v-for="item in options" :key="item.id" :value="item.id">{{ item.name }}</option>
       </select>
     </label>
     <form
@@ -127,7 +136,7 @@ function date(value: string) {
       class="max-w-xl space-y-4 rounded-xl border border-border p-4 focus:outline-none"
       @submit.prevent="save"
     >
-      <h3 class="font-semibold">{{ website.name }}</h3>
+      <h3 class="font-semibold">{{ websiteLabel(website.name) }}</h3>
       <p v-if="source" class="text-sm text-muted-foreground">{{ t('fanfiction.connections.takeOver', { title: source.title }) }}</p>
       <p v-if="connection" class="text-sm text-muted-foreground">{{ t('fanfiction.connections.savedHelp') }}</p>
       <Button v-if="signInUrl" variant="outline" as-child>
