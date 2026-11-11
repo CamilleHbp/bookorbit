@@ -19,6 +19,10 @@ describe('website sign-in capabilities', () => {
       access: 'login',
       usernameKind: 'email',
     });
+    expect(fanfictionWebsite({ id: 'www.fanfiction.net', supportsPasswordLogin: true, examples: [] })).toMatchObject({
+      access: 'login',
+      usernameKind: 'email',
+    });
     expect(fanfictionWebsite({ id: 'www.fimfiction.net', supportsPasswordLogin: true, examples: [] }).access).toBe('login');
     expect(fanfictionWebsite({ id: 'www.giantessworld.net', supportsPasswordLogin: true, examples: [] }).access).toBe('login');
   });

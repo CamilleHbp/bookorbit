@@ -15,6 +15,7 @@
       "modules/fanfiction/runtime/browser_connection.py",
       "modules/fanfiction/runtime/flaresolverr_transport.py",
       "modules/fanfiction/runtime/scribblehub_login.py",
+      "modules/fanfiction/runtime/fanfiction_net_login.py",
       "modules/fanfiction/runtime/epub_policy.py",
       "modules/fanfiction/runtime/image_processing.py",
       "modules/fanfiction/runtime/tag_matching.py"
