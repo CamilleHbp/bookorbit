@@ -75,10 +75,9 @@
       "finalizing": "Finishing import",
       "cancelling": "Cancelling…",
       "retrying": "Waiting to retry automatically",
-      "chapters": "{completed} of {total} chapters downloaded",
+      "ready": "{completed} of {total} chapters ready",
       "attempt": "Attempt {count}",
       "failedDuring": "Stopped while: {stage}",
-      "reused": "{completed} of {total} chapters ready ({reused} reused)",
       "nextAttempt": "Next automatic attempt {time}"
     },
     "errors": {

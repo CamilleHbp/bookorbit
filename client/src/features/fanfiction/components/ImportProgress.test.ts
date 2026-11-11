@@ -29,7 +29,7 @@ describe('import progress', () => {
       props: { job: job({ state: 'failed', errorCode, result: { progress: { stage: 'downloading', completedChapters: 17, totalChapters: 219 } } }) },
     })
     expect(wrapper.get('[role="alert"]').text()).toContain(message)
-    expect(wrapper.text()).toContain('17 of 219 chapters downloaded')
+    expect(wrapper.text()).toContain('17 of 219 chapters ready')
     expect(wrapper.text()).not.toContain('Check your source settings')
     wrapper.unmount()
   })
@@ -42,7 +42,7 @@ describe('import progress', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('story URL or chapter count changed')
     wrapper.unmount()
   })
-  it('shows reused chapters and fresh progress for a running update', () => {
+  it('shows one chapter total for a resumed update', () => {
     const wrapper = mount(ImportProgress, {
       props: {
         job: job({
@@ -52,14 +52,15 @@ describe('import progress', () => {
         }),
       },
     })
-    expect(wrapper.text()).toContain('39 of 40 chapters ready (36 reused)')
+    expect(wrapper.text()).toContain('39 of 40 chapters ready')
+    expect(wrapper.text()).not.toContain('reused')
     expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('98')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('shows actual chapter counts and accessible download progress', () => {
     const wrapper = mount(ImportProgress, { props: { job: job() } })
-    expect(wrapper.text()).toContain('12 of 40 chapters downloaded')
+    expect(wrapper.text()).toContain('12 of 40 chapters ready')
     expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('30')
     wrapper.unmount()
   })
