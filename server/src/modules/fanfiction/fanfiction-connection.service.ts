@@ -177,7 +177,7 @@ export class FanfictionConnectionService {
       .from(connections)
       .where(and(eq(connections.site, site), eq(connections.userId, user.id)))
       .limit(1);
-    if (!row) return { document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined, connection: null };
+    if (!row) return { site, document: withFanfictionDefaults({ configuration: '', cookies: [] }, user), saveCookies: undefined, connection: null };
     let original = JSON.parse(await this.vault.decrypt(`user:${user.id}`, row.id, row.document)) as FanfictionConnectionDocument;
     if (original.tagRules?.length) {
       original = await this.db.transaction(async (tx) => {
@@ -220,7 +220,7 @@ export class FanfictionConnectionService {
         original.cookies = merged;
       });
     };
-    return { document: withFanfictionDefaults(original, user), saveCookies, connection: { id: row.id, generation: row.credentialGeneration } };
+    return { site, document: withFanfictionDefaults(original, user), saveCookies, connection: { id: row.id, generation: row.credentialGeneration } };
   }
 
   async outcome(connection: { id: string; generation: number }, userId: number, errorCode?: string) {

@@ -82,6 +82,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
   private async run(job: ClaimedJob, controller: AbortController): Promise<void> {
     const startedAt = Date.now();
     let connection: { id: string; generation: number } | null = null;
+    let websiteSite: string | undefined;
     let renewing = false;
     const timer = setInterval(() => {
       if (renewing) return;
@@ -114,6 +115,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
       // Resolve at execution time so already queued stories use a repaired website login.
       const session = downloads ? await this.connections.session(job.url, user, authorizeCookies) : null;
       connection = session?.connection ?? null;
+      websiteSite = session?.site;
       const { document: connectionDocument, saveCookies } = session ?? {
         document: withFanfictionDefaults({ configuration: '', cookies: [] }, user),
         saveCookies: undefined,
@@ -219,6 +221,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
               : 'failed',
         null,
         blocked && error instanceof ForbiddenException ? 'access_revoked' : code,
+        websiteSite ? { site: websiteSite, connection } : undefined,
       );
       this.logger.warn(
         `[fanfiction.job] [fail] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} errorClass=${error instanceof ForbiddenException ? 'ForbiddenException' : 'RuntimeError'} errorCode=${code.replace(/[^a-z_]/g, '').slice(0, 80)} - job did not complete`,

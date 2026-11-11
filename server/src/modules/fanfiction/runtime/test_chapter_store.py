@@ -4,7 +4,7 @@ from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from zipfile import ZipFile
 
 from fanficfare_wrapper import run
@@ -13,6 +13,22 @@ from safe_transport import SafeTransport
 
 
 class ChapterRecoveryTest(unittest.TestCase):
+    def test_empty_fictionlive_ranges_are_rechecked_and_other_empty_downloads_fail(self):
+        from chapter_store import recover_chapters
+        from safe_transport import SourceResponseError
+        adapter = Mock()
+        adapter.get_chapters.return_value = [{'url': 'chapter'}]
+        adapter.normalize_chapterurl.side_effect = lambda url: url
+        adapter.getChapterTextNum.side_effect = ['', '<p>Later</p>', '']
+        adapter.getSiteDomain.return_value = 'fiction.live'
+        with tempfile.TemporaryDirectory() as directory:
+            with recover_chapters(adapter, directory, 'story', Mock(failure=None)):
+                self.assertEqual(adapter.getChapterTextNum('chapter', 0), '<div></div>')
+                self.assertEqual(adapter.getChapterTextNum('chapter', 0), '<p>Later</p>')
+                adapter.getSiteDomain.return_value = 'other.example'
+                with self.assertRaises(SourceResponseError):
+                    adapter.getChapterTextNum('other', 1)
+
     def test_retry_update_and_explicit_refresh_reuse_exactly_the_completed_chapters(self):
         from io import BytesIO
         from PIL import Image

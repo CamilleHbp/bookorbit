@@ -179,10 +179,18 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         configuration.set('overrides', 'update_check_recent_chapters', '0')
     adapter = adapters.getAdapter(configuration, url)
     report_progress({'stage': 'metadata'})
-    login_fanfiction_net(adapter, transport)
     login_scribblehub(adapter)
     # FanFicFare caches metadata, so the writer cannot fetch a skipped cover later.
-    story = adapter.getStoryMetadataOnly(get_cover=operation in ('download', 'update', 'refresh'))
+    get_cover = operation in ('download', 'update', 'refresh')
+    try:
+        story = adapter.getStoryMetadataOnly(get_cover=get_cover)
+    except Exception as error:
+        if (adapter.getSiteDomain() != 'www.fanfiction.net' or
+                failure_code(error) != 'authentication_required' or not adapter.getConfig('username', '')):
+            raise
+        login_fanfiction_net(adapter, transport)
+        adapter = adapters.getAdapter(configuration, url)
+        story = adapter.getStoryMetadataOnly(get_cover=get_cover)
     install_tag_matching(story, adapter.getConfigSection(), request.get('tagMatching') or {'version': 0, 'rules': []})
     preview = matched_preview(story, story_preview(adapter, story))
     canonical = preview['canonicalUrl']

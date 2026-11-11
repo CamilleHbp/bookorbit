@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import WebsiteConnections from './WebsiteConnections.vue'
 
+vi.mock('@/features/auth/composables/useAuth', () => ({ useAuth: () => ({ user: { value: { id: 7 } } }) }))
 vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 const response = (body: unknown) => new Response(JSON.stringify(body))
 afterEach(() => {
