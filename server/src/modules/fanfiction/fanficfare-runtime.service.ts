@@ -8,7 +8,9 @@ import type {
   FanfictionRecognizedUrl,
 } from '@bookorbit/types';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { validateFanfictionPreview } from './fanfiction-preview';
@@ -215,8 +217,44 @@ export class FanficfareRuntimeService {
         });
       if (!['output.epub', 'input.epub'].includes(result.output ?? '') || !result.preview)
         throw new ServiceUnavailableException('Invalid FanFicFare update response');
-      return consume(join(directory, result.output!), validateFanfictionPreview(result.preview));
+      const consumed = await consume(join(directory, result.output!), validateFanfictionPreview(result.preview));
+      if (
+        scope &&
+        result.output === 'output.epub' &&
+        consumed &&
+        typeof consumed === 'object' &&
+        'noChange' in consumed &&
+        consumed.noChange === true
+      )
+        await this.confirmUnchanged(scope, directory);
+      return consumed;
     });
+  }
+
+  private async confirmUnchanged(scope: ChapterScope, directory: string) {
+    const startedAt = Date.now();
+    const path = join(this.chapterDirectory(scope)!, '..', 'check.json');
+    const temporary = `${path}.${randomUUID()}.tmp`;
+    try {
+      const hash = async (name: string) => {
+        const digest = createHash('sha256');
+        for await (const chunk of createReadStream(join(directory, name))) digest.update(chunk);
+        return digest.digest('hex');
+      };
+      const [inputHash, outputHash] = await Promise.all([hash('input.epub'), hash('output.epub')]);
+      const state = JSON.parse(await readFile(path, 'utf8')) as { epubHash?: string };
+      if (state.epubHash !== outputHash) return;
+      // Semantic equality can leave the original ZIP installed. Bind the verified
+      // source snapshot to those exact bytes rather than the discarded new ZIP.
+      await writeFile(temporary, JSON.stringify({ ...state, epubHash: inputHash }), { flag: 'wx', mode: 0o600 });
+      await rename(temporary, path);
+    } catch {
+      this.logger.warn(
+        `[fanfiction.check_cache] [fail] libraryId=${scope.libraryId} sourceId=${scope.sourceId} durationMs=${Date.now() - startedAt} errorClass=CacheStateError - source verification cache will be rebuilt`,
+      );
+    } finally {
+      await rm(temporary, { force: true }).catch(() => {});
+    }
   }
 
   async execute(

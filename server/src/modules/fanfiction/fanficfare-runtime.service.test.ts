@@ -1,4 +1,7 @@
 import { tmpdir } from 'node:os';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -88,6 +91,52 @@ describe('private FanFicFare runtime session output', () => {
       'Invalid FanFicFare update response',
     );
     expect(consume).not.toHaveBeenCalled();
+  });
+  it.each([false, true])('binds a verified scan to the retained EPUB only when noChange=%s', async (noChange) => {
+    const scope = { libraryId: 3, userId: 4, sourceId: randomUUID() };
+    const root = join(tmpdir(), 'fanfiction', 'chapters', '3', '4', scope.sourceId);
+    const statePath = join(root, 'check.json');
+    const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+    const preview = {
+      canonicalUrl: 'https://example.org/story',
+      site: 'example.org',
+      title: 'Story',
+      authors: [],
+      description: '',
+      chapterCount: 1,
+      wordCount: 100,
+      status: 'Completed',
+      tags: [],
+    };
+    output.response = { ok: true, result: { output: 'output.epub', preview } };
+    try {
+      await service.update(
+        'update',
+        preview.canonicalUrl,
+        { configuration: '', cookies: [] },
+        async (input) => {
+          await writeFile(input, 'installed ZIP');
+          await writeFile(join(dirname(input), 'output.epub'), 'new ZIP with different timestamps');
+          await mkdir(root, { recursive: true });
+          await writeFile(
+            statePath,
+            JSON.stringify({ epubHash: digest('new ZIP with different timestamps'), fingerprint: 'source', verifiedAt: 123 }),
+          );
+        },
+        () => Promise.resolve({ noChange }),
+        undefined,
+        undefined,
+        false,
+        scope,
+      );
+      expect(JSON.parse(await readFile(statePath, 'utf8'))).toEqual({
+        epubHash: digest(noChange ? 'installed ZIP' : 'new ZIP with different timestamps'),
+        fingerprint: 'source',
+        verifiedAt: 123,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
   it('accepts a large personal rulebook while keeping input bounded', async () => {
     const rules = Array.from({ length: 6000 }, (_, index) => ({
