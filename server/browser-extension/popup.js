@@ -1,38 +1,51 @@
 const action = document.querySelector('#action');
 const clear = document.querySelector('#forget');
-const status = document.querySelector('#status');
+const statusLabel = document.querySelector('#status');
 const help = document.querySelector('#help');
 async function setup() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  let page;
+  function render(result) {
+    page = result;
+    statusLabel.textContent = result.error || result.message || '';
+    if (result.page !== 'story') return;
+    help.textContent =
+      'Chapters collect automatically. Complete Cloudflare verification in the story tab when asked. The EPUB downloads when every chapter is saved.';
+    clear.hidden = !result.active;
+    action.hidden = false;
+    action.textContent = result.complete
+      ? 'Download EPUB'
+      : !result.active
+        ? 'Collect this story'
+        : result.running
+          ? 'Pause collection'
+          : 'Resume collection';
+  }
   async function send(method) {
     const result = await chrome.tabs.sendMessage(tab.id, method, { frameId: 0 });
-    if (result.error) throw new Error(result.error);
+    if (!result) throw new Error('Reload the story tab and try again.');
     return result;
   }
   async function handle(method) {
     action.disabled = clear.disabled = true;
     try {
-      const result = await send(method);
-      status.textContent = result.message;
-      if (result.page === 'story') {
-        clear.hidden = !result.message;
-        action.hidden = !!result.message;
-      }
+      render(await send(method));
     } catch (error) {
-      status.textContent = error.message;
+      statusLabel.textContent = error.message;
     } finally {
       action.disabled = clear.disabled = false;
     }
   }
-  const page = await chrome.tabs.sendMessage(tab.id, 'status', { frameId: 0 });
+  render(await send('status'));
   if (page.page === 'story') {
-    help.textContent = 'Start collecting this story, then open each chapter. When all chapters are saved, open its Story updates tab in BookOrbit.';
-    action.textContent = 'Collect this story';
-    action.hidden = !!page.message;
-    clear.hidden = !page.message;
-    status.textContent = page.error || page.message || '';
-    action.onclick = () => handle('start');
+    action.onclick = () => handle(page.complete ? 'download' : page.active ? 'toggle' : 'start');
     clear.onclick = () => handle('forget');
+    setInterval(() => {
+      if (!action.disabled)
+        send('status')
+          .then(render)
+          .catch(() => {});
+    }, 1500);
   } else if (page.page === 'library') {
     help.textContent = 'Open the matching book’s Story updates tab. Prepare its EPUB here, then submit the selected file in BookOrbit.';
     action.hidden = false;
