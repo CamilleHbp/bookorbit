@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChapterDifferences from './ChapterDifferences.vue'
 import { computed, nextTick, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft } from '@lucide/vue'
@@ -118,10 +119,13 @@ defineExpose({ canLeave })
         <p v-if="row.currentChapters !== null && row.proposedChapters !== null">
           {{ t('fanfiction.downloads.compare', { saved: row.currentChapters, website: row.proposedChapters }) }}
         </p>
+        <ChapterDifferences :changes="job.result?.changes" />
         <p class="text-sm">{{ t('fanfiction.downloads.keepHint') }}</p>
         <div class="flex flex-wrap gap-2">
           <Button :disabled="busy" @click="discard">{{ t('fanfiction.maintenance.keepCopy') }}</Button
-          ><Button variant="outline" :disabled="busy" @click="apply">{{ t('fanfiction.downloads.useWebsite') }}</Button>
+          ><Button variant="outline" :disabled="busy || job.result?.changes?.incompletePreview" @click="apply">{{
+            t('fanfiction.downloads.useWebsite')
+          }}</Button>
         </div>
       </div>
       <ImportProgress v-else :job="job" />

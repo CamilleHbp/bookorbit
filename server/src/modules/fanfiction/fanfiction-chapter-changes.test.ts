@@ -101,3 +101,17 @@ it('matches unique StoriesOnline chapter titles across URL formats but still fla
     storyUpdateSafety(manifest(saved), manifest(proposed, { ...proposed, sourceUrl: 'https://storiesonline.net/s/123/current-title/2' })).safety,
   ).toBe('review_required');
 });
+
+it('keeps repeated chapter titles distinct when the website replaces every URL', () => {
+  const chapters = [1, 2, 3].map((n) => ({
+    ...chapter('Chapter 1', 'https://storiesonline.net/s/123:' + n + '/old', 'content' + n),
+    length: 50,
+    bodyHash: 'body' + n,
+  }));
+  const saved = { version: 1 as const, contentHash: '', metadataHash: '', coverHash: null, chapters };
+  const next = { ...saved, chapters: chapters.map((c, i) => ({ ...c, sourceUrl: 'https://storiesonline.net/s/123/title/' + (i + 1) })) };
+  next.chapters[2] = { ...next.chapters[2], textHash: 'with-site-footer', comparisonHash: chapters[2].textHash } as (typeof next.chapters)[number];
+  expect(storyUpdateSafety(saved, next)).toMatchObject({ safety: 'unchanged', removed: 0 });
+  expect(storyChapterChanges(saved, next)).toMatchObject({ changed: 0, added: [] });
+  expect(storyUpdateSafety(saved, { ...next, chapters: [next.chapters[1], next.chapters[0], next.chapters[2]] }).reordered).toBe(true);
+});

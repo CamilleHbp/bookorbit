@@ -637,6 +637,8 @@ export class FanfictionJobService {
         if (!job?.sourceId || !job.result?.contentReview || job.result.contentReview.approved || job.state !== 'review_required')
           throw new ConflictException('Refresh this chapter review before continuing');
         if (job.userId !== user.id) throw new ForbiddenException('This update belongs to another maintainer');
+        if (action === 'apply' && job.result.changes?.incompletePreview)
+          throw new ConflictException('The website returned an incomplete membership preview');
         const sources = schema.fanfictionSources;
         const [source] = await tx
           .select()
