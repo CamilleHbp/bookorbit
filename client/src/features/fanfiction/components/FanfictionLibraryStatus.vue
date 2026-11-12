@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { CircleCheck, CircleAlert, RefreshCw, LibraryBig, Clock3, BookUp2, BookCheck } from '@lucide/vue'
 import type { FanfictionDownloadQueue, FanfictionJob, FanfictionSourceBatchStatus } from '@bookorbit/types'
@@ -52,7 +51,6 @@ const stats = computed(() =>
       ]
     : [],
 )
-const sourcesLink = computed(() => ({ name: 'fanfiction', query: { libraryId: props.libraryId, tab: 'stories' } }))
 const checkState = computed(() => {
   if (props.checking) return 'fanfiction.bulk.checking'
   if (check.value?.state === 'cancelled') return 'fanfiction.bulk.stopped'
@@ -158,12 +156,5 @@ watch([() => props.libraryId, () => props.job?.id], () => {
         <slot />
       </section>
     </div>
-    <footer class="border-t border-border px-5 py-1 sm:px-6">
-      <RouterLink
-        :to="sourcesLink"
-        class="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
-        ><LibraryBig class="size-4" aria-hidden="true" />{{ t('fanfiction.downloads.sources') }}</RouterLink
-      >
-    </footer>
   </section>
 </template>
