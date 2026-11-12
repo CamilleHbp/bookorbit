@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { storyIssueRoute } from '../composables/storyReview'
 import { needsImportReview } from '../composables/useImportReview'
 import TagReviewNotice from './TagReviewNotice.vue'
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
@@ -54,7 +55,7 @@ const lastStage = computed(() =>
   <div class="space-y-2">
     <RouterLink
       v-if="(job.result?.metadataReview || job.result?.contentReview) && job.result.bookId"
-      :to="{ name: 'book-detail', params: { bookId: job.result.bookId }, query: { tab: 'story-updates' } }"
+      :to="storyIssueRoute(job.libraryId, job.result.sourceId, job.result.bookId, job.errorCode)"
       class="text-primary block font-medium underline"
       >{{
         t(job.result?.contentReview && !job.result.contentReview.approved ? 'fanfiction.storyUpdates' : 'fanfiction.metadataReview.title')

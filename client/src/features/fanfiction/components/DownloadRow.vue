@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { canReviewDownload, storyIssueRoute } from '../composables/storyReview'
 import { computed, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronRight, ArrowUpRight, Download } from '@lucide/vue'
@@ -12,6 +13,8 @@ const emit = defineEmits<{ retried: []; inspect: [row: FanfictionDownloadRow] }>
 const { t, locale } = useI18n()
 const open = ref(false)
 const id = useId()
+const reviewTarget = computed(() => storyIssueRoute(props.libraryId, props.row.sourceId, props.row.bookId, props.row.code))
+const reviewable = computed(() => canReviewDownload(props.row))
 const decision = computed(() => chapterDecision(props.row))
 const reason = computed(() => {
   const row = props.row
@@ -97,8 +100,14 @@ function inspectMember(row: FanfictionDownloadRow) {
           ><p class="text-xs font-semibold text-muted-foreground">
             {{ row.issue ? t(`fanfiction.downloads.issue.${row.issue}`) + ' · ' : '' }}{{ row.site }}
           </p>
+          <RouterLink
+            v-if="reviewable"
+            :to="reviewTarget"
+            class="inline-flex min-h-11 items-center gap-1 font-medium break-words underline decoration-border underline-offset-4 hover:decoration-current"
+            >{{ row.title }}<ChevronRight class="size-4 shrink-0" aria-hidden="true"
+          /></RouterLink>
           <button
-            v-if="row.jobId"
+            v-else-if="row.jobId"
             class="min-h-8 text-start font-medium break-words underline decoration-border underline-offset-4 hover:decoration-current"
             @click="inspect"
           >
@@ -106,7 +115,7 @@ function inspectMember(row: FanfictionDownloadRow) {
           </button>
           <RouterLink
             v-else-if="row.bookId"
-            :to="{ name: 'book-detail', params: { bookId: row.bookId }, query: { tab: 'story-updates' } }"
+            :to="reviewTarget"
             class="inline-flex min-h-9 items-center gap-1 font-medium underline decoration-border underline-offset-4"
             >{{ row.title }}<ArrowUpRight class="size-3" aria-hidden="true"
           /></RouterLink>

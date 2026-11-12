@@ -11,12 +11,12 @@ import StoryAttentionEditor from './StoryAttentionEditor.vue'
 import StoryMetadataFields from './StoryMetadataFields.vue'
 import StoryReviewActions from './StoryReviewActions.vue'
 
-const props = defineProps<{ libraryId: number; attention?: boolean }>()
+const props = defineProps<{ libraryId: number; attention?: boolean; sourceId?: string; bookId?: number }>()
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
 const scope = ref<StoryReviewScope>(props.attention ? 'attention' : 'pending')
 const attentionEditor = ref<InstanceType<typeof StoryAttentionEditor>>()
-const queue = useStoryReviewQueue(toRef(props, 'libraryId'), scope)
+const queue = useStoryReviewQueue(toRef(props, 'libraryId'), scope, { sourceId: toRef(props, 'sourceId'), bookId: toRef(props, 'bookId') })
 const { current, busy, error, finished, position, total, hasPrevious, savedCount, skippedCount, save, retry, restart, reloadCurrent } = queue
 const heading = ref<HTMLElement>()
 const reviewEditor = ref<InstanceType<typeof StoryMetadataReview>>()
@@ -86,7 +86,7 @@ onBeforeUnmount(() => {
         <h2 class="text-xl font-semibold">{{ t('fanfiction.reviewQueue.title') }}</h2>
         <p class="text-sm text-muted-foreground" role="status">{{ summary }}</p>
       </div>
-      <label class="space-y-1 text-sm">
+      <label v-if="scope !== 'attention'" class="space-y-1 text-sm">
         <span class="block">{{ t('fanfiction.reviewQueue.scope') }}</span>
         <select
           :value="scope"
@@ -94,7 +94,6 @@ onBeforeUnmount(() => {
           class="min-h-11 rounded-md border border-input bg-background px-3 focus-visible:outline-2 focus-visible:outline-ring"
           @change="changeScope"
         >
-          <option value="attention">{{ t('fanfiction.maintenance.attention') }}</option>
           <option value="pending">{{ t('fanfiction.reviewQueue.pending') }}</option>
           <option value="all">{{ t('fanfiction.reviewQueue.all') }}</option>
         </select>
@@ -135,14 +134,16 @@ onBeforeUnmount(() => {
         >
       </div>
       <p v-if="!current.loaded && busy" role="status" class="py-8 text-sm text-muted-foreground">{{ t('common.loading') }}</p>
-      <Button v-if="scope === 'attention' && hasPrevious" variant="ghost" :disabled="busy" @click="previous">{{ t('common.previous') }}</Button>
       <StoryAttentionEditor
         v-if="scope === 'attention' && current.loaded"
         ref="attentionEditor"
         :key="current.source.id"
         :source="current.source"
         :busy="busy"
+        :has-previous="hasPrevious"
         @next="queue.completeAttention"
+        @previous="previous"
+        @excluded="queue.excludeCurrent"
       />
       <StoryMetadataReview
         v-else-if="current.review"

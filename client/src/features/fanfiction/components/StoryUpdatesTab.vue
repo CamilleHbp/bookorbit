@@ -140,14 +140,16 @@ onMounted(() => {
         @discard="discardMetadata"
       >
         <template v-if="reviewMode" #actions="{ save: submitReview }">
-          <div class="sticky bottom-0 z-10 flex flex-wrap gap-2 border-t border-border bg-card py-3">
-            <Button type="button" class="min-h-11" variant="outline" :disabled="busy" @click="skipReview">{{
-              t('fanfiction.reviewQueue.skip')
-            }}</Button>
-            <Button type="button" class="min-h-11 w-full sm:w-auto" :disabled="busy" @click="submitReview">{{
-              t('fanfiction.reviewQueue.save')
-            }}</Button>
-          </div>
+          <slot name="review-actions" :save="submitReview"
+            ><div class="sticky bottom-0 z-10 flex flex-wrap gap-2 border-t border-border bg-card py-3">
+              <Button type="button" class="min-h-11" variant="outline" :disabled="busy" @click="skipReview">{{
+                t('fanfiction.reviewQueue.skip')
+              }}</Button>
+              <Button type="button" class="min-h-11 w-full sm:w-auto" :disabled="busy" @click="submitReview">{{
+                t('fanfiction.reviewQueue.save')
+              }}</Button>
+            </div></slot
+          >
         </template>
       </StoryMetadataReview>
       <select
@@ -159,7 +161,10 @@ onMounted(() => {
       >
         <option v-for="item in sources" :key="item.id" :value="item.id">{{ item.title }}</option>
       </select>
-      <div v-if="!reviewMode || !metadataReview" class="border-border bg-card space-y-3 rounded-xl border p-4">
+      <div
+        v-if="(!reviewMode || !metadataReview) && (!reviewMode || !job?.result?.contentReview)"
+        class="border-border bg-card space-y-3 rounded-xl border p-4"
+      >
         <a :href="source.canonicalUrl" target="_blank" rel="noopener noreferrer" class="text-primary break-words underline">{{
           source.canonicalUrl
         }}</a>
@@ -199,7 +204,7 @@ onMounted(() => {
             <Button type="submit" :disabled="updating || !replacementFile">{{ t('fanfiction.replacementUpload') }}</Button>
           </form>
         </details>
-        <dl class="text-muted-foreground grid gap-2 text-sm sm:grid-cols-2">
+        <dl v-if="!reviewMode" class="text-muted-foreground grid gap-2 text-sm sm:grid-cols-2">
           <div>
             <dt>{{ t('fanfiction.lastChecked') }}</dt>
             <dd>{{ dateLabel(source.lastCheckedAt) }}</dd>
@@ -216,18 +221,21 @@ onMounted(() => {
         <div class="flex flex-wrap gap-2">
           <Button v-if="canUpdate || canRetryWebsiteAccess(source)" :disabled="updating" @click="checkNow">{{ t('fanfiction.checkNow') }}</Button>
           <Button v-if="canUpdate" variant="outline" :disabled="updating" @click="refreshChapters">{{ t('fanfiction.refreshChapters') }}</Button>
-          <Button v-if="canUpdate" variant="outline" :disabled="busy" @click="pause">{{
+          <Button v-if="canUpdate && !reviewMode" variant="outline" :disabled="busy" @click="pause">{{
             !(source.tracking?.enabled ?? source.state !== 'paused') ? t('fanfiction.resumeUpdates') : t('fanfiction.pauseUpdates')
           }}</Button>
-          <Button variant="outline" :disabled="updating" @click="unlink">{{ t('fanfiction.unlink') }}</Button>
+          <Button v-if="!reviewMode" variant="outline" :disabled="updating" @click="unlink">{{ t('fanfiction.unlink') }}</Button>
         </div>
-        <p class="text-muted-foreground text-xs">{{ t('fanfiction.unlinkHelp') }}</p>
+        <p v-if="!reviewMode" class="text-muted-foreground text-xs">{{ t('fanfiction.unlinkHelp') }}</p>
       </div>
-      <Button v-if="['authentication_required', 'access_denied'].includes(source.attentionCode ?? '')" variant="outline" @click="showLogin">{{
-        t('fanfiction.bulk.fixLogin')
-      }}</Button>
+      <Button
+        v-if="!reviewMode && ['authentication_required', 'access_denied'].includes(source.attentionCode ?? '')"
+        variant="outline"
+        @click="showLogin"
+        >{{ t('fanfiction.bulk.fixLogin') }}</Button
+      >
       <WebsiteConnections
-        v-if="connecting"
+        v-if="connecting && !reviewMode"
         :library-id="source.libraryId"
         :source="source"
         :focus-site="source.site"
@@ -274,7 +282,7 @@ onMounted(() => {
         {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }}
         <StoryUpdateOutcome :job="job" />
         <p v-if="job.errorCode && !job.result?.contentReview" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
-        <Button v-if="['review_required', 'source_chapter_reduction'].includes(job.errorCode ?? '')" variant="outline" as-child>
+        <Button v-if="!reviewMode && ['review_required', 'source_chapter_reduction'].includes(job.errorCode ?? '')" variant="outline" as-child>
           <RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.maintenance.defaultPolicy') }}</RouterLink>
         </Button>
         <div v-if="job.result?.contentReview && !job.result.contentReview.approved" class="space-y-3 py-3">

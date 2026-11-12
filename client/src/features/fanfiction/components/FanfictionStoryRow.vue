@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { storyIssueRoute } from '../composables/storyReview'
 import { canRetryWebsiteAccess } from '../composables/downloadIssue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -42,7 +43,11 @@ const canRetry = computed(
   () =>
     canCheck.value && ['source_failed', 'source_unavailable', 'source_rate_limited', 'download_timeout'].includes(props.source.attentionCode ?? ''),
 )
-const details = computed(() => ({ name: 'book-detail', params: { bookId: props.source.bookId }, query: { tab: 'story-updates' } }))
+const details = computed(() =>
+  needsAttention.value
+    ? storyIssueRoute(props.source.libraryId, props.source.id, props.source.bookId, props.source.attentionCode)
+    : { name: 'book-detail', params: { bookId: props.source.bookId }, query: { tab: 'story-updates' } },
+)
 const succeeded = computed(() => props.job && ['succeeded', 'no_change'].includes(props.job.state))
 const outcome = computed(() =>
   props.job?.state === 'no_change' || props.job?.result?.noChange ? t('fanfiction.noNewChapters') : t('fanfiction.storyUpdated'),
@@ -136,9 +141,6 @@ function handlePause() {
       />
       <p v-if="source.sourceTitle && source.sourceTitle !== source.title" class="text-xs text-muted-foreground">{{ source.sourceTitle }}</p>
       <p v-if="source.attentionCode" class="text-sm text-destructive">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
-      <Button v-if="['review_required', 'source_chapter_reduction'].includes(source.attentionCode ?? '')" variant="outline" as-child>
-        <RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.maintenance.defaultPolicy') }}</RouterLink>
-      </Button>
       <p v-if="error" role="alert" class="text-sm text-destructive">{{ error }}</p>
       <div v-if="pending" role="status" class="flex items-center gap-2 text-sm">
         <LoaderCircle class="size-4 motion-safe:animate-spin" aria-hidden="true" />{{ t('fanfiction.checkingStory') }}

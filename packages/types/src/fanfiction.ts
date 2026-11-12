@@ -443,7 +443,25 @@ export interface FanfictionReplacementReview {
 }
 
 export type FanfictionMetadataField = "title" | "description" | "authors" | "tags" | "genres";
-export type FanfictionReviewScope = "pending" | "all";
+export type FanfictionReviewScope = "pending" | "all" | "attention";
+
+export const FANFICTION_WEBSITE_ACCESS_ERRORS = [
+  "adult_confirmation_required",
+  "configuration_blocked",
+  "authentication_required",
+  "access_denied",
+  "storiesonline_membership_expired",
+  "source_failed",
+  "source_unavailable",
+  "source_rate_limited",
+  "download_timeout",
+  "fanfiction_net_browser_verification",
+  "source_browser_verification",
+] as const;
+
+export function isFanfictionWebsiteAccessProblem(code: string | null | undefined): boolean {
+  return FANFICTION_WEBSITE_ACCESS_ERRORS.some((value) => value === code);
+}
 export type FanfictionMetadataValues = Pick<FanfictionPreview, FanfictionMetadataField>;
 export interface FanfictionMetadataReview {
   current: FanfictionMetadataValues;

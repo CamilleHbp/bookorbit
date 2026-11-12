@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { storyIssueRoute } from '../composables/storyReview'
 import { computed, type UnwrapNestedRefs } from 'vue'
 import { RouterLink } from 'vue-router'
 import { RefreshCw, RotateCcw, CircleStop, KeyRound } from '@lucide/vue'
@@ -170,16 +171,9 @@ const failureGroups = computed(() => {
                 ><KeyRound class="size-4" aria-hidden="true" />{{ t('fanfiction.bulk.fixLogin') }}</Button
               >
               <Button v-else variant="ghost" as-child>
-                <RouterLink
-                  :to="
-                    failure.bookId
-                      ? { name: 'book-detail', params: { bookId: failure.bookId }, query: { tab: 'story-updates' } }
-                      : { name: 'fanfiction', query: { libraryId: bulk.job.libraryId, sourceId: failure.sourceId, tab: 'activity' } }
-                  "
-                  >{{
-                    t(failure.errorCode === 'metadata_review_required' ? 'fanfiction.metadataReview.title' : 'fanfiction.reviewStory')
-                  }}</RouterLink
-                >
+                <RouterLink :to="storyIssueRoute(bulk.job.libraryId, failure.sourceId, failure.bookId, failure.errorCode)">{{
+                  t(failure.errorCode === 'metadata_review_required' ? 'fanfiction.metadataReview.title' : 'fanfiction.reviewStory')
+                }}</RouterLink>
               </Button>
             </li>
           </ul>

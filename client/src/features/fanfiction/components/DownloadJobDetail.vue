@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { storyIssueRoute } from '../composables/storyReview'
 import ChapterDifferences from './ChapterDifferences.vue'
 import { computed, nextTick, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -133,9 +134,12 @@ defineExpose({ canLeave })
       </div>
       <ImportProgress v-else :job="job" />
       <div class="flex flex-wrap items-center gap-3">
-        <RouterLink v-if="bookId" :to="{ name: 'book-detail', params: { bookId }, query: { tab: 'story-updates' } }" class="text-primary underline">{{
-          t('fanfiction.storyUpdates')
-        }}</RouterLink>
+        <RouterLink
+          v-if="bookId"
+          :to="storyIssueRoute(libraryId, row.sourceId ?? job.result?.sourceId, bookId, job.errorCode ?? row.code)"
+          class="text-primary underline"
+          >{{ t('fanfiction.reviewStory') }}</RouterLink
+        >
         <RouterLink v-if="row.issue === 'login'" :to="{ name: 'settings-website-logins' }" class="text-primary underline">{{
           t('fanfiction.tasks.websiteLogins')
         }}</RouterLink>
