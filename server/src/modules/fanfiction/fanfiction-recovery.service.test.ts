@@ -17,3 +17,12 @@ it('identifies StoriesOnline books by story ID even when the title slug changes'
   expect(source.sameStory(saved, 'https://storiesonline.net/s/22848/a-true-history-book-two')).toBe(false);
   expect(source.sameStory(saved, 'https://example.org/s/22849')).toBe(false);
 });
+
+it('matches collected chapters to their FanFiction.net story ID', () => {
+  const source = FanfictionSourceService.prototype;
+  const saved = 'https://www.fanfiction.net/s/2680093/1/Circular-Reasoning';
+  expect(source.sameStory(saved, 'https://www.fanfiction.net/s/2680093/1/')).toBe(true);
+  expect(source.sameStory(saved, 'https://fanfiction.net/s/2680093/29/Changed-Title')).toBe(true);
+  expect(source.sameStory(saved, 'https://www.fanfiction.net/s/26800930/1/')).toBe(false);
+  expect(source.sameStory(saved, 'https://example.org/s/2680093/1/')).toBe(false);
+});
