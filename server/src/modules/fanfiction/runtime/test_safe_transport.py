@@ -62,6 +62,16 @@ class FakeResponse:
 
 
 class HttpResponseTest(unittest.TestCase):
+    def test_fanfiction_net_verification_is_distinct_from_an_ordinary_forbidden_response(self):
+        from safe_transport import FanfictionNetBrowserVerification
+        connection = MagicMock()
+        connection.getresponse.side_effect = [FakeResponse(b'', status=403, headers={'cf-mitigated': 'challenge'}),
+                                              FakeResponse(b'', status=403)]
+        with patch('safe_transport.PinnedConnection', return_value=connection):
+            with self.assertRaises(FanfictionNetBrowserVerification):
+                SafeTransport().request('GET', 'https://www.fanfiction.net/s/123/1/')
+            self.assertEqual(SafeTransport().request('GET', 'https://www.fanfiction.net/s/123/1/')[0], 403)
+
     def test_retries_temporary_website_failures_within_the_request_budget(self):
         connection = MagicMock()
         connection.getresponse.side_effect = [FakeResponse(b'Unavailable', status=525), FakeResponse(b'Story')]

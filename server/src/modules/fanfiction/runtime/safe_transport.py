@@ -23,6 +23,10 @@ class ConfigurationError(PolicyError):
     code = 'configuration_blocked'
 
 
+class FanfictionNetBrowserVerification(ConfigurationError):
+    code = 'fanfiction_net_browser_verification'
+
+
 class DownloadLimitError(PolicyError):
     code = 'download_limit'
 
@@ -231,6 +235,9 @@ class SafeTransport:
                         raise PolicyError('Authenticated redirects cannot forward request bodies across sites')
                     url = target
                     continue
+                if (hostname in ('www.fanfiction.net', 'fanfiction.net', 'm.fanfiction.net') and response.status == 403
+                        and response.getheader('cf-mitigated') == 'challenge'):
+                    raise FanfictionNetBrowserVerification('FanFiction.net requires browser verification')
                 return response.status, self.read_body(response), url
             finally:
                 connection.close()

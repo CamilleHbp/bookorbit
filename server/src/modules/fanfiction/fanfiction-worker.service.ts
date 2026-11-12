@@ -113,15 +113,19 @@ export class FanfictionWorkerService implements OnModuleDestroy {
         (!job.result?.preparedUpdate?.approved || stalePrepared) &&
         !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind);
       // Resolve at execution time so already queued stories use a repaired website login.
-      const session = downloads ? await this.connections.session(job.url, user, authorizeCookies) : null;
-      connection = session?.connection ?? null;
-      websiteSite = session?.site;
-      const { document: connectionDocument, saveCookies } = session ?? {
-        document: withFanfictionDefaults({ configuration: '', cookies: [] }, user),
-        saveCookies: undefined,
+      const loadWebsite = async () => {
+        const session = await this.connections.session(job.url, user, authorizeCookies);
+        connection = session.connection ?? null;
+        websiteSite = session.site;
+        const policy = await this.tagMatching.runtimePolicy(job.libraryId);
+        return { document: policy ? { ...session.document, tagMatching: policy } : session.document, saveCookies: session.saveCookies };
       };
-      const policy = downloads ? await this.tagMatching.runtimePolicy(job.libraryId) : undefined;
-      const document = policy ? { ...connectionDocument, tagMatching: policy } : connectionDocument;
+      const { document, saveCookies } = downloads
+        ? await loadWebsite()
+        : {
+            document: withFanfictionDefaults({ configuration: '', cookies: [] }, user),
+            saveCookies: undefined,
+          };
       const result: FanfictionJob['result'] =
         job.kind === 'replacement'
           ? await this.replacements.run(job, () => this.authorized(job), controller.signal)
@@ -151,6 +155,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
                           controller.signal,
                           saveCookies,
                           (progress) => this.jobs.reportProgress(job, progress),
+                          downloads ? undefined : loadWebsite,
                         )
                       : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
       await this.authorized(job);
@@ -195,6 +200,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
           'authentication_required',
           'adult_confirmation_required',
           'access_denied',
+          'fanfiction_net_browser_verification',
           'storiesonline_membership_expired',
         ].includes(code);
       if (connection) await this.connections.outcome(connection, job.userId, code);

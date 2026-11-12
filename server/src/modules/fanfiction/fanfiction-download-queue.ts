@@ -41,7 +41,7 @@ function downloadEntries(libraryId: number, userId: number) {
         and (s.attention_code is not null or s.metadata_review_pending) and s.state<>'unlinked' and not exists (select 1 from pending p where p.source_id=s.id)
     ), classified as (
       select *, case when state='running' then 'running' when retry_at is not null then 'retrying' when state='queued' then 'queued' else 'attention' end as section,
-        case when code in ('source_failed','source_unavailable','source_rate_limited','download_timeout') then 'website'
+        case when code in ('source_failed','source_unavailable','source_rate_limited','download_timeout','fanfiction_net_browser_verification') then 'website'
           when code in ('authentication_required','access_denied','storiesonline_membership_expired') then 'login'
           when code in ('content_review_required','source_chapter_reduction') then 'chapter'
           when code in ('source_not_found','unsupported_story_url') then 'story' when state='cancelled' then 'stopped'
