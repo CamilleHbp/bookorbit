@@ -1,5 +1,6 @@
 import importlib
 import pkgutil
+import publisher_edition
 
 
 def website_catalog():
@@ -14,6 +15,6 @@ def website_catalog():
         adapter = importlib.import_module('fanficfare.adapters.' + module.name).getClass()
         if any(callable(getattr(adapter, method, None)) for method in ('performLogin', '_login')):
             logins.add(adapter.getConfigSection())
-    return [{'id': site, 'examples': urls[:3], 'supportsPasswordLogin': site in logins}
+    return [{'id': publisher_edition.SITE, 'examples': list(publisher_edition.EDITIONS), 'supportsPasswordLogin': False}] + [{'id': site, 'examples': urls[:3], 'supportsPasswordLogin': site in logins}
             for site, urls in adapters.getSiteExamples()
             if site.removeprefix('www.') not in {'test1.com', 'test2.com', 'test3.com', 'test4.com'}]

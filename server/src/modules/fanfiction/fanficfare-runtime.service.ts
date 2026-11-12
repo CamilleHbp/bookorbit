@@ -210,7 +210,7 @@ export class FanficfareRuntimeService {
     url: string,
     document: FanfictionConnectionDocument,
     prepare: (inputPath: string) => Promise<void>,
-    consume: (path: string, preview: FanfictionPreview) => Promise<T>,
+    consume: (path: string, preview: FanfictionPreview, unchangedEdition?: boolean) => Promise<T>,
     signal?: AbortSignal,
     saveCookies?: FanfictionCookieSink,
     reviewChanges = false,
@@ -234,6 +234,7 @@ export class FanficfareRuntimeService {
         reportProgress,
       )) as {
         output?: string;
+        unchangedEdition?: boolean;
         reviewRequired?: string;
         preview?: FanfictionPreview;
       };
@@ -247,7 +248,11 @@ export class FanficfareRuntimeService {
         });
       if (!['output.epub', 'input.epub'].includes(result.output ?? '') || !result.preview)
         throw new ServiceUnavailableException('Invalid FanFicFare update response');
-      const consumed = await consume(join(directory, result.output!), validateFanfictionPreview(result.preview));
+      const consumed = await consume(
+        join(directory, result.output!),
+        validateFanfictionPreview(result.preview),
+        result.output === 'input.epub' && result.unchangedEdition === true,
+      );
       if (
         scope &&
         result.output === 'output.epub' &&

@@ -127,8 +127,9 @@ export class FanfictionUpdateService {
         await pipeline(snapshot.stream, createWriteStream(path, { flags: 'wx', mode: 0o600 }), { signal });
         if (source.updatePolicy === 'safe') previousManifest = await this.manifests.inspect(path);
       },
-      async (path, preview) => {
+      async (path, preview, unchangedEdition) => {
         await access();
+        if (unchangedEdition && preview.canonicalUrl === source.canonicalUrl) return finish(expected, true);
         const matches = await this.sources.sameStory(preview.canonicalUrl, source.canonicalUrl, signal);
         if (!matches || (source.updatePolicy !== 'safe' && preview.chapterCount < source.chapterCount))
           throw new BadRequestException({
