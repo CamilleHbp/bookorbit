@@ -12,7 +12,24 @@ import StorySchedule from './StorySchedule.vue'
 import StoryMetadataReview from './StoryMetadataReview.vue'
 import type { useBookStory } from '../composables/useBookStory'
 
-const props = defineProps<{ state: ReturnType<typeof useBookStory> }>()
+const props = defineProps<{ state: ReturnType<typeof useBookStory>; reviewMode?: boolean }>()
+const emit = defineEmits<{ reviewed: []; skip: [] }>()
+const metadataEditor = ref<InstanceType<typeof StoryMetadataReview>>()
+function skipReview() {
+  emit('skip')
+}
+function commitPending() {
+  return metadataEditor.value?.commitPending() !== false
+}
+function handleMetadataSave() {
+  if (props.reviewMode) void saveReview()
+  else void props.state.resolveMetadata()
+}
+async function saveReview() {
+  await props.state.resolveMetadata()
+  if (!props.state.error.value) emit('reviewed')
+}
+defineExpose({ commitPending })
 const { t } = useI18n()
 const {
   updatePolicy,
@@ -22,7 +39,6 @@ const {
   allowed,
   metadataReview,
   metadataChoices,
-  resolveMetadata,
   deferMetadata,
   discardMetadata,
   reviewDeferred,
@@ -95,11 +111,12 @@ onMounted(() => {
 
 <template>
   <section v-if="visible" class="mx-auto max-w-4xl space-y-5">
-    <header class="flex flex-wrap items-center justify-between gap-3">
+    <header v-if="!reviewMode" class="flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-xl font-semibold">{{ t('fanfiction.storyUpdates') }}</h1>
       <Button variant="outline" :disabled="busy || loading" @click="refresh">{{ t('fanfiction.refresh') }}</Button>
     </header>
     <p v-if="error" role="alert" class="text-destructive text-sm">{{ error }}</p>
+    <Button v-if="reviewMode && error" variant="outline" :disabled="busy || loading" @click="refresh">{{ t('fanfiction.retry') }}</Button>
     <p v-if="loading" role="status" class="text-muted-foreground">{{ t('common.loading') }}</p>
     <div v-if="allowed && !loading && !sources.length" class="space-y-3">
       <p class="text-muted-foreground">{{ t('fanfiction.noManagedSource') }}</p>
@@ -109,15 +126,27 @@ onMounted(() => {
       <Button v-if="metadataReview && reviewDeferred" @click="resumeMetadataReview">{{ t('fanfiction.metadataReview.title') }}</Button>
       <StoryMetadataReview
         v-else-if="metadataReview"
+        ref="metadataEditor"
         v-model="metadataChoices"
         :review="metadataReview.review"
         :busy="busy"
-        @save="resolveMetadata"
+        @save="handleMetadataSave"
         @later="deferMetadata"
         @discard="discardMetadata"
-      />
+      >
+        <template v-if="reviewMode" #actions="{ save: submitReview }">
+          <div class="sticky bottom-0 z-10 flex flex-wrap gap-2 border-t border-border bg-card py-3">
+            <Button type="button" class="min-h-11" variant="outline" :disabled="busy" @click="skipReview">{{
+              t('fanfiction.reviewQueue.skip')
+            }}</Button>
+            <Button type="button" class="min-h-11 w-full sm:w-auto" :disabled="busy" @click="submitReview">{{
+              t('fanfiction.reviewQueue.save')
+            }}</Button>
+          </div>
+        </template>
+      </StoryMetadataReview>
       <select
-        v-if="sources.length > 1"
+        v-if="!reviewMode && sources.length > 1"
         v-model="sourceId"
         :aria-label="t('fanfiction.stories')"
         class="border-input bg-background w-full rounded-md border p-2"
@@ -125,7 +154,7 @@ onMounted(() => {
       >
         <option v-for="item in sources" :key="item.id" :value="item.id">{{ item.title }}</option>
       </select>
-      <div class="border-border bg-card space-y-3 rounded-xl border p-4">
+      <div v-if="!reviewMode || !metadataReview" class="border-border bg-card space-y-3 rounded-xl border p-4">
         <a :href="source.canonicalUrl" target="_blank" rel="noopener noreferrer" class="text-primary break-words underline">{{
           source.canonicalUrl
         }}</a>
@@ -201,7 +230,7 @@ onMounted(() => {
         @saved="loginSaved"
         @cancel="closeLogin"
       />
-      <form class="border-border space-y-4 rounded-xl border p-4" @submit.prevent="updateSettings">
+      <form v-if="!reviewMode" class="border-border space-y-4 rounded-xl border p-4" @submit.prevent="updateSettings">
         <label class="flex min-h-11 items-center gap-3 text-sm"
           ><input v-model="keepUpdated" type="checkbox" :disabled="updating" class="size-4 accent-primary" />{{
             t('fanfiction.maintenance.keepUpdated')
@@ -236,7 +265,7 @@ onMounted(() => {
           >
         </div>
       </form>
-      <div v-if="job" role="status" class="border-border rounded-xl border p-4 text-sm">
+      <div v-if="job && (!reviewMode || !metadataReview)" role="status" class="border-border rounded-xl border p-4 text-sm">
         {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }}
         <StoryUpdateOutcome :job="job" />
         <p v-if="job.errorCode && !job.result?.contentReview" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
@@ -279,7 +308,7 @@ onMounted(() => {
           >{{ t('fanfiction.retry') }}</Button
         >
       </div>
-      <details class="space-y-4">
+      <details v-if="!reviewMode" class="space-y-4">
         <summary class="cursor-pointer font-medium">{{ t('book.detail.files.revisions.title') }}</summary>
         <section class="border-border space-y-3 rounded-xl border p-4">
           <h2 class="font-semibold">{{ t('book.detail.files.revisions.title') }}</h2>

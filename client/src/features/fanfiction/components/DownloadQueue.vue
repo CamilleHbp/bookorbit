@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import { ArrowUpRight, CircleCheck, CloudDownload } from '@lucide/vue'
 import type { FanfictionDownloadRow, FanfictionJob, FanfictionSourceBatchStatus } from '@bookorbit/types'
+import { Button } from '@/components/ui/button'
 import { sections, useDownloadQueue } from '../composables/useDownloadQueue'
 import DownloadSection from './DownloadSection.vue'
 import FanfictionLibraryStatus from './FanfictionLibraryStatus.vue'
@@ -50,6 +51,13 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
     <FanfictionLibraryStatus :library-id="libraryId" :job="checkJob" :summary="checkSummary" :checking="checking" :show-actions="checkError"
       ><slot name="check-details"
     /></FanfictionLibraryStatus>
+    <div class="flex flex-wrap justify-end">
+      <Button as-child class="min-h-11"
+        ><RouterLink :to="{ name: 'fanfiction', query: { tab: 'review', review: 'attention', libraryId } }">{{
+          t('fanfiction.attentionReview.start')
+        }}</RouterLink></Button
+      >
+    </div>
     <template v-if="snapshot">
       <DownloadSection
         v-for="key in visible"

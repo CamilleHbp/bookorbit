@@ -46,7 +46,14 @@ onScopeDispose(() => {
 </script>
 <template>
   <section class="space-y-3">
-    <h2 class="text-lg font-semibold">{{ t('fanfiction.maintenance.attention') }}</h2>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 class="text-lg font-semibold">{{ t('fanfiction.maintenance.attention') }}</h2>
+      <Button v-if="stories.length" class="min-h-11" as-child
+        ><RouterLink :to="{ name: 'fanfiction', query: { tab: 'review', review: 'attention', libraryId } }">{{
+          t('fanfiction.attentionReview.start')
+        }}</RouterLink></Button
+      >
+    </div>
     <p v-if="error" role="alert" class="text-sm text-destructive">{{ t('fanfiction.connections.loadFailed') }}</p>
     <Button v-if="error" variant="outline" :disabled="busy" @click="refresh">{{ t('fanfiction.retry') }}</Button>
     <p v-if="busy" role="status" class="text-sm text-muted-foreground">{{ t('common.loading') }}</p>

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import StoryReviewQueue from './StoryReviewQueue.vue'
 
-vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>(), setOnAuthFailure: vi.fn() }))
 const permissions = vi.hoisted(() => ({ edit: true }))
 vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => permissions.edit }) }))
 const values = { title: 'Story', description: '', authors: [], genres: [], tags: ['Existing'] }

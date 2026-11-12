@@ -38,6 +38,20 @@ describe('book story administration', () => {
       return response({ items: [{ revision: 'previous', canRollback: true }], currentRevisionId: 'current', nextCursor: null })
     return response({ items: [], nextCursor: null })
   }
+  it('loads the exact pinned source for attention review instead of choosing another source on the book', async () => {
+    mockApi.mockImplementation(async (url) => {
+      const path = String(url)
+      if (path.endsWith('/sources/pinned')) return response({ ...source, id: 'pinned' })
+      return pages(path)
+    })
+    const model = scope.run(() => useBookStory(7, 5, true, undefined, 'pinned'))!
+    await flush()
+    expect(model.source.value?.id).toBe('pinned')
+    expect(mockApi.mock.calls.some(([url]) => String(url).includes('/sources?'))).toBe(false)
+    await model.refresh()
+    expect(model.source.value?.id).toBe('pinned')
+  })
+
   it('loads the collector for a blocked story when the metadata review endpoint has an empty body', async () => {
     mockApi.mockImplementation(async (url) => {
       const path = String(url)
