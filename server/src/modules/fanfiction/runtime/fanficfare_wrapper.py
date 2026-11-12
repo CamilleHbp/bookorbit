@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from chapter_store import recover_chapters
+from update_check import UpdateCheck
 from tag_matching import install as install_tag_matching, matched_preview
 
 
@@ -198,7 +199,8 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
             raise ConfigurationError('FlareSolverr is not configured on this server')
         transport.enable_for(url)
         transport.deadline = time.monotonic() + min(7200, max(1, request.get('browserTimeoutSeconds', request.get('timeoutSeconds', 1800))))
-    # A normal update adds missing chapters. Only an explicit refresh replaces saved text.
+    # Unscoped updates retain FanFicFare's append-only behavior. Managed checks
+    # periodically verify saved text even when the website reports no changes.
     if operation in ('download', 'update', 'refresh'):
         if not configuration.has_section('overrides'):
             configuration.add_section('overrides')
@@ -228,6 +230,10 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         return finish(preview)
     if operation not in ('download', 'update', 'refresh'):
         raise PolicyError('Unsupported integration operation')
+    check = UpdateCheck(request, adapter, preview)
+    if operation == 'update' and check.unchanged():
+        report_progress({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
+        return finish({'preview': preview, 'output': 'input.epub'})
     if operation in ('update', 'refresh'):
         from fanficfare.epubutils import get_update_data
         validate_epub('input.epub', LIBRARY_EPUB_LIMIT)
@@ -240,7 +246,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
             previous_count -= 1
         if previous_count > chapter_count and request.get('reviewChanges') is not True:
             return finish({'reviewRequired': 'chapter_reduction', 'preview': preview})
-        if operation == 'update':
+        if operation == 'update' and not request.get('checkStatePath'):
             (adapter.oldchapters, adapter.oldimgs, adapter.oldcover, adapter.calibrebookmark,
              adapter.logfile, adapter.oldchaptersmap, adapter.oldchaptersdata) = old[2:9]
             if saved_placeholder:
@@ -253,7 +259,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         progress = ProgressReporter(report_progress)
         progress.total = chapter_count
         report_progress({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
-        with recover_chapters(adapter, request.get('chapterDirectory'), canonical, transport) as downloaded:
+        with recover_chapters(adapter, check.chapter_directory(request.get('chapterDirectory')), canonical, transport) as downloaded:
             progress.downloaded = downloaded
             writers.getWriter('epub', configuration, adapter).writeStory(outstream=output, notification=progress.chapters)
         if transport.failure is not None:
@@ -262,6 +268,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         os.fsync(output.fileno())
     report_progress({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
     validate_epub('output.epub', LIBRARY_EPUB_LIMIT if operation in ('update', 'refresh') else NEW_EPUB_LIMIT)
+    check.save('output.epub')
     return finish({'preview': matched_preview(adapter.story, story_preview(adapter, adapter.story)), 'output': 'output.epub'})
 
 

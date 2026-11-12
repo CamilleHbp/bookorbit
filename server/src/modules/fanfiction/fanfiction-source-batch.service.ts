@@ -174,7 +174,16 @@ export class FanfictionSourceBatchService {
           kind: 'source_batch',
           site: `local-library-${libraryId}`,
           url: '',
-          sourceSelection: { ...input, cutoff, total, tracksOutcomes: true, cursor: null, processed: 0, failed: 0 },
+          sourceSelection: {
+            ...input,
+            cutoff,
+            total,
+            tracksOutcomes: true,
+            cursor: null,
+            processed: 0,
+            failed: 0,
+            ...(!repairConnectionSite && ['update', 'refresh'].includes(dto.action) ? { priorityPhase: 'in_progress' as const } : {}),
+          },
           result: { selection: { tracked: true, processed: 0, failed: 0, finished: false, action: dto.action } },
         })
         .onConflictDoNothing()
@@ -253,6 +262,12 @@ export class FanfictionSourceBatchService {
             this.enabledFilter(selection.excludePaused),
             sql`${sources.createdAt} <= ${selection.cutoff}::timestamptz`,
             selection.cursor ? gt(sources.id, selection.cursor) : undefined,
+            !selection.retryFailedOnly && selection.priorityPhase === 'in_progress'
+              ? sql`lower(trim(${sources.storyStatus})) in ('in-progress', 'in progress', 'ongoing')`
+              : undefined,
+            !selection.retryFailedOnly && selection.priorityPhase === 'remaining'
+              ? sql`not exists (select 1 from ${items} where ${items.batchId} = ${job.id} and ${items.sourceId} = ${sources.id})`
+              : undefined,
             selection.retryFailedOnly
               ? exists(
                   this.db
@@ -291,7 +306,19 @@ export class FanfictionSourceBatchService {
         }
         if (Date.now() - startedAt >= 20_000) break;
       }
-      const finished = !batch.length || (batch.length < 100 && selection.cursor === batch.at(-1)!.id);
+      let finished = !batch.length || (batch.length < 100 && selection.cursor === batch.at(-1)!.id);
+      if (finished && !selection.retryFailedOnly && selection.priorityPhase === 'in_progress') {
+        selection = { ...selection, priorityPhase: 'remaining', cursor: null };
+        await this.db.transaction(async (tx) => {
+          await this.jobs.assertOwnership(job, tx);
+          await authorize();
+          await tx
+            .update(jobs)
+            .set({ sourceSelection: selection, updatedAt: sql`now()` })
+            .where(eq(jobs.id, job.id));
+        });
+        finished = false;
+      }
       this.logger.log(
         `[fanfiction.source_batch] [end] libraryId=${job.libraryId} jobId=${job.id} durationMs=${Date.now() - startedAt} processed=${selection.processed} failed=${selection.failed} finished=${finished} - story selection checkpoint saved`,
       );

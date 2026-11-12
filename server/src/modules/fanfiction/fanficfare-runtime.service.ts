@@ -29,6 +29,7 @@ type RuntimeRequest = {
   redact?: boolean;
   reviewChanges?: boolean;
   chapterDirectory?: string;
+  checkStatePath?: string;
 };
 type RuntimeResponse =
   { ok: true; result: unknown; cookies?: unknown } | { ok: false; code: string; errorClass: string; errorLocation?: string; httpStatus?: number };
@@ -152,7 +153,13 @@ export class FanficfareRuntimeService {
   ): Promise<T> {
     return this.workspace(async (directory) => {
       const result = (await this.execute(
-        { operation: 'download', url, ...document, chapterDirectory: this.chapterDirectory(scope) },
+        {
+          operation: 'download',
+          url,
+          ...document,
+          chapterDirectory: this.chapterDirectory(scope),
+          checkStatePath: scope ? join(this.chapterDirectory(scope)!, '..', 'check.json') : undefined,
+        },
         directory,
         signal,
         saveCookies,
@@ -181,7 +188,14 @@ export class FanficfareRuntimeService {
     return this.workspace(async (directory) => {
       await prepare(join(directory, 'input.epub'));
       const result = (await this.execute(
-        { operation, url, ...document, reviewChanges, chapterDirectory: this.chapterDirectory(scope) },
+        {
+          operation,
+          url,
+          ...document,
+          reviewChanges,
+          chapterDirectory: this.chapterDirectory(scope),
+          checkStatePath: scope ? join(this.chapterDirectory(scope)!, '..', 'check.json') : undefined,
+        },
         directory,
         signal,
         saveCookies,
@@ -199,8 +213,9 @@ export class FanficfareRuntimeService {
               : 'The saved EPUB points to a different story',
           errorCode: result.reviewRequired === 'chapter_reduction' ? 'source_chapter_reduction' : 'source_identity_mismatch',
         });
-      if (result.output !== 'output.epub' || !result.preview) throw new ServiceUnavailableException('Invalid FanFicFare update response');
-      return consume(join(directory, 'output.epub'), validateFanfictionPreview(result.preview));
+      if (!['output.epub', 'input.epub'].includes(result.output ?? '') || !result.preview)
+        throw new ServiceUnavailableException('Invalid FanFicFare update response');
+      return consume(join(directory, result.output!), validateFanfictionPreview(result.preview));
     });
   }
 

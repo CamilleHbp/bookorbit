@@ -25,6 +25,7 @@ import { ManagedMetadataService } from '../src/modules/metadata/managed-metadata
 import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
 import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
 import { RevisionCatalogService } from '../src/modules/book-revision/revision-catalog.service';
+import { TagMatchingService } from '../src/modules/tag-matching/tag-matching.service';
 
 const configPath = process.env.REVISION_TEST_DB_CONFIG;
 describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
@@ -59,6 +60,7 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
           ManagedTagService,
           ManagedMetadataService,
           RevisionCatalogService,
+          TagMatchingService,
           FanfictionReviewService,
           FanfictionReaderService,
         ].map((provide) => ({ provide, useValue: {} })),
@@ -138,7 +140,30 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
       .returning();
   }
   const fresh = async (id: string) => (await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, id)))[0];
-  const run = (job: typeof schema.fanfictionJobs.$inferSelect, signal = new AbortController().signal) => batches.run(job, user, authorize, signal);
+  const run = async (job: typeof schema.fanfictionJobs.$inferSelect, signal = new AbortController().signal) => {
+    const result = await batches.run(job, user, authorize, signal);
+    // Empty priority passes yield without enqueueing work.
+    return result?.selection?.processed === 0 && result.selection.finished === false
+      ? batches.run(await fresh(job.id), user, authorize, signal)
+      : result;
+  };
+
+  it('checks in-progress stories first, then completed and unlabelled stories without duplicates', async () => {
+    const selected = await createSources(4, true);
+    await db.update(schema.fanfictionSources).set({ storyStatus: 'In-Progress' }).where(eq(schema.fanfictionSources.id, selected[2].id));
+    await db.update(schema.fanfictionSources).set({ storyStatus: 'Completed' }).where(eq(schema.fanfictionSources.id, selected[0].id));
+    const queued = await batches.start(libraryId, { idempotencyKey: randomUUID(), allMatching: true, action: 'update' }, user);
+    const job = (await jobs.claim())!;
+    expect((await batches.run(job, user, authorize, new AbortController().signal))?.selection).toMatchObject({ processed: 1, finished: false });
+    let children = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.kind, 'update'));
+    expect(children.map((child) => child.sourceId)).toEqual([selected[2].id]);
+    // Source metadata may change while the durable selection is running.
+    await db.update(schema.fanfictionSources).set({ storyStatus: 'Completed' }).where(eq(schema.fanfictionSources.id, selected[2].id));
+    await db.update(schema.fanfictionSources).set({ storyStatus: 'In-Progress' }).where(eq(schema.fanfictionSources.id, selected[1].id));
+    expect((await run(await fresh(queued.id)))?.selection).toMatchObject({ processed: 4, finished: true });
+    children = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.kind, 'update'));
+    expect(children.map((child) => child.sourceId).sort()).toEqual(selected.map((source) => source.id).sort());
+  });
 
   it('retries every affected story for the saved website without changing other websites or duplicating queued checks', async () => {
     const selected = await createSources(5, true);
