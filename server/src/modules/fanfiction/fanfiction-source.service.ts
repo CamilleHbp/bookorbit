@@ -1,10 +1,12 @@
+import { reservationKey, sameStory } from './fanfiction-story-identity';
+import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { TagMatchingService, storyLabels } from '../tag-matching/tag-matching.service';
 import { personalAccessIssueFilter, storyStateFilter } from './fanfiction-source-filters';
 import { FanfictionReaderService } from './fanfiction-reader.service';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { resolveUploadPath, type FanfictionPreview, type FanfictionSource, type FanfictionExistingStoryConflict } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
@@ -33,6 +35,7 @@ type Job = typeof schema.fanfictionJobs.$inferSelect;
 export class FanfictionSourceService {
   private readonly logger = new Logger(FanfictionSourceService.name);
   constructor(
+    private readonly runtime: FanficfareRuntimeService,
     private readonly tagMatching: TagMatchingService,
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly access: FanfictionAccessService,
@@ -49,7 +52,7 @@ export class FanfictionSourceService {
 
   async create(libraryId: number, dto: ImportFanfictionDto, user: RequestUser) {
     await this.access.administer(user, libraryId);
-    const canonicalKey = createHash('sha256').update(this.canonicalUrl(dto.url)).digest('hex');
+    const canonicalKey = await reservationKey(this.db, this.runtime, libraryId, this.canonicalUrl(dto.url));
     const [existing] = await this.db
       .select({ id: sources.id, title: sources.title, bookFileId: sources.bookFileId, bookId: sources.bookId, attentionCode: sources.attentionCode })
       .from(sources)
@@ -609,7 +612,7 @@ export class FanfictionSourceService {
     if (!job.input || job.kind !== 'import') throw new BadRequestException('Missing managed import settings');
     preview = validateFanfictionPreview(preview);
     const canonicalUrl = this.canonicalUrl(preview.canonicalUrl);
-    const canonicalKey = createHash('sha256').update(canonicalUrl).digest('hex');
+    const canonicalKey = await reservationKey(this.db, this.runtime, job.libraryId, canonicalUrl);
     const { library } = await this.libraries.importDestination(job.libraryId, job.input.folderId);
     const pattern =
       library.fileNamingPattern ??
@@ -659,7 +662,7 @@ export class FanfictionSourceService {
         .from(sources)
         .where(and(eq(sources.libraryId, job.libraryId), eq(sources.canonicalKey, canonicalKey)))
         .for('update');
-      if (!source || source.canonicalUrl !== canonicalUrl) throw new ConflictException('Story identity is ambiguous');
+      if (!source) throw new ConflictException('Story identity is ambiguous');
       if (source.bookFileId || source.state !== 'pending' || (await this.pendingImport(job.libraryId, source.id, user.id, tx)))
         return { source, owned: false };
       return { source, owned: await this.jobs.bindSource(job, source.id, tx) };
@@ -687,7 +690,7 @@ export class FanfictionSourceService {
     try {
       await this.db.transaction(async (tx) => {
         const source = await this.assertImportable(job, sourceId, tx);
-        if (!this.sameStory(preview.canonicalUrl, source.canonicalUrl) || preview.chapterCount < source.chapterCount)
+        if (!(await this.sameStory(preview.canonicalUrl, source.canonicalUrl)) || preview.chapterCount < source.chapterCount)
           throw new BadRequestException({ message: 'The story changed before import. Preview it again.', errorCode: 'import_source_changed' });
         await tx
           .update(sources)
@@ -769,12 +772,8 @@ export class FanfictionSourceService {
     });
   }
 
-  sameStory(left: string, right: string): boolean {
-    const identity = (url: string) =>
-      this.canonicalUrl(url)
-        .replace(/^https:\/\/(?:www\.)?fanfiction\.net\/s\/(\d+)(?:\/\d+(?:\/[^/?#]+)?)?\/?$/, 'https://www.fanfiction.net/s/$1')
-        .replace(/^(https:\/\/storiesonline\.net\/s\/\d+)(?:\/[a-zA-Z0-9_-]+)?\/?$/, '$1');
-    return identity(left) === identity(right);
+  sameStory(left: string, right: string, signal?: AbortSignal) {
+    return sameStory(this.runtime, left, right, signal);
   }
 
   canonicalUrl(value: string): string {
