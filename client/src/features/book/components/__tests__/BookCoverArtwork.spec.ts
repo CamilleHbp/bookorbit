@@ -82,6 +82,8 @@ describe('BookCoverArtwork', () => {
     expect(wrapper.get('img').attributes('src')).toContain('hideSensitive=true')
     await button.trigger('click')
     expect(button.attributes('aria-pressed')).toBe('true')
+    expect(hideSensitiveCovers.value).toBe(true)
+    expect(wrapper.props('sensitiveCover')).toBe(true)
     expect(wrapper.get('img').attributes('src')).toBe('/api/v1/books/7/thumbnail?t=123')
     expect(other.get('img').attributes('src')).toContain('hideSensitive=true')
     await button.trigger('click')

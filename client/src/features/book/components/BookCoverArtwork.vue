@@ -55,7 +55,7 @@ const revealed = ref(false)
 const { hideSensitiveCovers, bookCoverDisplayMode, bookSpineOverlay, showSpineOnComics } = useDisplaySettings()
 const injectedAspectRatio = inject(COVER_ASPECT_RATIO_KEY, ref(DEFAULT_COVER_ASPECT_RATIO))
 
-const canReveal = computed(() => props.sensitiveCover && hideSensitiveCovers.value && props.hasCover)
+const canReveal = computed(() => props.sensitiveCover && hideSensitiveCovers?.value && props.hasCover)
 const artworkSrc = computed(() => {
   if (!revealed.value || !canReveal.value || !props.src) return props.src
   const url = new URL(props.src, window.location.origin)
@@ -63,7 +63,7 @@ const artworkSrc = computed(() => {
   return `${url.pathname}${url.search}`
 })
 watch(
-  () => [props.src, props.sensitiveCover, hideSensitiveCovers.value],
+  () => [props.src, props.resetKey, props.hasCover, props.sensitiveCover, hideSensitiveCovers?.value],
   () => {
     revealed.value = false
   },
