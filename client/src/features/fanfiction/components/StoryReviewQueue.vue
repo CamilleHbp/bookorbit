@@ -83,7 +83,7 @@ onBeforeUnmount(() => {
   <section class="mx-auto w-full max-w-4xl space-y-5" :aria-label="t('fanfiction.reviewQueue.title')" :aria-busy="busy">
     <header class="flex flex-wrap items-end justify-between gap-4">
       <div class="space-y-1">
-        <h2 class="text-xl font-semibold">{{ t('fanfiction.reviewQueue.title') }}</h2>
+        <h2 v-if="scope !== 'attention'" class="text-xl font-semibold">{{ t('fanfiction.reviewQueue.title') }}</h2>
         <p class="text-sm text-muted-foreground" role="status">{{ summary }}</p>
       </div>
       <label v-if="scope !== 'attention'" class="space-y-1 text-sm">
