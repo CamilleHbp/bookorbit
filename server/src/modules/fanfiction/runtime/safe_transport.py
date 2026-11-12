@@ -23,7 +23,11 @@ class ConfigurationError(PolicyError):
     code = 'configuration_blocked'
 
 
-class FanfictionNetBrowserVerification(ConfigurationError):
+class BrowserVerification(ConfigurationError):
+    code = 'source_browser_verification'
+
+
+class FanfictionNetBrowserVerification(BrowserVerification):
     code = 'fanfiction_net_browser_verification'
 
 
@@ -238,6 +242,8 @@ class SafeTransport:
                 if (hostname in ('www.fanfiction.net', 'fanfiction.net', 'm.fanfiction.net') and response.status == 403
                         and response.getheader('cf-mitigated') == 'challenge'):
                     raise FanfictionNetBrowserVerification('FanFiction.net requires browser verification')
+                if response.getheader('cf-mitigated') == 'challenge':
+                    raise BrowserVerification('The website requires browser verification')
                 return response.status, self.read_body(response), url
             finally:
                 connection.close()

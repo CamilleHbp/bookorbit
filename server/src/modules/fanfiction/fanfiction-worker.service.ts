@@ -186,6 +186,7 @@ export class FanfictionWorkerService implements OnModuleDestroy {
           'adult_confirmation_required',
           'access_denied',
           'fanfiction_net_browser_verification',
+          'source_browser_verification',
           'storiesonline_membership_expired',
         ].includes(code);
       if (connection) await this.connections.outcome(connection, job.userId, code);

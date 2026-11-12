@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, CircleCheck, CloudDownload } from '@lucide/vue'
 import type { FanfictionDownloadRow } from '@bookorbit/types'
@@ -16,6 +16,34 @@ const selected = ref<FanfictionDownloadRow>()
 const detail = ref<InstanceType<typeof DownloadJobDetail>>()
 let opener: HTMLElement | null = null
 const list = ref<HTMLElement>()
+const verificationDialog = ref<HTMLDialogElement>()
+const dismissed = ref(new Set<string>())
+const blockedStories = computed(() =>
+  (snapshot.value?.items ?? []).flatMap((row) => {
+    if (!['fanfiction_net_browser_verification', 'source_browser_verification'].includes(row.code ?? '') || !row.verificationUrl) return []
+    const site = row.site.replace(/^www\./, '')
+    if (site === 'archiveofourown.org') return []
+    try {
+      const url = new URL(row.verificationUrl)
+      if (url.protocol !== 'https:' || url.port || url.username || url.password || url.hostname.replace(/^www\./, '') !== site) return []
+      return [{ key: row.jobId ?? row.id, url: url.href, site }]
+    } catch {
+      return []
+    }
+  }),
+)
+const blockedStory = computed(() => blockedStories.value.find((item) => !dismissed.value.has(item.key)))
+watch(
+  blockedStory,
+  (story) => {
+    if (story && !verificationDialog.value?.open) verificationDialog.value?.showModal()
+    else if (!story) verificationDialog.value?.close()
+  },
+  { flush: 'post' },
+)
+function closeVerification() {
+  if (blockedStory.value) dismissed.value.add(blockedStory.value.key)
+}
 function inspect(row: FanfictionDownloadRow) {
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   selected.value = row
@@ -29,6 +57,18 @@ async function close() {
 defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true })
 </script>
 <template>
+  <dialog
+    ref="verificationDialog"
+    :aria-label="t('fanfiction.connections.verifyStory')"
+    @cancel.prevent="closeVerification"
+    class="m-auto max-w-sm space-y-4 rounded-lg bg-background p-5 text-foreground backdrop:bg-black/50"
+  >
+    <p>{{ t('fanfiction.connections.verifyPrompt', { site: blockedStory?.site }) }}</p>
+    <div class="flex justify-between gap-3">
+      <a v-if="blockedStory" :href="blockedStory.url" class="text-primary underline">{{ t('fanfiction.connections.verifyStory') }}</a>
+      <button type="button" @click="closeVerification">{{ t('common.close') }}</button>
+    </div>
+  </dialog>
   <DownloadJobDetail ref="detail" v-if="selected" :key="selected.id" :row="selected" :checked-at="lastSeen" :library-id="libraryId" @close="close" />
   <div v-show="!selected" ref="list" tabindex="-1" class="space-y-6 focus:outline-none">
     <div v-if="error" role="alert" class="rounded-lg border border-warning p-3 text-sm">
@@ -40,6 +80,9 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
     </div>
     <p v-if="!snapshot && !error" role="status">{{ t('common.loading') }}</p>
     <template v-if="snapshot">
+      <a v-for="story in blockedStories" :key="story.key" :href="story.url" class="block text-primary underline"
+        >{{ story.site }}: {{ t('fanfiction.connections.verifyStory') }}</a
+      >
       <DownloadSection
         v-for="key in visible"
         :key="key"

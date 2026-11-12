@@ -1,0 +1,21 @@
+--- adapter_storiesonlinenet.py
++++ adapter_storiesonlinenet.py
+@@ -402,12 +402,12 @@
+                         # find number in series from series page--not
+                         # included in story page anymore.
+                         # ... <a id="t20130r"></a>2 ...
+-                        seriesi = series_soup.select_one("a[id='t"+self.story.getMetadata('storyId')+"r']").parent
+-                        # logger.debug(seriesi)
+-                        try:
+-                            i = int(stripHTML(seriesi))
+-                        except:
+-                            logger.debug("Failed to convert series number(%s)"%seriesi)
++                        anchor = series_soup.select_one("a[id='t"+self.story.getMetadata('storyId')+"r']")
++                        if anchor is not None:
++                            try:
++                                i = int(stripHTML(anchor.parent))
++                            except (ValueError, TypeError):
++                                logger.debug("Series position is not numeric")
+                 self.setSeries(series_name, i)
+                 # Check if series is in a universe
+                 if self.has_universes:

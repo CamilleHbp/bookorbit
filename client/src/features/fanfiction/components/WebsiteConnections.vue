@@ -88,7 +88,22 @@ watch(
 )
 async function save() {
   const result = await state.save(props.source)
+  if (result && signInUrl.value) {
+    pendingSave.value = result
+    loginDialog.value?.showModal()
+    return
+  }
   if (result) emit('saved', result.connection, result.job)
+}
+const loginDialog = ref<HTMLDialogElement>()
+const pendingSave = ref<{ connection: FanfictionConnection; job?: FanfictionJob }>()
+function finishLoginPrompt() {
+  const result = pendingSave.value
+  pendingSave.value = undefined
+  if (result) emit('saved', result.connection, result.job)
+}
+function dismissLoginPrompt() {
+  loginDialog.value?.close()
 }
 function cancel() {
   state.select('')
@@ -173,11 +188,20 @@ function date(value: string) {
             class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
         /></label>
       </template>
+      <Button v-if="signInUrl" variant="outline" as-child>
+        <a :href="signInUrl.href">{{ t('fanfiction.connections.manualSignIn') }}</a>
+      </Button>
+      <dialog
+        ref="loginDialog"
+        aria-label="FanFiction.net"
+        class="m-auto rounded-lg bg-background p-5 text-foreground backdrop:bg-black/50"
+        @close="finishLoginPrompt"
+      >
+        <a v-if="signInUrl" class="text-primary underline" :href="signInUrl.href">{{ t('fanfiction.connections.manualSignIn') }}</a>
+        <Button type="button" variant="ghost" @click="dismissLoginPrompt">{{ t('common.close') }}</Button>
+      </dialog>
       <details :open="website.access === 'cookies'" class="space-y-3">
         <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">{{ t('fanfiction.connections.cookies') }}</summary>
-        <Button v-if="signInUrl" variant="outline" as-child>
-          <a :href="signInUrl.href" target="_blank" rel="noopener noreferrer">{{ website.name }} · {{ t('auth.login.signIn') }}</a>
-        </Button>
         <p class="text-sm text-muted-foreground">{{ t('fanfiction.connections.cookieHelp') }}</p>
         <label class="block space-y-1 text-sm"
           >{{ t('fanfiction.connections.cookieName')

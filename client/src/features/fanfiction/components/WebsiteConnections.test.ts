@@ -6,6 +6,12 @@ import WebsiteConnections from './WebsiteConnections.vue'
 vi.mock('@/features/auth/composables/useAuth', () => ({ useAuth: () => ({ user: { value: { id: 7 } } }) }))
 vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 const response = (body: unknown) => new Response(JSON.stringify(body))
+Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+  configurable: true,
+  value() {
+    this.open = true
+  },
+})
 afterEach(() => {
   vi.clearAllMocks()
   document.body.innerHTML = ''
@@ -107,6 +113,11 @@ it.each(['royalroad.com', 'fanfiction.net'])('saves %s email and password while 
     await flushPromises()
     const request = vi.mocked(api).mock.calls.find(([, options]) => options?.method === 'POST')!
     expect(JSON.parse(request[1]!.body as string)).toEqual({ site, username: 'reader@example.com', password: 'private-password' })
+    if (site === 'fanfiction.net') {
+      expect(wrapper.get('dialog a').attributes('href')).toBe('https://www.fanfiction.net/login.php')
+      expect(wrapper.get('dialog a').attributes('target')).toBeUndefined()
+      await wrapper.get('dialog').trigger('close')
+    }
     expect(wrapper.emitted('saved')).toHaveLength(1)
   } finally {
     wrapper.unmount()

@@ -18,6 +18,14 @@ import { changedStoryMetadata } from './fanfiction-metadata-review';
 const jobs = schema.fanfictionJobs;
 const sources = schema.fanfictionSources;
 
+export function awaitingPublicationReview(job: typeof jobs.$inferSelect): boolean {
+  return (
+    !job.cancellationRequested &&
+    ((job.state === 'review_required' && !!job.result?.contentReview && !job.result.contentReview.approved) ||
+      (!!job.result?.metadataReview?.beforeUpdate && !job.result.preparedUpdate?.approved))
+  );
+}
+
 @Injectable()
 export class FanfictionRecoveryService {
   private readonly logger = new Logger(FanfictionRecoveryService.name);
@@ -58,7 +66,7 @@ export class FanfictionRecoveryService {
       for (const row of pending) {
         const owner = byId.get(row.ownerKey!);
         const hasReceipt = row.state === 'cleanup_complete' && owner?.result?.revisionId === row.nextRevisionId;
-        if (owner?.result?.metadataReview?.beforeUpdate && !owner.cancellationRequested && !owner.result.preparedUpdate?.approved) continue;
+        if (owner && awaitingPublicationReview(owner)) continue;
         if (owner && !hasReceipt && !owner.cancellationRequested && ['queued', 'running'].includes(owner.state)) continue;
         if (!started) {
           started = true;
@@ -127,11 +135,7 @@ export class FanfictionRecoveryService {
 
   private async requireInterrupted(tx: DatabaseTransaction, id: string, libraryId: number) {
     const job = await this.lockOwner(tx, id, libraryId);
-    if (
-      job &&
-      !job.cancellationRequested &&
-      (['queued', 'running'].includes(job.state) || (job.result?.metadataReview?.beforeUpdate && !job.result.preparedUpdate?.approved))
-    )
+    if (job && !job.cancellationRequested && (['queued', 'running'].includes(job.state) || awaitingPublicationReview(job)))
       throw new ConflictException('Publication owner resumed before recovery');
     return job;
   }
