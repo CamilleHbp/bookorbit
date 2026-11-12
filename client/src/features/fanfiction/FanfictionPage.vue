@@ -339,6 +339,19 @@ onMounted(() => {
         <h1 class="font-serif text-4xl font-semibold tracking-tight sm:text-5xl">{{ t('fanfiction.title') }}</h1>
       </div>
       <div class="flex flex-wrap items-center gap-2">
+        <Button
+          v-if="tab === 'downloads'"
+          variant="outline"
+          class="min-h-11"
+          :disabled="busy || libraryId === null || bulk.busy || bulk.active"
+          :aria-label="t('fanfiction.bulk.checkLibrary', { library: libraryName })"
+          :aria-busy="bulk.active"
+          @click="bulk.checkAll"
+        >
+          <RefreshCw class="size-4" :class="{ 'motion-safe:animate-spin': bulk.active }" aria-hidden="true" />{{
+            t(bulk.active ? 'fanfiction.bulk.checking' : 'fanfiction.bulk.checkAll')
+          }}
+        </Button>
         <details ref="managementMenu" class="relative">
           <summary class="flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-md px-2 text-sm hover:bg-muted">
             <Settings class="size-4" aria-hidden="true" />{{ t('fanfiction.downloads.manage') }}
@@ -436,7 +449,20 @@ onMounted(() => {
           t('fanfiction.maintenance.fromLibrary')
         }}</RouterLink>
       </nav>
-      <DownloadQueue v-if="tab === 'downloads'" ref="downloads" :key="libraryId" :library-id="libraryId" />
+      <section v-if="tab === 'downloads'" class="space-y-5">
+        <StoryBulkActions
+          v-if="bulk.job || bulk.error"
+          v-model:all-matching="bulk.allMatching"
+          v-model:action="bulk.action"
+          v-model:interval="bulk.interval"
+          :bulk="bulk"
+          :loading="busy"
+          :selecting="false"
+          :library-name="libraryName"
+          @fix-login="fixSourceLogin"
+        />
+        <DownloadQueue ref="downloads" :key="libraryId" :library-id="libraryId" />
+      </section>
       <section v-if="tab === 'review'" class="mx-auto w-full max-w-4xl space-y-6">
         <div class="flex flex-wrap gap-2" role="group" :aria-label="t('fanfiction.reviewQueue.nav')">
           <Button :variant="reviewView === 'imports' ? 'secondary' : 'ghost'" :aria-pressed="reviewView === 'imports'" @click="showImportReviews">{{
