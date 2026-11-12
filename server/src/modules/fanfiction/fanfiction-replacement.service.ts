@@ -1,3 +1,4 @@
+import { storyIdentity } from './fanfiction-story-identity';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -121,6 +122,7 @@ export class FanfictionReplacementService {
           )
         : [];
       const identities = recognized.filter((url) => url.recognized);
+      const [saved] = await this.runtime.recognize([source.canonicalUrl], signal);
       const replacement: FanfictionReplacementReview = {
         sha256: job.replacementSha256!,
         expectedRevisionId: current.id,
@@ -128,7 +130,7 @@ export class FanfictionReplacementService {
         authors: evidence.authors.length ? evidence.authors : source.authors,
         previousChapterCount: source.chapterCount,
         chapterCount: evidence.chapterCount,
-        identityMatches: identities.length > 0 && identities.every((url) => this.sources.sameStory(url.canonicalUrl, source.canonicalUrl)),
+        identityMatches: !!saved?.recognized && identities.length > 0 && identities.every((url) => storyIdentity(url) === storyIdentity(saved)),
       };
       await this.jobs.recordReplacementReview(job, replacement);
       if (!replacement.identityMatches)

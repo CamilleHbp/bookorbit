@@ -1,3 +1,4 @@
+import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { Test } from '@nestjs/testing';
 import { ConflictException, ForbiddenException, type ArgumentsHost } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,6 +34,10 @@ describe('existing story import confirmation', () => {
     const module = await Test.createTestingModule({
       providers: [
         FanfictionSourceService,
+        {
+          provide: FanficfareRuntimeService,
+          useValue: { recognize: (urls: string[]) => Promise.resolve(urls.map((url) => ({ recognized: true, canonicalUrl: url }))) },
+        },
         { provide: DB, useValue: db },
         { provide: FanfictionAccessService, useValue: access },
         { provide: FanfictionJobService, useValue: jobs },
@@ -217,7 +222,10 @@ describe('existing story import confirmation', () => {
   });
   it.each(['queued', 'running', 'review_required', 'failed'])('reopens the same %s import when the URL is entered again', async (state) => {
     const job = { id: 'original', state };
-    query.limit.mockResolvedValueOnce([{ id: 'pending', bookFileId: null }]).mockResolvedValueOnce([job]);
+    query.limit
+      .mockResolvedValueOnce([{ key: 'existing-key' }])
+      .mockResolvedValueOnce([{ id: 'pending', bookFileId: null }])
+      .mockResolvedValueOnce([job]);
     jobs.get.mockResolvedValue(job);
     await expect(service.create(5, dto, user)).resolves.toEqual(job);
     expect(jobs.get).toHaveBeenCalledWith(5, job.id, user);

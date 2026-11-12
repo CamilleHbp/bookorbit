@@ -73,6 +73,7 @@ describe.skipIf(!configPath)('durable managed Book Dock imports', () => {
     tags: [],
   });
   const runtime = {
+    recognize: (urls: string[]) => Promise.resolve(urls.map((url) => ({ recognized: true, canonicalUrl: url }))),
     preview: vi.fn((url: string) => Promise.resolve(previewFor(url))),
     download: vi.fn(async <T>(url: string, _document: unknown, consume: (path: string, preview: FanfictionPreview) => Promise<T>) =>
       consume(sourcePath, previewFor(url)),
