@@ -86,7 +86,7 @@
       "download_limit": "This story exceeds the download limit. Try without images, or upload an EPUB.",
       "response_too_large": "A chapter or image is too large to download. Try without images, or upload an EPUB.",
       "source_browser_verification": "The website requires browser verification.",
-      "fanfiction_net_browser_verification": "FanFiction.net asks this server to complete browser verification. To update your saved copy, open Story updates and use the chapter collector or upload a matching EPUB.",
+      "fanfiction_net_browser_verification": "FanFiction.net blocked the server download. Update this book with collected chapters or a matching EPUB.",
       "storiesonline_membership_expired": "StoriesOnline asks you to confirm whether to renew your expired Premier membership. Sign in and choose Do Not Renew to keep free access, or Renew to restore Premier access. Then retry.",
       "source_policy_blocked": "A source request was blocked for safety. Contact your administrator, or upload an EPUB.",
       "invalid_epub": "The downloaded EPUB could not be safely opened. Try uploading another EPUB.",
@@ -538,7 +538,8 @@
       "saveRetry": "Save and retry affected stories",
       "loadFailed": "Story could not be loaded. Refresh and try again.",
       "remove": "Remove saved login",
-      "removeHelp": "Remove this website login? Saved stories remain readable. Future checks may need you to sign in again."
+      "removeHelp": "Remove this website login? Saved stories remain readable. Future checks may need you to sign in again.",
+      "updateSavedBook": "Update saved book"
     },
     "maintenance": {
       "fromWeb": "From a URL",
@@ -674,6 +675,17 @@
       "emptyFiltered": "No changes of this kind yet.",
       "older": "Older",
       "newer": "Newer"
+    },
+    "libraryStatus": {
+      "title": "Library status",
+      "lastCheck": "Last story check",
+      "noCheck": "No story check recorded.",
+      "clear": "No download issues",
+      "attention": "Needs attention",
+      "active": "Updates in progress",
+      "unavailable": "Status unavailable",
+      "reviewIssues": "Review issues",
+      "checkDetails": "Check details"
     }
   },
   "auth": {

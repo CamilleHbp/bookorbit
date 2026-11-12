@@ -1,45 +1,47 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import DownloadQueue from './DownloadQueue.vue'
 
 const snapshot = ref()
 vi.mock('../composables/useDownloadQueue', () => ({
-  sections: [],
-  useDownloadQueue: () => ({ snapshot, offsets: {}, reload: vi.fn<() => void>(), refresh: vi.fn<() => void>() }),
+  sections: ['attention'],
+  useDownloadQueue: () => ({ snapshot, offsets: { attention: 0 }, reload: vi.fn<() => void>(), refresh: vi.fn<() => void>() }),
 }))
+afterEach(() => {
+  snapshot.value = undefined
+})
 
-it('prompts on a challenged story, ignores an unrelated origin, and leaves a link after dismissal', async () => {
-  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
-    configurable: true,
-    value() {
-      this.open = true
-    },
+it('offers verification beside the affected download without opening a dialog or repeating the link', async () => {
+  const wrapper = mount(DownloadQueue, {
+    props: { libraryId: 1 },
+    global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
   })
-  Object.defineProperty(HTMLDialogElement.prototype, 'close', {
-    configurable: true,
-    value() {
-      this.open = false
-    },
-  })
-  const wrapper = mount(DownloadQueue, { props: { libraryId: 1 } })
   try {
     const row = {
+      section: 'attention',
       site: 'fanfiction.net',
       code: 'fanfiction_net_browser_verification',
-      id: 'group',
-      jobId: 'job',
+      id: 'story',
+      title: 'A story',
       verificationUrl: 'https://example.org/s/123',
     }
-    snapshot.value = { items: [row], recent: [], totals: {} }
+    snapshot.value = { items: [row], recent: [], totals: { attention: 1 } }
     await flushPromises()
-    expect(wrapper.get('dialog').attributes('open')).toBeUndefined()
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
     snapshot.value.items[0].verificationUrl = 'https://www.fanfiction.net/s/123/1'
     await flushPromises()
-    expect(wrapper.get('dialog').attributes('open')).toBeDefined()
-    await wrapper.get('dialog button').trigger('click')
-    expect(wrapper.get('dialog').attributes('open')).toBeUndefined()
-    expect(wrapper.get('a').attributes('href')).toBe('https://www.fanfiction.net/s/123/1')
+    const links = wrapper.findAll('a[target="_blank"]')
+    expect(links).toHaveLength(1)
+    expect(links[0]!.attributes('href')).toBe('https://www.fanfiction.net/s/123/1')
+    expect(links[0]!.attributes('rel')).toBe('noopener noreferrer')
+    expect(wrapper.get('article').text()).toContain('A story')
+    expect(wrapper.find('dialog').exists()).toBe(false)
+    snapshot.value.items[0].bookId = 42
+    await flushPromises()
+    expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
+    expect(wrapper.get('article').text()).toContain('Update saved book')
   } finally {
     wrapper.unmount()
   }
