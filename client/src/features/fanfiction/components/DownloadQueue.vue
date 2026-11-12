@@ -15,6 +15,7 @@ const props = defineProps<{
   checkJob?: FanfictionJob | null
   checkSummary?: FanfictionSourceBatchStatus | null
   checking?: boolean
+  checkError?: boolean
 }>()
 const { t, locale } = useI18n()
 const { snapshot, busy, error, lastSeen, refresh, reload, offsets } = useDownloadQueue(props.libraryId)
@@ -51,6 +52,7 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
       :job="checkJob"
       :summary="checkSummary"
       :checking="checking"
+      :show-actions="checkError"
       :totals="snapshot?.totals"
       :stale="error"
       ><slot name="check-details"

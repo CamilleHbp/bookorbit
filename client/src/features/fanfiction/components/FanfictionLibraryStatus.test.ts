@@ -45,3 +45,42 @@ it.each(['failed', 'configuration_blocked', 'review_required'])('keeps a %s chec
   })
   expect(wrapper.get('[role="status"]').text()).toBe('Needs attention')
 })
+
+it('opens failed stories directly from the attention count and resets when the library changes', async () => {
+  const wrapper = mount(FanfictionLibraryStatus, {
+    attachTo: document.body,
+    props: { libraryId: 5, job, summary },
+    slots: { default: '<p>Failed story</p>' },
+    global,
+  })
+  try {
+    const count = wrapper.get('button[aria-expanded]')
+    expect(count.attributes('aria-label')).toBe('Stories needing attention: 3')
+    expect(count.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.text()).not.toContain('Failed story')
+    expect(wrapper.text()).not.toContain('Check details')
+    expect(wrapper.text()).not.toContain('Review issues')
+    await count.trigger('click')
+    expect(count.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.text()).toContain('Failed story')
+    expect(document.activeElement?.id).toBe(count.attributes('aria-controls'))
+    await wrapper.setProps({ libraryId: 6 })
+    expect(wrapper.text()).not.toContain('Failed story')
+  } finally {
+    wrapper.unmount()
+  }
+})
+it('keeps zero attention noninteractive and still exposes active controls and errors', async () => {
+  const wrapper = mount(FanfictionLibraryStatus, {
+    props: { libraryId: 5, job, summary: { ...summary, needsAttention: 0 } },
+    slots: { default: '<p>Check actions</p>' },
+    global,
+  })
+  expect(wrapper.find('button').exists()).toBe(false)
+  expect(wrapper.text()).not.toContain('Check actions')
+  await wrapper.setProps({ checking: true })
+  expect(wrapper.text()).toContain('Check actions')
+  await wrapper.setProps({ checking: false, showActions: true })
+  expect(wrapper.text()).toContain('Check actions')
+  wrapper.unmount()
+})
