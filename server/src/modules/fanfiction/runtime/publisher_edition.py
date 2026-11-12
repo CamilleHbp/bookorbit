@@ -1,5 +1,6 @@
 """Complete editions published by Michael J. Cropo on his own website."""
 import hashlib
+import re
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -56,7 +57,21 @@ def edition(request, transport):
         authors = [value(n) for n in doc.getElementsByTagNameNS(DC, 'creator')]
         if title.casefold() != EDITIONS[url].casefold() or 'Michael J. Cropo' not in authors:
             raise PolicyError('The publisher returned a different book')
-        count = len([n for n in doc.getElementsByTagNameNS(OPF, 'itemref') if n.getAttribute('linear') != 'no'])
+        # The EPUB spine also contains front matter and splits long chapters.
+        # The publisher numbers the story chapters in a separate public index.
+        from bs4 import BeautifulSoup
+        number = url.split('/')[-2]
+        index_url = f'https://{SITE}/files/chapters/{number}/index.html'
+        status, index, final = transport.request('GET', index_url)
+        if status != 200 or final != index_url:
+            raise PolicyError('Publisher chapter list is unavailable')
+        numbers = [int(value) for link in BeautifulSoup(index, 'html.parser').select('a[href$=".doc"]')
+                   for value in re.findall(r'Chapter (\d+)', link.get_text(strip=True), re.I)]
+        numbers = sorted(set(numbers))
+        if not numbers or numbers != list(range(1, len(numbers) + 1)):
+            raise PolicyError('Publisher chapter list is incomplete')
+        count = len(numbers) + (number == '3')  # Discovery begins with an unnumbered prologue.
+
         preview = dict(canonicalUrl=url, site=SITE, title=title, authors=authors, description='', chapterCount=count,
                        wordCount=None, status='', tags=[], rawLabels=[])
         version = (request.get('tagMatching') or {}).get('version')
