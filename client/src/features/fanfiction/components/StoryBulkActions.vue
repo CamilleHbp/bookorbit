@@ -14,6 +14,7 @@ const props = defineProps<{
   libraryName: string
   matchingCount?: number
   allowAllMatching?: boolean
+  compact?: boolean
 }>()
 const emit = defineEmits<{ fixLogin: [sourceId: string] }>()
 const { t } = useI18n()
@@ -59,7 +60,7 @@ const failureGroups = computed(() => {
 </script>
 
 <template>
-  <section class="space-y-3 border-y border-border py-3" :aria-label="t('fanfiction.bulk.title')">
+  <section :class="compact ? 'space-y-3' : 'space-y-3 border-y border-border py-3'" :aria-label="t('fanfiction.bulk.title')">
     <template v-if="selecting && !bulk.active">
       <div class="flex flex-wrap items-center gap-2">
         <p role="status" class="me-auto text-sm font-medium tabular-nums">{{ selectionText }}</p>
@@ -100,7 +101,7 @@ const failureGroups = computed(() => {
     <p v-if="bulk.error" role="alert" class="text-sm text-destructive">{{ bulk.error }}</p>
     <div v-if="bulk.job" class="space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-sm font-semibold">{{ schedule ? t('fanfiction.bulk.schedule') : heading }} · {{ libraryName }}</h2>
+        <h2 v-if="!compact" class="text-sm font-semibold">{{ schedule ? t('fanfiction.bulk.schedule') : heading }} · {{ libraryName }}</h2>
         <div class="flex flex-wrap gap-2">
           <Button variant="ghost" :disabled="bulk.busy" @click="bulk.refresh">{{ t('fanfiction.bulk.reload') }}</Button>
           <Button v-if="bulk.selecting" variant="outline" :disabled="bulk.busy || bulk.job.cancellationRequested" @click="bulk.cancel">{{
@@ -109,7 +110,7 @@ const failureGroups = computed(() => {
           <Button v-if="bulk.canRetry" variant="outline" :disabled="bulk.busy" @click="bulk.retry">{{ t('fanfiction.bulk.retryFailed') }}</Button>
         </div>
       </div>
-      <div v-if="summary?.trackingAvailable" role="status" class="space-y-2 text-sm tabular-nums">
+      <div v-if="!compact && summary?.trackingAvailable" role="status" class="space-y-2 text-sm tabular-nums">
         <p>{{ t('fanfiction.bulk.checked', { count: summary.checked, total: summary.total ?? summary.checked }) }}</p>
         <progress
           v-if="summary.total"
@@ -130,11 +131,18 @@ const failureGroups = computed(() => {
           </li>
         </ul>
       </div>
-      <p v-else class="text-sm text-muted-foreground">{{ t(bulk.job.result?.selection?.tracked ? 'common.loading' : 'fanfiction.bulk.legacy') }}</p>
-      <p v-if="bulk.job.errorCode" class="text-sm text-destructive">{{ t(`fanfiction.errors.${bulk.job.errorCode}`) }}</p>
+      <p v-else-if="!compact" class="text-sm text-muted-foreground">
+        {{ t(bulk.job.result?.selection?.tracked ? 'common.loading' : 'fanfiction.bulk.legacy') }}
+      </p>
+      <p v-if="bulk.job.errorCode && bulk.job.errorCode !== 'source_batch_review_required'" class="text-sm text-destructive">
+        {{ t(`fanfiction.errors.${bulk.job.errorCode}`) }}
+      </p>
       <p v-if="bulk.job.cancellationRequested && bulk.active" class="text-sm text-muted-foreground">{{ t('fanfiction.bulk.cancelHelp') }}</p>
-      <details v-if="bulk.failures.length" class="border-t border-border pt-2">
-        <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
+      <details v-if="bulk.failures.length" :open="compact" :class="compact ? 'space-y-3' : 'border-t border-border pt-2'">
+        <summary
+          class="min-h-11 cursor-pointer py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
+          :class="{ hidden: compact }"
+        >
           {{ t('fanfiction.bulk.failures') }}
         </summary>
         <div v-for="group in failureGroups" :key="group.code" class="space-y-2 pb-3">

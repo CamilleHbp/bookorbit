@@ -3,6 +3,7 @@ import { computed, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronRight, ArrowUpRight, Download } from '@lucide/vue'
 import type { FanfictionDownloadRow } from '@bookorbit/types'
+import { safeVerificationUrl } from '../composables/downloadVerification'
 import { chapterDecision, issueStyle } from '../composables/downloadIssue'
 import RetryDownloadsButton from './RetryDownloadsButton.vue'
 import DownloadGroupMembers from './DownloadGroupMembers.vue'
@@ -22,6 +23,7 @@ const reason = computed(() => {
   const fallback = row.issue ? t(`fanfiction.downloads.issue.${row.issue}`) : t('fanfiction.errors.runtime_failed')
   return row.code ? t(`fanfiction.errors.${row.code}`, fallback) : row.issue ? fallback : ''
 })
+const verificationUrl = computed(() => safeVerificationUrl(props.row))
 const progress = computed(() => props.row.progress)
 const percent = computed(() =>
   progress.value?.stage === 'downloading' && progress.value.totalChapters
@@ -111,6 +113,15 @@ function inspectMember(row: FanfictionDownloadRow) {
           <p v-else class="font-medium break-words">{{ row.title }}</p></template
         >
         <p v-if="reason" class="max-w-prose text-sm text-muted-foreground">{{ reason }}</p>
+        <a
+          v-if="verificationUrl"
+          :href="verificationUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          {{ t('fanfiction.connections.verifyStory') }}<ArrowUpRight class="size-4" aria-hidden="true" />
+        </a>
         <time v-if="row.nextAttemptAt" :datetime="row.nextAttemptAt" class="text-sm tabular-nums">{{
           t('fanfiction.progress.nextAttempt', { time })
         }}</time>
