@@ -1,5 +1,16 @@
 {
   "fanfiction": {
+    "libraryStatus": {
+      "title": "Library status",
+      "lastCheck": "Last story check",
+      "noCheck": "No story check recorded.",
+      "clear": "No download issues",
+      "attention": "Needs attention",
+      "active": "Updates in progress",
+      "unavailable": "Status unavailable",
+      "reviewIssues": "Review issues",
+      "checkDetails": "Check details"
+    },
     "storyUpdates": "Story updates",
     "noManagedSource": "No story source linked.",
     "lastUpdated": "Last updated",

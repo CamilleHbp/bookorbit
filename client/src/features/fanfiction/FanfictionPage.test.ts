@@ -87,6 +87,49 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.findComponent({ name: 'DownloadQueue' }).exists()).toBe(true)
   })
 
+  it('shows the last check and preserves its failures without the duplicate warning', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    const job = {
+      id: 'last-check',
+      libraryId: 5,
+      kind: 'source_batch',
+      state: 'review_required',
+      createdAt: '2026-11-12T09:30:00Z',
+      errorCode: 'source_batch_review_required',
+      result: { selection: { tracked: true, action: 'update' } },
+    }
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      const path = String(url)
+      if (path.includes('/jobs?kind=source_batch')) return Response.json({ items: [job], nextCursor: null })
+      if (path.endsWith('/source-batches/last-check/status'))
+        return Response.json({
+          job,
+          total: 12,
+          checked: 12,
+          updated: 2,
+          unchanged: 9,
+          needsAttention: 1,
+          running: 0,
+          finished: true,
+          trackingAvailable: true,
+        })
+      if (path.includes('/source-batches/last-check/failures'))
+        return Response.json({
+          items: [{ sourceId: 'story', bookId: 8, title: 'Unresolved story', errorCode: 'source_not_found' }],
+          nextCursor: null,
+        })
+      return base(url, options)
+    })
+    await open()
+    const card = wrapper!.findComponent({ name: 'FanfictionLibraryStatus' })
+    expect(card.get('time').attributes('datetime')).toBe(job.createdAt)
+    expect(card.get('[role="status"]').text()).toBe('Needs attention')
+    expect(card.text()).toContain('Unresolved story')
+    expect(card.text()).toContain('Review story updates')
+    expect(wrapper!.text()).not.toContain('Some stories need attention. Review the failed items, then retry them.')
+    expect(card.findAll('dl')).toHaveLength(1)
+  })
+
   it.each(['failed', 'configuration_blocked', 'cancelled'])('resumes a saved %s import after opening a new session', async (state) => {
     const base = vi.mocked(api).getMockImplementation()!
     const job = {
@@ -404,7 +447,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.find('source-profiles-stub').exists()).toBe(false)
     expect(wrapper!.text()).not.toContain('Recent story changes')
     expect(wrapper!.text()).not.toContain('No activity yet.')
-    expect(wrapper!.findAll('nav a').map((link) => link.text())).toEqual(['Downloads', 'History'])
+    expect(wrapper!.findAll('nav[aria-label="Fanfiction"] a').map((link) => link.text())).toEqual(['Downloads', 'History'])
   })
 
   it('keeps running downloads, grouped website failures and chapter decisions distinct through a failed refresh', async () => {
