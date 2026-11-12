@@ -5,7 +5,7 @@ import type { BookFileRevisionSummary } from '@bookorbit/types'
 import WebsiteConnections from './WebsiteConnections.vue'
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import StorySchedule from './StorySchedule.vue'
@@ -13,6 +13,7 @@ import StoryMetadataReview from './StoryMetadataReview.vue'
 import type { useBookStory } from '../composables/useBookStory'
 
 const props = defineProps<{ state: ReturnType<typeof useBookStory>; reviewMode?: boolean }>()
+const router = useRouter()
 const emit = defineEmits<{ reviewed: []; skip: [] }>()
 const metadataEditor = ref<InstanceType<typeof StoryMetadataReview>>()
 function skipReview() {
@@ -22,13 +23,15 @@ function commitPending() {
   return metadataEditor.value?.commitPending() !== false
 }
 function handleMetadataSave() {
-  if (props.reviewMode) void saveReview()
-  else void props.state.resolveMetadata()
+  void saveReview()
 }
 async function saveReview() {
   if (props.state.busy.value || !props.state.metadataReview.value) return
+  const libraryId = props.state.source.value?.libraryId
   await props.state.resolveMetadata()
-  if (!props.state.error.value && !props.state.metadataReview.value) emit('reviewed')
+  if (props.state.error.value || props.state.metadataReview.value) return
+  if (props.reviewMode) emit('reviewed')
+  else if (libraryId) await router.push({ name: 'fanfiction', query: { tab: 'review', review: 'attention', libraryId } })
 }
 defineExpose({ commitPending })
 const { t } = useI18n()
@@ -130,6 +133,7 @@ onMounted(() => {
         ref="metadataEditor"
         v-model="metadataChoices"
         :review="metadataReview.review"
+        :save-label="t('fanfiction.reviewQueue.save')"
         :busy="busy"
         @save="handleMetadataSave"
         @later="deferMetadata"
