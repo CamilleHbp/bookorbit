@@ -16,7 +16,7 @@ import ImportProgress from './components/ImportProgress.vue'
 import StoryImportReview from './components/StoryImportReview.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { LibraryBig, ArrowDownToLine, History, Plus, Settings, RefreshCw, Search } from '@lucide/vue'
+import { LibraryBig, ArrowLeft, ArrowDownToLine, History, Plus, Settings, RefreshCw, Search } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
 import FanfictionStoryRow from './components/FanfictionStoryRow.vue'
 import FanfictionPagination from './components/FanfictionPagination.vue'
@@ -337,7 +337,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <main v-if="canManage" class="mx-auto w-full max-w-5xl space-y-5 px-4 py-6 sm:px-8 sm:py-8">
+  <main
+    v-if="canManage"
+    class="mx-auto w-full max-w-5xl px-4 sm:px-8"
+    :class="tab === 'review' ? 'space-y-4 py-4 sm:py-5' : 'space-y-5 py-6 sm:py-8'"
+  >
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div class="min-w-0">
         <RouterLink
@@ -346,9 +350,16 @@ onMounted(() => {
           class="inline-flex items-center gap-2 py-1 text-sm font-medium text-primary hover:underline"
           ><LibraryBig class="size-4" aria-hidden="true" />{{ libraryName || t('fanfiction.library') }}</RouterLink
         >
-        <h1 class="font-serif text-4xl font-semibold tracking-tight sm:text-5xl">{{ t('fanfiction.title') }}</h1>
+        <h1 class="font-serif font-semibold tracking-tight" :class="tab === 'review' ? 'text-2xl sm:text-3xl' : 'text-4xl sm:text-5xl'">
+          {{ t(tab === 'review' && reviewView === 'attention' ? 'fanfiction.reviewQueue.title' : 'fanfiction.title') }}
+        </h1>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
+      <Button v-if="tab === 'review'" variant="ghost" class="min-h-11" as-child
+        ><RouterLink :to="{ name: 'fanfiction', query: { tab: 'downloads', libraryId } }"
+          ><ArrowLeft class="size-4" aria-hidden="true" />{{ t('fanfiction.importInbox.back') }}</RouterLink
+        ></Button
+      >
+      <div v-else class="flex flex-wrap items-center gap-2">
         <Button
           v-if="tab === 'downloads'"
           variant="outline"
@@ -390,7 +401,7 @@ onMounted(() => {
         >
       </div>
     </header>
-    <div v-if="tab !== 'downloads' || libraries.length > 1 || libraryCursor !== null" class="flex flex-wrap items-end gap-2">
+    <div v-if="(tab !== 'downloads' && tab !== 'review') || libraries.length > 1 || libraryCursor !== null" class="flex flex-wrap items-end gap-2">
       <label v-if="libraries.length > 1 || libraryCursor !== null" class="w-full min-w-0 flex-none space-y-1 text-sm sm:w-auto sm:flex-1 sm:max-w-xs"
         >{{ t('fanfiction.library') }}
         <select
@@ -417,7 +428,7 @@ onMounted(() => {
       </div>
       <Button v-if="libraryCursor !== null" variant="outline" :disabled="busy" @click="loadLibraries">{{ t('fanfiction.moreLibraries') }}</Button>
       <Button
-        v-if="tab !== 'downloads'"
+        v-if="tab !== 'downloads' && tab !== 'review'"
         variant="ghost"
         class="size-11 sm:size-9"
         :aria-label="t('fanfiction.bulk.reload')"
@@ -439,7 +450,7 @@ onMounted(() => {
           @cancel="closeLogin"
         />
       </div>
-      <nav class="flex overflow-x-auto border-b border-border scrollbar-none" :aria-label="t('fanfiction.title')">
+      <nav v-if="tab !== 'review'" class="flex overflow-x-auto border-b border-border scrollbar-none" :aria-label="t('fanfiction.title')">
         <RouterLink
           v-for="item in navigation"
           :key="item.id"
@@ -489,7 +500,7 @@ onMounted(() => {
         </DownloadQueue>
       </section>
       <section v-if="tab === 'review'" class="mx-auto w-full max-w-4xl space-y-6">
-        <div class="flex flex-wrap gap-2" role="group" :aria-label="t('fanfiction.reviewQueue.nav')">
+        <div v-if="reviewView !== 'attention'" class="flex flex-wrap gap-2" role="group" :aria-label="t('fanfiction.reviewQueue.nav')">
           <Button
             :variant="reviewView === 'attention' ? 'secondary' : 'ghost'"
             :aria-pressed="reviewView === 'attention'"
