@@ -11,7 +11,7 @@ import { fanficfareConfig, storageConfig } from '../../config/config';
 import { LibraryModule } from '../library/library.module';
 import { UserModule } from '../user/user.module';
 import { FanfictionAccessService } from './fanfiction-access.service';
-import { FanficfareRuntimeService } from './fanficfare-runtime.service';
+import { FanfictionLocationModule } from './fanfiction-location.module';
 import { FanfictionVaultService } from './fanfiction-vault.service';
 import { FanfictionController } from './fanfiction.controller';
 import { FanfictionJobService } from './fanfiction-job.service';
@@ -43,6 +43,7 @@ import { FanfictionConnectionController } from './fanfiction-connection.controll
 @Module({
   imports: [
     TagMatchingModule,
+    FanfictionLocationModule,
     BookModule,
     CollectionModule,
     ConfigModule.forFeature(fanficfareConfig),
@@ -61,7 +62,7 @@ import { FanfictionConnectionController } from './fanfiction-connection.controll
     FanfictionReaderService,
     FanfictionReviewService,
     FanfictionAccessService,
-    FanficfareRuntimeService,
+
     FanfictionVaultService,
     FanfictionJobService,
     FanfictionWorkerService,
