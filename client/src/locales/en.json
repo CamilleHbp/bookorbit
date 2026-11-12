@@ -15696,6 +15696,14 @@
       "lastCheck": "Last library check",
       "sourceDetails": "Details from the website"
     },
+    "attentionReview": {
+      "start": "Fix stories",
+      "position": "Story {count}",
+      "resolved": "Resolved",
+      "running": "Update in progress. You can move to the next story.",
+      "pending": "Still needs attention",
+      "summary": "{saved} resolved · {skipped} still need attention"
+    },
     "reviewQueue": {
       "nav": "Review",
       "title": "Review stories",

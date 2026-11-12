@@ -31,6 +31,7 @@ export function useBookStory(
   libraryId: MaybeRefOrGetter<number | undefined>,
   permitted: MaybeRefOrGetter<boolean>,
   onBookUpdated?: (bookId: number) => void | Promise<void>,
+  pinnedSourceId?: string,
 ) {
   const updatePolicy = ref<'safe' | 'review'>('review')
   const keepUpdated = ref(true)
@@ -140,7 +141,9 @@ export function useBookStory(
     }
   }
   async function loadSources(id: number, cursor?: string) {
-    const page = await request<FanfictionSourcePage>(`${base.value}/sources?bookId=${toValue(bookId)}&limit=50${cursor ? `&cursor=${cursor}` : ''}`)
+    const page = pinnedSourceId
+      ? { items: [await request<FanfictionSource>(`${base.value}/sources/${pinnedSourceId}`)], nextCursor: null }
+      : await request<FanfictionSourcePage>(`${base.value}/sources?bookId=${toValue(bookId)}&limit=50${cursor ? `&cursor=${cursor}` : ''}`)
     if (!valid(id)) return
     allowed.value = true
     sources.value = page.items

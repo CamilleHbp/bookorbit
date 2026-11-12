@@ -2,18 +2,20 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Permission, type FanfictionReviewScope } from '@bookorbit/types'
+import { Permission } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
-import { useStoryReviewQueue } from '../composables/useStoryReviewQueue'
+import { useStoryReviewQueue, type StoryReviewScope } from '../composables/useStoryReviewQueue'
 import StoryMetadataReview from './StoryMetadataReview.vue'
+import StoryAttentionEditor from './StoryAttentionEditor.vue'
 import StoryMetadataFields from './StoryMetadataFields.vue'
 import StoryReviewActions from './StoryReviewActions.vue'
 
-const props = defineProps<{ libraryId: number }>()
+const props = defineProps<{ libraryId: number; attention?: boolean }>()
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
-const scope = ref<FanfictionReviewScope>('pending')
+const scope = ref<StoryReviewScope>(props.attention ? 'attention' : 'pending')
+const attentionEditor = ref<InstanceType<typeof StoryAttentionEditor>>()
 const queue = useStoryReviewQueue(toRef(props, 'libraryId'), scope)
 const { current, busy, error, finished, position, total, hasPrevious, savedCount, skippedCount, save, retry, restart, reloadCurrent } = queue
 const heading = ref<HTMLElement>()
@@ -21,10 +23,15 @@ const reviewEditor = ref<InstanceType<typeof StoryMetadataReview>>()
 const fields = ref<InstanceType<typeof StoryMetadataFields>>()
 const form = ref<HTMLFormElement>()
 const canSave = computed(() => Boolean(current.value?.review) || hasPermission(Permission.LibraryEditMetadata))
-const summary = computed(() => t('fanfiction.reviewQueue.summary', { saved: savedCount.value, skipped: skippedCount.value }))
+const summary = computed(() =>
+  t(scope.value === 'attention' ? 'fanfiction.attentionReview.summary' : 'fanfiction.reviewQueue.summary', {
+    saved: savedCount.value,
+    skipped: skippedCount.value,
+  }),
+)
 function changeScope(event: Event) {
   const select = event.target as HTMLSelectElement
-  if (queue.confirmLeave()) scope.value = select.value as FanfictionReviewScope
+  if (canLeave()) scope.value = select.value as StoryReviewScope
   else select.value = scope.value
 }
 async function saveFields() {
@@ -34,13 +41,13 @@ async function saveFields() {
 }
 function beforeUnload(event: BeforeUnloadEvent) {
   const committed = current.value?.review ? reviewEditor.value?.commitPending() : fields.value?.commitPending()
-  if (committed === false || queue.hasDrafts.value || busy.value) {
+  if (committed === false || queue.hasDrafts.value || busy.value || (scope.value === 'attention' && attentionEditor.value?.hasUnsavedInput())) {
     event.preventDefault()
     event.returnValue = ''
   }
 }
 function canLeave() {
-  if (busy.value) return false
+  if (busy.value || attentionEditor.value?.canLeave() === false) return false
   const committed = current.value?.review ? reviewEditor.value?.commitPending() : fields.value?.commitPending()
   if (committed === false) return false
   return !busy.value && queue.confirmLeave()
@@ -54,6 +61,7 @@ async function next() {
   if (await commitDraft()) await queue.next()
 }
 async function previous() {
+  if (attentionEditor.value?.canLeave() === false) return
   if (await commitDraft()) await queue.previous()
 }
 defineExpose({ canLeave })
@@ -86,6 +94,7 @@ onBeforeUnmount(() => {
           class="min-h-11 rounded-md border border-input bg-background px-3 focus-visible:outline-2 focus-visible:outline-ring"
           @change="changeScope"
         >
+          <option value="attention">{{ t('fanfiction.maintenance.attention') }}</option>
           <option value="pending">{{ t('fanfiction.reviewQueue.pending') }}</option>
           <option value="all">{{ t('fanfiction.reviewQueue.all') }}</option>
         </select>
@@ -109,10 +118,12 @@ onBeforeUnmount(() => {
     <template v-else-if="current">
       <div class="space-y-2">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span>{{ t('fanfiction.reviewQueue.position', { count: position, total }) }}</span>
+          <span>{{
+            t(scope === 'attention' ? 'fanfiction.attentionReview.position' : 'fanfiction.reviewQueue.position', { count: position, total })
+          }}</span>
           <span v-if="current.saved" class="text-foreground">{{ t('fanfiction.reviewQueue.saved') }}</span>
         </div>
-        <h3 ref="heading" tabindex="-1" class="break-words text-xl font-semibold focus:outline-none">
+        <h3 ref="heading" tabindex="-1" class="break-words text-xl font-semibold focus-visible:outline-2 focus-visible:outline-ring">
           {{ current.source.title }}
         </h3>
         <a
@@ -124,6 +135,15 @@ onBeforeUnmount(() => {
         >
       </div>
       <p v-if="!current.loaded && busy" role="status" class="py-8 text-sm text-muted-foreground">{{ t('common.loading') }}</p>
+      <Button v-if="scope === 'attention' && hasPrevious" variant="ghost" :disabled="busy" @click="previous">{{ t('common.previous') }}</Button>
+      <StoryAttentionEditor
+        v-if="scope === 'attention' && current.loaded"
+        ref="attentionEditor"
+        :key="current.source.id"
+        :source="current.source"
+        :busy="busy"
+        @next="queue.completeAttention"
+      />
       <StoryMetadataReview
         v-else-if="current.review"
         ref="reviewEditor"

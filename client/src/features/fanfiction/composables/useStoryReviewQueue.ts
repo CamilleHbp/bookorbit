@@ -29,7 +29,9 @@ const emptyChoices = (): FanfictionMetadataChoices => ({ title: 'keep', authors:
 const snapshot = (entry: Entry) => JSON.stringify(entry.review ? entry.choices : entry.values)
 const dirty = (entry: Entry) => entry.loaded && !entry.saved && snapshot(entry) !== entry.baseline
 
-export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<FanfictionReviewScope>) {
+export type StoryReviewScope = FanfictionReviewScope | 'attention'
+
+export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<StoryReviewScope>) {
   const { t } = useI18n()
   const entries = ref<Entry[]>([])
   const index = ref(0)
@@ -86,7 +88,11 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
   }
 
   async function loadPage(signal: AbortSignal) {
-    const query = new URLSearchParams({ reviewScope: scope.value, limit: '25', ...(cursor.value ? { cursor: cursor.value } : {}) })
+    const query = new URLSearchParams({
+      ...(scope.value === 'attention' ? { view: 'attention' } : { reviewScope: scope.value }),
+      limit: '25',
+      ...(cursor.value ? { cursor: cursor.value } : {}),
+    })
     const page = await request<FanfictionSourcePage>(`/api/v1/libraries/${libraryId.value}/fanfiction/sources?${query}`, signal)
     if (signal.aborted) return
     entries.value.push(
@@ -109,6 +115,11 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
 
   async function loadEntry(entry: Entry, signal: AbortSignal) {
     if (entry.loaded) return
+    if (scope.value === 'attention') {
+      entry.loaded = true
+      entry.baseline = snapshot(entry)
+      return
+    }
     const review = await request<FanfictionMetadataReviewView | null>(
       `/api/v1/libraries/${libraryId.value}/fanfiction/sources/${entry.source.id}/metadata-review`,
       signal,
@@ -163,6 +174,23 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
     await run(async (signal) => {
       const entry = current.value!
       if (!entry.saved && !entry.skipped) {
+        entry.skipped = true
+        skippedCount.value++
+      }
+      await advance(signal)
+    })
+  }
+
+  async function completeAttention(resolved: boolean) {
+    if (busy.value || !current.value || !canAdvance()) return
+    await run(async (signal) => {
+      const entry = current.value!
+      if (!entry.saved && resolved) {
+        entry.saved = true
+        savedCount.value++
+        if (entry.skipped) skippedCount.value--
+        entry.skipped = false
+      } else if (!entry.saved && !entry.skipped) {
         entry.skipped = true
         skippedCount.value++
       }
@@ -264,6 +292,7 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<Fanfictio
     savedCount,
     skippedCount,
     next,
+    completeAttention,
     previous,
     save,
     retry,
