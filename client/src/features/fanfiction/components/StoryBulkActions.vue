@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, type UnwrapNestedRefs } from 'vue'
 import { RouterLink } from 'vue-router'
+import { RefreshCw, RotateCcw, CircleStop, KeyRound } from '@lucide/vue'
 import StorySchedule from './StorySchedule.vue'
 import type { FanfictionSourceBatchAction } from '@bookorbit/types'
 import { useI18n } from 'vue-i18n'
@@ -103,11 +104,15 @@ const failureGroups = computed(() => {
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h2 v-if="!compact" class="text-sm font-semibold">{{ schedule ? t('fanfiction.bulk.schedule') : heading }} · {{ libraryName }}</h2>
         <div class="flex flex-wrap gap-2">
-          <Button variant="ghost" :disabled="bulk.busy" @click="bulk.refresh">{{ t('fanfiction.bulk.reload') }}</Button>
-          <Button v-if="bulk.selecting" variant="outline" :disabled="bulk.busy || bulk.job.cancellationRequested" @click="bulk.cancel">{{
-            t('fanfiction.bulk.stop')
-          }}</Button>
-          <Button v-if="bulk.canRetry" variant="outline" :disabled="bulk.busy" @click="bulk.retry">{{ t('fanfiction.bulk.retryFailed') }}</Button>
+          <Button variant="ghost" :disabled="bulk.busy" @click="bulk.refresh"
+            ><RefreshCw class="size-4" aria-hidden="true" />{{ t('fanfiction.bulk.reload') }}</Button
+          >
+          <Button v-if="bulk.selecting" variant="outline" :disabled="bulk.busy || bulk.job.cancellationRequested" @click="bulk.cancel"
+            ><CircleStop class="size-4" aria-hidden="true" />{{ t('fanfiction.bulk.stop') }}</Button
+          >
+          <Button v-if="bulk.canRetry" variant="outline" :disabled="bulk.busy" @click="bulk.retry"
+            ><RotateCcw class="size-4" aria-hidden="true" />{{ t('fanfiction.bulk.retryFailed') }}</Button
+          >
         </div>
       </div>
       <div v-if="!compact && summary?.trackingAvailable" role="status" class="space-y-2 text-sm tabular-nums">
@@ -155,14 +160,14 @@ const failureGroups = computed(() => {
                 variant="outline"
                 :disabled="bulk.busy || bulk.active"
                 @click="bulk.retryStory(failure.jobId)"
-                >{{ t('fanfiction.retry') }}</Button
+                ><RotateCcw class="size-4" aria-hidden="true" />{{ t('fanfiction.retry') }}</Button
               >
               <Button
                 v-if="failure.errorCode === 'authentication_required'"
                 variant="outline"
                 :disabled="loading || bulk.busy || bulk.active"
                 @click="fixLogin(failure.sourceId)"
-                >{{ t('fanfiction.bulk.fixLogin') }}</Button
+                ><KeyRound class="size-4" aria-hidden="true" />{{ t('fanfiction.bulk.fixLogin') }}</Button
               >
               <Button v-else variant="ghost" as-child>
                 <RouterLink
