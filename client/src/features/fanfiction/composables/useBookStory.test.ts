@@ -38,6 +38,24 @@ describe('book story administration', () => {
       return response({ items: [{ revision: 'previous', canRollback: true }], currentRevisionId: 'current', nextCursor: null })
     return response({ items: [], nextCursor: null })
   }
+  it('loads the collector for a blocked story when the metadata review endpoint has an empty body', async () => {
+    mockApi.mockImplementation(async (url) => {
+      const path = String(url)
+      if (path.endsWith('/metadata-review')) return new Response(null, { status: 200 })
+      if (path.includes('/sources?'))
+        return response({
+          items: [{ ...source, state: 'configuration_blocked', attentionCode: 'fanfiction_net_browser_verification' }],
+          nextCursor: null,
+        })
+      return pages(path)
+    })
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    await model.refresh()
+    expect(model.metadataReview.value).toBeNull()
+    expect(model.error.value).toBe('')
+    expect(model.canReplace.value).toBe(true)
+  })
   it('dismisses the current missing-source warning for this story and reloads its paused state', async () => {
     let dismissed = false
     mockApi.mockImplementation(async (url, options) => {

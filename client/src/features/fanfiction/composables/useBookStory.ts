@@ -101,16 +101,16 @@ export function useBookStory(
             ? { method, body }
             : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
       })
-      const result = await response.json().catch(() => ({}))
+      const result = await response.json().catch(() => null)
       if ([401, 403].includes(response.status) && valid(id)) {
         allowed.value = false
         denied.value = true
       }
       if (!response.ok)
         throw new StoryRequestError(
-          typeof result.message === 'string' ? result.message : `HTTP ${response.status}`,
+          typeof result?.message === 'string' ? result.message : `HTTP ${response.status}`,
           response.status,
-          result.errorCode,
+          result?.errorCode,
         )
       return result as T
     } finally {

@@ -252,7 +252,7 @@ onMounted(() => {
           >{{ t('fanfiction.retry') }}</Button
         >
       </div>
-      <details class="space-y-4">
+      <details :open="source.attentionCode === 'fanfiction_net_browser_verification'" class="space-y-4">
         <summary class="cursor-pointer font-medium">{{ t('fanfiction.advanced') }}</summary>
         <p v-if="canReplace && source?.site === 'fanfiction.net'" class="text-sm">
           <a href="/bookorbit-story-updates.zip" download class="text-primary underline">{{ t('fanfiction.browserExtension') }}</a>
