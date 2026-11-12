@@ -15312,6 +15312,17 @@
     "clearCookies": "Remove all cookies",
     "previousCookies": "Previous cookies",
     "nextCookies": "More cookies",
+    "libraryStatus": {
+      "title": "Library status",
+      "lastCheck": "Last story check",
+      "noCheck": "No story check recorded.",
+      "clear": "No download issues",
+      "attention": "Needs attention",
+      "active": "Updates in progress",
+      "unavailable": "Status unavailable",
+      "reviewIssues": "Review issues",
+      "checkDetails": "Check details"
+    },
     "bulk": {
       "title": "Bulk story actions",
       "selectStory": "Select {title}",

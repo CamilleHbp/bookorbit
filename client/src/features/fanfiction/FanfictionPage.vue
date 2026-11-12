@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DownloadQueue from './components/DownloadQueue.vue'
+import FanfictionLibraryStatus from './components/FanfictionLibraryStatus.vue'
 import { needsImportReview } from './composables/useImportReview'
 import WebsiteConnections from './components/WebsiteConnections.vue'
 import StoryAttentionList from './components/StoryAttentionList.vue'
@@ -450,18 +451,37 @@ onMounted(() => {
         }}</RouterLink>
       </nav>
       <section v-if="tab === 'downloads'" class="space-y-5">
-        <StoryBulkActions
-          v-if="bulk.job || bulk.error"
-          v-model:all-matching="bulk.allMatching"
-          v-model:action="bulk.action"
-          v-model:interval="bulk.interval"
-          :bulk="bulk"
-          :loading="busy"
-          :selecting="false"
-          :library-name="libraryName"
-          @fix-login="fixSourceLogin"
-        />
-        <DownloadQueue ref="downloads" :key="libraryId" :library-id="libraryId" />
+        <DownloadQueue
+          ref="downloads"
+          :key="libraryId"
+          :library-id="libraryId"
+          :check-job="bulk.job"
+          :check-summary="bulk.summary"
+          :checking="bulk.active"
+        >
+          <template #check-details>
+            <details v-if="bulk.job || bulk.error" :open="bulk.active || Boolean(bulk.error)" class="group border-t border-border pt-2">
+              <summary
+                class="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                <ChevronRight class="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />{{
+                  t('fanfiction.libraryStatus.checkDetails')
+                }}
+              </summary>
+              <StoryBulkActions
+                v-model:all-matching="bulk.allMatching"
+                v-model:action="bulk.action"
+                v-model:interval="bulk.interval"
+                :bulk="bulk"
+                :loading="busy"
+                :selecting="false"
+                :library-name="libraryName"
+                compact
+                @fix-login="fixSourceLogin"
+              />
+            </details>
+          </template>
+        </DownloadQueue>
       </section>
       <section v-if="tab === 'review'" class="mx-auto w-full max-w-4xl space-y-6">
         <div class="flex flex-wrap gap-2" role="group" :aria-label="t('fanfiction.reviewQueue.nav')">
@@ -700,13 +720,9 @@ onMounted(() => {
       <ExistingStories v-else-if="tab === 'discovery'" :key="libraryId" :library-id="libraryId" />
       <section v-else-if="tab === 'activity' || tab === 'history'" class="space-y-6" :aria-label="t('fanfiction.activity')">
         <template v-if="tab === 'activity'"
-          ><details v-if="bulk.job" :open="bulk.active" class="group border-border rounded-xl border px-4">
-            <summary class="flex min-h-11 cursor-pointer list-none items-center gap-3 py-3 font-medium">
-              <ChevronRight class="size-4 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />{{
-                t('fanfiction.importInbox.lastCheck')
-              }}
-            </summary>
+          ><FanfictionLibraryStatus :library-id="libraryId" :job="bulk.job" :summary="bulk.summary" :checking="bulk.active" hide-review-link>
             <StoryBulkActions
+              v-if="bulk.job || bulk.error"
               v-model:all-matching="bulk.allMatching"
               v-model:action="bulk.action"
               v-model:interval="bulk.interval"
@@ -714,9 +730,10 @@ onMounted(() => {
               :loading="busy"
               :selecting="false"
               :library-name="libraryName"
+              compact
               @fix-login="fixSourceLogin"
             />
-          </details>
+          </FanfictionLibraryStatus>
           <div v-show="storyIssues?.needsAttention" class="border-border rounded-xl border p-4">
             <StoryAttentionList ref="storyIssues" :library-id="libraryId" />
           </div>
