@@ -5,6 +5,7 @@ defineProps<{ changes?: FanfictionChapterChanges }>()
 const { t } = useI18n()
 </script>
 <template>
+  <p v-if="changes?.differentStory" role="alert">{{ t('fanfiction.errors.source_identity_mismatch') }}</p>
   <p v-if="changes?.incompletePreview" role="alert">{{ t('fanfiction.errors.access_denied') }}</p>
   <details v-if="changes?.differences?.length">
     <summary class="cursor-pointer">{{ t('settings.admin.libraries.viewChanges') }}</summary>

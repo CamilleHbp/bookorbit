@@ -123,9 +123,12 @@ defineExpose({ canLeave })
         <p class="text-sm">{{ t('fanfiction.downloads.keepHint') }}</p>
         <div class="flex flex-wrap gap-2">
           <Button :disabled="busy" @click="discard">{{ t('fanfiction.maintenance.keepCopy') }}</Button
-          ><Button variant="outline" :disabled="busy || job.result?.changes?.incompletePreview" @click="apply">{{
-            t('fanfiction.downloads.useWebsite')
-          }}</Button>
+          ><Button
+            variant="outline"
+            :disabled="busy || job.result?.changes?.incompletePreview || job.result?.changes?.differentStory"
+            @click="apply"
+            >{{ t('fanfiction.downloads.useWebsite') }}</Button
+          >
         </div>
       </div>
       <ImportProgress v-else :job="job" />

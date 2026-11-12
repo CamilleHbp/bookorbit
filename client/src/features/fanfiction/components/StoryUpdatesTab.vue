@@ -248,7 +248,7 @@ onMounted(() => {
           <ChapterDifferences :changes="job.result?.changes" />
           <p>{{ t('fanfiction.downloads.keepHint') }}</p>
           <div class="flex flex-wrap gap-2">
-            <Button :disabled="updating || job.result?.changes?.incompletePreview" @click="approveContent">{{
+            <Button :disabled="updating || job.result?.changes?.incompletePreview || job.result?.changes?.differentStory" @click="approveContent">{{
               t('fanfiction.downloads.useWebsite')
             }}</Button
             ><Button variant="outline" :disabled="updating" @click="discardContent">{{ t('fanfiction.maintenance.keepCopy') }}</Button>
