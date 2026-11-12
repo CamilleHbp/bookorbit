@@ -59,7 +59,35 @@ describe('private FanFicFare runtime session output', () => {
       operation: 'update',
       reviewChanges: true,
       chapterDirectory: expect.stringContaining('/3/4/11111111-1111-4111-8111-111111111111/incremental'),
+      checkStatePath: expect.stringContaining('/3/4/11111111-1111-4111-8111-111111111111/check.json'),
     });
+  });
+  it.each(['input.epub', 'output.epub'])('validates and consumes the runtime %s result', async (path) => {
+    const preview = {
+      canonicalUrl: 'https://example.org/story',
+      site: 'example.org',
+      title: 'Story',
+      authors: [],
+      description: '',
+      chapterCount: 1,
+      wordCount: 100,
+      status: 'Completed',
+      tags: [],
+    };
+    output.response = { ok: true, result: { output: path, preview } };
+    const consume = vi.fn().mockResolvedValue('verified');
+    await expect(service.update('update', preview.canonicalUrl, { configuration: '', cookies: [] }, async () => {}, consume)).resolves.toBe(
+      'verified',
+    );
+    expect(consume).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`/${path.replace('.', '\\.')}$`)), preview);
+  });
+  it('rejects arbitrary runtime output paths', async () => {
+    output.response = { ok: true, result: { output: '../private.epub', preview: {} } };
+    const consume = vi.fn();
+    await expect(service.update('update', 'https://example.org/story', { configuration: '', cookies: [] }, async () => {}, consume)).rejects.toThrow(
+      'Invalid FanFicFare update response',
+    );
+    expect(consume).not.toHaveBeenCalled();
   });
   it('accepts a large personal rulebook while keeping input bounded', async () => {
     const rules = Array.from({ length: 6000 }, (_, index) => ({

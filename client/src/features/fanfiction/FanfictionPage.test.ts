@@ -8,7 +8,7 @@ import FanfictionPage from './FanfictionPage.vue'
 vi.mock('@/features/collection/composables/useCollections', () => ({
   useCollections: () => ({ collections: ref([]), fetchCollections: vi.fn<() => Promise<void>>().mockResolvedValue(undefined) }),
 }))
-vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>(), setOnAuthFailure: vi.fn() }))
 vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
 
 describe('Fanfiction navigation and story hierarchy', () => {
@@ -64,6 +64,28 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await flushPromises()
     return router
   }
+
+  it('checks every enabled source from Downloads and shows progress without leaving the page', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      if (String(url).endsWith('/source-batches') && options?.method === 'POST')
+        return Response.json({ id: 'all-sources', kind: 'source_batch', state: 'queued' })
+      return base(url, options)
+    })
+    const router = await open('/fanfiction')
+    const button = wrapper!.findAll('header button').find((button) => button.text() === 'Check all stories')
+    expect(button).toBeDefined()
+    await button!.trigger('click')
+    await flushPromises()
+    expect(api).toHaveBeenCalledWith(
+      '/api/v1/libraries/5/fanfiction/source-batches',
+      expect.objectContaining({ method: 'POST', body: expect.stringContaining('"allMatching":true') }),
+    )
+    expect(wrapper!.text()).toContain('Checking stories')
+    expect(button!.attributes('disabled')).toBeDefined()
+    expect(router.currentRoute.value.path).toBe('/fanfiction')
+    expect(wrapper!.findComponent({ name: 'DownloadQueue' }).exists()).toBe(true)
+  })
 
   it.each(['failed', 'configuration_blocked', 'cancelled'])('resumes a saved %s import after opening a new session', async (state) => {
     const base = vi.mocked(api).getMockImplementation()!

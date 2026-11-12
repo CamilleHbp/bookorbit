@@ -292,6 +292,7 @@ export interface FanfictionDiscoverySelection {
 export type FanfictionSourceBatchAction = "update" | "refresh" | "retry" | "schedule" | "policy";
 
 export interface FanfictionSourceSelection {
+  priorityPhase?: "in_progress" | "remaining";
   repairConnectionSite?: string;
   updatePolicy?: FanfictionUpdatePolicy;
   excludePaused?: boolean;
