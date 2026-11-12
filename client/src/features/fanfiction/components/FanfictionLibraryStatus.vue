@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CircleCheck, CircleAlert, RefreshCw, LibraryBig, Clock3, BookUp2, BookCheck } from '@lucide/vue'
-import type { FanfictionDownloadQueue, FanfictionJob, FanfictionSourceBatchStatus } from '@bookorbit/types'
+import { CircleAlert, LibraryBig, Clock3, BookUp2, BookCheck } from '@lucide/vue'
+import type { FanfictionJob, FanfictionSourceBatchStatus } from '@bookorbit/types'
 
 const props = defineProps<{
   libraryId: number
   job?: FanfictionJob | null
   summary?: FanfictionSourceBatchStatus | null
   checking?: boolean
-  totals?: FanfictionDownloadQueue['totals']
-  stale?: boolean
   showActions?: boolean
 }>()
 const { t, locale } = useI18n()
@@ -21,21 +19,6 @@ const checkDate = computed(() => {
   const date = new Date(check.value.createdAt)
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(locale.value, { dateStyle: 'medium', timeStyle: 'short' })
 })
-const status = computed(() => {
-  if (props.stale) return 'unavailable'
-  if (
-    tracked.value?.needsAttention ||
-    props.totals?.attention ||
-    ['failed', 'configuration_blocked', 'review_required'].includes(check.value?.state ?? '')
-  )
-    return 'attention'
-  if (!props.totals && !tracked.value) return 'unavailable'
-  if (props.checking || props.totals?.running || props.totals?.queued || props.totals?.retrying) return 'active'
-  return 'clear'
-})
-const icon = computed(() =>
-  status.value === 'attention' || status.value === 'unavailable' ? CircleAlert : status.value === 'active' ? RefreshCw : CircleCheck,
-)
 const stats = computed(() =>
   tracked.value
     ? [
@@ -83,28 +66,10 @@ watch([() => props.libraryId, () => props.job?.id], () => {
 
 <template>
   <section class="rounded-xl border border-border bg-card text-card-foreground" :aria-label="t('fanfiction.libraryStatus.title')">
-    <header class="flex flex-wrap items-center justify-between gap-3 rounded-t-xl border-b border-border bg-muted/30 px-5 py-4 sm:px-6">
+    <header class="rounded-t-xl border-b border-border bg-muted/30 px-5 py-4 sm:px-6">
       <h2 class="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
         <LibraryBig class="size-5 text-primary" aria-hidden="true" />{{ t('fanfiction.libraryStatus.title') }}
       </h2>
-      <p
-        class="flex items-center gap-2 rounded-md px-2.5 py-1 text-xs font-medium"
-        :class="
-          status === 'attention'
-            ? 'bg-warning/15 text-foreground'
-            : status === 'clear'
-              ? 'bg-primary/10 text-foreground'
-              : 'bg-muted text-muted-foreground'
-        "
-        role="status"
-      >
-        <component
-          :is="icon"
-          class="size-4 shrink-0"
-          :class="status === 'attention' ? 'text-warning' : status === 'clear' ? 'text-primary' : ''"
-          aria-hidden="true"
-        />{{ t(`fanfiction.libraryStatus.${status}`) }}
-      </p>
     </header>
     <div class="space-y-5 p-5 sm:p-6">
       <div class="grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">

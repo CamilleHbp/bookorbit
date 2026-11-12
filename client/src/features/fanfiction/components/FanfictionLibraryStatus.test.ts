@@ -23,27 +23,18 @@ const global = { stubs: { RouterLink: { template: '<a><slot /></a>' } } }
 
 it('keeps failures visible in the last check even when there are no active downloads', () => {
   const wrapper = mount(FanfictionLibraryStatus, {
-    props: { libraryId: 5, job, summary, totals: { running: 0, queued: 0, retrying: 0, attention: 0 } },
+    props: { libraryId: 5, job, summary },
     global,
   })
   expect(wrapper.get('time').attributes('datetime')).toBe(job.createdAt)
-  expect(wrapper.get('[role="status"]').text()).toBe('Needs attention')
+  expect(wrapper.find('[role="status"]').exists()).toBe(false)
   expect(wrapper.findAll('dd').map((item) => item.text())).toEqual(['8', '109', '3'])
   expect(wrapper.text()).toContain('120 of 120 checked')
 })
-it('does not claim a check happened when none is recorded or show stale success on a refresh error', () => {
-  const wrapper = mount(FanfictionLibraryStatus, { props: { libraryId: 5, stale: true }, global })
+it('does not claim a check happened when none is recorded', () => {
+  const wrapper = mount(FanfictionLibraryStatus, { props: { libraryId: 5 }, global })
   expect(wrapper.text()).toContain('No story check recorded.')
-  expect(wrapper.get('[role="status"]').text()).toBe('Status unavailable')
   expect(wrapper.find('time').exists()).toBe(false)
-})
-
-it.each(['failed', 'configuration_blocked', 'review_required'])('keeps a %s check visible without tracked results', (state) => {
-  const wrapper = mount(FanfictionLibraryStatus, {
-    props: { libraryId: 5, job: { ...job, state } as FanfictionJob, totals: { running: 0, queued: 0, retrying: 0, attention: 0 } },
-    global,
-  })
-  expect(wrapper.get('[role="status"]').text()).toBe('Needs attention')
 })
 
 it('opens failed stories directly from the attention count and resets when the library changes', async () => {

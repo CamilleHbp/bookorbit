@@ -123,7 +123,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await open()
     const card = wrapper!.findComponent({ name: 'FanfictionLibraryStatus' })
     expect(card.get('time').attributes('datetime')).toBe(job.createdAt)
-    expect(card.get('[role="status"]').text()).toBe('Needs attention')
+    expect(card.find('[role="status"]').exists()).toBe(false)
     expect(card.text()).not.toContain('Unresolved story')
     expect(card.text()).not.toContain('Check details')
     expect(card.text()).not.toContain('Review issues')

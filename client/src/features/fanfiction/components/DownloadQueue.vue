@@ -47,14 +47,7 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
       </p>
     </div>
     <p v-if="!snapshot && !error" role="status">{{ t('common.loading') }}</p>
-    <FanfictionLibraryStatus
-      :library-id="libraryId"
-      :job="checkJob"
-      :summary="checkSummary"
-      :checking="checking"
-      :show-actions="checkError"
-      :totals="snapshot?.totals"
-      :stale="error"
+    <FanfictionLibraryStatus :library-id="libraryId" :job="checkJob" :summary="checkSummary" :checking="checking" :show-actions="checkError"
       ><slot name="check-details"
     /></FanfictionLibraryStatus>
     <template v-if="snapshot">
