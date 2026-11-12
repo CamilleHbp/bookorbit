@@ -10,7 +10,10 @@ export const issueStyle = {
   stopped: { icon: Pause, color: 'text-muted-foreground bg-muted' },
   unknown: { icon: CircleHelp, color: 'text-destructive bg-destructive/10' },
 }
-export function chapterDecision(changes?: { removed?: number; changed?: number; reordered?: boolean; inserted?: boolean } | null) {
+export function chapterDecision(
+  changes?: { unmatched?: boolean; removed?: number; changed?: number; reordered?: boolean; inserted?: boolean } | null,
+) {
+  if (changes?.unmatched) return { key: 'unmatched', count: 0 }
   if (changes?.removed) return { key: 'removed', count: changes.removed }
   if (changes?.changed) return { key: 'changed', count: changes.changed }
   if (changes?.reordered) return { key: 'reordered', count: 0 }
