@@ -17,10 +17,10 @@ import { FanfictionSourceBatchService } from './fanfiction-source-batch.service'
 import { UserService } from '../user/user.service';
 
 describe('Fanfiction queued execution', () => {
-  it.each([true, false])('loads a fresh policy and login only when approved update matching changed: current=%s', async (current) => {
+  it.each(['update', 'refresh'])('loads the current website connection for every approved %s', async (kind) => {
     const job = {
       id: 'job',
-      kind: 'update',
+      kind,
       libraryId: 5,
       userId: 7,
       tokenVersion: 1,
@@ -30,7 +30,7 @@ describe('Fanfiction queued execution', () => {
     };
     const jobs = { claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null), finish: vi.fn().mockResolvedValue(true) };
     const policy = { version: 2, rules: [] };
-    const matching = { isCurrent: vi.fn().mockResolvedValue(current), runtimePolicy: vi.fn().mockResolvedValue(policy) };
+    const matching = { runtimePolicy: vi.fn().mockResolvedValue(policy) };
     const connections = { session: vi.fn().mockResolvedValue({ document: { configuration: 'private fixture', cookies: [] } }) };
     const updates = { run: vi.fn().mockResolvedValue({ revisionId: 'installed' }) };
     const module = await Test.createTestingModule({
@@ -49,12 +49,8 @@ describe('Fanfiction queued execution', () => {
     try {
       await module.get(FanfictionWorkerService).tick();
       await vi.waitFor(() => expect(jobs.finish).toHaveBeenCalled());
-      expect(matching.isCurrent).toHaveBeenCalledWith(5, 1);
-      if (current) expect(connections.session).not.toHaveBeenCalled();
-      else {
-        expect(connections.session).toHaveBeenCalled();
-        expect(updates.run.mock.calls[0][1]).toMatchObject({ tagMatching: policy });
-      }
+      expect(connections.session).toHaveBeenCalledWith(job.url, expect.objectContaining({ id: job.userId }), expect.any(Function));
+      expect(updates.run.mock.calls[0][1]).toEqual({ configuration: 'private fixture', cookies: [], tagMatching: policy });
     } finally {
       await module.close();
     }

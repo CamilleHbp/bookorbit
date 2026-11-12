@@ -40,7 +40,6 @@ export class FanfictionUpdateService {
     signal: AbortSignal,
     saveCookies?: FanfictionCookieSink,
     reportProgress?: (progress: FanfictionImportProgress) => Promise<void>,
-    loadWebsite?: () => Promise<{ document: FanfictionConnectionDocument; saveCookies?: FanfictionCookieSink }>,
   ): Promise<FanfictionJob['result']> {
     if (job.result?.revisionId) return job.result;
     const source = await this.sources.updateContext(job);
@@ -117,12 +116,10 @@ export class FanfictionUpdateService {
     if (expected !== current.id)
       throw new ConflictException({ message: 'Installed EPUB changed before the update could resume', errorCode: 'saved_epub_changed' });
     if (job.kind !== 'update' && job.kind !== 'refresh') throw new BadRequestException('Invalid source update operation');
-    // An approved update may still need to download its chapters when no staged publication exists.
-    const website = loadWebsite ? await loadWebsite() : { document, saveCookies };
     return this.runtime.update(
       job.kind,
       source.canonicalUrl,
-      website.document,
+      document,
       async (path) => {
         const snapshot = await this.downloads.download(fileId, source.libraryId, expected, access);
         await pipeline(snapshot.stream, createWriteStream(path, { flags: 'wx', mode: 0o600 }), { signal });
@@ -173,7 +170,7 @@ export class FanfictionUpdateService {
         return finish(installed.revisionId, false, preview);
       },
       signal,
-      website.saveCookies,
+      saveCookies,
       source.updatePolicy === 'safe',
       { libraryId: job.libraryId, userId: job.userId, sourceId: source.id, restartId: job.kind === 'refresh' ? job.id : undefined },
       reportProgress,

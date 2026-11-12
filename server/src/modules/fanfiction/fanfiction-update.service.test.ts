@@ -14,7 +14,7 @@ import { FanfictionSourceService } from './fanfiction-source.service';
 import { FanfictionUpdateService } from './fanfiction-update.service';
 
 describe('fanfiction update covers', () => {
-  it('uses the current website connection when an approved update must download again', async () => {
+  it('downloads again with the website connection when an approved publication is missing', async () => {
     const runtime = { update: vi.fn().mockResolvedValue({ noChange: true }) };
     const module = await Test.createTestingModule({
       providers: [
@@ -42,12 +42,10 @@ describe('fanfiction update covers', () => {
           kind: 'update',
           result: { preparedUpdate: { approved: true, noChange: false }, preview: {} },
         } as typeof schema.fanfictionJobs.$inferSelect,
-        { configuration: '', cookies: [] },
+        website.document,
         vi.fn(),
         new AbortController().signal,
-        undefined,
-        undefined,
-        () => Promise.resolve(website),
+        website.saveCookies,
       );
       expect(runtime.update.mock.calls[0][2]).toBe(website.document);
       expect(runtime.update.mock.calls[0]).toContain(website.saveCookies);
