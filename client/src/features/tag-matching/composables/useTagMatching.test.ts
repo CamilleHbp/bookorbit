@@ -2,7 +2,7 @@ import { effectScope, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useTagMatching } from './useTagMatching'
 import { api } from '@/lib/api'
-vi.mock('@/lib/api', () => ({ api: vi.fn() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 const scopes: ReturnType<typeof effectScope>[] = []
 function setup() {
