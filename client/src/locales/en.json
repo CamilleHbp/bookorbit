@@ -327,8 +327,8 @@
           }
         },
         "sensitive": {
-          "label": "Hide sensitive covers",
-          "hint": "Replace covers marked as sensitive with a placeholder."
+          "label": "Blur sensitive covers",
+          "hint": "Heavily blur covers marked as sensitive."
         }
       },
       "layout": {
@@ -6665,7 +6665,7 @@
       "label": "Sensitive cover",
       "hint": "Shared with everyone who can access this book.",
       "reveal": "Show cover",
-      "hide": "Hide cover",
+      "hide": "Blur cover",
       "saveError": "Could not save the cover setting. Try again."
     }
   },
