@@ -1,4 +1,4 @@
-import { chapterDifferences, storyChapterChanges, storyUpdateSafety } from './fanfiction-chapter-changes';
+import { chapterDifferences, differentStory, storyChapterChanges, storyUpdateSafety } from './fanfiction-chapter-changes';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createWriteStream } from 'node:fs';
@@ -136,6 +136,11 @@ export class FanfictionUpdateService {
             errorCode: !matches ? 'source_identity_mismatch' : 'source_chapter_reduction',
           });
         const next = await this.manifests.inspect(path);
+        if (differentStory(source, preview, previousManifest, next))
+          throw new BadRequestException({
+            message: 'The website returned a different title, author and chapter text',
+            errorCode: 'source_identity_mismatch',
+          });
         if (next.chapters.some((c) => c.membershipNotice))
           throw new BadRequestException({ message: 'StoriesOnline returned a membership preview', errorCode: 'access_denied' });
         const safety = storyUpdateSafety(previousManifest, next);

@@ -525,6 +525,7 @@ export interface FanfictionChapterDifference {
 export interface FanfictionChapterChanges {
   differences?: FanfictionChapterDifference[];
   incompletePreview?: boolean;
+  differentStory?: boolean;
   safety?: "insert_only" | "append_only" | "unchanged" | "review_required";
   removed?: number;
   inserted?: boolean;
