@@ -81,3 +81,23 @@ it('identifies fiction.live ranges by story and start while preserving ordinary 
   expect(storyUpdateSafety(old, manifest('fiction.live', 30, 'old')).safety).toBe('unchanged');
   expect(storyUpdateSafety(manifest('example.org', 20, 'old'), manifest('example.org', 30, 'new')).removed).toBe(1);
 });
+
+it('matches unique StoriesOnline chapter titles across URL formats but still flags changed text and ambiguous titles', () => {
+  const saved = chapter('Chapter 1', 'https://storiesonline.net/s/123:999/chapter-2-wrong-slug');
+  const proposed = chapter('Chapter 1', 'https://storiesonline.net/s/123/current-title/1');
+  const manifest = (...chapters: RevisionChapter[]): EpubRevisionManifest => ({
+    version: 1,
+    contentHash: '',
+    metadataHash: '',
+    coverHash: null,
+    chapters,
+  });
+  expect(storyUpdateSafety(manifest(saved), manifest(proposed)).safety).toBe('unchanged');
+  const edited = { ...proposed, textHash: 'edited' };
+  expect(storyChapterChanges(manifest(saved), manifest(edited))).toMatchObject({ changed: 1, added: [] });
+  expect(storyUpdateSafety(manifest(saved), manifest(edited)).safety).toBe('review_required');
+  expect(storyUpdateSafety(manifest(saved), manifest({ ...proposed, sourceUrl: 'https://storiesonline.net/s/124/current-title/1' })).removed).toBe(1);
+  expect(
+    storyUpdateSafety(manifest(saved), manifest(proposed, { ...proposed, sourceUrl: 'https://storiesonline.net/s/123/current-title/2' })).safety,
+  ).toBe('review_required');
+});
