@@ -217,6 +217,7 @@ export type BookCard = {
   coverVersion: string;
   metadataScore: number | null;
   hasCover: boolean;
+  sensitiveCover?: boolean;
   hasMetadataLocks: boolean;
   lockedFields: BookMetadataLockField[];
   subtitle: string | null;
@@ -487,6 +488,7 @@ export type BookRecommendation = {
   /** The book card's cover cache key. Absent from servers that predate it, where `updatedAt` serves. */
   coverVersion?: string;
   hasCover: boolean;
+  sensitiveCover?: boolean;
   authors: string[];
   readStatus: UserBookStatus | null;
   isAudiobook?: boolean;
@@ -505,6 +507,7 @@ export type SeriesBookRecommendation = {
   coverVersion?: string;
   seriesIndex: SeriesIndex | null;
   hasCover: boolean;
+  sensitiveCover?: boolean;
   authors: string[];
   readStatus: UserBookStatus | null;
   isAudiobook?: boolean;

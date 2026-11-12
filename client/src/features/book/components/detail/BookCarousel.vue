@@ -17,6 +17,7 @@ export interface CarouselBook {
   updatedAt?: string | null
   coverVersion?: string
   seriesIndex?: string | null
+  sensitiveCover?: boolean
   hasCover: boolean
   authors: string[]
   readStatus?: UserBookStatus | null
@@ -140,14 +141,13 @@ defineExpose({ scroll })
     </div>
 
     <div v-else ref="scrollEl" class="flex gap-6 overflow-x-auto pb-2">
-      <button
+      <div
         v-for="(book, index) in books"
         :key="book.id"
         :data-book-id="book.id"
         class="shrink-0 text-left group animate-fade-up"
         :class="book.coverAspectRatio === '1/1' ? cardWidthClass.square : cardWidthClass.portrait"
         :style="{ animationDelay: `${index * 40}ms` }"
-        @click="navigateToBook(book.id)"
       >
         <BookCoverSurface
           class="book-cover-surface--spine-fitted relative w-full rounded-sm overflow-hidden transition-transform duration-150 group-hover:[transform:var(--cover-hover-transform)] motion-reduce:group-hover:[transform:none]"
@@ -157,9 +157,16 @@ defineExpose({ scroll })
           :display-mode="isAudiobook(book) ? 'fill-crop' : undefined"
           :style="{ aspectRatio: cardAspectRatio(book) }"
         >
+          <button
+            type="button"
+            class="absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus-visible:outline-2 focus-visible:outline-ring"
+            :aria-label="book.title ?? t('book.untitled')"
+            @click="navigateToBook(book.id)"
+          />
           <BookCoverArtwork
             :src="coverUrl(book.id, 'thumbnail', book.coverVersion ?? book.updatedAt)"
             :has-cover="book.hasCover"
+            :sensitive-cover="book.sensitiveCover"
             :title="book.title"
             :author-line="book.authors.length > 0 ? book.authors.join(', ') : null"
             :is-audio="isAudiobook(book)"
@@ -185,7 +192,7 @@ defineExpose({ scroll })
             {{ formatSeriesIndex(book.seriesIndex) }}
           </span>
         </BookCoverSurface>
-      </button>
+      </div>
     </div>
   </div>
 </template>

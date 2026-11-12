@@ -11,6 +11,10 @@ import { FORBIDDEN_PERMISSION_KEY } from '../../common/decorators/forbid-permiss
 import { PERMISSION_KEY } from '../../common/decorators/require-permission.decorator';
 import { BookController } from './book.controller';
 import { FASTIFY_ROUTE_CONFIG_METADATA } from '@nestjs/platform-fastify/constants.js';
+import { blurSensitiveCover } from './utils/sensitive-cover-blur';
+
+vi.mock('./utils/sensitive-cover-blur', () => ({ blurSensitiveCover: vi.fn().mockResolvedValue(Buffer.from('blurred')) }));
+
 import { EMPTY_CONTENT_FILTER_RULES } from '@bookorbit/types';
 
 vi.mock('archiver', () => ({
@@ -186,18 +190,22 @@ describe('BookController', () => {
     mockCreateReadStream.mockReturnValue({ stream: true } as never);
   });
 
-  it.each(['getCover', 'getThumbnail'] as const)('masks %s before file access or cache validation', async (method) => {
+  it.each(['getCover', 'getThumbnail'] as const)('blurs %s before cache validation', async (method) => {
     const { controller, bookService } = makeController();
     const { reply, headers } = makeReply();
     const user = makeUser();
     bookService.shouldHideSensitiveCover.mockResolvedValue(true);
-    await controller[method](7, user, reply, '1234', '"1234"', true);
+    bookService.getCoverPath.mockResolvedValue('/tmp/cover.jpg');
+    bookService.getThumbnailPath.mockResolvedValue('/tmp/thumbnail.jpg');
+    await controller[method](7, user, reply, { t: '1234', medium: 'audio' }, '"1234"', true);
     expect(bookService.shouldHideSensitiveCover).toHaveBeenCalledWith(7, user);
-    expect(bookService.getCoverPath).not.toHaveBeenCalled();
-    expect(bookService.getThumbnailPath).not.toHaveBeenCalled();
+    const pathMethod = method === 'getCover' ? 'getCoverPath' : 'getThumbnailPath';
+    expect(bookService[pathMethod]).toHaveBeenCalledWith(7, user, { medium: 'audio', strict: undefined });
+    expect(blurSensitiveCover).toHaveBeenCalledWith(method === 'getCover' ? '/tmp/cover.jpg' : '/tmp/thumbnail.jpg');
     expect(mockStat).not.toHaveBeenCalled();
-    expect(reply.type).toHaveBeenCalledWith('image/svg+xml');
-    expect(reply.send).toHaveBeenCalledWith(expect.stringContaining('<svg'));
+    expect(reply.type).toHaveBeenCalledWith('image/jpeg');
+    expect(reply.send).toHaveBeenCalledWith(Buffer.from('blurred'));
+    expect(mockCreateReadStream).not.toHaveBeenCalled();
     expect(headers['Cache-Control']).toBe('private, no-store');
   });
 
@@ -207,7 +215,7 @@ describe('BookController', () => {
     bookService.shouldHideSensitiveCover.mockResolvedValue(false);
     bookService.getCoverPath.mockResolvedValue('/tmp/cover.jpg');
     mockStat.mockResolvedValue({ mtimeMs: 1234 } as never);
-    await controller.getCover(7, makeUser(), reply, '1234', undefined, true);
+    await controller.getCover(7, makeUser(), reply, { t: '1234' }, undefined, true);
     expect(headers['Cache-Control']).toBe('private, no-store');
     expect(reply.type).toHaveBeenCalledWith('image/jpeg');
   });

@@ -51,7 +51,7 @@ import { UpsertAudioProgressDto } from './dto/upsert-audio-progress.dto';
 import { UpdateBookMetadataAndLocksDto } from './dto/update-book-metadata-and-locks.dto';
 import { UpdateBookMetadataDto } from './dto/update-book-metadata.dto';
 import { UpdateSensitiveCoverDto } from './dto/update-sensitive-cover.dto';
-import { SENSITIVE_COVER_PLACEHOLDER } from './utils/sensitive-cover-placeholder';
+import { blurSensitiveCover } from './utils/sensitive-cover-blur';
 import { UpdateBookAddedAtDto } from './dto/update-book-added-at.dto';
 import { CoverReadQueryDto } from './dto/cover-read-query.dto';
 import { CoverMediumQueryDto } from '../cover/dto/cover-medium-query.dto';
@@ -360,12 +360,14 @@ export class BookController {
     @Headers('if-none-match') ifNoneMatch?: string,
     @Query('hideSensitive', new ParseBoolPipe({ optional: true })) hideSensitive?: boolean,
   ) {
-    if (hideSensitive && (await this.bookService.shouldHideSensitiveCover(id, user))) {
-      reply.header('Cache-Control', 'private, no-store').type('image/svg+xml').send(SENSITIVE_COVER_PLACEHOLDER);
-      return;
-    }
+    const sensitive = hideSensitive && (await this.bookService.shouldHideSensitiveCover(id, user));
     const coverPath = await this.bookService.getCoverPath(id, user, { medium: query.medium, strict: query.strict });
     if (!coverPath) throw new NotFoundException(`No cover for book ${id}`);
+    if (sensitive) {
+      const blurred = await blurSensitiveCover(coverPath);
+      reply.header('Cache-Control', 'private, no-store').type('image/jpeg').send(blurred);
+      return;
+    }
 
     const { mtimeMs } = await stat(coverPath);
     const etag = `"${Math.floor(mtimeMs)}"`;
@@ -393,12 +395,14 @@ export class BookController {
     @Headers('if-none-match') ifNoneMatch?: string,
     @Query('hideSensitive', new ParseBoolPipe({ optional: true })) hideSensitive?: boolean,
   ) {
-    if (hideSensitive && (await this.bookService.shouldHideSensitiveCover(id, user))) {
-      reply.header('Cache-Control', 'private, no-store').type('image/svg+xml').send(SENSITIVE_COVER_PLACEHOLDER);
-      return;
-    }
+    const sensitive = hideSensitive && (await this.bookService.shouldHideSensitiveCover(id, user));
     const thumbnailPath = await this.bookService.getThumbnailPath(id, user, { medium: query.medium, strict: query.strict });
     if (!thumbnailPath) throw new NotFoundException(`No thumbnail for book ${id}`);
+    if (sensitive) {
+      const blurred = await blurSensitiveCover(thumbnailPath);
+      reply.header('Cache-Control', 'private, no-store').type('image/jpeg').send(blurred);
+      return;
+    }
 
     const { mtimeMs } = await stat(thumbnailPath);
     const etag = `"${Math.floor(mtimeMs)}"`;
