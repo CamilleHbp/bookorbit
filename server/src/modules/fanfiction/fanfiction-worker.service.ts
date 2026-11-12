@@ -1,12 +1,11 @@
 import { TagMatchingService } from '../tag-matching/tag-matching.service';
 import { ForbiddenException, ServiceUnavailableException, HttpException, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import type { FanfictionJob } from '@bookorbit/types';
+import type { FanfictionJob, FanfictionImportProgress } from '@bookorbit/types';
 import { UserService } from '../user/user.service';
 import { shouldRetryJob } from './fanfiction-download-retry';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
-import { withFanfictionDefaults } from './fanfiction-defaults';
 import { FanfictionConnectionService } from './fanfiction-connection.service';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { FanfictionImportService } from './fanfiction-import.service';
@@ -107,57 +106,38 @@ export class FanfictionWorkerService implements OnModuleDestroy {
           throw new ServiceUnavailableException({ errorCode: 'worker_lease_expired', message: 'Queued operation lease was lost' });
         return current;
       };
-      const stalePrepared =
-        !!job.result?.preparedUpdate?.approved && !(await this.tagMatching.isCurrent(job.libraryId, job.result.preview?.labelMappingVersion));
-      const downloads =
-        (!job.result?.preparedUpdate?.approved || stalePrepared) &&
-        !['rollback', 'discovery', 'adopt', 'source_batch', 'replacement'].includes(job.kind);
-      // Resolve at execution time so already queued stories use a repaired website login.
-      const loadWebsite = async () => {
-        const session = await this.connections.session(job.url, user, authorizeCookies);
-        connection = session.connection ?? null;
-        websiteSite = session.site;
-        const policy = await this.tagMatching.runtimePolicy(job.libraryId);
-        return { document: policy ? { ...session.document, tagMatching: policy } : session.document, saveCookies: session.saveCookies };
-      };
-      const { document, saveCookies } = downloads
-        ? await loadWebsite()
-        : {
-            document: withFanfictionDefaults({ configuration: '', cookies: [] }, user),
-            saveCookies: undefined,
-          };
-      const result: FanfictionJob['result'] =
-        job.kind === 'replacement'
-          ? await this.replacements.run(job, () => this.authorized(job), controller.signal)
-          : job.kind === 'source_batch'
-            ? await this.sourceBatches.run(job, user, () => this.authorized(job), controller.signal)
-            : job.kind === 'discovery'
-              ? await this.discovery.run(job, () => this.authorized(job), controller.signal)
-              : job.kind === 'adopt'
-                ? await this.adoption.run(job, user, () => this.authorized(job), controller.signal)
-                : job.kind === 'rollback'
-                  ? await this.rollbacks.run(job, () => this.authorized(job), controller.signal)
-                  : job.kind === 'import'
-                    ? await this.imports.run(
-                        job,
-                        user,
-                        document,
-                        () => this.authorized(job),
-                        controller.signal,
-                        saveCookies,
-                        (progress) => this.jobs.reportProgress(job, progress),
-                      )
-                    : job.kind === 'update' || job.kind === 'refresh'
-                      ? await this.updates.run(
-                          job,
-                          document,
-                          () => this.authorized(job),
-                          controller.signal,
-                          saveCookies,
-                          (progress) => this.jobs.reportProgress(job, progress),
-                          downloads ? undefined : loadWebsite,
-                        )
-                      : { preview: await this.runtime.preview(job.url, document, controller.signal, saveCookies) };
+      const authorize = () => this.authorized(job);
+      const signal = controller.signal;
+      let result: FanfictionJob['result'];
+      switch (job.kind) {
+        case 'replacement':
+          result = await this.replacements.run(job, authorize, signal);
+          break;
+        case 'source_batch':
+          result = await this.sourceBatches.run(job, user, authorize, signal);
+          break;
+        case 'discovery':
+          result = await this.discovery.run(job, authorize, signal);
+          break;
+        case 'adopt':
+          result = await this.adoption.run(job, user, authorize, signal);
+          break;
+        case 'rollback':
+          result = await this.rollbacks.run(job, authorize, signal);
+          break;
+        default: {
+          const session = await this.connections.session(job.url, user, authorizeCookies);
+          connection = session.connection;
+          websiteSite = session.site;
+          const policy = await this.tagMatching.runtimePolicy(job.libraryId);
+          const document = policy ? { ...session.document, tagMatching: policy } : session.document;
+          const reportProgress = (progress: FanfictionImportProgress) => this.jobs.reportProgress(job, progress);
+          if (job.kind === 'import') result = await this.imports.run(job, user, document, authorize, signal, session.saveCookies, reportProgress);
+          else if (job.kind === 'update' || job.kind === 'refresh')
+            result = await this.updates.run(job, document, authorize, signal, session.saveCookies, reportProgress);
+          else result = { preview: await this.runtime.preview(job.url, document, signal, session.saveCookies) };
+        }
+      }
       await this.authorized(job);
       if (connection) await this.connections.outcome(connection, job.userId);
       const continuation = result?.discovery?.finished === false || result?.selection?.finished === false;
@@ -171,7 +151,12 @@ export class FanfictionWorkerService implements OnModuleDestroy {
               : null;
       const needsReview = !!storyReview || (result?.selection?.failed ?? 0) > 0;
       if (job.sourceId && result?.bookFileId && !needsReview && ['import', 'update', 'refresh'].includes(job.kind)) {
-        const scope = { libraryId: job.libraryId, userId: job.userId, sourceId: job.sourceId };
+        const scope = {
+          libraryId: job.libraryId,
+          userId: job.userId,
+          sourceId: job.sourceId,
+          restartId: job.kind === 'refresh' ? job.id : job.kind === 'import' ? job.result?.chapterRestartId : undefined,
+        };
         if (await this.jobs.renew(job)) await this.runtime.releaseChapters(scope);
       }
       const committed = continuation
