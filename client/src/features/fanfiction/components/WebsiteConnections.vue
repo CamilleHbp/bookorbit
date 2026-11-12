@@ -189,7 +189,7 @@ function date(value: string) {
         /></label>
       </template>
       <Button v-if="signInUrl" variant="outline" as-child>
-        <a :href="signInUrl.href">{{ t('fanfiction.connections.manualSignIn') }}</a>
+        <a :href="signInUrl.href" target="_blank" rel="noopener noreferrer">{{ t('fanfiction.connections.manualSignIn') }}</a>
       </Button>
       <dialog
         ref="loginDialog"
@@ -197,7 +197,10 @@ function date(value: string) {
         class="m-auto rounded-lg bg-background p-5 text-foreground backdrop:bg-black/50"
         @close="finishLoginPrompt"
       >
-        <a v-if="signInUrl" class="text-primary underline" :href="signInUrl.href">{{ t('fanfiction.connections.manualSignIn') }}</a>
+        <p class="mb-3 text-sm" role="status">{{ t('fanfiction.connections.saved') }}</p>
+        <a v-if="signInUrl" class="text-primary underline" :href="signInUrl.href" target="_blank" rel="noopener noreferrer">{{
+          t('fanfiction.connections.manualSignIn')
+        }}</a>
         <Button type="button" variant="ghost" @click="dismissLoginPrompt">{{ t('common.close') }}</Button>
       </dialog>
       <details :open="website.access === 'cookies'" class="space-y-3">
@@ -207,6 +210,7 @@ function date(value: string) {
           >{{ t('fanfiction.connections.cookieName')
           }}<input
             v-model="cookieName"
+            :required="!!cookieValue"
             autocomplete="off"
             :disabled="busy"
             class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
@@ -215,6 +219,7 @@ function date(value: string) {
           >{{ t('fanfiction.connections.cookieValue')
           }}<input
             v-model="cookieValue"
+            :required="!!cookieName"
             type="password"
             autocomplete="off"
             :disabled="busy"

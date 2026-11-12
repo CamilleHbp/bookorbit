@@ -38,6 +38,10 @@ it('offers verification beside the affected download without opening a dialog or
     expect(links[0]!.attributes('rel')).toBe('noopener noreferrer')
     expect(wrapper.get('article').text()).toContain('A story')
     expect(wrapper.find('dialog').exists()).toBe(false)
+    snapshot.value.items[0].bookId = 42
+    await flushPromises()
+    expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
+    expect(wrapper.get('article').text()).toContain('Update saved book')
   } finally {
     wrapper.unmount()
   }

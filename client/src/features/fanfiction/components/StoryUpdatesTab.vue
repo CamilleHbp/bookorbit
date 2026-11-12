@@ -141,6 +141,29 @@ onMounted(() => {
           @click="ignoreMissingWarning"
           >{{ t('fanfiction.ignoreMissingWarning') }}</Button
         >
+        <details v-if="canReplace" :open="source.attentionCode === 'fanfiction_net_browser_verification'" class="space-y-4">
+          <summary class="cursor-pointer font-medium">{{ t('fanfiction.connections.updateSavedBook') }}</summary>
+          <p v-if="source.site === 'fanfiction.net'" class="text-sm">
+            <a href="/bookorbit-story-updates.zip" download class="text-primary underline">{{ t('fanfiction.browserExtension') }}</a>
+          </p>
+          <form class="space-y-3" @submit.prevent="uploadReplacement">
+            <h2 class="font-semibold">{{ t('fanfiction.replacementTitle') }}</h2>
+            <p class="text-muted-foreground text-sm">{{ t('fanfiction.replacementHelp') }}</p>
+            <label class="block space-y-2 text-sm">
+              {{ t('fanfiction.replacementFile') }}
+              <input
+                type="file"
+                :data-bookorbit-story="source?.canonicalUrl"
+                accept=".epub,application/epub+zip"
+                :disabled="updating"
+                class="block w-full"
+                @change="chooseReplacement"
+              />
+            </label>
+            <p v-if="replacementFile" class="text-sm break-words">{{ replacementFile.name }}</p>
+            <Button type="submit" :disabled="updating || !replacementFile">{{ t('fanfiction.replacementUpload') }}</Button>
+          </form>
+        </details>
         <dl class="text-muted-foreground grid gap-2 text-sm sm:grid-cols-2">
           <div>
             <dt>{{ t('fanfiction.lastChecked') }}</dt>
@@ -252,28 +275,8 @@ onMounted(() => {
           >{{ t('fanfiction.retry') }}</Button
         >
       </div>
-      <details :open="source.attentionCode === 'fanfiction_net_browser_verification'" class="space-y-4">
-        <summary class="cursor-pointer font-medium">{{ t('fanfiction.advanced') }}</summary>
-        <p v-if="canReplace && source?.site === 'fanfiction.net'" class="text-sm">
-          <a href="/bookorbit-story-updates.zip" download class="text-primary underline">{{ t('fanfiction.browserExtension') }}</a>
-        </p>
-        <form v-if="canReplace" class="border-border space-y-3 rounded-xl border p-4" @submit.prevent="uploadReplacement">
-          <h2 class="font-semibold">{{ t('fanfiction.replacementTitle') }}</h2>
-          <p class="text-muted-foreground text-sm">{{ t('fanfiction.replacementHelp') }}</p>
-          <label class="block space-y-2 text-sm">
-            {{ t('fanfiction.replacementFile') }}
-            <input
-              type="file"
-              :data-bookorbit-story="source?.canonicalUrl"
-              accept=".epub,application/epub+zip"
-              :disabled="updating"
-              class="block w-full"
-              @change="chooseReplacement"
-            />
-          </label>
-          <p v-if="replacementFile" class="text-sm break-words">{{ replacementFile.name }}</p>
-          <Button type="submit" :disabled="updating || !replacementFile">{{ t('fanfiction.replacementUpload') }}</Button>
-        </form>
+      <details class="space-y-4">
+        <summary class="cursor-pointer font-medium">{{ t('book.detail.files.revisions.title') }}</summary>
         <section class="border-border space-y-3 rounded-xl border p-4">
           <h2 class="font-semibold">{{ t('book.detail.files.revisions.title') }}</h2>
           <p class="text-muted-foreground text-sm">{{ t('fanfiction.rollbackHelp') }}</p>

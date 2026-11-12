@@ -115,7 +115,7 @@ it.each(['royalroad.com', 'fanfiction.net'])('saves %s email and password while 
     expect(JSON.parse(request[1]!.body as string)).toEqual({ site, username: 'reader@example.com', password: 'private-password' })
     const links = wrapper.findAll('dialog a')
     expect(links.map((link) => link.attributes('href'))).toEqual(site === 'fanfiction.net' ? ['https://www.fanfiction.net/login.php'] : [])
-    expect(links.map((link) => link.attributes('target'))).toEqual(site === 'fanfiction.net' ? [undefined] : [])
+    expect(links.map((link) => link.attributes('target'))).toEqual(site === 'fanfiction.net' ? ['_blank'] : [])
     if (site === 'fanfiction.net') await wrapper.get('dialog').trigger('close')
     expect(wrapper.emitted('saved')).toHaveLength(1)
   } finally {
