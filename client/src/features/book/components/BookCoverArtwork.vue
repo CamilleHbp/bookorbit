@@ -230,6 +230,10 @@ function handleImageError() {
 </template>
 
 <style scoped>
+:global(.book-cover-surface--mini) .sensitive-cover-reveal {
+  bottom: 0.125rem;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .sensitive-cover-reveal {
     opacity: 0;

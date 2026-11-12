@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import BookCarousel, { type CarouselBook } from '../BookCarousel.vue'
+import { useDisplaySettings } from '@/composables/useDisplaySettings'
 import type { ReadStatus } from '@bookorbit/types'
 
 vi.mock('vue-router', async (importOriginal) => {
@@ -29,6 +30,22 @@ function mountCarousel(books: CarouselBook[]) {
 }
 
 describe('BookCarousel read status badge', () => {
+  it('keeps temporary reveal separate from book navigation', async () => {
+    const { hideSensitiveCovers } = useDisplaySettings()
+    hideSensitiveCovers.value = true
+    try {
+      const wrapper = mountCarousel([{ ...makeBook(1, null), sensitiveCover: true }])
+      const card = wrapper.get('[data-book-id="1"]')
+      expect(card.findAll('button')).toHaveLength(2)
+      expect(card.find('button button').exists()).toBe(false)
+      await card.get('button[aria-pressed]').trigger('click')
+      expect(card.get('button[aria-pressed]').attributes('aria-pressed')).toBe('true')
+      expect(hideSensitiveCovers.value).toBe(true)
+    } finally {
+      hideSensitiveCovers.value = false
+    }
+  })
+
   it('labels a card with the read status of its book', () => {
     const wrapper = mountCarousel([makeBook(1, 'reading')])
 
