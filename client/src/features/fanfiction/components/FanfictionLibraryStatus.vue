@@ -63,7 +63,13 @@ const failuresOpen = ref(false)
 const failuresPanel = ref<HTMLElement>()
 const failuresId = useId()
 const actionsVisible = computed(() =>
-  Boolean(props.checking || props.showActions || (!tracked.value && check.value) || (failuresOpen.value && tracked.value?.needsAttention)),
+  Boolean(
+    props.checking ||
+    props.showActions ||
+    ['failed', 'configuration_blocked', 'cancelled'].includes(check.value?.state ?? '') ||
+    (!tracked.value && check.value) ||
+    (failuresOpen.value && tracked.value?.needsAttention),
+  ),
 )
 async function toggleFailures() {
   failuresOpen.value = !failuresOpen.value
