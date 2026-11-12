@@ -4,7 +4,7 @@ import type { FanfictionSource } from '@bookorbit/types'
 import { api } from '@/lib/api'
 import StoryAttentionEditor from './StoryAttentionEditor.vue'
 
-vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>(), setOnAuthFailure: vi.fn() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>(), setOnAuthFailure: vi.fn<() => void>() }))
 vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
 const source = {
   id: 'source',
