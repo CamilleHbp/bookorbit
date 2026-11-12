@@ -26,8 +26,9 @@ function handleMetadataSave() {
   else void props.state.resolveMetadata()
 }
 async function saveReview() {
+  if (props.state.busy.value || !props.state.metadataReview.value) return
   await props.state.resolveMetadata()
-  if (!props.state.error.value) emit('reviewed')
+  if (!props.state.error.value && !props.state.metadataReview.value) emit('reviewed')
 }
 defineExpose({ commitPending })
 const { t } = useI18n()

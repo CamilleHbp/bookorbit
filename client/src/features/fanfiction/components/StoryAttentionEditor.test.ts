@@ -58,6 +58,26 @@ describe('attention repair editor', () => {
     expect(wrapper.emitted('next')).toEqual([[true]])
     expect(wrapper.text()).toContain('Resolved')
   })
+  it('does not advance from a second save click while the first save is pending', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    let finish: () => void = () => {}
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      if (options?.method === 'POST') await pending
+      return base(url, options)
+    })
+    await open()
+    const save = button('Save & next')
+    await Promise.all([save.trigger('click'), save.trigger('click')])
+    await flushPromises()
+    expect(wrapper.emitted('next')).toBeUndefined()
+    finish()
+    await flushPromises()
+    expect(wrapper.emitted('next')).toEqual([[true]])
+    expect(vi.mocked(api).mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1)
+  })
   it('keeps the current story and edits when saving fails', async () => {
     fail = true
     await open()
