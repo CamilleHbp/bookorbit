@@ -6,7 +6,7 @@ import DownloadQueue from './DownloadQueue.vue'
 const snapshot = ref()
 vi.mock('../composables/useDownloadQueue', () => ({
   sections: [],
-  useDownloadQueue: () => ({ snapshot, offsets: {}, reload: vi.fn(), refresh: vi.fn() }),
+  useDownloadQueue: () => ({ snapshot, offsets: {}, reload: vi.fn<() => void>(), refresh: vi.fn<() => void>() }),
 }))
 
 it('prompts on a challenged story, ignores an unrelated origin, and leaves a link after dismissal', async () => {
