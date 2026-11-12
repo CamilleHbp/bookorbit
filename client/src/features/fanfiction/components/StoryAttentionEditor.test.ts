@@ -1,0 +1,93 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { FanfictionSource } from '@bookorbit/types'
+import { api } from '@/lib/api'
+import StoryAttentionEditor from './StoryAttentionEditor.vue'
+
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>(), setOnAuthFailure: vi.fn() }))
+vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
+const source = {
+  id: 'source',
+  bookId: 7,
+  libraryId: 5,
+  title: 'Story',
+  state: 'review_required',
+  attentionCode: 'metadata_review_required',
+  metadataReviewPending: true,
+} as FanfictionSource
+const values = { title: 'Story', description: '', authors: ['Writer'], genres: [], tags: [] }
+const review = {
+  jobId: 'review',
+  review: { current: values, incoming: values, fields: ['tags'], lockedFields: [], fingerprint: 'hash', previousState: 'active' },
+}
+const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
+
+describe('attention repair editor', () => {
+  let wrapper: ReturnType<typeof mount>
+  let saved = false
+  let fail = false
+  beforeEach(() => {
+    saved = false
+    fail = false
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      const path = String(url)
+      if (options?.method === 'POST') {
+        if (fail) return respond({ message: 'Could not save' }, 500)
+        saved = true
+        return respond({ resolved: true })
+      }
+      if (path.endsWith('/metadata-review')) return respond(saved ? null : review)
+      if (path.endsWith('/sources/source'))
+        return respond(saved ? { ...source, state: 'active', attentionCode: null, metadataReviewPending: false } : source)
+      return respond({ items: [], nextCursor: null })
+    })
+  })
+  afterEach(() => {
+    wrapper?.unmount()
+    vi.restoreAllMocks()
+  })
+  async function open() {
+    wrapper = mount(StoryAttentionEditor, { props: { source, busy: false }, global: { stubs: { RouterLink: true } } })
+    await flushPromises()
+  }
+  const button = (label: string) => wrapper.findAll('button').find((item) => item.text() === label)!
+  it('saves the metadata review and advances only after successful resolution', async () => {
+    await open()
+    await button('Save & next').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('next')).toEqual([[true]])
+    expect(wrapper.text()).toContain('Resolved')
+  })
+  it('keeps the current story and edits when saving fails', async () => {
+    fail = true
+    await open()
+    await button('Save & next').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('next')).toBeUndefined()
+    expect(wrapper.text()).toContain('Could not save')
+    expect(button('Save & next')).toBeDefined()
+  })
+  it('does not call an unfinished retry resolved', async () => {
+    vi.mocked(api).mockImplementation(async (url) => {
+      const path = String(url)
+      if (path.endsWith('/sources/source')) return respond({ ...source, state: 'active', attentionCode: null, metadataReviewPending: false })
+      if (path.endsWith('/metadata-review')) return respond(null)
+      if (path.includes('/jobs?')) return respond({ items: [{ id: 'pending', state: 'queued', kind: 'update' }], nextCursor: null })
+      return respond({ items: [], nextCursor: null })
+    })
+    await open()
+    expect(wrapper.text()).toContain('Update in progress')
+    await button('Next').trigger('click')
+    expect(wrapper.emitted('next')).toEqual([[false]])
+  })
+  it('protects uncommitted tag edits before skipping', async () => {
+    await open()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await wrapper.get('input[role="combobox"]').setValue('Unsaved tag')
+    await button('Skip & next').trigger('click')
+    await flushPromises()
+    expect(window.confirm).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('next')).toBeUndefined()
+    expect(wrapper.text()).toContain('Unsaved tag')
+  })
+})

@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { api } from '@/lib/api'
 import FanfictionPage from './FanfictionPage.vue'
 
@@ -47,7 +47,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
     })
     await router.push(path)
     await router.isReady()
-    wrapper = mount(FanfictionPage, {
+    wrapper = mount(RouterView, {
       attachTo: document.body,
       global: {
         plugins: [router],
@@ -234,6 +234,7 @@ describe('Fanfiction navigation and story hierarchy', () => {
       .findAll('button')
       .find((button) => button.text() === 'Library metadata')!
       .trigger('click')
+    await flushPromises()
     expect(confirm).toHaveBeenCalled()
     expect(wrapper!.text()).toContain('new.tag')
     expect(wrapper!.find('form').exists()).toBe(true)

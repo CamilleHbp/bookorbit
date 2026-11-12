@@ -1,7 +1,7 @@
 import { defineComponent, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { FanfictionReviewScope } from '@bookorbit/types'
+import type { StoryReviewScope } from './useStoryReviewQueue'
 import { api } from '@/lib/api'
 import { useStoryReviewQueue } from './useStoryReviewQueue'
 
@@ -32,7 +32,7 @@ describe('story review queue', () => {
   let wrapper: ReturnType<typeof mount>
   let queue: ReturnType<typeof useStoryReviewQueue>
   const libraryId = ref(5)
-  const scope = ref<FanfictionReviewScope>('pending')
+  const scope = ref<StoryReviewScope>('pending')
   async function open() {
     wrapper = mount(
       defineComponent({
@@ -57,6 +57,28 @@ describe('story review queue', () => {
   afterEach(() => {
     wrapper?.unmount()
     vi.restoreAllMocks()
+  })
+
+  it('reviews every attention type without loading ordinary metadata editors', async () => {
+    scope.value = 'attention'
+    await open()
+    const url = new URL(String(vi.mocked(api).mock.calls[0]![0]), 'https://example.org')
+    expect(url.searchParams.get('view')).toBe('attention')
+    expect(url.searchParams.has('reviewScope')).toBe(false)
+    expect(url.searchParams.has('excludeSharedAccess')).toBe(false)
+    expect(queue.current.value?.loaded).toBe(true)
+    expect(vi.mocked(api)).toHaveBeenCalledTimes(1)
+    await queue.completeAttention(true)
+    expect(queue.current.value?.source.id).toBe('2')
+    expect(queue.savedCount.value).toBe(1)
+    await queue.completeAttention(false)
+    expect(queue.finished.value).toBe(true)
+    expect(queue.skippedCount.value).toBe(1)
+    await queue.previous()
+    expect(queue.current.value?.source.id).toBe('2')
+    await queue.completeAttention(true)
+    expect(queue.savedCount.value).toBe(2)
+    expect(queue.skippedCount.value).toBe(0)
   })
 
   it('starts with library tags even when a website proposes other tags', async () => {

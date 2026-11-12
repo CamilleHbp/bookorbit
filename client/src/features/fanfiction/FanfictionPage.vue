@@ -123,21 +123,22 @@ const storyIssues = ref<InstanceType<typeof StoryAttentionList> | null>(null)
 const reviewQueue = ref<InstanceType<typeof StoryReviewQueue> | null>(null)
 const importInbox = ref<InstanceType<typeof StoryImportInbox> | null>(null)
 const downloads = ref<InstanceType<typeof DownloadQueue>>()
-const reviewView = ref<'imports' | 'metadata'>('imports')
+const reviewView = ref<'imports' | 'metadata' | 'attention'>('imports')
 watch(
   () => [router.currentRoute.value.query.tab, router.currentRoute.value.query.review],
   ([page, review]) => {
-    if (page === 'review') reviewView.value = review === 'metadata' ? 'metadata' : 'imports'
+    if (page === 'review') reviewView.value = review === 'metadata' ? 'metadata' : review === 'attention' ? 'attention' : 'imports'
   },
   { immediate: true },
 )
+function showAttentionReviews() {
+  void router.replace({ query: { ...router.currentRoute.value.query, review: 'attention' } })
+}
 function showImportReviews() {
-  if (reviewQueue.value?.canLeave() === false) return
-  reviewView.value = 'imports'
+  void router.replace({ query: { ...router.currentRoute.value.query, review: 'imports' } })
 }
 function showMetadataReviews() {
-  if (importInbox.value?.canLeave() === false) return
-  reviewView.value = 'metadata'
+  void router.replace({ query: { ...router.currentRoute.value.query, review: 'metadata' } })
 }
 const inlineReviews = ref<InstanceType<typeof StoryImportReview>[]>([])
 const taskList = ref<InstanceType<typeof FanfictionTaskList>>()
@@ -478,6 +479,12 @@ onMounted(() => {
       </section>
       <section v-if="tab === 'review'" class="mx-auto w-full max-w-4xl space-y-6">
         <div class="flex flex-wrap gap-2" role="group" :aria-label="t('fanfiction.reviewQueue.nav')">
+          <Button
+            :variant="reviewView === 'attention' ? 'secondary' : 'ghost'"
+            :aria-pressed="reviewView === 'attention'"
+            @click="showAttentionReviews"
+            >{{ t('fanfiction.maintenance.attention') }}</Button
+          >
           <Button :variant="reviewView === 'imports' ? 'secondary' : 'ghost'" :aria-pressed="reviewView === 'imports'" @click="showImportReviews">{{
             t('fanfiction.importInbox.title')
           }}</Button>
@@ -489,7 +496,13 @@ onMounted(() => {
           >
         </div>
         <StoryImportInbox v-if="reviewView === 'imports'" ref="importInbox" :key="libraryId" :library-id="libraryId" :disabled="!canManage" />
-        <StoryReviewQueue v-else ref="reviewQueue" :key="libraryId" :library-id="libraryId" />
+        <StoryReviewQueue
+          v-else
+          ref="reviewQueue"
+          :key="`${libraryId}-${reviewView}`"
+          :library-id="libraryId"
+          :attention="reviewView === 'attention'"
+        />
       </section>
       <section v-if="tab === 'stories'" class="space-y-3 rounded-xl bg-card p-3 sm:p-4" :aria-label="t('fanfiction.stories')" :aria-busy="busy">
         <form class="flex flex-wrap items-center gap-2" @submit.prevent="applyFilters">
