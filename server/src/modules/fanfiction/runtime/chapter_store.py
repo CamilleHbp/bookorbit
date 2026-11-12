@@ -7,6 +7,7 @@ import sqlite3
 import zlib
 from contextlib import closing, contextmanager
 
+from controlled_config import check_storiesonline_notice, StoriesOnlinePreview
 from safe_transport import DownloadLimitError, SourceResponseError
 
 # FanFicFare uses a URL-derived UUID for inline illustrations and CSS assets.
@@ -58,15 +59,23 @@ def recover_chapters(adapter, directory, canonical, transport):
             if row:
                 body, checksum, references = row
                 if digest(body + references.encode()) == checksum:
-                    replacements = {}
-                    for name, image_hash, ext, mime in json.loads(references):
-                        image = db.execute('SELECT data FROM images WHERE checksum=?', (image_hash,)).fetchone()
-                        if not image or digest(image[0]) != image_hash:
-                            break
-                        restored = adapter.story.img_store.add_img(name, ext, mime, image[0])
-                        replacements[name] = restored['newsrc']
+                    stored = zlib.decompress(body)
+                    try:
+                        check_storiesonline_notice(canonical, stored)
+                    except StoriesOnlinePreview:
+                        # Checkpoints written before preview detection must be fetched again.
+                        with db:
+                            db.execute('DELETE FROM chapters WHERE story=? AND url=?', key)
                     else:
-                        return IMAGE.sub(lambda match: replacements.get(match.group(), match.group()), zlib.decompress(body).decode('utf-8'))
+                        replacements = {}
+                        for name, image_hash, ext, mime in json.loads(references):
+                            image = db.execute('SELECT data FROM images WHERE checksum=?', (image_hash,)).fetchone()
+                            if not image or digest(image[0]) != image_hash:
+                                break
+                            restored = adapter.story.img_store.add_img(name, ext, mime, image[0])
+                            replacements[name] = restored['newsrc']
+                        else:
+                            return IMAGE.sub(lambda match: replacements.get(match.group(), match.group()), stored.decode('utf-8'))
             html = original(url, index)
             if transport.failure is not None:
                 raise transport.failure
@@ -78,6 +87,7 @@ def recover_chapters(adapter, directory, canonical, transport):
             if not isinstance(html, str) or not html.strip():
                 raise SourceResponseError('Empty chapter returned by the source')
             body = html.encode('utf-8')
+            check_storiesonline_notice(canonical, body)
             if len(body) > MAX_BODY:
                 raise DownloadLimitError('Chapter exceeds the EPUB entry limit')
             body = zlib.compress(body, 3)
