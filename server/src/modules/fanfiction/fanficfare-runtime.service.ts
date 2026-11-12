@@ -248,11 +248,10 @@ export class FanficfareRuntimeService {
         });
       if (!['output.epub', 'input.epub'].includes(result.output ?? '') || !result.preview)
         throw new ServiceUnavailableException('Invalid FanFicFare update response');
-      const consumed = await consume(
-        join(directory, result.output!),
-        validateFanfictionPreview(result.preview),
-        result.output === 'input.epub' && result.unchangedEdition === true,
-      );
+      const output = join(directory, result.output!);
+      const preview = validateFanfictionPreview(result.preview);
+      const consumed =
+        result.output === 'input.epub' && result.unchangedEdition === true ? await consume(output, preview, true) : await consume(output, preview);
       if (
         scope &&
         result.output === 'output.epub' &&
