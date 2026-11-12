@@ -409,6 +409,13 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect(await readFile(target)).toEqual(await readFile(output));
     expect(runtime.update).toHaveBeenCalledTimes(1);
   }, 180000);
+  it('finds the installed legacy reservation when a renamed URL is submitted', async () => {
+    const alias = preview.canonicalUrl + '/new-title';
+    runtime.recognize.mockResolvedValueOnce([{ recognized: true, canonicalUrl: alias, identityUrl: preview.canonicalUrl }]);
+    await expect(sources.create(libraryId, { url: alias, folderId: source.folderId, idempotencyKey: randomUUID() }, user)).rejects.toMatchObject({
+      response: { errorCode: 'story_exists', errorMeta: { id: source.id, bookId: source.bookId } },
+    });
+  });
   it('uploaded replacement preserves book identity and metadata, retains rollback, and releases staging', async () => {
     await db.update(schema.bookMetadata).set({ title: 'Original title' }).where(eq(schema.bookMetadata.bookId, source.bookId!));
     const original = await readFile(target);

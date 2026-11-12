@@ -1,3 +1,5 @@
+import { TagMatchingService } from '../src/modules/tag-matching/tag-matching.service';
+import { FanficfareRuntimeService } from '../src/modules/fanfiction/fanficfare-runtime.service';
 import { installPostgresExtensions } from '../src/scripts/postgres-extensions';
 import { FanfictionReviewService } from '../src/modules/fanfiction/fanfiction-review.service';
 import { FanfictionReaderService } from '../src/modules/fanfiction/fanfiction-reader.service';
@@ -59,6 +61,11 @@ describe.skipIf(!configPath)('managed story relocation', () => {
     user = { ...created, permissions: [], contentFilters: {} } as RequestUser;
     module = await Test.createTestingModule({
       providers: [
+        {
+          provide: FanficfareRuntimeService,
+          useValue: { recognize: (urls: string[]) => Promise.resolve(urls.map((url) => ({ recognized: true, canonicalUrl: url }))) },
+        },
+        { provide: TagMatchingService, useValue: {} },
         FanfictionLocationService,
         FanfictionSourceService,
         { provide: FanfictionReviewService, useValue: {} },

@@ -1,3 +1,5 @@
+import { reservationKey } from './fanfiction-story-identity';
+import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { DatabaseTransaction } from '../../db/transaction';
@@ -5,6 +7,8 @@ import { fanfictionSources as sources, fanfictionDiscoveryCandidates as candidat
 
 @Injectable()
 export class FanfictionLocationService {
+  constructor(private readonly runtime: FanficfareRuntimeService) {}
+
   async assertMergeSafe(tx: DatabaseTransaction, bookId: number): Promise<void> {
     const [managed] = await tx
       .select({ id: sources.id })
@@ -41,10 +45,21 @@ export class FanfictionLocationService {
   async moveBook(tx: DatabaseTransaction, bookId: number, previousLibraryId: number, libraryId: number, folderId: number): Promise<void> {
     const acrossLibraries = previousLibraryId !== libraryId;
     if (acrossLibraries) {
-      const collision = await tx.execute(sql`select 1 from ${sources} moving
-        join ${sources} existing on existing.canonical_key = moving.canonical_key and existing.library_id = ${libraryId}
-        where moving.book_id = ${bookId} and moving.state <> 'unlinked' limit 1`);
-      if (collision.rows.length) throw new ConflictException('The destination library already has this story source');
+      const moving = await tx
+        .select({ id: sources.id, url: sources.canonicalUrl })
+        .from(sources)
+        .where(and(eq(sources.bookId, bookId), ne(sources.state, 'unlinked')))
+        .for('update');
+      for (const source of moving) {
+        const key = await reservationKey(tx, this.runtime, libraryId, source.url);
+        const [existing] = await tx
+          .select({ id: sources.id })
+          .from(sources)
+          .where(and(eq(sources.libraryId, libraryId), eq(sources.canonicalKey, key)))
+          .limit(1);
+        if (existing) throw new ConflictException('The destination library already has this story source');
+        await tx.update(sources).set({ canonicalKey: key, libraryId }).where(eq(sources.id, source.id));
+      }
       await tx.delete(candidates).where(eq(candidates.bookId, bookId));
     }
     await tx

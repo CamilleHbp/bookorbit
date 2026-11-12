@@ -91,7 +91,7 @@ export interface FanficfareSiteCatalog {
 }
 
 export type FanfictionRecognizedUrl =
-  | { url: string; recognized: true; canonicalUrl: string; site: string }
+  | { url: string; recognized: true; canonicalUrl: string; identityUrl?: string; site: string }
   | { url: string; recognized: false; reason: "unsupported" | "unsafe" | "access_required" };
 
 export interface FanfictionCookie {

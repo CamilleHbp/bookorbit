@@ -1,3 +1,4 @@
+import { FanficfareRuntimeService } from '../src/modules/fanfiction/fanficfare-runtime.service';
 import { installPostgresExtensions } from '../src/scripts/postgres-extensions';
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
@@ -48,6 +49,10 @@ describe.skipIf(!configPath)('durable story selections with PostgreSQL', () => {
     await migrate(db, { migrationsFolder: join(import.meta.dirname, '../src/db/migrations') });
     const module = await Test.createTestingModule({
       providers: [
+        {
+          provide: FanficfareRuntimeService,
+          useValue: { recognize: (urls: string[]) => Promise.resolve(urls.map((url) => ({ recognized: true, canonicalUrl: url }))) },
+        },
         FanfictionSourceBatchService,
         FanfictionJobService,
         FanfictionSourceService,

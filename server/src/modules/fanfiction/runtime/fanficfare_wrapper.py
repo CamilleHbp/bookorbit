@@ -41,8 +41,18 @@ class RecognitionTransport(SafeTransport):
         raise RecognitionNeedsAccess()
 
 
-def recognize_urls(urls):
+def story_adapter(configuration, url):
     from fanficfare import adapters, exceptions
+    try:
+        return adapters.getAdapter(configuration, url)
+    except exceptions.InvalidStoryURL:
+        # Some legacy adapters accept only http in their URL grammar.
+        # The fetcher still enforces HTTPS for every network request.
+        return adapters.getAdapter(configuration, url.replace('https://', 'http://', 1))
+
+
+def recognize_urls(urls):
+    from fanficfare import exceptions
     if not isinstance(urls, list) or not 0 < len(urls) <= 100:
         raise PolicyError('URL recognition batch exceeds its limit')
     result = []
@@ -51,14 +61,18 @@ def recognize_urls(urls):
             raise PolicyError('Invalid URL recognition input')
         try:
             validate_url(url)
-            adapter = adapters.getAdapter(make_configuration(url, '', RecognitionTransport()), url)
+            adapter = story_adapter(make_configuration(url, '', RecognitionTransport()), url)
             canonical = adapter.url.replace('http://', 'https://', 1)
             validate_url(canonical)
             site = adapter.getSiteDomain()
             if site.removeprefix('www.') in TEST_SITES:
                 result.append({'url': url, 'recognized': False, 'reason': 'unsupported'})
             else:
-                result.append({'url': url, 'recognized': True, 'canonicalUrl': canonical, 'site': site})
+                entry = {'url': url, 'recognized': True, 'canonicalUrl': canonical, 'site': site}
+                identity = story_identity(adapter)
+                if identity != canonical:
+                    entry['identityUrl'] = identity
+                result.append(entry)
         except (exceptions.UnknownSite, exceptions.InvalidStoryURL):
             result.append({'url': url, 'recognized': False, 'reason': 'unsupported'})
         except RecognitionNeedsAccess:
@@ -115,9 +129,15 @@ def empty_saved_home_url(adapter, saved):
     return None
 
 
-def story_identity(url):
-    match = re.fullmatch(r'(https://storiesonline[.]net/s/[0-9]+)(?:/[a-zA-Z0-9_-]+)?/?', url or '')
-    return match.group(1) if match else url
+def story_identity(adapter):
+    # FanFicFare provides section URLs specifically for story URLs that can change.
+    url = adapter.get_section_url(adapter.url).replace('http://', 'https://', 1)
+    from fanficfare.adapters.adapter_storiesonlinenet import StoriesOnlineNetAdapter
+    if isinstance(adapter, StoriesOnlineNetAdapter):
+        match = re.fullmatch(r'(https://[^/]+/[sn]/[0-9]+)(?:/[^/?#]+)?/?', url)
+        if match:
+            return match.group(1)
+    return url
 
 
 def story_preview(adapter, story):
@@ -213,7 +233,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         for option in ('always_reload_first_chapter', 'continue_on_chapter_error'):
             configuration.set('overrides', option, 'false')
         configuration.set('overrides', 'update_check_recent_chapters', '0')
-    adapter = adapters.getAdapter(configuration, url)
+    adapter = story_adapter(configuration, url)
     report_progress({'stage': 'metadata'})
     login_scribblehub(adapter)
     # FanFicFare caches metadata, so the writer cannot fetch a skipped cover later.
@@ -225,7 +245,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
                 failure_code(error) != 'authentication_required' or not adapter.getConfig('username', '')):
             raise
         login_fanfiction_net(adapter, transport)
-        adapter = adapters.getAdapter(configuration, url)
+        adapter = story_adapter(configuration, url)
         story = adapter.getStoryMetadataOnly(get_cover=get_cover)
     empty_home = omit_empty_fictionlive_home(adapter)
     install_tag_matching(story, adapter.getConfigSection(), request.get('tagMatching') or {'version': 0, 'rules': []})
@@ -245,8 +265,12 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         validate_epub('input.epub', LIBRARY_EPUB_LIMIT)
         old = get_update_data('input.epub')
         previous_url, previous_count = old[:2]
-        if story_identity(adapters.getNormalStoryURL(previous_url)) != story_identity(adapters.getNormalStoryURL(canonical)):
-            return finish({'reviewRequired': 'identity_mismatch', 'preview': preview})
+        saved_url = (previous_url or '').replace('http://', 'https://', 1)
+        if saved_url != canonical:
+            previous, current = recognize_urls([saved_url, canonical])
+            if (not previous.get('recognized') or not current.get('recognized') or previous['site'] != current['site'] or
+                    previous.get('identityUrl', previous['canonicalUrl']) != current.get('identityUrl', current['canonicalUrl'])):
+                return finish({'reviewRequired': 'identity_mismatch', 'preview': preview})
         saved_placeholder = empty_saved_home_url(adapter, old[7])
         if empty_home and empty_home == saved_placeholder:
             previous_count -= 1

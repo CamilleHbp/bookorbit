@@ -333,6 +333,29 @@ class ConfigurationTest(unittest.TestCase):
         self.assertEqual(result[2]['reason'], 'unsafe')
         self.assertNotIn('authenticated', result[0])
 
+    def test_story_identity_uses_pinned_adapter_rules(self):
+        pairs = [
+            ('https://www.fanfiction.net/s/2680093/1/Circular-Reasoning', 'https://www.fanfiction.net/s/2680093/29/'),
+            ('https://forum.questionablequesting.com/threads/old.1234/', 'https://forum.questionablequesting.com/threads/new.1234/'),
+            ('https://www.scribblehub.com/series/1234/old/', 'https://www.scribblehub.com/series/1234/new/'),
+            ('https://storiesonline.net/s/22849/old', 'https://storiesonline.net/s/22849'),
+            ('https://scifistories.com/n/1234/old', 'https://scifistories.com/n/1234/new'),
+            ('https://storyroom.com/s/1234/old', 'https://storyroom.com/s/1234/new'),
+            ('https://www.royalroad.com/fiction/1234/old', 'https://www.royalroad.com/fiction/1234/new'),
+            ('https://fiction.live/stories/Old/17CharacterIDhere/home', 'https://fiction.live/stories/New/17CharacterIDhere/home'),
+        ]
+        def key(entry):
+            self.assertTrue(entry['recognized'])
+            return entry['site'], entry.get('identityUrl', entry['canonicalUrl'])
+        for left, right in pairs:
+            with self.subTest(left=left):
+                a, b = run({'operation': 'recognize', 'urls': [left, right]})
+                self.assertEqual(key(a), key(b))
+        a, b, c = run({'operation': 'recognize', 'urls': [pairs[0][0], pairs[0][0].replace('2680093', '2680094'),
+                                                         pairs[0][0].replace('fanfiction.net', 'fictionpress.com')]})
+        self.assertNotEqual(key(a), key(b))
+        self.assertNotEqual(key(a), key(c))
+
     def test_site_catalog_excludes_fixture_adapters_and_recognition_is_bounded(self):
         self.assertFalse(any(site['id'] in ['test1.com', 'test2.com'] for site in run({'operation': 'sites'})['sites']))
         with self.assertRaises(PolicyError):

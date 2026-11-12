@@ -1,7 +1,9 @@
+import { recordedStories, reservationKey, storyIdentity } from './fanfiction-story-identity';
+import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, gt, inArray, notInArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { FanfictionDiscoverySelection } from '@bookorbit/types';
 import type { RequestUser } from '../../common/types/request-user';
 import { DB } from '../../db';
@@ -24,6 +26,7 @@ const sources = schema.fanfictionSources;
 @Injectable()
 export class FanfictionAdoptionService {
   constructor(
+    private readonly runtime: FanficfareRuntimeService,
     @Inject(DB) private readonly db: NodePgDatabase<typeof schema>,
     private readonly access: FanfictionAccessService,
     private readonly jobs: FanfictionJobService,
@@ -242,9 +245,13 @@ export class FanfictionAdoptionService {
     authorize: () => Promise<unknown>,
     complete: (tx: DatabaseTransaction) => Promise<void>,
   ) {
-    const choices = candidate.urls.filter((url) => url.recognized);
-    const unique = new Map(choices.map((url) => [url.canonicalUrl, url]));
-    const choice = selection.canonicalUrl ? unique.get(selection.canonicalUrl) : unique.size === 1 ? [...unique.values()][0] : undefined;
+    const choices = await recordedStories(this.runtime, candidate.urls);
+    const unique = new Map(choices.map((url) => [storyIdentity(url), url]));
+    const choice = selection.canonicalUrl
+      ? choices.find((url) => url.canonicalUrl === selection.canonicalUrl)
+      : unique.size === 1
+        ? [...unique.values()][0]
+        : undefined;
     if (!choice) throw new ConflictException({ errorCode: 'source_ambiguous', message: 'Choose one verified source URL before linking this book' });
     const file = await this.catalog.fileLocation(candidate.bookFileId, job.libraryId);
     if (file.bookId !== candidate.bookId) throw new ConflictException('Candidate book assignment changed');
@@ -254,6 +261,7 @@ export class FanfictionAdoptionService {
     const inspected = inspection.file;
     if (inspected.sha256 !== candidate.sha256)
       throw new ConflictException({ errorCode: 'candidate_changed', message: 'The EPUB changed after discovery; scan its current contents again' });
+    const canonicalKey = await reservationKey(this.db, this.runtime, job.libraryId, choice.canonicalUrl);
     await this.revisions.observeFile(file.id, {});
     await this.db.transaction(async (tx) => {
       await this.jobs.assertOwnership(job, tx);
@@ -263,7 +271,6 @@ export class FanfictionAdoptionService {
         throw new ConflictException('Candidate changed before linking');
       await this.catalog.lockFileLocation(tx, job.libraryId, file);
       await this.files.verifyUnchanged(file.absolutePath, inspected);
-      const canonicalKey = createHash('sha256').update(choice.canonicalUrl).digest('hex');
       const [assigned] = await tx
         .select({ canonicalKey: sources.canonicalKey })
         .from(sources)

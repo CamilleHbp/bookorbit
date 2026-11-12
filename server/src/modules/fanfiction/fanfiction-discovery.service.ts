@@ -1,3 +1,4 @@
+import { recordedStories, sameStory, storyIdentity } from './fanfiction-story-identity';
 import { FanfictionConnectionService } from './fanfiction-connection.service';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, count, eq, gt, inArray, sql } from 'drizzle-orm';
@@ -56,11 +57,12 @@ export class FanfictionDiscoveryService {
           )
         : [];
       const known = existingUrls.filter((value) => value.recognized);
-      if (known.length && !known.some((value) => value.canonicalUrl === url.canonicalUrl))
+      if (known.length && !known.every((value) => storyIdentity(value) === storyIdentity(url)))
         throw new ConflictException('This URL does not match the story source recorded in the EPUB');
       const session = await this.connections.session(url.canonicalUrl, user, () => this.access.administer(user, libraryId));
       const remote = await this.runtime.preview(url.canonicalUrl, session.document, signal, session.saveCookies);
-      if (remote.canonicalUrl !== url.canonicalUrl) throw new ConflictException('The source URL changed. Check the story URL again.');
+      if (!(await sameStory(this.runtime, remote.canonicalUrl, url.canonicalUrl, signal)))
+        throw new ConflictException('The source URL changed. Check the story URL again.');
       await this.access.administer(user, libraryId);
       const candidate = await this.db.transaction(async (tx) => {
         await this.catalog.lockFileLocation(tx, libraryId, file);
@@ -187,16 +189,19 @@ export class FanfictionDiscoveryService {
       .where(and(eq(candidates.libraryId, libraryId), eq(candidates.id, id)))
       .limit(1);
     if (!candidate) throw new ForbiddenException('This story does not belong to this library');
-    const urls = [...new Set(candidate.urls.flatMap((url) => (url.recognized ? [url.canonicalUrl] : [])))];
-    const canonicalUrl = dto.canonicalUrl ?? (urls.length === 1 ? urls[0] : undefined);
-    if (!canonicalUrl || !urls.includes(canonicalUrl)) throw new BadRequestException('Choose one of the recorded story URLs');
+    const stories = await recordedStories(this.runtime, candidate.urls);
+    const unique = new Set(stories.map(storyIdentity));
+    const canonicalUrl = dto.canonicalUrl ?? (unique.size === 1 ? stories[0].canonicalUrl : undefined);
+    if (!canonicalUrl || !stories.some((story) => story.canonicalUrl === canonicalUrl))
+      throw new BadRequestException('Choose one of the recorded story URLs');
     const session = await this.connections.session(canonicalUrl, user, () => this.access.administer(user, libraryId));
     const started = Date.now();
     this.logger.log(`[fanfiction.compare] [start] userId=${user.id} libraryId=${libraryId} candidateId=${id} - fetching remote story details`);
     try {
       const remote = await this.runtime.preview(canonicalUrl, session.document, AbortSignal.timeout(60000), session.saveCookies);
       await this.access.administer(user, libraryId);
-      if (remote.canonicalUrl !== canonicalUrl) throw new ConflictException('The website returned a different story URL');
+      if (!(await sameStory(this.runtime, remote.canonicalUrl, canonicalUrl)))
+        throw new ConflictException('The website returned a different story URL');
       this.logger.log(
         `[fanfiction.compare] [end] userId=${user.id} libraryId=${libraryId} candidateId=${id} durationMs=${Date.now() - started} - remote story details ready`,
       );
@@ -302,7 +307,7 @@ export class FanfictionDiscoveryService {
                   signal,
                 )
               : [];
-            const recognized = new Set(urls.filter((url) => url.recognized).map((url) => url.canonicalUrl));
+            const recognized = new Set(urls.filter((url) => url.recognized).map(storyIdentity));
             if (recognized.size || evidence.fanficfare)
               candidate = {
                 libraryId: job.libraryId,

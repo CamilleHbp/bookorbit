@@ -39,6 +39,9 @@ type RuntimeResponse =
 @Injectable()
 export class FanficfareRuntimeService {
   private readonly logger = new Logger(FanficfareRuntimeService.name);
+  // Recognition depends only on the pinned adapters. Cache successful URL lookups
+  // so repeated legacy-library checks do not repeatedly start Python for the same batch.
+  private readonly recognized = new Map<string, FanfictionRecognizedUrl>();
   private active = 0;
   private controlPending = 0;
   private controlTail: Promise<unknown> = Promise.resolve();
@@ -71,6 +74,24 @@ export class FanficfareRuntimeService {
   async recognize(urls: string[], signal?: AbortSignal): Promise<FanfictionRecognizedUrl[]> {
     if (!urls.length || urls.length > 100 || urls.some((url) => typeof url !== 'string' || url.length > 4096))
       throw new BadRequestException('URL recognition requires a bounded batch');
+    signal?.throwIfAborted();
+    const found = new Map<string, FanfictionRecognizedUrl>();
+    for (const url of urls) {
+      const cached = this.recognized.get(url);
+      if (cached) found.set(url, cached);
+    }
+    const missing = [...new Set(urls.filter((url) => !found.has(url)))];
+    if (missing.length) {
+      for (const item of await this.recognizeBatch(missing, signal)) {
+        found.set(item.url, item);
+        if (item.recognized) this.recognized.set(item.url, item);
+      }
+      while (this.recognized.size > 4096) this.recognized.delete(this.recognized.keys().next().value!);
+    }
+    return urls.map((url) => found.get(url)!);
+  }
+
+  private async recognizeBatch(urls: string[], signal?: AbortSignal): Promise<FanfictionRecognizedUrl[]> {
     const result = await this.temporary({ operation: 'recognize', urls }, signal);
     if (!Array.isArray(result) || result.length !== urls.length) throw new ServiceUnavailableException('Invalid URL recognition response');
     return result.map((item: unknown, index) => {
@@ -98,7 +119,16 @@ export class FanficfareRuntimeService {
       if (canonical.protocol !== 'https:' || canonical.username || canonical.password || (canonical.port && canonical.port !== '443'))
         throw new ServiceUnavailableException('Unsafe canonical URL');
       canonical.hash = '';
-      return { url: urls[index], recognized: true, canonicalUrl: canonical.href, site: item.site };
+      const identityUrl = 'identityUrl' in item ? item.identityUrl : undefined;
+      if (identityUrl !== undefined && (typeof identityUrl !== 'string' || !identityUrl || identityUrl.length > 4096))
+        throw new ServiceUnavailableException('Invalid adapter story identity');
+      return {
+        url: urls[index],
+        recognized: true,
+        canonicalUrl: canonical.href,
+        site: item.site,
+        ...(typeof identityUrl === 'string' && { identityUrl }),
+      };
     });
   }
 
@@ -265,7 +295,7 @@ export class FanficfareRuntimeService {
     reportProgress?: FanfictionProgressSink,
   ): Promise<unknown> {
     // Local catalog/configuration work must remain available while downloads run.
-    const control = ['health', 'sites', 'validate', 'merge'].includes(request.operation);
+    const control = ['health', 'sites', 'validate', 'merge', 'recognize'].includes(request.operation);
     if (!control) return this.executeWorker(request, workspace, signal, saveCookies, reportProgress);
     if (this.controlPending >= 32) throw new ServiceUnavailableException('Too many website settings requests; try again shortly');
     this.controlPending++;
@@ -291,7 +321,11 @@ export class FanficfareRuntimeService {
     const browserDownload =
       ['download', 'update', 'refresh'].includes(request.operation) &&
       (this.config.flaresolverrUrl || /^https:\/\/(?:www\.)?royalroad\.com\//.test(request.url ?? ''));
-    const timeoutMs = control ? Math.min(this.config.timeoutMs, 5000) : browserDownload ? 7_200_000 : this.config.timeoutMs;
+    const timeoutMs = control
+      ? Math.min(this.config.timeoutMs, request.operation === 'recognize' ? 60_000 : 5000)
+      : browserDownload
+        ? 7_200_000
+        : this.config.timeoutMs;
     const input = JSON.stringify({
       ...request,
       timeoutSeconds: Math.ceil((control ? timeoutMs : this.config.timeoutMs) / 1000),
