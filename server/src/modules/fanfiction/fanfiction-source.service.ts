@@ -770,7 +770,10 @@ export class FanfictionSourceService {
   }
 
   sameStory(left: string, right: string): boolean {
-    const identity = (url: string) => this.canonicalUrl(url).replace(/^(https:\/\/storiesonline\.net\/s\/\d+)(?:\/[a-zA-Z0-9_-]+)?\/?$/, '$1');
+    const identity = (url: string) =>
+      this.canonicalUrl(url)
+        .replace(/^https:\/\/(?:www\.)?fanfiction\.net\/s\/(\d+)(?:\/\d+(?:\/[^/?#]+)?)?\/?$/, 'https://www.fanfiction.net/s/$1')
+        .replace(/^(https:\/\/storiesonline\.net\/s\/\d+)(?:\/[a-zA-Z0-9_-]+)?\/?$/, '$1');
     return identity(left) === identity(right);
   }
 
