@@ -149,6 +149,21 @@ export class EpubManifestService {
       const title = boundAnchorText(normalizeAnchorText($('h1,h2,h3').first().text()), 512);
       const generated =
         fanficfare && ['title_page', 'toc_page', 'log_page', 'cover'].includes(item['@_id']!) && posix.basename(href) === `${item['@_id']}.xhtml`;
+      // Keep the original text hash for reader anchors. Website decorations and
+      // FanFicFare chapter headings can change independently of the story text.
+      const semantic = fanficfare && !generated && sourceUrl ? load(html) : undefined;
+      let membershipNotice = false;
+      if (semantic && /^https?:\/\/(?:www\.)?storiesonline\.net\//i.test(sourceUrl!)) {
+        const notice = semantic('article h4.end#theend');
+        membershipNotice =
+          notice.text().trim() === 'Rest of this story requires a premier membership' &&
+          notice.find('a[href$="/doc/Premier_Services_Details"]').length === 1;
+        const end = semantic('article > h2.end#theend:last-child');
+        if (end.length === 1 && end.text().trim() === 'The End') end.remove();
+      }
+      const comparisonHash = semantic ? digest(visibleChapterText(semantic)) : undefined;
+      semantic?.('body.fff_chapter > h3.fff_chapter_title:first-child').remove();
+      const bodyHash = semantic ? digest(normalizeAnchorText(semantic('body').text())) : undefined;
       const text = visibleChapterText($);
       const textHash = digest(text);
       if (!generated && !emptyFictionHome) contentChapters.push(textHash);
@@ -160,6 +175,9 @@ export class EpubManifestService {
         title,
         ...(sourceUrl && sourceUrl.length <= 2048 && /^https?:\/\//i.test(sourceUrl) ? { sourceUrl } : {}),
         textHash,
+        ...(comparisonHash && comparisonHash !== textHash ? { comparisonHash } : {}),
+        ...(membershipNotice ? { membershipNotice: true } : {}),
+        ...(bodyHash ? { bodyHash } : {}),
         length: scalarLength(text),
       });
     }
@@ -184,6 +202,11 @@ export class EpubManifestService {
       metadataHash: digest(JSON.stringify(canonical({ package: semanticPackageMetadata(pkg.metadata), generated: generatedMetadata }))),
       coverHash,
     };
+  }
+
+  async chapterTextReader(path: string) {
+    const { read } = await this.openPackage(path);
+    return async (href: string) => visibleChapterText(load((await read(href)).toString()));
   }
 
   private async openPackage(path: string) {

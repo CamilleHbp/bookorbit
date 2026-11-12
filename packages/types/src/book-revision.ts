@@ -4,6 +4,9 @@ export interface RevisionChapter {
   title: string;
   sourceUrl?: string;
   textHash: string;
+  membershipNotice?: boolean;
+  comparisonHash?: string;
+  bodyHash?: string;
   length: number;
 }
 
