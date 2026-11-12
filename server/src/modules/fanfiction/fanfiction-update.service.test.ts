@@ -14,6 +14,46 @@ import { FanfictionSourceService } from './fanfiction-source.service';
 import { FanfictionUpdateService } from './fanfiction-update.service';
 
 describe('fanfiction update covers', () => {
+  it('downloads again with the website connection when an approved publication is missing', async () => {
+    const runtime = { update: vi.fn().mockResolvedValue({ noChange: true }) };
+    const module = await Test.createTestingModule({
+      providers: [
+        FanfictionUpdateService,
+        { provide: FanficfareRuntimeService, useValue: runtime },
+        {
+          provide: FanfictionSourceService,
+          useValue: {
+            updateContext: vi.fn().mockResolvedValue({ bookFileId: 3, libraryId: 1, canonicalUrl: 'https://example.org/story' }),
+            expectRevision: vi.fn().mockResolvedValue('revision'),
+          },
+        },
+        { provide: RevisionPublicationService, useValue: { ownedPublication: vi.fn().mockResolvedValue(null) } },
+        { provide: RevisionCatalogService, useValue: { requireFile: vi.fn(), current: vi.fn().mockResolvedValue({ id: 'revision' }) } },
+        { provide: BookRevisionService, useValue: { observeFile: vi.fn() } },
+      ],
+    })
+      .useMocker(() => ({}))
+      .compile();
+    try {
+      const website = { document: { configuration: 'saved connection', cookies: [] }, saveCookies: vi.fn() };
+      await module.get(FanfictionUpdateService).run(
+        {
+          id: 'job',
+          kind: 'update',
+          result: { preparedUpdate: { approved: true, noChange: false }, preview: {} },
+        } as typeof schema.fanfictionJobs.$inferSelect,
+        website.document,
+        vi.fn(),
+        new AbortController().signal,
+        website.saveCookies,
+      );
+      expect(runtime.update.mock.calls[0][2]).toBe(website.document);
+      expect(runtime.update.mock.calls[0]).toContain(website.saveCookies);
+    } finally {
+      await module.close();
+    }
+  });
+
   it.each([false, true])('refreshes a resumed publication cover only while book ownership matches: changed=%s', async (changed) => {
     const metadata = { refreshCoverForBook: vi.fn().mockResolvedValue(true) };
     const sources = {

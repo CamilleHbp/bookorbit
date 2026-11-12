@@ -85,6 +85,7 @@
       "configuration_blocked": "Check your source settings, then retry.",
       "download_limit": "This story exceeds the download limit. Try without images, or upload an EPUB.",
       "response_too_large": "A chapter or image is too large to download. Try without images, or upload an EPUB.",
+      "fanfiction_net_browser_verification": "FanFiction.net asks this server to complete browser verification. To update your saved copy, open Story updates and use the chapter collector or upload a matching EPUB.",
       "storiesonline_membership_expired": "StoriesOnline asks you to confirm whether to renew your expired Premier membership. Sign in and choose Do Not Renew to keep free access, or Renew to restore Premier access. Then retry.",
       "source_policy_blocked": "A source request was blocked for safety. Contact your administrator, or upload an EPUB.",
       "invalid_epub": "The downloaded EPUB could not be safely opened. Try uploading another EPUB.",

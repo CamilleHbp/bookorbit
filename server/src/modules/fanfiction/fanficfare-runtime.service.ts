@@ -9,7 +9,7 @@ import type {
 } from '@bookorbit/types';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { validateFanfictionPreview } from './fanfiction-preview';
 import { validateRuntimeCookies, type FanfictionCookieSink } from './fanfiction-cookies';
@@ -133,7 +133,7 @@ export class FanficfareRuntimeService {
 
   async releaseChapters(scope: ChapterScope) {
     try {
-      await rm(dirname(this.chapterDirectory(scope)!), { recursive: true, force: true });
+      await rm(this.chapterDirectory(scope)!, { recursive: true, force: true });
     } catch {
       this.logger.warn(
         `[fanfiction.chapter_cleanup] [fail] libraryId=${scope.libraryId} sourceId=${scope.sourceId} - saved chapter cleanup deferred`,
