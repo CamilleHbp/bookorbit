@@ -154,10 +154,16 @@ export class EpubManifestService {
       const semantic = fanficfare && !generated && sourceUrl ? load(html) : undefined;
       let membershipNotice = false;
       if (semantic && /^https?:\/\/(?:www\.)?storiesonline\.net\//i.test(sourceUrl!)) {
-        const notice = semantic('article h4.end#theend');
-        membershipNotice =
-          notice.text().trim() === 'Rest of this story requires a premier membership' &&
-          notice.find('a[href$="/doc/Premier_Services_Details"]').length === 1;
+        membershipNotice = semantic('article h4.end#theend, article div.notice')
+          .toArray()
+          .some((el) => {
+            const notice = semantic(el);
+            const message = normalizeAnchorText(notice.text()).toLowerCase();
+            return (
+              notice.find('a[href$="/doc/Premier_Services_Details"]').length === 1 &&
+              ['rest of this story requires a premier membership', 'for the rest of this story you need a premier membership'].includes(message)
+            );
+          });
         const end = semantic('article > h2.end#theend:last-child');
         if (end.length === 1 && end.text().trim() === 'The End') end.remove();
       }

@@ -69,7 +69,7 @@ export function storyChapterChanges(previous: EpubRevisionManifest, next: EpubRe
 export function storyUpdateSafety(
   previous: EpubRevisionManifest,
   next: EpubRevisionManifest,
-): Pick<FanfictionChapterChanges, 'safety' | 'removed' | 'reordered' | 'inserted'> {
+): Pick<FanfictionChapterChanges, 'safety' | 'removed' | 'reordered' | 'inserted' | 'unmatched'> {
   const id = chapterIds(previous, next);
   const before = previous.chapters.filter((chapter) => !chapter.generated);
   const after = next.chapters.filter((chapter) => !chapter.generated);
@@ -102,6 +102,11 @@ export function storyUpdateSafety(
   const inserted = identifiable && sharedAfter.length > 0 && newIds.slice(0, newIds.lastIndexOf(sharedAfter.at(-1))).some((id) => !oldSet.has(id));
   return {
     safety: !unchanged ? 'review_required' : inserted ? 'insert_only' : after.length > before.length ? 'append_only' : 'unchanged',
+    ...(removed &&
+    before.some((c) => /^https:\/\/storiesonline\.net\/[sn]\/\d+:/.test(c.sourceUrl ?? '')) &&
+    after.some((c, i) => !oldSet.has(newIds[i]) && /^https:\/\/storiesonline\.net\/[sn]\/\d+\/[^/]+\/\d+/.test(c.sourceUrl ?? ''))
+      ? { unmatched: true }
+      : {}),
     ...(inserted ? { inserted: true } : {}),
     removed,
     reordered,
