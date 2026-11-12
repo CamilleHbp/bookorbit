@@ -501,12 +501,7 @@ onMounted(() => {
       </section>
       <section v-if="tab === 'review'" class="mx-auto w-full max-w-4xl space-y-6">
         <div v-if="reviewView !== 'attention'" class="flex flex-wrap gap-2" role="group" :aria-label="t('fanfiction.reviewQueue.nav')">
-          <Button
-            :variant="reviewView === 'attention' ? 'secondary' : 'ghost'"
-            :aria-pressed="reviewView === 'attention'"
-            @click="showAttentionReviews"
-            >{{ t('fanfiction.maintenance.attention') }}</Button
-          >
+          <Button variant="ghost" :aria-pressed="false" @click="showAttentionReviews">{{ t('fanfiction.maintenance.attention') }}</Button>
           <Button :variant="reviewView === 'imports' ? 'secondary' : 'ghost'" :aria-pressed="reviewView === 'imports'" @click="showImportReviews">{{
             t('fanfiction.importInbox.title')
           }}</Button>
