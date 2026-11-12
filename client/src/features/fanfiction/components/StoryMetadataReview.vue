@@ -10,7 +10,7 @@ import { useGenreSearch, useTagSearch } from '@/features/book/composables/useTag
 import { useStoryMetadataReview } from '../composables/useStoryMetadataReview'
 import StoryMetadataReference from './StoryMetadataReference.vue'
 
-const props = defineProps<{ review: FanfictionMetadataReview; busy: boolean }>()
+const props = defineProps<{ review: FanfictionMetadataReview; busy: boolean; saveLabel?: string }>()
 const choices = defineModel<FanfictionMetadataChoices>({ required: true })
 const emit = defineEmits<{ save: []; later: []; discard: [] }>()
 const { t } = useI18n()
@@ -134,7 +134,7 @@ defineExpose({ commitPending })
     </fieldset>
     <slot name="actions" :save="handleSave">
       <div class="flex flex-wrap gap-2">
-        <Button type="submit" :disabled="busy">{{ t(review.beforeUpdate ? 'fanfiction.metadataReview.apply' : 'common.save') }}</Button>
+        <Button type="submit" :disabled="busy">{{ saveLabel ?? t(review.beforeUpdate ? 'fanfiction.metadataReview.apply' : 'common.save') }}</Button>
         <Button v-if="review.beforeUpdate" type="button" variant="outline" :disabled="busy" @click="handleKeepAll">{{
           t('fanfiction.metadataReview.keepAll')
         }}</Button>
