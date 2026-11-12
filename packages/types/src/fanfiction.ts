@@ -526,6 +526,7 @@ export interface FanfictionChapterChanges {
   differences?: FanfictionChapterDifference[];
   incompletePreview?: boolean;
   differentStory?: boolean;
+  unmatched?: boolean;
   safety?: "insert_only" | "append_only" | "unchanged" | "review_required";
   removed?: number;
   inserted?: boolean;
@@ -560,6 +561,7 @@ export interface FanfictionDownloadRow {
   nextAttemptAt: string | null;
   progress: FanfictionImportProgress | null;
   removed: number;
+  unmatched?: boolean;
   changed: number;
   inserted?: boolean;
   reordered: boolean;

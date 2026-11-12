@@ -83,8 +83,14 @@ class StoriesOnlineMembershipExpired(ConfigurationError):
     code = 'storiesonline_membership_expired'
 
 
+class StoriesOnlinePreview(ConfigurationError):
+    code = 'access_denied'
+
+
 def check_storiesonline_notice(url, content):
-    if urlsplit(url).hostname != 'storiesonline.net' or b'Membership Expired' not in content[:8192]:
+    if urlsplit(url).hostname not in ('storiesonline.net', 'www.storiesonline.net'):
+        return
+    if b'Membership Expired' not in content[:8192] and b'/doc/Premier_Services_Details' not in content:
         return
     from bs4 import BeautifulSoup
     page = BeautifulSoup(content, 'html.parser')
@@ -92,6 +98,13 @@ def check_storiesonline_notice(url, content):
             and any(h.get_text(' ', strip=True).casefold() == 'your paid premier membership has expired'
                     for h in page.find_all('h3'))):
         raise StoriesOnlineMembershipExpired('StoriesOnline requires a membership decision')
+    for notice in page.select('article h4.end#theend, article div.notice'):
+        message = ' '.join(notice.stripped_strings).casefold()
+        message = ' '.join(message.split())
+        if (message in ('rest of this story requires a premier membership', 'for the rest of this story you need a premier membership')
+                and notice.select_one('a[href$="/doc/Premier_Services_Details"]')):
+            raise StoriesOnlinePreview('StoriesOnline returned a partial story')
+
 
 
 def make_configuration(url, ini, transport):

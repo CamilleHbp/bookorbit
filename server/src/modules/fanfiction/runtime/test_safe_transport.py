@@ -201,6 +201,17 @@ class HttpResponseTest(unittest.TestCase):
         check_storiesonline_notice('https://storiesonline.net/', title + b'<h1>Story</h1>')
         check_storiesonline_notice('https://storiesonline.net/', heading)
 
+    def test_partial_story_notice_requires_the_site_message_and_membership_link(self):
+        from controlled_config import check_storiesonline_notice, StoriesOnlinePreview
+        link = b'<a href="/doc/Premier_Services_Details">Premier Membership</a>'
+        for notice in (b'<h4 class="end" id="theend">Rest of this story requires a ' + link + b'</h4>',
+                       b'<div class="notice"><p>For the rest of this story you need a\n' + link + b'</p></div>'):
+            page = b'<article>' + notice + b'</article>'
+            with self.assertRaises(StoriesOnlinePreview):
+                check_storiesonline_notice('https://storiesonline.net/s/123', page)
+            check_storiesonline_notice('https://other.example/story', page)
+            check_storiesonline_notice('https://storiesonline.net/s/123', page.replace(b'/doc/Premier_Services_Details', b'/link'))
+
     def test_storiesonline_callback_uses_get_without_login_form_or_provider_cookie(self):
         callback = 'https://storiesonline.net/sol-secure/login.php?rr=example'
         for origin, target, allowed in [
