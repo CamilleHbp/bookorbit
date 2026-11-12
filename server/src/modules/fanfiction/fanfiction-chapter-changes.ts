@@ -147,3 +147,20 @@ export async function chapterDifferences(
   for (const [i, c] of before.entries()) if (!id(c) || !incoming.has(id(c))) differences.push({ saved: { position: i + 1, title: c.title } });
   return differences;
 }
+
+export function differentStory(
+  saved: { title: string; authors: string[] },
+  website: { title: string; authors: string[] },
+  previous: EpubRevisionManifest,
+  next: EpubRevisionManifest,
+) {
+  const normalize = (s: string) => s.trim().normalize('NFKC').toLowerCase();
+  if (!saved.title || !website.title || normalize(saved.title) === normalize(website.title)) return false;
+  const authors = new Set(saved.authors.map(normalize).filter(Boolean));
+  if (!authors.size || !website.authors.some((a) => normalize(a)) || website.authors.some((a) => authors.has(normalize(a)))) return false;
+  const hashes = (m: EpubRevisionManifest) =>
+    m.chapters.filter((c) => !c.generated && c.length > 0).flatMap((c) => [comparisonHash(c), ...(c.bodyHash ? [c.bodyHash] : [])]);
+  const old = new Set(hashes(previous)),
+    incoming = hashes(next);
+  return old.size > 0 && incoming.length > 0 && !incoming.some((h) => old.has(h));
+}
