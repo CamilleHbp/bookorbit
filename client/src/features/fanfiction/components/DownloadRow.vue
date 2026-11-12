@@ -113,8 +113,14 @@ function inspectMember(row: FanfictionDownloadRow) {
           <p v-else class="font-medium break-words">{{ row.title }}</p></template
         >
         <p v-if="reason" class="max-w-prose text-sm text-muted-foreground">{{ reason }}</p>
+        <RouterLink
+          v-if="verificationUrl && row.bookId && row.code === 'fanfiction_net_browser_verification' && !row.groupKey"
+          :to="{ name: 'book-detail', params: { bookId: row.bookId }, query: { tab: 'story-updates' } }"
+          class="inline-flex min-h-11 items-center text-sm font-medium text-primary underline underline-offset-4"
+          >{{ t('fanfiction.connections.updateSavedBook') }}</RouterLink
+        >
         <a
-          v-if="verificationUrl"
+          v-else-if="verificationUrl && !row.groupKey"
           :href="verificationUrl"
           target="_blank"
           rel="noopener noreferrer"
