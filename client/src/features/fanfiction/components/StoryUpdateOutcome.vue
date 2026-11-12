@@ -11,9 +11,9 @@ const first = computed(() => changes.value?.added[0])
 </script>
 <template>
   <div v-if="changes" class="space-y-1 text-sm" role="status">
-    <p v-if="changes.added.length">{{ t('fanfiction.outcome.added', { count: changes.added.length }) }}</p>
+    <p v-if="changes.added.length && !changes.unmatched">{{ t('fanfiction.outcome.added', { count: changes.added.length }) }}</p>
     <p v-if="changes.changed">{{ t('fanfiction.outcome.changed', { count: changes.changed }) }}</p>
-    <p v-if="changes.removed">{{ t('fanfiction.outcome.removed', { count: changes.removed }) }}</p>
+    <p v-if="changes.removed && !changes.unmatched">{{ t('fanfiction.outcome.removed', { count: changes.removed }) }}</p>
     <p v-if="changes.reordered">{{ t('fanfiction.outcome.reordered') }}</p>
     <p v-if="changes.metadataChanged">{{ t('fanfiction.outcome.metadata') }}</p>
     <RouterLink
