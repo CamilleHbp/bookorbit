@@ -8,7 +8,7 @@ import FanfictionPage from './FanfictionPage.vue'
 vi.mock('@/features/collection/composables/useCollections', () => ({
   useCollections: () => ({ collections: ref([]), fetchCollections: vi.fn<() => Promise<void>>().mockResolvedValue(undefined) }),
 }))
-vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>(), setOnAuthFailure: vi.fn() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>(), setOnAuthFailure: vi.fn<() => void>() }))
 vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
 
 describe('Fanfiction navigation and story hierarchy', () => {
