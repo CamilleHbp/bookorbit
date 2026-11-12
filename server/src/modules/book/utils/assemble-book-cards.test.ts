@@ -236,9 +236,10 @@ describe('assembleBookCards', () => {
   });
 
   it('sets hasCover to true when coverSource is non-null', () => {
-    const rows = [makeBookRow(1, { coverSource: 'extracted' })];
+    const rows = [makeBookRow(1, { coverSource: 'extracted', sensitiveCover: true })];
     const [card] = assembleBookCards(rows, [], [], [], []);
     expect(card.hasCover).toBe(true);
+    expect(card.sensitiveCover).toBe(true);
   });
 
   it('marks cards with metadata locks', () => {

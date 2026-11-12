@@ -323,6 +323,7 @@ function handleRowClick(event: MouseEvent) {
       <BookCoverArtwork
         :src="coverSrc"
         :has-cover="book.hasCover"
+        :sensitive-cover="book.sensitiveCover"
         :title="book.title"
         :author-line="authorLine"
         :is-audio="isAudiobook"

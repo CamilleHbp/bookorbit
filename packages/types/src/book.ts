@@ -207,6 +207,7 @@ export type BookCard = {
   coverVersion: string;
   metadataScore: number | null;
   hasCover: boolean;
+  sensitiveCover?: boolean;
   hasMetadataLocks: boolean;
   lockedFields: BookMetadataLockField[];
   subtitle: string | null;
@@ -425,6 +426,7 @@ export type BookRecommendation = {
   coverAspectRatio: CoverAspectRatio;
   updatedAt: string | null;
   hasCover: boolean;
+  sensitiveCover?: boolean;
   authors: string[];
   readStatus: UserBookStatus | null;
   isAudiobook?: boolean;
@@ -441,6 +443,7 @@ export type SeriesBookRecommendation = {
   updatedAt: string | null;
   seriesIndex: SeriesIndex | null;
   hasCover: boolean;
+  sensitiveCover?: boolean;
   authors: string[];
   readStatus: UserBookStatus | null;
   isAudiobook?: boolean;

@@ -29,6 +29,7 @@ type BookRow = {
   rating: number | null;
   metadataScore?: number | null;
   coverSource: string | null;
+  sensitiveCover?: boolean;
   lockedFields: string[] | null;
   subtitle: string | null;
   publisher: string | null;
@@ -239,6 +240,7 @@ export function assembleBookCards(
       coverVersion: `legacy:${(row.updatedAt ?? row.addedAt).toISOString()}`,
       metadataScore: row.metadataScore ?? null,
       hasCover: row.coverSource != null,
+      sensitiveCover: row.sensitiveCover === true,
       hasMetadataLocks: (row.lockedFields?.length ?? 0) > 0,
       lockedFields: normalizeLockedFields(row.lockedFields),
       subtitle: row.subtitle ?? null,

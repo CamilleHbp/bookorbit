@@ -123,6 +123,7 @@ const isComic = computed(() => primaryFile.value?.format != null && FORMAT_TO_GR
     :title="book.title"
     :version="book.coverVersion"
     :has-cover="book.hasCover"
+    :sensitive-cover="book.sensitiveCover"
     :is-audio="isAudiobook"
     :is-comic="isComic"
     @cover-click="emit('coverClick')"

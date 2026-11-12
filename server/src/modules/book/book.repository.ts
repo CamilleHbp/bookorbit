@@ -88,6 +88,7 @@ type CollapsedRawRow = {
   rating: number | null;
   metadata_score: number | null;
   cover_source: string | null;
+  sensitive_cover: boolean;
   locked_fields: string[] | null;
   subtitle: string | null;
   isbn13: string | null;
@@ -568,6 +569,7 @@ export class BookRepository {
         language: bookMetadata.language,
         rating: userBookRatings.rating,
         coverSource: bookMetadata.coverSource,
+        sensitiveCover: books.sensitiveCover,
         lockedFields: bookMetadata.lockedFields,
         subtitle: bookMetadata.subtitle,
         publisher: bookMetadata.publisher,
@@ -925,6 +927,7 @@ export class BookRepository {
           book_metadata.published_year,
           book_metadata.language,
           book_metadata.cover_source,
+          books.sensitive_cover,
           book_metadata.locked_fields,
           book_metadata.publisher,
           book_metadata.page_count,
@@ -1065,6 +1068,7 @@ export class BookRepository {
           base.language,
           ubr.rating,
           base.cover_source,
+          base.sensitive_cover,
           base.locked_fields,
           base.publisher,
           base.page_count,
@@ -1146,6 +1150,7 @@ export class BookRepository {
       rating: r.rating,
       metadataScore: r.metadata_score !== null ? Number(r.metadata_score) : null,
       coverSource: r.cover_source,
+      sensitiveCover: r.sensitive_cover,
       lockedFields: r.locked_fields,
       subtitle: r.subtitle,
       publisher: r.publisher,
@@ -1948,6 +1953,7 @@ export class BookRepository {
           coverAspectRatio: libraries.coverAspectRatio,
           updatedAt: books.updatedAt,
           coverSource: bookMetadata.coverSource,
+          sensitiveCover: books.sensitiveCover,
           primaryFormat: bookFiles.format,
         })
         .from(books)
@@ -1975,6 +1981,7 @@ export class BookRepository {
       coverAspectRatio: normalizeCoverAspectRatio(r.coverAspectRatio),
       updatedAt: r.updatedAt?.toISOString() ?? null,
       hasCover: r.coverSource !== null,
+      sensitiveCover: r.sensitiveCover,
       authors: authorsByBook.get(r.id) ?? [],
       isAudiobook: r.primaryFormat != null ? isAudioFormat(r.primaryFormat) : false,
       isComic: r.primaryFormat != null ? isComicFormat(r.primaryFormat) : false,
