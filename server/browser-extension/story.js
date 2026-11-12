@@ -41,37 +41,174 @@
     });
     return count;
   }
-  async function start() {
-    const count = await save();
-    await storage.set({ [activeKey]: true });
-    return count;
+  let busy = false;
+  let saved = false;
+  let readyAt = 0;
+  let error = '';
+  let tabId;
+  let panel;
+  let message;
+  let toggle;
+  let downloadButton;
+  let clearButton;
+  let navigating = false;
+
+  async function progress() {
+    const data = await storage.get([activeKey, key + 'info', key + 'download', key + 'delivery']);
+    const info = data[key + 'info'];
+    const state = data[activeKey];
+    const keys = new Set(await storage.getKeys());
+    const missing = info ? Array.from({ length: info.count }, (_, i) => i + 1).filter((i) => !keys.has(key + i)) : [];
+    return { state, info, missing, delivery: data[key + 'delivery'], downloaded: data[key + 'download'] === info?.count };
   }
-  async function status() {
-    const data = await storage.get([activeKey, key + 'info']);
-    if (!data[activeKey]) return '';
-    await save();
-    const { count } = (await storage.get(key + 'info'))[key + 'info'];
-    const keys = Array.from({ length: count }, (_, i) => key + (i + 1));
-    // Count stored chapters without loading story text into the popup.
-    const savedKeys = new Set(await storage.getKeys());
-    const saved = keys.filter((key) => savedKeys.has(key)).length;
-    return saved + ' of ' + count + ' chapters saved.';
+
+  function mount() {
+    if (panel?.isConnected) return;
+    panel = document.createElement('section');
+    panel.setAttribute('aria-label', 'BookOrbit chapter collection');
+    panel.style.cssText =
+      'position:sticky;top:0;z-index:2147483647;padding:12px;background:Canvas;color:CanvasText;border:1px solid GrayText;font:14px/1.5 system-ui';
+    message = document.createElement('p');
+    message.setAttribute('role', 'status');
+    toggle = document.createElement('button');
+    toggle.onclick = () => runAction('toggle');
+    downloadButton = document.createElement('button');
+    downloadButton.textContent = 'Download EPUB';
+    downloadButton.onclick = () => runAction('download');
+    clearButton = document.createElement('button');
+    clearButton.textContent = 'Clear saved chapters';
+    clearButton.onclick = () => runAction('forget');
+    const link = document.createElement('a');
+    link.href = 'https://books.camille.studio';
+    link.textContent = 'Go to BookOrbit';
+    panel.append(message, toggle, ' ', downloadButton, ' ', clearButton, ' ', link);
+    document.body.prepend(panel);
   }
-  async function forget() {
-    await storage.remove([activeKey, ...(await storage.getKeys()).filter((name) => name.startsWith(key))]);
+
+  function render(p) {
+    mount();
+    const running = p.state === true || p.state?.running;
+    toggle.textContent = !p.state ? 'Collect this story' : running ? 'Pause collection' : 'Resume collection';
+    clearButton.hidden = !p.state;
+    toggle.disabled = busy;
+    downloadButton.hidden = !p.info || p.missing.length > 0;
+    downloadButton.disabled = busy;
+    let text = p.info ? p.info.count - p.missing.length + ' of ' + p.info.count + ' chapters saved. ' : '';
+    if (error) text += error;
+    else if (!p.missing.length && p.info) text += p.downloaded ? p.delivery || 'EPUB sent to Downloads.' : 'Preparing EPUB…';
+    else if (!p.state) text += '';
+    else if (!running) text += 'Collection paused.';
+    else if (!document.querySelector('#storytext')?.innerText.trim())
+      text += 'Complete Cloudflare verification here. Collection will resume automatically.';
+    else if (p.state?.tabId !== undefined && p.state.tabId !== tabId) text += 'Collecting in another tab. Resume here to use this tab.';
+    else text += 'Collecting chapters automatically.';
+    message.textContent = text;
+    return text;
   }
-  storage
-    .get(activeKey)
-    .then((data) => data[activeKey] && save())
-    .catch(() => {});
-  chrome.runtime.onMessage.addListener((request, sender, respond) => {
-    if (sender.id !== chrome.runtime.id || !['status', 'start', 'forget'].includes(request)) return;
-    const act = async () => {
-      if (request === 'start') await start();
-      if (request === 'forget') await forget();
-      return { page: 'story', message: await status() };
+
+  async function download() {
+    const { blob, info } = await buildStoryEpub(id);
+    const url = URL.createObjectURL(blob);
+    try {
+      const result = await chrome.runtime.sendMessage({ type: 'download', storyId: id, url });
+      if (result?.error || !Number.isInteger(result?.downloadId))
+        throw new Error(result?.error || 'The download did not start. Try Download EPUB again.');
+      await storage.set({ [key + 'download']: info.count, [key + 'delivery']: result.message || 'EPUB sent to Downloads.' });
+    } finally {
+      // Let the browser take ownership of the blob before releasing the page's URL.
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+  }
+
+  async function tick() {
+    if (busy || navigating) return;
+    busy = true;
+    try {
+      let p = await progress();
+      if (!p.state) return;
+      if (tabId === undefined) tabId = (await chrome.runtime.sendMessage({ type: 'identity' })).tabId;
+      if (!saved && document.querySelector('#storytext')?.innerText.trim()) {
+        await save();
+        saved = true;
+        readyAt = Date.now() + 2000;
+        error = '';
+        p = await progress();
+      }
+      render(p);
+      const running = p.state === true || p.state.running;
+      const owner = p.state === true || p.state.tabId === tabId;
+      if (!running || !owner || !saved || Date.now() < readyAt || error) return;
+      if (p.state === true) await storage.set({ [activeKey]: { running: true, tabId } });
+      if (!p.missing.length) {
+        if (!p.downloaded) await download();
+        await storage.set({ [activeKey]: { running: false, tabId } });
+      } else {
+        // Navigate only after the current chapter is durably saved. Challenge pages never advance.
+        navigating = true;
+        location.assign('/s/' + id + '/' + p.missing[0] + '/');
+      }
+    } catch (e) {
+      error = e.message + ' Use Resume collection or Download EPUB to retry.';
+    } finally {
+      busy = false;
+      const p = await progress();
+      render(p);
+    }
+  }
+
+  async function runAction(action) {
+    if (busy) return;
+    busy = true;
+    try {
+      error = '';
+      tabId ??= (await chrome.runtime.sendMessage({ type: 'identity' })).tabId;
+      const p = await progress();
+      if (action === 'forget') {
+        await storage.remove([activeKey, ...(await storage.getKeys()).filter((name) => name.startsWith(key))]);
+        saved = false;
+        panel?.remove();
+      } else if (action === 'download') {
+        await download();
+      } else {
+        const running = action === 'start' || !(p.state === true || (p.state?.running && p.state.tabId === tabId));
+        await storage.set({ [activeKey]: { running, tabId } });
+      }
+    } catch (e) {
+      error = e.message;
+    } finally {
+      busy = false;
+    }
+    await tick();
+    const p = await progress();
+    return {
+      page: 'story',
+      active: !!p.state,
+      running: p.state === true || !!p.state?.running,
+      complete: !!p.info && !p.missing.length,
+      message: p.state ? render(p) : '',
+      error,
     };
-    act().then(respond, (error) => respond({ page: 'story', error: error.message }));
+  }
+
+  chrome.runtime.onMessage.addListener((request, sender, respond) => {
+    if (sender.id !== chrome.runtime.id || !['status', 'start', 'toggle', 'download', 'forget'].includes(request)) return;
+    const act =
+      request === 'status'
+        ? tick().then(async () => {
+            const p = await progress();
+            return {
+              page: 'story',
+              active: !!p.state,
+              running: p.state === true || !!p.state?.running,
+              complete: !!p.info && !p.missing.length,
+              message: p.state ? render(p) : '',
+              error,
+            };
+          })
+        : runAction(request);
+    act.then(respond, (e) => respond({ page: 'story', error: e.message }));
     return true;
   });
+  setInterval(() => void tick(), 2000);
+  void tick();
 })();
