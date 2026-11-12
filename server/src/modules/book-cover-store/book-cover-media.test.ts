@@ -91,6 +91,10 @@ describe('Kobo-visible cover changes', () => {
     expect(didKoboCoverChange(rows, rows, mixedMedia, 'audio', true)).toBe(false);
   });
 
+  it('does not expose catalogue-only artwork to Kobo without readable content', () => {
+    expect(didKoboCoverChange([], [slot('ebook')], { hasEbook: false, hasAudio: false }, 'ebook', true)).toBe(false);
+  });
+
   it('moves the Kobo stamp when deleting the ebook slot falls back to audio', () => {
     expect(didKoboCoverChange([slot('ebook'), slot('audio')], [slot('audio')], mixedMedia, 'ebook', true)).toBe(true);
   });

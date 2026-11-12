@@ -31,6 +31,7 @@ import { BookCoverEventsService } from './book-cover-events.service';
 import { classifyCoverShape } from './cover-shape';
 import {
   BookCoverStoreRepository,
+  canDisplayCoverMedium,
   getCoverMediaFromDatabaseFiles,
   type BookCoverContext,
   type BookCoverFaceRow,
@@ -86,7 +87,7 @@ export class BookCoverStore {
     const context = await this.convertOnRead(existing);
     const activeSlots = new Map(
       context.slots
-        .filter((slot) => slot.dormantSince === null && this.mediumIsActive(slot.medium as CoverMedium, context.media))
+        .filter((slot) => slot.dormantSince === null && canDisplayCoverMedium(slot.medium as CoverMedium, context.media))
         .map((slot) => [slot.medium as CoverMedium, slot]),
     );
     const order = this.resolutionOrder(context, options.medium, options.strict === true);
@@ -476,8 +477,12 @@ export class BookCoverStore {
 
   slotDtos(context: Pick<BookCoverContext, 'media' | 'slots'>): Record<CoverMedium, BookCoverSlot | null> {
     return {
-      ebook: this.toSlotDto(context.slots.find((slot) => slot.medium === 'ebook' && slot.dormantSince === null && context.media.hasEbook)),
-      audio: this.toSlotDto(context.slots.find((slot) => slot.medium === 'audio' && slot.dormantSince === null && context.media.hasAudio)),
+      ebook: this.toSlotDto(
+        context.slots.find((slot) => slot.medium === 'ebook' && slot.dormantSince === null && canDisplayCoverMedium('ebook', context.media)),
+      ),
+      audio: this.toSlotDto(
+        context.slots.find((slot) => slot.medium === 'audio' && slot.dormantSince === null && canDisplayCoverMedium('audio', context.media)),
+      ),
     };
   }
 
@@ -764,7 +769,7 @@ export class BookCoverStore {
   private servedFace(preferred: CoverMedium, slots: readonly BookCoverSlotRow[], media: CoverMedia): CoverMedium {
     const alternate: CoverMedium = preferred === 'ebook' ? 'audio' : 'ebook';
     const filled = (medium: CoverMedium) =>
-      this.mediumIsActive(medium, media) && slots.some((slot) => slot.medium === medium && slot.dormantSince === null);
+      canDisplayCoverMedium(medium, media) && slots.some((slot) => slot.medium === medium && slot.dormantSince === null);
     if (filled(preferred)) return preferred;
     if (filled(alternate)) return alternate;
     if (this.mediumIsActive(preferred, media)) return preferred;

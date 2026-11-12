@@ -126,6 +126,11 @@ function mediumIsActive(medium: CoverMedium, media: CoverMedia): boolean {
   return medium === 'ebook' ? media.hasEbook : media.hasAudio;
 }
 
+export function canDisplayCoverMedium(medium: CoverMedium, media: CoverMedia): boolean {
+  // Catalogue artwork remains useful when its content file is absent or unreadable.
+  return mediumIsActive(medium, media) || (!media.hasEbook && !media.hasAudio);
+}
+
 export function resolveKoboCoverMedium(rows: readonly BookCoverSlotRow[], media: CoverMedia): CoverMedium | null {
   const active = new Set(
     rows.filter((row) => row.dormantSince === null && mediumIsActive(row.medium as CoverMedium, media)).map((row) => row.medium as CoverMedium),
@@ -266,7 +271,7 @@ export class BookCoverStoreRepository {
       }
       const after = await this.selectSlots(bookId, tx);
       const koboCoverChanged = didKoboCoverChange(before, after, media, medium, options.servedBytesChanged, options.beforeMedia);
-      const activeRows = after.filter((row) => row.dormantSince === null && mediumIsActive(row.medium as CoverMedium, media));
+      const activeRows = after.filter((row) => row.dormantSince === null && canDisplayCoverMedium(row.medium as CoverMedium, media));
       const coverSource: BookCoverSource | null = activeRows.some((row) => row.source === 'custom')
         ? 'custom'
         : activeRows.length > 0
@@ -369,7 +374,11 @@ export class BookCoverStoreRepository {
           "book_covers"."book_id" as book_id,
           "book_covers"."source" as source,
           "book_covers"."dormant_since" is null
-            and (("book_covers"."medium" = 'ebook' and ${hasEbook}) or ("book_covers"."medium" = 'audio' and ${hasAudio})) as active
+            and (
+              ("book_covers"."medium" = 'ebook' and ${hasEbook})
+              or ("book_covers"."medium" = 'audio' and ${hasAudio})
+              or (not ${hasEbook} and not ${hasAudio})
+            ) as active
         from "book_covers"
       ),
       derived as (
@@ -436,7 +445,7 @@ export class BookCoverStoreRepository {
     if (!book) return;
     const slots = await this.selectSlots(bookId, tx);
     const activeRows = slots.filter(
-      (row) => row.dormantSince === null && mediumIsActive(row.medium as CoverMedium, { hasEbook: book.hasEbook, hasAudio: book.hasAudio }),
+      (row) => row.dormantSince === null && canDisplayCoverMedium(row.medium as CoverMedium, { hasEbook: book.hasEbook, hasAudio: book.hasAudio }),
     );
     const coverSource: BookCoverSource | null = activeRows.some((row) => row.source === 'custom')
       ? 'custom'

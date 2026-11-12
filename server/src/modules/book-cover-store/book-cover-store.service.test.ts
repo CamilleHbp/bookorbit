@@ -123,6 +123,12 @@ describe('BookCoverStore', () => {
     it('keeps a read-along EPUB on the ebook side', () => {
       expect(face({ primaryFormat: 'epub', media: { hasEbook: true, hasAudio: true }, slots: [ebook, audio] }).coverAspectRatio).toBe('2/3');
     });
+
+    it('frames existing catalogue artwork when no readable content is attached', () => {
+      const media = { hasEbook: false, hasAudio: false };
+      expect(face({ libraryCoverAspectRatio: '1/1', primaryFormat: null, media, slots: [ebook] }).coverAspectRatio).toBe('2/3');
+      expect(face({ primaryFormat: null, media, slots: [audio] }).coverAspectRatio).toBe('1/1');
+    });
   });
 
   it('gives cards the face of their primary file and replaces the library shape they arrive with', async () => {
@@ -174,6 +180,39 @@ describe('BookCoverStore', () => {
       await expect(store.resolve(7, { medium: 'ebook', variant: 'cover', strict: true })).resolves.toBe(join(ebookDir, 'cover_extracted.jpg'));
       await rm(join(ebookDir, 'cover_extracted.jpg'));
       await expect(store.resolve(7, { medium: 'ebook', variant: 'cover' })).resolves.toBe(join(audioDir, 'cover_extracted.jpg'));
+      await expect(store.resolve(7, { medium: 'ebook', variant: 'cover', strict: true })).resolves.toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('serves existing covers and thumbnails without inventing readable content', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'cover-store-catalogue-'));
+    try {
+      const dir = bookCoverSlotDirPath(root, 7, 'ebook');
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, 'cover_extracted.jpg'), await image(60, 90));
+      await writeFile(join(dir, 'thumbnail.jpg'), await image(20, 30));
+      const current = context({
+        primaryFileId: null,
+        media: { hasEbook: false, hasAudio: false },
+        files: [{ id: 70, format: 'jpg', role: 'cover', mediaOverlayAvailable: false }],
+        slots: [slot('ebook')],
+      });
+      const { store, repository } = makeStore(root, current);
+
+      await expect(store.resolve(7, { variant: 'cover' })).resolves.toBe(join(dir, 'cover_extracted.jpg'));
+      await expect(store.resolve(7, { variant: 'thumbnail' })).resolves.toBe(join(dir, 'thumbnail.jpg'));
+      expect(store.slotDtos(current).ebook).toMatchObject({ source: 'extracted' });
+      expect(current.media).toEqual({ hasEbook: false, hasAudio: false });
+      expect(repository.applySlotMutation).not.toHaveBeenCalled();
+
+      current.slots[0]!.dormantSince = new Date();
+      await expect(store.resolve(7, { variant: 'cover' })).resolves.toBeNull();
+      expect(store.slotDtos(current).ebook).toBeNull();
+
+      current.slots[0]!.dormantSince = null;
+      current.media = { hasEbook: false, hasAudio: true };
       await expect(store.resolve(7, { medium: 'ebook', variant: 'cover', strict: true })).resolves.toBeNull();
     } finally {
       await rm(root, { recursive: true, force: true });
