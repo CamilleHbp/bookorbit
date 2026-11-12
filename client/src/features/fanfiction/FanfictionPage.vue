@@ -15,7 +15,7 @@ import ImportProgress from './components/ImportProgress.vue'
 import StoryImportReview from './components/StoryImportReview.vue'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { LibraryBig, ArrowDownToLine, History, ChevronRight, Plus, Settings, RefreshCw, Search } from '@lucide/vue'
+import { LibraryBig, ArrowDownToLine, History, Plus, Settings, RefreshCw, Search } from '@lucide/vue'
 import { Input } from '@/components/ui/input'
 import FanfictionStoryRow from './components/FanfictionStoryRow.vue'
 import FanfictionPagination from './components/FanfictionPagination.vue'
@@ -458,28 +458,21 @@ onMounted(() => {
           :check-job="bulk.job"
           :check-summary="bulk.summary"
           :checking="bulk.active"
+          :check-error="Boolean(bulk.error)"
         >
           <template #check-details>
-            <details v-if="bulk.job || bulk.error" :open="bulk.active || Boolean(bulk.error)" class="group border-t border-border pt-2">
-              <summary
-                class="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                <ChevronRight class="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />{{
-                  t('fanfiction.libraryStatus.checkDetails')
-                }}
-              </summary>
-              <StoryBulkActions
-                v-model:all-matching="bulk.allMatching"
-                v-model:action="bulk.action"
-                v-model:interval="bulk.interval"
-                :bulk="bulk"
-                :loading="busy"
-                :selecting="false"
-                :library-name="libraryName"
-                compact
-                @fix-login="fixSourceLogin"
-              />
-            </details>
+            <StoryBulkActions
+              v-if="bulk.job || bulk.error"
+              v-model:all-matching="bulk.allMatching"
+              v-model:action="bulk.action"
+              v-model:interval="bulk.interval"
+              :bulk="bulk"
+              :loading="busy"
+              :selecting="false"
+              :library-name="libraryName"
+              compact
+              @fix-login="fixSourceLogin"
+            />
           </template>
         </DownloadQueue>
       </section>
@@ -720,7 +713,13 @@ onMounted(() => {
       <ExistingStories v-else-if="tab === 'discovery'" :key="libraryId" :library-id="libraryId" />
       <section v-else-if="tab === 'activity' || tab === 'history'" class="space-y-6" :aria-label="t('fanfiction.activity')">
         <template v-if="tab === 'activity'"
-          ><FanfictionLibraryStatus :library-id="libraryId" :job="bulk.job" :summary="bulk.summary" :checking="bulk.active" hide-review-link>
+          ><FanfictionLibraryStatus
+            :library-id="libraryId"
+            :job="bulk.job"
+            :summary="bulk.summary"
+            :checking="bulk.active"
+            :show-actions="Boolean(bulk.error)"
+          >
             <StoryBulkActions
               v-if="bulk.job || bulk.error"
               v-model:all-matching="bulk.allMatching"
