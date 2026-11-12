@@ -84,3 +84,14 @@ it('keeps zero attention noninteractive and still exposes active controls and er
   expect(wrapper.text()).toContain('Check actions')
   wrapper.unmount()
 })
+
+it.each(['failed', 'configuration_blocked', 'cancelled'])('exposes recovery for a tracked %s check with no failed child stories', (state) => {
+  const wrapper = mount(FanfictionLibraryStatus, {
+    props: { libraryId: 5, job: { ...job, state } as FanfictionJob, summary: { ...summary, needsAttention: 0 } },
+    slots: { default: '<p>Last check recovery</p>' },
+    global,
+  })
+  expect(wrapper.find('button').exists()).toBe(false)
+  expect(wrapper.text()).toContain('Last check recovery')
+  wrapper.unmount()
+})
