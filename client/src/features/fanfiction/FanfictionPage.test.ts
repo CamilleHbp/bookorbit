@@ -344,7 +344,14 @@ describe('Fanfiction navigation and story hierarchy', () => {
     await wrapper!.get('form').trigger('submit')
     await flushPromises()
     expect(wrapper!.find('[role="dialog"]').exists()).toBe(false)
-    expect(router.currentRoute.value.fullPath).toBe('/book/1968?tab=story-updates')
+    expect(router.currentRoute.value.name).toBe('fanfiction')
+    expect(router.currentRoute.value.query).toMatchObject({
+      tab: 'review',
+      review: 'attention',
+      libraryId: '5',
+      bookId: '1968',
+      sourceId: 'existing',
+    })
     expect(wrapper!.text()).not.toContain('Story source changed or requires attention')
     expect(vi.mocked(api).mock.calls.filter(([url]) => String(url).endsWith('/check'))).toHaveLength(scenario === 'update-race' ? 1 : 0)
   })

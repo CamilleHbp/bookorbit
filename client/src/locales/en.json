@@ -1,7 +1,7 @@
 {
   "fanfiction": {
     "attentionReview": {
-      "start": "Fix stories",
+      "start": "Review stories",
       "position": "Story {count}",
       "resolved": "Resolved",
       "running": "Update in progress. You can move to the next story.",

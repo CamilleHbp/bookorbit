@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Permission, type FanfictionSource } from '@bookorbit/types'
-import { Button } from '@/components/ui/button'
+import { Permission, isFanfictionWebsiteAccessProblem, type FanfictionSource } from '@bookorbit/types'
+import StoryReviewActions from './StoryReviewActions.vue'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useBookStory } from '../composables/useBookStory'
 import StoryUpdatesTab from './StoryUpdatesTab.vue'
 
-const props = defineProps<{ source: FanfictionSource; busy: boolean }>()
-const emit = defineEmits<{ next: [resolved: boolean] }>()
+const props = defineProps<{ source: FanfictionSource; busy: boolean; hasPrevious?: boolean }>()
+const emit = defineEmits<{ next: [resolved: boolean]; previous: []; excluded: [] }>()
 const { t } = useI18n()
 const { hasPermission } = usePermissions()
 const state = useBookStory(
@@ -30,6 +29,15 @@ watch(
   { flush: 'post' },
 )
 const working = computed(() => props.busy || state.busy.value || state.loading.value)
+const websiteBlocked = computed(
+  () => isFanfictionWebsiteAccessProblem(state.source.value?.attentionCode) || isFanfictionWebsiteAccessProblem(state.job.value?.errorCode),
+)
+watch([websiteBlocked, working], ([blocked, busy]) => {
+  if (blocked && !busy) emit('excluded')
+})
+function previous() {
+  emit('previous')
+}
 const running = computed(() => state.job.value && ['queued', 'running'].includes(state.job.value.state))
 const resolved = computed(() => {
   const source = state.source.value
@@ -61,25 +69,33 @@ function reviewed() {
 defineExpose({ canLeave, hasUnsavedInput })
 </script>
 <template>
-  <div class="space-y-4">
-    <StoryUpdatesTab v-if="source.bookId" ref="editor" :state="state" review-mode @reviewed="reviewed" @skip="next" />
-    <Button v-else as-child
-      ><RouterLink :to="{ name: 'fanfiction', query: { tab: 'review', review: 'imports', libraryId: source.libraryId } }">{{
-        t('fanfiction.importInbox.title')
-      }}</RouterLink></Button
-    >
-    <div
-      v-if="!state.metadataReview.value"
-      class="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-    >
+  <div v-if="!websiteBlocked" class="space-y-4">
+    <StoryUpdatesTab v-if="source.bookId" ref="editor" :state="state" review-mode @reviewed="reviewed" @skip="next">
+      <template #review-actions="{ save: submitReview }">
+        <StoryReviewActions
+          :busy="working"
+          :has-previous="Boolean(hasPrevious)"
+          :can-save="true"
+          @save="submitReview"
+          @skip="next"
+          @previous="previous"
+        />
+      </template>
+    </StoryUpdatesTab>
+    <div v-if="!state.metadataReview.value" class="space-y-2">
       <p role="status" class="text-sm text-muted-foreground">
         {{
           t(resolved ? 'fanfiction.attentionReview.resolved' : running ? 'fanfiction.attentionReview.running' : 'fanfiction.attentionReview.pending')
         }}
       </p>
-      <Button class="min-h-11" :variant="resolved ? 'default' : 'outline'" :disabled="working" @click="next">{{
-        t(resolved || running ? 'common.next' : 'fanfiction.reviewQueue.skip')
-      }}</Button>
+      <StoryReviewActions
+        :busy="working"
+        :has-previous="Boolean(hasPrevious)"
+        :can-save="false"
+        :saved="resolved || Boolean(running)"
+        @skip="next"
+        @previous="previous"
+      />
     </div>
   </div>
 </template>
