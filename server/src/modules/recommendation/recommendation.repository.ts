@@ -22,6 +22,7 @@ export interface SeriesBookRow {
   updatedAt: Date | null;
   seriesIndex: string | null;
   coverSource: string | null;
+  sensitiveCover?: boolean;
   authorNames: string[];
   isAudiobook: boolean;
   isComic: boolean;
@@ -33,6 +34,7 @@ export interface AuthorBookRow {
   coverAspectRatio: string;
   updatedAt: Date | null;
   coverSource: string | null;
+  sensitiveCover?: boolean;
   authorNames: string[];
   isAudiobook: boolean;
   isComic: boolean;
@@ -177,6 +179,7 @@ export class RecommendationRepository {
         updatedAt: books.updatedAt,
         seriesIndex: bookMetadata.seriesIndex,
         coverSource: bookMetadata.coverSource,
+        sensitiveCover: books.sensitiveCover,
         primaryFormat: bookFiles.format,
       })
       .from(books)
@@ -206,6 +209,7 @@ export class RecommendationRepository {
       updatedAt: r.updatedAt ?? null,
       seriesIndex: r.seriesIndex,
       coverSource: r.coverSource,
+      sensitiveCover: r.sensitiveCover,
       authorNames: authorsByBook.get(r.bookId) ?? [],
       isAudiobook: r.primaryFormat != null ? isAudioFormat(r.primaryFormat) : false,
       isComic: r.primaryFormat != null ? isComicFormat(r.primaryFormat) : false,
@@ -225,6 +229,7 @@ export class RecommendationRepository {
         coverAspectRatio: libraries.coverAspectRatio,
         updatedAt: books.updatedAt,
         coverSource: bookMetadata.coverSource,
+        sensitiveCover: books.sensitiveCover,
         sharedAuthors: sql<number>`count(*)::int`.as('shared_authors'),
         primaryFormat: bookFiles.format,
       })
@@ -256,6 +261,7 @@ export class RecommendationRepository {
       coverAspectRatio: r.coverAspectRatio,
       updatedAt: r.updatedAt ?? null,
       coverSource: r.coverSource,
+      sensitiveCover: r.sensitiveCover,
       authorNames: authorsByBook.get(r.bookId) ?? [],
       isAudiobook: r.primaryFormat != null ? isAudioFormat(r.primaryFormat) : false,
       isComic: r.primaryFormat != null ? isComicFormat(r.primaryFormat) : false,

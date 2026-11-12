@@ -17,6 +17,7 @@ export interface CarouselBook {
   updatedAt?: string | null
   coverVersion?: string
   seriesIndex?: string | null
+  sensitiveCover?: boolean
   hasCover: boolean
   authors: string[]
   readStatus?: UserBookStatus | null
@@ -160,6 +161,7 @@ defineExpose({ scroll })
           <BookCoverArtwork
             :src="coverUrl(book.id, 'thumbnail', book.coverVersion ?? book.updatedAt)"
             :has-cover="book.hasCover"
+            :sensitive-cover="book.sensitiveCover"
             :title="book.title"
             :author-line="book.authors.length > 0 ? book.authors.join(', ') : null"
             :is-audio="isAudiobook(book)"

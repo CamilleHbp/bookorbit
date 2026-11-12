@@ -37,6 +37,7 @@ export function mergeBookCardWithDetail(book: BookCard, detail: BookDetail): Boo
     metadataScore: detail.metadataScore,
     hasCover: detail.coverSource !== null,
     coverAspectRatio: detail.coverAspectRatio ?? book.coverAspectRatio,
+    sensitiveCover: detail.sensitiveCover,
     coverVersion: detail.coverVersion,
     hasMetadataLocks: detail.lockedFields.length > 0,
     lockedFields: detail.lockedFields,

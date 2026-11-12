@@ -12,6 +12,7 @@ const props = defineProps<{
   bookId: number
   title: string | null
   version?: string | number | Date | null
+  sensitiveCover?: boolean
   hasCover: boolean
   isAudio: boolean
   isComic: boolean
@@ -91,6 +92,7 @@ const adjustedTop = computed(() => {
       <BookCoverArtwork
         :src="thumbnailSrc"
         :has-cover="hasCover"
+        :sensitive-cover="sensitiveCover"
         :title="title"
         :author-line="null"
         :is-audio="isAudio"

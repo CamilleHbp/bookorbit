@@ -4,6 +4,8 @@ import { computed, inject, ref, watch, type ComponentPublicInstance } from 'vue'
 import { COVER_ASPECT_RATIO_KEY, DEFAULT_COVER_ASPECT_RATIO, coverAspectRatioValue, fittedCoverFrameStyle } from '../lib/cover-aspect-ratio'
 import { getCachedCoverRatio, rememberLoadedCover } from '../lib/cover-load-cache'
 import { useDisplaySettings } from '@/composables/useDisplaySettings'
+import { Eye, EyeOff } from '@lucide/vue'
+import { useI18n } from 'vue-i18n'
 import BookCoverPlaceholder from './BookCoverPlaceholder.vue'
 
 const props = withDefaults(
@@ -23,6 +25,7 @@ const props = withDefaults(
     imageClass?: string
     resetKey?: string | number | null
     spine?: boolean
+    sensitiveCover?: boolean
     isComic?: boolean
     authors?: readonly string[] | null
     subtitle?: string | null
@@ -42,6 +45,7 @@ const props = withDefaults(
     imageClass: '',
     resetKey: null,
     spine: true,
+    sensitiveCover: false,
     isComic: false,
     authors: null,
     subtitle: null,
@@ -56,8 +60,28 @@ const emit = defineEmits<{
   error: []
 }>()
 
-const { bookCoverDisplayMode, bookSpineOverlay, showSpineOnComics } = useDisplaySettings()
+const { t } = useI18n()
+const revealed = ref(false)
+const { hideSensitiveCovers, bookCoverDisplayMode, bookSpineOverlay, showSpineOnComics } = useDisplaySettings()
 const injectedAspectRatio = inject(COVER_ASPECT_RATIO_KEY, ref(DEFAULT_COVER_ASPECT_RATIO))
+
+const canReveal = computed(() => props.sensitiveCover && hideSensitiveCovers?.value && props.hasCover)
+const artworkSrc = computed(() => {
+  if (!revealed.value || !canReveal.value || !props.src) return props.src
+  const url = new URL(props.src, window.location.origin)
+  url.searchParams.delete('hideSensitive')
+  return `${url.pathname}${url.search}`
+})
+watch(
+  () => [props.src, props.resetKey, props.hasCover, props.sensitiveCover, hideSensitiveCovers?.value],
+  () => {
+    revealed.value = false
+  },
+  { flush: 'sync' },
+)
+function handleReveal() {
+  revealed.value = !revealed.value
+}
 
 const loaded = ref(false)
 const failed = ref(false)
@@ -103,7 +127,7 @@ const spineStyle = computed(() => {
 })
 
 function restoreFromCoverCache() {
-  const cached = getCachedCoverRatio(props.src)
+  const cached = getCachedCoverRatio(artworkSrc.value)
   instant.value = cached !== null
   loaded.value = instant.value
   imageRatio.value = cached?.ratio ?? null
@@ -114,7 +138,7 @@ function resetImageState() {
   restoreFromCoverCache()
 }
 
-watch(() => [props.src, props.hasCover, props.resetKey] as const, resetImageState)
+watch(() => [artworkSrc.value, props.hasCover, props.resetKey] as const, resetImageState)
 
 function updateImageRatio(img: HTMLImageElement | null): number | null {
   if (!img || img.naturalWidth <= 0 || img.naturalHeight <= 0) return null
@@ -129,7 +153,7 @@ function handleImageRef(el: Element | ComponentPublicInstance | null) {
     const ratio = updateImageRatio(img)
     loaded.value = true
     failed.value = false
-    rememberLoadedCover(props.src, ratio)
+    rememberLoadedCover(artworkSrc.value, ratio)
     emit('load', ratio)
   }
 }
@@ -138,7 +162,7 @@ function handleImageLoad(event: Event) {
   const ratio = updateImageRatio(event.target as HTMLImageElement | null)
   loaded.value = true
   failed.value = false
-  rememberLoadedCover(props.src, ratio)
+  rememberLoadedCover(artworkSrc.value, ratio)
   emit('load', ratio)
 }
 
@@ -162,7 +186,8 @@ function handleImageError() {
     />
     <img
       v-if="showBlurredBackdrop"
-      :src="src ?? ''"
+      :key="`backdrop-${artworkSrc}`"
+      :src="artworkSrc ?? ''"
       :class="['absolute inset-0 z-0 h-full w-full scale-110 object-cover transition-opacity duration-300 ease-out', backdropClass]"
       aria-hidden="true"
       loading="lazy"
@@ -172,8 +197,9 @@ function handleImageError() {
       :style="frameStyle"
     >
       <img
+        :key="artworkSrc ?? undefined"
         :ref="handleImageRef"
-        :src="src ?? ''"
+        :src="artworkSrc ?? ''"
         :alt="alt"
         :loading="loading"
         :decoding="decoding"
@@ -209,4 +235,28 @@ function handleImageError() {
       :genres="genres"
     />
   </span>
+  <button
+    v-if="canReveal && canRenderImage"
+    type="button"
+    class="sensitive-cover-reveal absolute bottom-2 left-1/2 z-40 grid size-8 -translate-x-1/2 place-items-center rounded-full bg-background/90 text-foreground shadow-sm focus-visible:outline-2 focus-visible:outline-ring"
+    :aria-label="revealed ? t('book.sensitiveCover.hide') : t('book.sensitiveCover.reveal')"
+    :title="revealed ? t('book.sensitiveCover.hide') : t('book.sensitiveCover.reveal')"
+    :aria-pressed="revealed"
+    @click.stop.prevent="handleReveal"
+    @keydown.stop
+  >
+    <component :is="revealed ? EyeOff : Eye" :size="18" />
+  </button>
 </template>
+
+<style scoped>
+@media (hover: hover) and (pointer: fine) {
+  .sensitive-cover-reveal {
+    opacity: 0;
+  }
+  :global(.book-cover-surface:hover) .sensitive-cover-reveal,
+  :global(.book-cover-surface:focus-within) .sensitive-cover-reveal {
+    opacity: 1;
+  }
+}
+</style>

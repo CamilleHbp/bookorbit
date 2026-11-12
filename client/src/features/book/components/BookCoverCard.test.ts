@@ -69,6 +69,7 @@ const mockThumbnailClickAction = ref('reader')
 vi.mock('@/composables/useDisplaySettings', () => ({
   useDisplaySettings: () => ({
     cardOverlays: mockCardOverlays,
+    hideSensitiveCovers: ref(false),
     bookSpineOverlay: ref('off'),
     bookShadowStrength: ref('default'),
     bookCoverDisplayMode: mockBookCoverDisplayMode,

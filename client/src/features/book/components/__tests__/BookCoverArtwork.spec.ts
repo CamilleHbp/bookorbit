@@ -7,7 +7,7 @@ import { clearCoverLoadCache } from '@/features/book/lib/cover-load-cache'
 import { useDisplaySettings } from '@/composables/useDisplaySettings'
 import BookCoverArtwork from '../BookCoverArtwork.vue'
 
-const { bookCoverDisplayMode, bookSpineOverlay, showSpineOnComics } = useDisplaySettings()
+const { hideSensitiveCovers, bookCoverDisplayMode, bookSpineOverlay, showSpineOnComics } = useDisplaySettings()
 
 function mountArtwork(
   options: {
@@ -16,6 +16,7 @@ function mountArtwork(
     src?: string | null
     frameAspectRatio?: string
     spine?: boolean
+    sensitiveCover?: boolean
     isComic?: boolean
   } = {},
 ) {
@@ -32,6 +33,7 @@ function mountArtwork(
       frameAspectRatio: options.frameAspectRatio,
       spine: options.spine,
       isComic: options.isComic,
+      sensitiveCover: options.sensitiveCover,
     },
     global: {
       provide: {
@@ -59,6 +61,7 @@ async function triggerMainImageLoad(wrapper: ReturnType<typeof mountArtwork>, na
 }
 
 beforeEach(() => {
+  hideSensitiveCovers.value = false
   clearCoverLoadCache()
   bookSpineOverlay.value = 'off'
   showSpineOnComics.value = false
@@ -71,6 +74,34 @@ afterEach(() => {
 })
 
 describe('BookCoverArtwork', () => {
+  it('reveals only the selected cover and resets when the source changes', async () => {
+    hideSensitiveCovers.value = true
+    const wrapper = mountArtwork({ sensitiveCover: true, src: '/api/v1/books/7/thumbnail?t=123&hideSensitive=true' })
+    const other = mountArtwork({ sensitiveCover: true, src: '/api/v1/books/8/thumbnail?hideSensitive=true' })
+    const button = wrapper.get('button')
+    expect(wrapper.get('img').attributes('src')).toContain('hideSensitive=true')
+    await button.trigger('click')
+    expect(button.attributes('aria-pressed')).toBe('true')
+    expect(hideSensitiveCovers.value).toBe(true)
+    expect(wrapper.props('sensitiveCover')).toBe(true)
+    expect(wrapper.get('img').attributes('src')).toBe('/api/v1/books/7/thumbnail?t=123')
+    expect(other.get('img').attributes('src')).toContain('hideSensitive=true')
+    await button.trigger('click')
+    expect(wrapper.get('img').attributes('src')).toContain('hideSensitive=true')
+    await button.trigger('click')
+    await wrapper.setProps({ src: '/api/v1/books/9/thumbnail?hideSensitive=true' })
+    expect(wrapper.get('img').attributes('src')).toContain('hideSensitive=true')
+    expect(button.attributes('aria-pressed')).toBe('false')
+    hideSensitiveCovers.value = false
+    await nextTick()
+    expect(wrapper.find('button').exists()).toBe(false)
+  })
+
+  it('does not offer reveal for an unmarked cover', () => {
+    hideSensitiveCovers.value = true
+    expect(mountArtwork().find('button').exists()).toBe(false)
+  })
+
   it('renders a placeholder when the book has no cover', () => {
     const wrapper = mountArtwork({ hasCover: false })
 
