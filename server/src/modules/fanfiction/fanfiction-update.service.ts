@@ -1,4 +1,4 @@
-import { storyChapterChanges, storyUpdateSafety } from './fanfiction-chapter-changes';
+import { chapterDifferences, storyChapterChanges, storyUpdateSafety } from './fanfiction-chapter-changes';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createWriteStream } from 'node:fs';
@@ -116,11 +116,13 @@ export class FanfictionUpdateService {
     if (expected !== current.id)
       throw new ConflictException({ message: 'Installed EPUB changed before the update could resume', errorCode: 'saved_epub_changed' });
     if (job.kind !== 'update' && job.kind !== 'refresh') throw new BadRequestException('Invalid source update operation');
+    let savedPath = '';
     return this.runtime.update(
       job.kind,
       source.canonicalUrl,
       document,
       async (path) => {
+        savedPath = path;
         const snapshot = await this.downloads.download(fileId, source.libraryId, expected, access);
         await pipeline(snapshot.stream, createWriteStream(path, { flags: 'wx', mode: 0o600 }), { signal });
         if (source.updatePolicy === 'safe') previousManifest = await this.manifests.inspect(path);
@@ -134,6 +136,8 @@ export class FanfictionUpdateService {
             errorCode: !matches ? 'source_identity_mismatch' : 'source_chapter_reduction',
           });
         const next = await this.manifests.inspect(path);
+        if (next.chapters.some((c) => c.membershipNotice))
+          throw new BadRequestException({ message: 'StoriesOnline returned a membership preview', errorCode: 'access_denied' });
         const safety = storyUpdateSafety(previousManifest, next);
         const removedPlaceholder =
           previousManifest.chapters.some((c) => c.generated && c.sourceUrl && c.title === 'Home') &&
@@ -157,8 +161,11 @@ export class FanfictionUpdateService {
         job.result = await this.reviews.prepare(job, preview, false, false, source.updatePolicy === 'safe');
         job.result.changes = storyChapterChanges(previousManifest, next);
         job.result.changes = { ...job.result.changes, ...safety };
-        if (source.updatePolicy === 'safe' && safety.safety === 'review_required')
+        if (source.updatePolicy === 'safe' && safety.safety === 'review_required') {
+          const [savedText, websiteText] = await Promise.all([this.manifests.chapterTextReader(savedPath), this.manifests.chapterTextReader(path)]);
+          job.result.changes.differences = await chapterDifferences(previousManifest, next, savedText, websiteText);
           job.result.contentReview = { approved: false, previousState: source.state === 'paused' ? 'paused' : 'active' };
+        }
         const prepared = await this.publications.prepare(fileId, source.libraryId, expected, path, 'fanficfare', authority);
         await this.sources.recordChapterChanges(job);
         if (job.result.contentReview && !job.result.contentReview.approved) return job.result;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChapterDifferences from './ChapterDifferences.vue'
 import { canRetryWebsiteAccess, chapterDecision } from '../composables/downloadIssue'
 import type { BookFileRevisionSummary } from '@bookorbit/types'
 import WebsiteConnections from './WebsiteConnections.vue'
@@ -244,9 +245,12 @@ onMounted(() => {
         </Button>
         <div v-if="job.result?.contentReview && !job.result.contentReview.approved" class="space-y-3 py-3">
           <p class="font-semibold">{{ t(`fanfiction.downloads.${decision.key}`, { count: decision.count }) }}</p>
+          <ChapterDifferences :changes="job.result?.changes" />
           <p>{{ t('fanfiction.downloads.keepHint') }}</p>
           <div class="flex flex-wrap gap-2">
-            <Button :disabled="updating" @click="approveContent">{{ t('fanfiction.downloads.useWebsite') }}</Button
+            <Button :disabled="updating || job.result?.changes?.incompletePreview" @click="approveContent">{{
+              t('fanfiction.downloads.useWebsite')
+            }}</Button
             ><Button variant="outline" :disabled="updating" @click="discardContent">{{ t('fanfiction.maintenance.keepCopy') }}</Button>
           </div>
         </div>

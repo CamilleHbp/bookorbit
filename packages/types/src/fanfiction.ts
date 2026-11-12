@@ -517,7 +517,14 @@ export interface FanfictionLinkRequest {
   url: string;
 }
 
+export interface FanfictionChapterDifference {
+  saved?: { position: number; title: string; excerpt?: string };
+  website?: { position: number; title: string; excerpt?: string };
+}
+
 export interface FanfictionChapterChanges {
+  differences?: FanfictionChapterDifference[];
+  incompletePreview?: boolean;
   safety?: "insert_only" | "append_only" | "unchanged" | "review_required";
   removed?: number;
   inserted?: boolean;
