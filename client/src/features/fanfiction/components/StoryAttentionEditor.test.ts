@@ -1,3 +1,7 @@
+import { defineComponent, h } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { useBookStory } from '../composables/useBookStory'
+import StoryUpdatesTab from './StoryUpdatesTab.vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FanfictionSource } from '@bookorbit/types'
@@ -46,11 +50,46 @@ describe('attention repair editor', () => {
     wrapper?.unmount()
     vi.restoreAllMocks()
   })
-  async function open() {
-    wrapper = mount(StoryAttentionEditor, { props: { source, busy: false }, global: { stubs: { RouterLink: true } } })
+  async function open(standalone = false) {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/story', component: { template: '<div />' } },
+        { path: '/fanfiction', name: 'fanfiction', component: { template: '<div />' } },
+        { path: '/settings/website-logins', name: 'settings-website-logins', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/story')
+    await router.isReady()
+    const component = standalone
+      ? defineComponent({
+          setup() {
+            const state = useBookStory(7, 5, true, undefined, source.id)
+            return () => h(StoryUpdatesTab, { state })
+          },
+        })
+      : StoryAttentionEditor
+    wrapper = mount(component, { attachTo: document.body, props: standalone ? {} : { source, busy: false }, global: { plugins: [router] } })
     await flushPromises()
+    return router
   }
   const button = (label: string) => wrapper.findAll('button').find((item) => item.text() === label)!
+  it('offers Save & next on standalone Story updates and continues into the attention queue', async () => {
+    const router = await open(true)
+    await button('Save & next').trigger('click')
+    await flushPromises()
+    expect(saved).toBe(true)
+    expect(router.currentRoute.value.name).toBe('fanfiction')
+    expect(router.currentRoute.value.query).toEqual({ tab: 'review', review: 'attention', libraryId: '5' })
+  })
+  it('stays on standalone Story updates when saving fails', async () => {
+    fail = true
+    const router = await open(true)
+    await button('Save & next').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/story')
+    expect(wrapper.text()).toContain('Could not save')
+  })
   it('saves the metadata review and advances only after successful resolution', async () => {
     await open()
     await button('Save & next').trigger('click')
