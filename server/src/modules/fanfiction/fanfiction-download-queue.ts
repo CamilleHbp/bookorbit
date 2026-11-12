@@ -21,7 +21,7 @@ function downloadEntries(libraryId: number, userId: number) {
     ), pending as (
       select distinct on (coalesce(j.source_id::text, j.url))
         j.id as job_id, j.source_id, coalesce(s.book_id,(j.result->>'bookId')::int) as book_id, j.site, coalesce(nullif(j.result#>>'{importReview,values,title}',''), s.title, j.result#>>'{preview,title}', j.url) as title,
-        j.kind, j.state, j.error_code as code, j.updated_at, s.chapter_count as current_chapters,
+        j.url as story_url, j.kind, j.state, j.error_code as code, j.updated_at, s.chapter_count as current_chapters,
         (j.result#>>'{preview,chapterCount}')::int as proposed_chapters,
         j.result->'progress' as progress, j.result->'changes' as changes,
         case when j.state='queued' and j.error_code is not null and j.attempts>0 then j.run_after end as retry_at
@@ -36,12 +36,12 @@ function downloadEntries(libraryId: number, userId: number) {
     ), entries as (
       select * from pending
       union all
-      select null,s.id,s.book_id,s.site,s.title,null,s.state,coalesce(s.attention_code,'metadata_review_required'),s.updated_at,s.chapter_count,null,null,null,null
+      select null,s.id,s.book_id,s.site,s.title,s.canonical_url,null,s.state,coalesce(s.attention_code,'metadata_review_required'),s.updated_at,s.chapter_count,null,null,null,null
       from ${schema.fanfictionSources} s where s.library_id=${libraryId} and coalesce(s.maintainer_user_id,s.created_by)=${userId}
         and (s.attention_code is not null or s.metadata_review_pending) and s.state<>'unlinked' and not exists (select 1 from pending p where p.source_id=s.id)
     ), classified as (
       select *, case when state='running' then 'running' when retry_at is not null then 'retrying' when state='queued' then 'queued' else 'attention' end as section,
-        case when code in ('source_failed','source_unavailable','source_rate_limited','download_timeout','fanfiction_net_browser_verification') then 'website'
+        case when code in ('source_failed','source_unavailable','source_rate_limited','download_timeout','fanfiction_net_browser_verification','source_browser_verification') then 'website'
           when code in ('authentication_required','access_denied','storiesonline_membership_expired') then 'login'
           when code in ('content_review_required','source_chapter_reduction') then 'chapter'
           when code in ('source_not_found','unsupported_story_url') then 'story' when state='cancelled' then 'stopped'
@@ -101,6 +101,7 @@ export async function downloadQueue(db: NodePgDatabase<typeof schema>, libraryId
       'id', ${dto.group ? sql`coalesce(job_id,source_id)::text` : sql`coalesce(group_key,job_id::text,source_id::text)`},
       'section',section,'issue',issue,'groupKey',${dto.group ? sql`null::text` : sql`group_key`},'count',${dto.group ? sql`1` : sql`members`},
       'site',site,'title',title,'kind',kind,'jobId',job_id,'sourceId',source_id,'bookId',book_id,'code',code,
+      'verificationUrl',case when code in ('fanfiction_net_browser_verification','source_browser_verification') then story_url end,
       'nextAttemptAt',${dto.group ? sql`retry_at` : sql`first_retry`},'progress',progress,
       'removed',coalesce((changes->>'removed')::int,0),'changed',coalesce((changes->>'changed')::int,0),
       'inserted',coalesce((changes->>'inserted')::boolean,false),'reordered',coalesce((changes->>'reordered')::boolean,false),'currentChapters',current_chapters,'proposedChapters',proposed_chapters

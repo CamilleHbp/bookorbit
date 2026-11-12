@@ -687,7 +687,7 @@ export class FanfictionSourceService {
     try {
       await this.db.transaction(async (tx) => {
         const source = await this.assertImportable(job, sourceId, tx);
-        if (this.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl || preview.chapterCount < source.chapterCount)
+        if (!this.sameStory(preview.canonicalUrl, source.canonicalUrl) || preview.chapterCount < source.chapterCount)
           throw new BadRequestException({ message: 'The story changed before import. Preview it again.', errorCode: 'import_source_changed' });
         await tx
           .update(sources)
@@ -767,6 +767,11 @@ export class FanfictionSourceService {
       });
       return source!;
     });
+  }
+
+  sameStory(left: string, right: string): boolean {
+    const identity = (url: string) => this.canonicalUrl(url).replace(/^(https:\/\/storiesonline\.net\/s\/\d+)(?:\/[a-zA-Z0-9_-]+)?\/?$/, '$1');
+    return identity(left) === identity(right);
   }
 
   canonicalUrl(value: string): string {
