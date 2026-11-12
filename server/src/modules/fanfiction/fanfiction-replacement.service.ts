@@ -120,7 +120,7 @@ export class FanfictionReplacementService {
             signal,
           )
         : [];
-      const identities = new Set(recognized.filter((url) => url.recognized).map((url) => this.sources.canonicalUrl(url.canonicalUrl)));
+      const identities = recognized.filter((url) => url.recognized);
       const replacement: FanfictionReplacementReview = {
         sha256: job.replacementSha256!,
         expectedRevisionId: current.id,
@@ -128,7 +128,7 @@ export class FanfictionReplacementService {
         authors: evidence.authors.length ? evidence.authors : source.authors,
         previousChapterCount: source.chapterCount,
         chapterCount: evidence.chapterCount,
-        identityMatches: identities.size === 1 && identities.has(source.canonicalUrl),
+        identityMatches: identities.length > 0 && identities.every((url) => this.sources.sameStory(url.canonicalUrl, source.canonicalUrl)),
       };
       await this.jobs.recordReplacementReview(job, replacement);
       if (!replacement.identityMatches)
