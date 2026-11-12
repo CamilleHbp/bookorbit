@@ -11,6 +11,7 @@ import importlib.metadata
 import json
 import logging
 import os
+import re
 import resource
 import sqlite3
 import time
@@ -111,6 +112,11 @@ def empty_saved_home_url(adapter, saved):
                 tag.name in ('html', 'body', 'div', 'br') for tag in body.find_all(True)):
             return home
     return None
+
+
+def story_identity(url):
+    match = re.fullmatch(r'(https://storiesonline[.]net/s/[0-9]+)(?:/[a-zA-Z0-9_-]+)?/?', url or '')
+    return match.group(1) if match else url
 
 
 def story_preview(adapter, story):
@@ -233,7 +239,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         validate_epub('input.epub', LIBRARY_EPUB_LIMIT)
         old = get_update_data('input.epub')
         previous_url, previous_count = old[:2]
-        if adapters.getNormalStoryURL(previous_url) != adapters.getNormalStoryURL(canonical):
+        if story_identity(adapters.getNormalStoryURL(previous_url)) != story_identity(adapters.getNormalStoryURL(canonical)):
             return finish({'reviewRequired': 'identity_mismatch', 'preview': preview})
         saved_placeholder = empty_saved_home_url(adapter, old[7])
         if empty_home and empty_home == saved_placeholder:

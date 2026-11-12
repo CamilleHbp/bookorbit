@@ -535,6 +535,7 @@ export type FanfictionDownloadSection = "running" | "queued" | "retrying" | "att
 export type FanfictionDownloadIssue = "website" | "login" | "chapter" | "metadata" | "import" | "story" | "stopped" | "unknown";
 
 export interface FanfictionDownloadRow {
+  verificationUrl?: string | null;
   id: string;
   section: FanfictionDownloadSection;
   issue: FanfictionDownloadIssue | null;

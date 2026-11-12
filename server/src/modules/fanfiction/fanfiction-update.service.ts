@@ -128,13 +128,12 @@ export class FanfictionUpdateService {
       async (path, preview) => {
         await access();
         if (
-          this.sources.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl ||
+          !this.sources.sameStory(preview.canonicalUrl, source.canonicalUrl) ||
           (source.updatePolicy !== 'safe' && preview.chapterCount < source.chapterCount)
         )
           throw new BadRequestException({
             message: 'The downloaded story does not match the saved source or chapter count',
-            errorCode:
-              this.sources.canonicalUrl(preview.canonicalUrl) !== source.canonicalUrl ? 'source_identity_mismatch' : 'source_chapter_reduction',
+            errorCode: !this.sources.sameStory(preview.canonicalUrl, source.canonicalUrl) ? 'source_identity_mismatch' : 'source_chapter_reduction',
           });
         const next = await this.manifests.inspect(path);
         const safety = storyUpdateSafety(previousManifest, next);

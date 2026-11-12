@@ -71,9 +71,12 @@ RUN apk upgrade --no-cache && \
 
 # FanFicFare buffers the complete archive alongside the existing book's images.
 COPY server/requirements/fanficfare-stream-epub.patch /tmp/fanficfare-stream-epub.patch
+COPY server/requirements/storiesonline-series.patch /tmp/storiesonline-series.patch
 RUN apk add --no-cache patch && \
     cd "$(/opt/bookorbit-python/bin/python -c 'from fanficfare import writers; print(writers.__path__[0])')" && \
-    dos2unix writer_epub.py && patch --fuzz=0 -p0 < /tmp/fanficfare-stream-epub.patch && rm /tmp/fanficfare-stream-epub.patch && apk del patch
+    dos2unix writer_epub.py && patch --fuzz=0 -p0 < /tmp/fanficfare-stream-epub.patch && \
+    cd ../adapters && dos2unix adapter_storiesonlinenet.py && patch --fuzz=0 -p0 < /tmp/storiesonline-series.patch && \
+    rm /tmp/fanficfare-stream-epub.patch /tmp/storiesonline-series.patch && apk del patch
 
 ENV NODE_ENV=production
 ENV PORT=3000
