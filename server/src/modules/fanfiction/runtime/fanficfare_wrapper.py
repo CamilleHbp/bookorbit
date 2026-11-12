@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from chapter_store import recover_chapters
 from update_check import UpdateCheck
+import publisher_edition
 from tag_matching import install as install_tag_matching, matched_preview
 
 
@@ -61,6 +62,9 @@ def recognize_urls(urls):
             raise PolicyError('Invalid URL recognition input')
         try:
             validate_url(url)
+            if url in publisher_edition.EDITIONS:
+                result.append({'url': url, 'recognized': True, 'canonicalUrl': url, 'site': publisher_edition.SITE})
+                continue
             adapter = story_adapter(make_configuration(url, '', RecognitionTransport()), url)
             canonical = adapter.url.replace('http://', 'https://', 1)
             validate_url(canonical)
@@ -219,6 +223,8 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         if save_cookies is not None:
             save_cookies(transport.export_cookies())
         return result
+    if url in publisher_edition.EDITIONS:
+        return finish(publisher_edition.edition(request, transport))
     configuration = make_configuration(url, ini, transport)
     if configuration.getConfig('use_flaresolverr_proxy', False):
         if not isinstance(transport, FlareSolverrTransport):
