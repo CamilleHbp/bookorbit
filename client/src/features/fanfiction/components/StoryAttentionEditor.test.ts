@@ -139,6 +139,19 @@ describe('attention repair editor', () => {
     await button('Next').trigger('click')
     expect(wrapper.emitted('next')).toEqual([[false]])
   })
+  it('removes a story that now has a website access problem without showing repair controls', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    vi.mocked(api).mockImplementation((url, options) =>
+      String(url).endsWith('/sources/source')
+        ? Promise.resolve(respond({ ...source, attentionCode: 'authentication_required', metadataReviewPending: true }))
+        : base(url, options),
+    )
+    await open()
+    expect(wrapper.emitted('excluded')).toEqual([[]])
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(vi.mocked(api).mock.calls.some(([, options]) => options?.method)).toBe(false)
+  })
   it('protects uncommitted tag edits before skipping', async () => {
     await open()
     vi.spyOn(window, 'confirm').mockReturnValue(false)

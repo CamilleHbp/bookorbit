@@ -70,7 +70,7 @@ export class ImportStoryReviewDto {
 }
 
 export class ListFanfictionSourcesDto {
-  @IsOptional() @IsIn(['pending', 'all']) reviewScope?: FanfictionReviewScope;
+  @IsOptional() @IsIn(['pending', 'all', 'attention']) reviewScope?: FanfictionReviewScope;
   @IsOptional() @IsIn(['true']) excludeSharedAccess?: 'true';
   @IsOptional() @IsIn(['ongoing', 'complete']) publication?: 'ongoing' | 'complete';
   @IsOptional() @IsIn(['added', 'updated']) sort?: 'added' | 'updated';

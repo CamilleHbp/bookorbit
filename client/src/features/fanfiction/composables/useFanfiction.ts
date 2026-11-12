@@ -43,7 +43,7 @@ class MetadataReviewRequiredError extends Error {
 }
 
 export function useFanfiction(
-  onMetadataReview?: (bookId: number) => Promise<unknown>,
+  onMetadataReview?: (bookId: number, sourceId?: string) => Promise<unknown>,
   reviewSource?: () => string | undefined,
   initialLibraryId?: number,
 ) {
@@ -155,7 +155,7 @@ export function useFanfiction(
       await operation(current, base.value)
     } catch (failure) {
       if (currentScope(current) && failure instanceof MetadataReviewRequiredError && onMetadataReview) {
-        await onMetadataReview(failure.review.bookId)
+        await onMetadataReview(failure.review.bookId, failure.review.sourceId)
         return
       }
       if (current === generation && !disposed) error.value = failure instanceof Error ? failure.message : 'Request failed'
@@ -455,7 +455,7 @@ export function useFanfiction(
     const story = candidate.existingStory
     if (!story || !currentScope(current)) return
     if (story.attentionCode === 'metadata_review_required' && story.bookId) {
-      if (candidates.value.length === 1 && onMetadataReview) await onMetadataReview(story.bookId)
+      if (candidates.value.length === 1 && onMetadataReview) await onMetadataReview(story.bookId, story.id)
       return
     }
     candidate.updateKey ??= createUuid()
@@ -469,7 +469,7 @@ export function useFanfiction(
     } catch (failure) {
       if (failure instanceof MetadataReviewRequiredError && currentScope(current)) {
         candidate.existingStory = { ...story, bookId: failure.review.bookId, attentionCode: 'metadata_review_required' }
-        if (candidates.value.length === 1 && onMetadataReview) await onMetadataReview(failure.review.bookId)
+        if (candidates.value.length === 1 && onMetadataReview) await onMetadataReview(failure.review.bookId, failure.review.sourceId)
         return
       }
       throw failure
@@ -479,7 +479,7 @@ export function useFanfiction(
     const candidate = existingCandidate.value
     if (busy.value || !candidate?.existingStory) return
     if (candidate.existingStory.attentionCode === 'metadata_review_required' && candidate.existingStory.bookId && onMetadataReview) {
-      await onMetadataReview(candidate.existingStory.bookId)
+      await onMetadataReview(candidate.existingStory.bookId, candidate.existingStory.id)
       return
     }
     await perform((current, path) => continueExisting(candidate, current, path))

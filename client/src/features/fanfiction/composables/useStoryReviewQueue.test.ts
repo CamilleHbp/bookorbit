@@ -33,11 +33,13 @@ describe('story review queue', () => {
   let queue: ReturnType<typeof useStoryReviewQueue>
   const libraryId = ref(5)
   const scope = ref<StoryReviewScope>('pending')
+  const targetSourceId = ref<string>()
+  const targetBookId = ref<number>()
   async function open() {
     wrapper = mount(
       defineComponent({
         setup() {
-          queue = useStoryReviewQueue(libraryId, scope)
+          queue = useStoryReviewQueue(libraryId, scope, { sourceId: targetSourceId, bookId: targetBookId })
           return () => null
         },
       }),
@@ -47,6 +49,8 @@ describe('story review queue', () => {
   beforeEach(() => {
     libraryId.value = 5
     scope.value = 'pending'
+    targetSourceId.value = undefined
+    targetBookId.value = undefined
     vi.mocked(api).mockImplementation(async (path, options) => {
       if (options?.method === 'POST' || options?.method === 'PATCH') return respond({ resolved: true })
       if (String(path).includes('/sources?')) return respond({ items: [source(1), source(2)], nextCursor: null })
@@ -63,8 +67,8 @@ describe('story review queue', () => {
     scope.value = 'attention'
     await open()
     const url = new URL(String(vi.mocked(api).mock.calls[0]![0]), 'https://example.org')
-    expect(url.searchParams.get('view')).toBe('attention')
-    expect(url.searchParams.has('reviewScope')).toBe(false)
+    expect(url.searchParams.get('reviewScope')).toBe('attention')
+    expect(url.searchParams.has('view')).toBe(false)
     expect(url.searchParams.has('excludeSharedAccess')).toBe(false)
     expect(queue.current.value?.loaded).toBe(true)
     expect(vi.mocked(api)).toHaveBeenCalledTimes(1)
@@ -78,6 +82,54 @@ describe('story review queue', () => {
     expect(queue.current.value?.source.id).toBe('2')
     await queue.completeAttention(true)
     expect(queue.savedCount.value).toBe(2)
+    expect(queue.skippedCount.value).toBe(0)
+  })
+
+  it('starts on the linked story and continues without including it twice', async () => {
+    scope.value = 'attention'
+    targetSourceId.value = '2'
+    const base = vi.mocked(api).getMockImplementation()!
+    vi.mocked(api).mockImplementation((path, options) =>
+      String(path).endsWith('/sources/2')
+        ? Promise.resolve(respond({ ...source(2), attentionCode: 'metadata_review_required' }))
+        : base(path, options),
+    )
+    await open()
+    expect(queue.current.value?.source.id).toBe('2')
+    await queue.completeAttention(true)
+    expect(queue.current.value?.source.id).toBe('1')
+    await queue.completeAttention(true)
+    expect(queue.finished.value).toBe(true)
+    expect(queue.savedCount.value).toBe(2)
+  })
+
+  it('excludes website access problems even when metadata also needs review', async () => {
+    scope.value = 'attention'
+    targetSourceId.value = 'blocked'
+    vi.mocked(api).mockImplementation(async (path) =>
+      String(path).endsWith('/sources/blocked')
+        ? respond({ ...source(3), attentionCode: 'access_denied', metadataReviewPending: true })
+        : respond({
+            items: [
+              { ...source(3), attentionCode: 'access_denied', metadataReviewPending: true },
+              { ...source(1), attentionCode: 'source_chapter_reduction' },
+            ],
+            nextCursor: null,
+          }),
+    )
+    await open()
+    expect(queue.current.value?.source.id).toBe('1')
+    expect(queue.savedCount.value).toBe(0)
+    expect(queue.skippedCount.value).toBe(0)
+    await queue.completeAttention(true)
+    expect(queue.finished.value).toBe(true)
+  })
+
+  it('removes a story that develops an access problem without counting it as skipped', async () => {
+    scope.value = 'attention'
+    await open()
+    await queue.excludeCurrent()
+    expect(queue.current.value?.source.id).toBe('2')
     expect(queue.skippedCount.value).toBe(0)
   })
 

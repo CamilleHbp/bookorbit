@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { canReviewStory, storyReviewRoute } from '../composables/storyReview'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -20,12 +21,12 @@ async function load(next?: string) {
   error.value = false
   const timeout = setTimeout(() => current.abort(), 20000)
   try {
-    const query = new URLSearchParams({ view: 'attention', excludeSharedAccess: 'true', limit: '25', ...(next ? { cursor: next } : {}) })
+    const query = new URLSearchParams({ reviewScope: 'attention', limit: '25', ...(next ? { cursor: next } : {}) })
     const response = await api(`/api/v1/libraries/${props.libraryId}/fanfiction/sources?${query}`, { signal: current.signal })
     if (!response.ok) throw new Error()
     const result = (await response.json()) as FanfictionSourcePage
     if (controller !== current || current.signal.aborted) return
-    stories.value = result.items
+    stories.value = result.items.filter(canReviewStory)
     cursor.value = result.nextCursor
   } catch {
     if (controller === current) error.value = true
@@ -73,14 +74,7 @@ onScopeDispose(() => {
           </p>
         </div>
         <Button variant="outline" as-child
-          ><RouterLink
-            :to="
-              story.bookId
-                ? { name: 'book-detail', params: { bookId: story.bookId }, query: { tab: 'story-updates' } }
-                : { name: 'fanfiction', query: { tab: 'review', libraryId } }
-            "
-            >{{ t('fanfiction.reviewStory') }}</RouterLink
-          ></Button
+          ><RouterLink :to="storyReviewRoute(libraryId, story.id, story.bookId)">{{ t('fanfiction.reviewStory') }}</RouterLink></Button
         >
       </li>
     </ul>

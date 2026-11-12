@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink } from 'vue-router'
+import { canReviewDownload, storyIssueRoute } from '../composables/storyReview'
+import { RouterLink, useRouter } from 'vue-router'
 import { ArrowUpRight, CircleCheck, CloudDownload } from '@lucide/vue'
 import type { FanfictionDownloadRow, FanfictionJob, FanfictionSourceBatchStatus } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,7 @@ const props = defineProps<{
   checkError?: boolean
 }>()
 const { t, locale } = useI18n()
+const router = useRouter()
 const { snapshot, busy, error, lastSeen, refresh, reload, offsets } = useDownloadQueue(props.libraryId)
 const visible = computed(() => sections.filter((key) => key === 'running' || snapshot.value?.totals[key]))
 const selected = ref<FanfictionDownloadRow>()
@@ -26,6 +28,10 @@ const detail = ref<InstanceType<typeof DownloadJobDetail>>()
 let opener: HTMLElement | null = null
 const list = ref<HTMLElement>()
 function inspect(row: FanfictionDownloadRow) {
+  if (canReviewDownload(row)) {
+    void router.push(storyIssueRoute(props.libraryId, row.sourceId, row.bookId, row.code))
+    return
+  }
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   selected.value = row
 }

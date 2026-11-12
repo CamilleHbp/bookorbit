@@ -9,6 +9,8 @@ import type {
   FanfictionSource,
   FanfictionSourcePage,
 } from '@bookorbit/types'
+import { isFanfictionWebsiteAccessProblem } from '@bookorbit/types'
+import { canReviewStory } from './storyReview'
 import { api } from '@/lib/api'
 import { readApiErrorDetail } from '@/lib/api-error'
 
@@ -29,9 +31,13 @@ const emptyChoices = (): FanfictionMetadataChoices => ({ title: 'keep', authors:
 const snapshot = (entry: Entry) => JSON.stringify(entry.review ? entry.choices : entry.values)
 const dirty = (entry: Entry) => entry.loaded && !entry.saved && snapshot(entry) !== entry.baseline
 
-export type StoryReviewScope = FanfictionReviewScope | 'attention'
+export type StoryReviewScope = FanfictionReviewScope
 
-export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<StoryReviewScope>) {
+export function useStoryReviewQueue(
+  libraryId: Ref<number>,
+  scope: Ref<StoryReviewScope>,
+  target?: { sourceId: Ref<string | undefined>; bookId: Ref<number | undefined> },
+) {
   const { t } = useI18n()
   const entries = ref<Entry[]>([])
   const index = ref(0)
@@ -50,6 +56,8 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<StoryRevi
   const hasPrevious = computed(() => index.value > 0)
   let controller: AbortController | undefined
   let generation = 0
+  let pinnedId: string | undefined
+  let targetLoaded = false
 
   function confirmLeave() {
     return !hasDrafts.value || window.confirm(t('fanfiction.reviewQueue.discardDrafts'))
@@ -87,30 +95,52 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<StoryRevi
     }
   }
 
+  function createEntry(source: FanfictionSource): Entry {
+    return {
+      source,
+      review: null,
+      values: emptyValues(),
+      choices: emptyChoices(),
+      lockedFields: [],
+      baseline: '',
+      loaded: false,
+      saved: false,
+      skipped: false,
+    }
+  }
+
+  async function loadTarget(signal: AbortSignal) {
+    if (targetLoaded || scope.value !== 'attention') return
+    targetLoaded = true
+    let source: FanfictionSource | undefined
+    if (target?.sourceId.value) {
+      source = await request<FanfictionSource>(`/api/v1/libraries/${libraryId.value}/fanfiction/sources/${target.sourceId.value}`, signal)
+    } else if (target?.bookId.value) {
+      const page = await request<FanfictionSourcePage>(
+        `/api/v1/libraries/${libraryId.value}/fanfiction/sources?reviewScope=attention&bookId=${target.bookId.value}&limit=1`,
+        signal,
+      )
+      source = page.items[0]
+    }
+    if (signal.aborted || !source || !canReviewStory(source)) return
+    pinnedId = source.id
+    entries.value.push(createEntry(source))
+  }
+
   async function loadPage(signal: AbortSignal) {
-    const query = new URLSearchParams({
-      ...(scope.value === 'attention' ? { view: 'attention' } : { reviewScope: scope.value }),
-      limit: '25',
-      ...(cursor.value ? { cursor: cursor.value } : {}),
-    })
-    const page = await request<FanfictionSourcePage>(`/api/v1/libraries/${libraryId.value}/fanfiction/sources?${query}`, signal)
-    if (signal.aborted) return
-    entries.value.push(
-      ...page.items.map((source): Entry => ({
-        source,
-        review: null,
-        values: emptyValues(),
-        choices: emptyChoices(),
-        lockedFields: [],
-        baseline: '',
-        loaded: false,
-        saved: false,
-        skipped: false,
-      })),
-    )
-    total.value = Math.max(total.value, page.total ?? 0, offset.value + entries.value.length)
-    cursor.value = page.nextCursor
-    started.value = true
+    while (!signal.aborted) {
+      const query = new URLSearchParams({ reviewScope: scope.value, limit: '25', ...(cursor.value ? { cursor: cursor.value } : {}) })
+      const page = await request<FanfictionSourcePage>(`/api/v1/libraries/${libraryId.value}/fanfiction/sources?${query}`, signal)
+      if (signal.aborted) return
+      const previousLength = entries.value.length
+      entries.value.push(
+        ...page.items.filter((source) => source.id !== pinnedId && !isFanfictionWebsiteAccessProblem(source.attentionCode)).map(createEntry),
+      )
+      total.value = Math.max(total.value, page.total ?? 0, offset.value + entries.value.length)
+      cursor.value = page.nextCursor
+      started.value = true
+      if (entries.value.length > previousLength || !cursor.value) return
+    }
   }
 
   async function loadEntry(entry: Entry, signal: AbortSignal) {
@@ -198,6 +228,16 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<StoryRevi
     })
   }
 
+  async function excludeCurrent() {
+    if (busy.value || !current.value) return
+    await run(async (signal) => {
+      entries.value.splice(index.value, 1)
+      total.value = Math.max(0, total.value - 1)
+      if (!current.value && cursor.value) await loadPage(signal)
+      if (current.value) await loadEntry(current.value, signal)
+    })
+  }
+
   async function previous() {
     if (busy.value || !hasPrevious.value) return
     await run(async (signal) => {
@@ -246,7 +286,10 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<StoryRevi
 
   async function retry() {
     await run(async (signal) => {
-      if (!started.value) await loadPage(signal)
+      if (!started.value) {
+        await loadTarget(signal)
+        await loadPage(signal)
+      } else if (!current.value && cursor.value) await loadPage(signal)
       if (current.value) await loadEntry(current.value, signal)
     })
   }
@@ -268,13 +311,15 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<StoryRevi
     generation++
     controller?.abort()
     entries.value = []
+    targetLoaded = false
+    pinnedId = undefined
     index.value = offset.value = total.value = savedCount.value = skippedCount.value = 0
     cursor.value = null
     started.value = busy.value = false
     error.value = ''
     void retry()
   }
-  watch([libraryId, scope], reset, { immediate: true })
+  watch([libraryId, scope, () => target?.sourceId.value, () => target?.bookId.value], reset, { immediate: true })
   onScopeDispose(() => {
     generation++
     controller?.abort()
@@ -293,6 +338,7 @@ export function useStoryReviewQueue(libraryId: Ref<number>, scope: Ref<StoryRevi
     skippedCount,
     next,
     completeAttention,
+    excludeCurrent,
     previous,
     save,
     retry,

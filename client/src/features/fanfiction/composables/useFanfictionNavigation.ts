@@ -54,7 +54,7 @@ export function useFanfictionNavigation(page: ReturnType<typeof useFanfiction>) 
   }
   function destination(tab: Tab) {
     const query: LocationQueryRaw = { ...route.query, tab, libraryId: page.libraryId.value ?? route.query.libraryId }
-    if (tab !== 'activity') delete query.sourceId
+    if (tab !== 'activity' && tab !== 'review') delete query.sourceId
     if (tab !== 'review') delete query.review
     return { name: 'fanfiction', query }
   }

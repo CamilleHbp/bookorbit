@@ -37,7 +37,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { installPostgresExtensions } from '../src/scripts/postgres-extensions';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FanfictionPreview } from '@bookorbit/types';
+import { FANFICTION_WEBSITE_ACCESS_ERRORS, type FanfictionPreview } from '@bookorbit/types';
 import { DB } from '../src/db';
 import * as schema from '../src/db/schema';
 import { storageConfig } from '../src/config/config';
@@ -1248,6 +1248,35 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect(await readFile(target)).toEqual(before);
     expect((await catalog.current(fileId, libraryId)).id).toBe(update?.revisionId);
   }, 60_000);
+  it('keeps website access problems out of every review scope even when metadata is pending', async () => {
+    for (const code of FANFICTION_WEBSITE_ACCESS_ERRORS) {
+      await db
+        .update(schema.fanfictionSources)
+        .set({ attentionCode: code, metadataReviewPending: true, state: 'configuration_blocked' })
+        .where(eq(schema.fanfictionSources.id, source.id));
+      for (const reviewScope of ['attention', 'pending', 'all'] as const) {
+        const page = await sources.list(libraryId, { limit: 10, reviewScope }, user);
+        expect(page.items, `${reviewScope}: ${code}`).toEqual([]);
+        expect(page.total).toBe(0);
+      }
+    }
+    await db
+      .update(schema.fanfictionSources)
+      .set({ attentionCode: 'metadata_review_required', metadataReviewPending: true, state: 'review_required' })
+      .where(eq(schema.fanfictionSources.id, source.id));
+    expect((await sources.list(libraryId, { limit: 10, reviewScope: 'attention' }, user)).items.map((entry) => entry.id)).toEqual([source.id]);
+    await db
+      .update(schema.fanfictionSources)
+      .set({ attentionCode: 'source_chapter_reduction', metadataReviewPending: false })
+      .where(eq(schema.fanfictionSources.id, source.id));
+    expect((await sources.list(libraryId, { limit: 10, reviewScope: 'attention' }, user)).items.map((entry) => entry.id)).toEqual([source.id]);
+    await db
+      .update(schema.fanfictionSources)
+      .set({ attentionCode: null, metadataReviewPending: false, state: 'active' })
+      .where(eq(schema.fanfictionSources.id, source.id));
+    expect((await sources.list(libraryId, { limit: 10, reviewScope: 'attention' }, user)).items).toEqual([]);
+    expect((await sources.list(libraryId, { limit: 10, reviewScope: 'all' }, user)).items.map((entry) => entry.id)).toEqual([source.id]);
+  });
   it('projects library metadata and filters by genres, tags, fandom and publication', async () => {
     const managed = module.get(ManagedMetadataService);
     await db.transaction((tx) =>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { storyReviewRoute } from './composables/storyReview'
 import DownloadQueue from './components/DownloadQueue.vue'
 import FanfictionLibraryStatus from './components/FanfictionLibraryStatus.vue'
 import { needsImportReview } from './composables/useImportReview'
@@ -46,7 +47,7 @@ const reviewSource = () =>
     ? router.currentRoute.value.query.sourceId
     : undefined
 const page = useFanfiction(
-  (bookId) => router.push({ name: 'book-detail', params: { bookId }, query: { tab: 'story-updates' } }),
+  openMetadataReview,
   reviewSource,
   Number.isSafeInteger(requestedLibraryId) && requestedLibraryId > 0 ? requestedLibraryId : undefined,
 )
@@ -118,6 +119,13 @@ const {
   sourceErrors,
   checkingSourceId,
 } = page
+async function openMetadataReview(bookId: number, sourceId?: string): Promise<void> {
+  if (libraryId.value) await router.push(storyReviewRoute(libraryId.value, sourceId, bookId))
+}
+const requestedReviewBookId = computed(() => {
+  const value = Number(router.currentRoute.value.query.bookId)
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined
+})
 const connectionIssues = ref<InstanceType<typeof WebsiteConnections> | null>(null)
 const storyIssues = ref<InstanceType<typeof StoryAttentionList> | null>(null)
 const reviewQueue = ref<InstanceType<typeof StoryReviewQueue> | null>(null)
@@ -132,13 +140,13 @@ watch(
   { immediate: true },
 )
 function showAttentionReviews() {
-  void router.replace({ query: { ...router.currentRoute.value.query, review: 'attention' } })
+  void router.replace({ query: { ...router.currentRoute.value.query, review: 'attention', sourceId: undefined, bookId: undefined } })
 }
 function showImportReviews() {
-  void router.replace({ query: { ...router.currentRoute.value.query, review: 'imports' } })
+  void router.replace({ query: { ...router.currentRoute.value.query, review: 'imports', sourceId: undefined, bookId: undefined } })
 }
 function showMetadataReviews() {
-  void router.replace({ query: { ...router.currentRoute.value.query, review: 'metadata' } })
+  void router.replace({ query: { ...router.currentRoute.value.query, review: 'metadata', sourceId: undefined, bookId: undefined } })
 }
 const inlineReviews = ref<InstanceType<typeof StoryImportReview>[]>([])
 const taskList = ref<InstanceType<typeof FanfictionTaskList>>()
@@ -364,7 +372,10 @@ onMounted(() => {
             <RouterLink class="rounded px-3 py-2 hover:bg-muted" :to="destination('stories')">{{ t('fanfiction.downloads.sources') }}</RouterLink>
             <RouterLink
               class="rounded px-3 py-2 hover:bg-muted"
-              :to="{ ...destination('review'), query: { ...destination('review').query, review: 'metadata' } }"
+              :to="{
+                ...destination('review'),
+                query: { ...destination('review').query, review: 'metadata', sourceId: undefined, bookId: undefined },
+              }"
               >{{ t('fanfiction.downloads.reviews') }}</RouterLink
             >
             <RouterLink class="rounded px-3 py-2 hover:bg-muted" :to="destination('activity')">{{ t('fanfiction.downloads.taskLog') }}</RouterLink>
@@ -499,9 +510,11 @@ onMounted(() => {
         <StoryReviewQueue
           v-else
           ref="reviewQueue"
-          :key="`${libraryId}-${reviewView}`"
+          :key="`${libraryId}-${reviewView}-${reviewSource() ?? router.currentRoute.value.query.bookId ?? ''}`"
           :library-id="libraryId"
           :attention="reviewView === 'attention'"
+          :source-id="reviewSource()"
+          :book-id="requestedReviewBookId"
         />
       </section>
       <section v-if="tab === 'stories'" class="space-y-3 rounded-xl bg-card p-3 sm:p-4" :aria-label="t('fanfiction.stories')" :aria-busy="busy">

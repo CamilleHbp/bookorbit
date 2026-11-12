@@ -6,7 +6,8 @@ import type { FanfictionSource } from '@bookorbit/types'
 import { api } from '@/lib/api'
 import FanfictionPage from './FanfictionPage.vue'
 
-vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>() }))
+vi.mock('@/lib/api', () => ({ api: vi.fn<typeof api>(), setOnAuthFailure: vi.fn<() => void>() }))
+vi.mock('@/features/auth/composables/useAuth', () => ({ useAuth: () => ({ user: ref({ id: 1 }) }) }))
 vi.mock('@/features/auth/composables/usePermissions', () => ({ usePermissions: () => ({ hasPermission: () => true }) }))
 vi.mock('@/features/collection/composables/useCollections', () => ({
   useCollections: () => ({ collections: ref([]), fetchCollections: vi.fn<() => Promise<void>>() }),
@@ -20,6 +21,7 @@ const source = {
   state: 'configuration_blocked',
   attentionCode: 'authentication_required',
   version: 1,
+  tracking: { maintainerUserId: 2, enabled: true, policy: 'review' },
   bookId: 42,
   bookFileId: 43,
   title: 'Embers Fall',
@@ -74,7 +76,7 @@ describe('story login repair through the fanfiction page', () => {
       if (url.endsWith('/jobs/repair'))
         return response({ id: 'repair', kind: 'source_batch', state: finished ? 'succeeded' : 'queued', result: { selection: { tracked: true } } })
       if (url.includes('/fanfiction/libraries?')) return response({ items: [{ id: 5, name: 'Books' }], nextCursor: null })
-      if (url.includes('/sources?')) return response({ items: finished && url.includes('view=attention') ? [] : [source], nextCursor: null })
+      if (url.includes('/sources?')) return response({ items: finished && url.includes('reviewScope=attention') ? [] : [source], nextCursor: null })
       if (url.includes('/sources/folders?')) return response({ items: [{ id: 6, name: 'Books' }], nextCursor: null })
       if (url.includes('/profiles?')) return response({ items: saved ? [profile] : [], nextCursor: null })
       if (url.endsWith('/source-batches/repair/status'))
@@ -128,7 +130,7 @@ describe('story login repair through the fanfiction page', () => {
       await vi.advanceTimersByTimeAsync(3100)
       await flushPromises()
       expect(wrapper.text()).not.toContain('2 stories need access')
-      expect(wrapper.text()).toContain('Library check complete')
+      expect(wrapper.text()).toContain('2 of 2 checked')
     } finally {
       wrapper.unmount()
     }

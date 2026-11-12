@@ -1,7 +1,7 @@
 import { reservationKey, sameStory } from './fanfiction-story-identity';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 import { TagMatchingService, storyLabels } from '../tag-matching/tag-matching.service';
-import { personalAccessIssueFilter, storyStateFilter } from './fanfiction-source-filters';
+import { personalAccessIssueFilter, storyStateFilter, storyReviewFilter } from './fanfiction-source-filters';
 import { FanfictionReaderService } from './fanfiction-reader.service';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
@@ -423,8 +423,7 @@ export class FanfictionSourceService {
     const filters = and(
       eq(sources.libraryId, libraryId),
       dto.bookId ? eq(sources.bookId, dto.bookId) : undefined,
-      dto.reviewScope ? sql`${sources.bookId} is not null and ${sources.state} <> 'unlinked'` : undefined,
-      dto.reviewScope === 'pending' ? sql`(${sources.metadataReviewPending} or ${sources.attentionCode} = 'metadata_review_required')` : undefined,
+      storyReviewFilter(dto.reviewScope),
       dto.state ? storyStateFilter(dto.state) : sql`${sources.state} <> 'unlinked'`,
       dto.excludeSharedAccess ? sql`(${sources.metadataReviewPending} or not coalesce((${personalAccessIssueFilter(user.id)}), false))` : undefined,
       dto.search
