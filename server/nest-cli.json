@@ -12,6 +12,7 @@
       "modules/fanfiction/runtime/chapter_store.py",
       "modules/fanfiction/runtime/update_check.py",
       "modules/fanfiction/runtime/website_catalog.py",
+      "modules/fanfiction/runtime/publisher_edition.py",
       "modules/fanfiction/runtime/safe_transport.py",
       "modules/fanfiction/runtime/browser_connection.py",
       "modules/fanfiction/runtime/flaresolverr_transport.py",
