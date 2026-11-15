@@ -1,1 +1,0 @@
-ALTER TABLE "book_merge_jobs" ADD COLUMN "library_ids" integer[];
