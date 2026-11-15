@@ -519,12 +519,18 @@ export function useBookStory(
   }
   const approveContent = () => reviewContent('apply')
   const discardContent = () => reviewContent('discard')
+  const canReviewMetadata = computed(
+    () =>
+      Boolean(metadataReview.value) &&
+      (!job.value || Boolean(metadataReview.value?.review.beforeUpdate) || ['succeeded', 'no_change', 'cancelled'].includes(job.value.state)),
+  )
   return {
     updatePolicy,
     keepUpdated,
     approveContent,
     discardContent,
     metadataReview,
+    canReviewMetadata,
     metadataChoices,
     resolveMetadata,
     deferMetadata,
