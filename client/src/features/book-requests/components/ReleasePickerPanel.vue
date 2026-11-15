@@ -1070,6 +1070,7 @@ function showEverySource(): void {
                     {{ t('bookRequests.releases.criteria.authorsEditor') }}
                   </label>
                   <textarea
+                    spellcheck="false"
                     id="release-search-authors"
                     v-model="searchAuthors"
                     rows="3"

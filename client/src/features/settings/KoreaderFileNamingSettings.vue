@@ -144,6 +144,7 @@ async function resetDevice(deviceId: string) {
           <p id="koreader-account-pattern-hint" class="settings-hint">{{ t('settings.reader.koreader.fileNaming.accountHint') }}</p>
         </div>
         <textarea
+          spellcheck="false"
           id="koreader-account-pattern"
           v-model="accountPatternDraft"
           rows="3"
@@ -215,6 +216,7 @@ async function resetDevice(deviceId: string) {
               }}</span>
             </div>
             <textarea
+              spellcheck="false"
               :id="'koreader-device-default-' + index"
               v-model="drafts[device.deviceId]!.pattern"
               rows="3"
@@ -246,6 +248,7 @@ async function resetDevice(deviceId: string) {
               <span :id="'koreader-device-series-help-' + index" class="sr-only">{{ t('settings.reader.koreader.fileNaming.seriesHelp') }}</span>
             </div>
             <textarea
+              spellcheck="false"
               :id="'koreader-device-series-' + index"
               v-model="drafts[device.deviceId]!.seriesPattern"
               rows="3"
@@ -279,6 +282,7 @@ async function resetDevice(deviceId: string) {
               }}</span>
             </div>
             <textarea
+              spellcheck="false"
               :id="'koreader-device-standalone-' + index"
               v-model="drafts[device.deviceId]!.standalonePattern"
               rows="3"

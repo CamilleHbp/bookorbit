@@ -620,6 +620,7 @@ onMounted(() => {
           <label class="block space-y-1 text-sm"
             >{{ t('fanfiction.storyUrls')
             }}<textarea
+              spellcheck="false"
               ref="urlInput"
               v-model="urls"
               :disabled="busy"
