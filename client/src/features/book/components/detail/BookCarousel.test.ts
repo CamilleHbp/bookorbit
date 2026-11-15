@@ -305,7 +305,7 @@ describe('BookCarousel', () => {
 
   it('navigates to book detail on card click', async () => {
     const wrapper = mountCarousel([makeBook({ id: 77 })])
-    await wrapper.find('[data-book-id="77"]').trigger('click')
+    await wrapper.find('[data-book-id="77"] button').trigger('click')
     expect(mockRouterPush).toHaveBeenCalledWith({ name: 'book-detail', params: { bookId: 77 } })
   })
 

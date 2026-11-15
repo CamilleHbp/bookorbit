@@ -158,27 +158,19 @@ describe('sidebar nav registry', () => {
   })
 
   it('resolves Tools to duplicate books when the user can only merge books', () => {
-    const context = makeContext({ permissions: ['library_merge_books', 'library_edit_metadata'] })
+    const context = makeContext({ permissions: ['library_merge_books'] })
 
     const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
 
     expect(resolved.to).toEqual({ name: 'tools-duplicate-books' })
   })
 
-  it('resolves Tools to chapter health when the user can only edit metadata', () => {
-    const context = makeContext({ permissions: ['library_edit_metadata'] })
-
-    const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
-
-    expect(resolved.to).toEqual({ name: 'tools-chapter-health' })
-  })
-
-  it('prefers duplicate books over chapter health when the user can delete books too', () => {
+  it('keeps tags as the default for metadata editors who can delete books', () => {
     const context = makeContext({ permissions: ['library_delete_books', 'library_edit_metadata'] })
 
     const resolved = resolveNavEntry(entry('tools'), context, makeRoute('dashboard'), 'Tools')
 
-    expect(resolved.to).toEqual({ name: 'tools-duplicate-books' })
+    expect(resolved.to).toEqual({ name: 'tools-entity-manager' })
   })
 
   it('marks Tools active on any tools- route', () => {
