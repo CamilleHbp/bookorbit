@@ -30,13 +30,13 @@ it('saves ScribbleHub username and password without requiring browser cookies', 
     expect(wrapper.get('h3').text()).toBe('ScribbleHub')
     expect(wrapper.get('details').attributes('open')).toBeUndefined()
     await wrapper.get('input[autocomplete="username"]').setValue('reader')
-    await wrapper.get('input[autocomplete="current-password"]').setValue('private-password')
+    await wrapper.get('input.input-secret').setValue('private-password')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     const request = vi.mocked(api).mock.calls.find(([, options]) => options?.method === 'POST')!
     expect(request[0]).toBe('/api/v1/fanfiction/connections')
     expect(JSON.parse(request[1]!.body as string)).toEqual({ site: 'scribblehub.com', username: 'reader', password: 'private-password' })
-    expect((wrapper.get('input[autocomplete="current-password"]').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.get('input.input-secret').element as HTMLInputElement).value).toBe('')
     expect(wrapper.emitted('saved')).toHaveLength(1)
   } finally {
     wrapper.unmount()
@@ -108,7 +108,7 @@ it.each(['royalroad.com', 'fanfiction.net'])('saves %s email and password while 
     expect(wrapper.get('input[type="email"]').element).toBeTruthy()
     expect(wrapper.get('details').attributes('open')).toBeUndefined()
     await wrapper.get('input[type="email"]').setValue('reader@example.com')
-    await wrapper.get('input[autocomplete="current-password"]').setValue('private-password')
+    await wrapper.get('input.input-secret').setValue('private-password')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     const request = vi.mocked(api).mock.calls.find(([, options]) => options?.method === 'POST')!
