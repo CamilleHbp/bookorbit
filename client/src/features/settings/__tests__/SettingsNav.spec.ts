@@ -130,7 +130,7 @@ describe('SettingsNav', () => {
     })
 
     it('shows the library group to a user who can manage libraries', () => {
-      expect(groupLabels(mountNav({ perms: ['manage_libraries'] }))).toEqual(['You', 'Library'])
+      expect(groupLabels(mountNav({ perms: ['manage_libraries'] }))).toEqual(['You', 'Library', 'Accounts'])
     })
   })
 
