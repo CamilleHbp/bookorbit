@@ -186,6 +186,11 @@ function stripMetadata(
         const refId = refines.startsWith('#') ? refines.slice(1) : refines;
         if (replacedIds.has(refId)) continue;
       }
+      // Continuation cutoffs control future content updates, independently of editable metadata.
+      if (name === 'bookorbit:chapter-floor') {
+        cleaned.push(node);
+        continue;
+      }
       // Strip bookorbit: named metas
       if (name.startsWith(`${APP_WRITE_NAMESPACE}:`)) continue;
       // Strip bookorbit: property metas
