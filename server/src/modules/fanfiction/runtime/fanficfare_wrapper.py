@@ -246,7 +246,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         configuration.set('overrides', 'update_check_recent_chapters', '0')
     adapter = story_adapter(configuration, url)
     report_progress({'stage': 'metadata'})
-    login_scribblehub(adapter)
+    login_scribblehub(adapter, allow_public=operation in ('download', 'update', 'refresh'))
     # FanFicFare caches metadata, so the writer cannot fetch a skipped cover later.
     get_cover = operation in ('download', 'update', 'refresh')
     try:

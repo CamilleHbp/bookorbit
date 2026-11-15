@@ -51,6 +51,25 @@ class ScribbleHubLoginTest(unittest.TestCase):
         self.assertNotIn('reader', str(failure.exception))
         self.assertNotIn('secret&password', str(failure.exception))
 
+    def test_public_reads_can_continue_after_login_recaptcha_but_not_bad_passwords(self):
+        captcha = FORM + '<div class="reg_error_msg">An error with Google reCAPTCHA has occurred. Please try again.</div>'
+        with patch.object(self.transport, 'request', return_value=(200, captcha.encode(), LOGIN_URL)):
+            login_scribblehub(self.adapter, allow_public=True)
+            with self.assertRaises(exceptions.AccessDenied):
+                login_scribblehub(self.adapter)
+        rejected = FORM + '<div class="reg_error_msg">Incorrect username or password.</div>'
+        with patch.object(self.transport, 'request', return_value=(200, rejected.encode(), LOGIN_URL)):
+            with self.assertRaises(exceptions.FailedToLogin):
+                login_scribblehub(self.adapter, allow_public=True)
+
+    def test_public_fallback_does_not_ignore_cloudflare_or_access_denied(self):
+        for response in [(403, b'Forbidden', LOGIN_URL),
+                         (200, b'<script>window._cf_chl_opt = {};</script>', LOGIN_URL)]:
+            with patch.object(self.transport, 'request', return_value=response):
+                with self.assertRaises(Exception) as failure:
+                    login_scribblehub(self.adapter, allow_public=True)
+                self.assertEqual(failure_code(failure.exception), 'access_denied')
+
     def test_wrapper_authenticates_before_metadata_and_returns_session_cookies(self):
         calls = []
 

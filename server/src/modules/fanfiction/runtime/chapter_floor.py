@@ -1,7 +1,8 @@
 """Keep published chapters out of an updating web continuation.
 
-An OPF marker stores a story URL, a minimum chapter number (or arc/chapter
-pair), and explicitly retained unnumbered bonus chapter URLs. Unnumbered
+An OPF marker stores a story URL, minimum chapter numbers, and explicitly
+retained unnumbered bonus chapter URLs. ScribbleHub uses independent main
+and side chapter cutoffs; Royal Road uses a chapter number or arc/chapter pair. Unnumbered
 announcements are excluded. Invalid policies fail closed during updates.
 """
 import json
@@ -23,19 +24,22 @@ MARKER = 'bookorbit:chapter-floor'
 
 def story_id(url):
     parts = urlsplit(url)
-    match = re.match(r'^/fiction/(\d+)(?:/|$)', parts.path)
-    if (parts.scheme not in ('http', 'https') or parts.hostname not in ('www.royalroad.com', 'royalroad.com') or
-            parts.username or parts.password or parts.port or not match):
+    site = (parts.hostname or '').removeprefix('www.')
+    pattern = {'royalroad.com': r'^/fiction/(\d+)(?:/|$)',
+               'scribblehub.com': r'^/(?:series|read)/(\d+)(?:/|$)'}.get(site)
+    match = re.match(pattern, parts.path) if pattern else None
+    if (parts.scheme not in ('http', 'https') or parts.username or parts.password or parts.port or not match):
         raise PolicyError('The continuation cutoff belongs to a different story')
-    return match[1]
+    return site, match[1]
 
 
 def chapter_id(url):
     parts = urlsplit(url)
     match = re.search(r'/chapter/(\d+)(?:/|$)', parts.path)
-    if parts.hostname not in ('www.royalroad.com', 'royalroad.com') or not match:
+    site, _ = story_id(url)
+    if not match:
         raise PolicyError('The continuation contains an invalid bonus chapter URL')
-    return match[1]
+    return site, match[1]
 
 
 def validate_policy(policy):
@@ -44,11 +48,14 @@ def validate_policy(policy):
         raise PolicyError('The continuation cutoff is invalid')
     if not isinstance(policy['storyUrl'], str):
         raise PolicyError('The continuation cutoff is invalid')
-    story_id(policy['storyUrl'])
+    site, _ = story_id(policy['storyUrl'])
     minimum = policy['minimum']
     if (not isinstance(minimum, list) or len(minimum) not in (1, 2) or
             any(type(n) is not int or not 0 <= n <= 999999 for n in minimum)):
         raise PolicyError('The continuation chapter number is invalid')
+    # ScribbleHub uses independent main and side-story numbering, rather than arcs.
+    if site == 'scribblehub.com' and len(minimum) != 2:
+        raise PolicyError('A ScribbleHub continuation needs main and side chapter cutoffs')
     extras = policy['extraChapterUrls']
     if not isinstance(extras, list) or len(extras) > 100 or any(not isinstance(u, str) or len(u) > 2048 for u in extras):
         raise PolicyError('The continuation bonus chapter list is invalid')
@@ -57,6 +64,42 @@ def validate_policy(policy):
         if story_id(url) != story_id(policy['storyUrl']):
             raise PolicyError('A continuation bonus chapter belongs to a different story')
     return policy
+
+
+NUMBER_WORDS = dict(zip(
+    'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety'.split(),
+    list(range(20)) + list(range(20, 100, 10))))
+
+
+def spelled_number(text):
+    """Read the number at the beginning of a source chapter title."""
+    tokens = re.findall(r'[a-z]+|[^\s-]', text.strip().lower())
+    total = current = 0
+    count = 0
+    for token in tokens:
+        if token in NUMBER_WORDS:
+            current += NUMBER_WORDS[token]
+        elif token == 'hundred' and current:
+            current *= 100
+        elif token == 'thousand' and current:
+            total += current * 1000
+            current = 0
+        elif token == 'and' and count:
+            continue
+        else:
+            break
+        count += 1
+    return total + current if count else None
+
+
+def scribblehub_number(title):
+    title = re.sub(r'^\s*Chapter\s+', '', title, flags=re.I).strip()
+    side = bool(re.match(r'^Side\s+', title, re.I))
+    if side:
+        title = re.sub(r'^Side\s+', '', title, flags=re.I)
+    numeric = re.match(r'^(\d+)(?=\s|[-:.]|$)', title)
+    number = int(numeric[1]) if numeric else spelled_number(title)
+    return (1 if side else 0), number
 
 
 def read_policy(path):
@@ -79,14 +122,19 @@ def apply_policy(adapter, policy, canonical_url):
         return
     if story_id(canonical_url) != story_id(policy['storyUrl']):
         raise PolicyError('The continuation cutoff belongs to a different story')
+    site, _ = story_id(canonical_url)
     minimum = tuple(policy['minimum'])
     pattern = (r'^\s*(?:Chapter\s+)?(\d+)\s*[-–]\s*(\d+)(?=\s|[:.]|$)' if len(minimum) == 2 else
                r'^\s*(?:Chapter\s+)?(\d+)(?=\s|[-:.]|$)')
     extras = {chapter_id(url) for url in policy['extraChapterUrls']}
     selected = []
     for chapter in adapter.get_chapters():
-        match = re.match(pattern, chapter.get('site_title', chapter['title']), re.I)
-        if match:
+        title = chapter.get('site_title', chapter['title'])
+        match = re.match(pattern, title, re.I)
+        if site == 'scribblehub.com':
+            kind, number = scribblehub_number(title)
+            include = number >= minimum[kind] if number is not None else chapter_id(chapter['url']) in extras
+        elif match:
             include = tuple(int(n) for n in match.groups()) >= minimum
         else:
             include = bool(extras) and chapter_id(chapter['url']) in extras

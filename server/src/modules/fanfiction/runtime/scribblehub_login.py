@@ -9,7 +9,7 @@ from safe_transport import PolicyError
 LOGIN_URL = 'https://www.scribblehub.com/login/'
 
 
-def login_scribblehub(adapter):
+def login_scribblehub(adapter, allow_public=False):
     if adapter.getSiteDomain() != 'www.scribblehub.com':
         return
     username = adapter.getConfig('username', '')
@@ -62,6 +62,12 @@ def login_scribblehub(adapter):
         parameters[submit['name']] = submit.get('value', '')
     parameters[username_field['name']] = username
     parameters[password_field['name']] = password
-    page(adapter.post_request(target, parameters, usecache=False))
+    response = page(adapter.post_request(target, parameters, usecache=False))
     if not any(is_login_cookie(cookie) and cookie.value and not cookie.is_expired() for cookie in cookies):
+        error = response.select_one('.reg_error_msg')
+        if error and ' '.join(error.get_text(' ', strip=True).casefold().split()) == 'an error with google recaptcha has occurred. please try again.':
+            # Public chapter requests do not require submitting a CAPTCHA or signing in.
+            if allow_public:
+                return
+            raise exceptions.AccessDenied('ScribbleHub sign-in requires browser verification')
         raise exceptions.FailedToLogin(LOGIN_URL, '')
