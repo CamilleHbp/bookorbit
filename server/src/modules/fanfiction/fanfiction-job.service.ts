@@ -828,7 +828,15 @@ export class FanfictionJobService {
         .orderBy(asc(jobs.runAfter), asc(jobs.id))
         .limit(100)
         .for('update', { skipLocked: true });
-      const candidate = candidates.find((row) => !active.some((other) => other.site === row.site));
+      // Finish approved updates within the due batch before starting another download.
+      const candidate =
+        candidates.find(
+          (row) =>
+            (row.kind === 'update' || row.kind === 'refresh') &&
+            row.result?.preparedUpdate?.approved &&
+            row.result.preview &&
+            (!row.result.contentReview || row.result.contentReview.approved),
+        ) ?? candidates[0];
       if (!candidate) return null;
       const [claimed] = await tx
         .update(jobs)

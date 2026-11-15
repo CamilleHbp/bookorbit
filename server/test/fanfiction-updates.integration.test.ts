@@ -323,6 +323,55 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       void zip.finalize();
     });
   }
+  it('finishes approved updates before older downloads within the due batch', async () => {
+    const readyResult = {
+      preview,
+      preparedUpdate: {
+        noChange: true,
+        previousState: 'active' as const,
+        values: { title: preview.title, description: '', authors: preview.authors, tags: [], genres: [] },
+        fields: [],
+        fingerprint: 'queue-test',
+        approved: true,
+      },
+      contentReview: { approved: true, previousState: 'active' as const },
+    };
+    const insert = async (kind: 'preview' | 'update', result: typeof readyResult | null, minutesAgo: number, site = preview.site) => {
+      const [job] = await db
+        .insert(schema.fanfictionJobs)
+        .values({
+          libraryId,
+          userId: user.id,
+          tokenVersion: user.tokenVersion,
+          idempotencyKey: randomUUID(),
+          kind,
+          state: 'queued',
+          url: preview.canonicalUrl,
+          site,
+          result,
+          runAfter: new Date(Date.now() - minutesAgo * 60_000),
+        })
+        .returning();
+      return job;
+    };
+    const download = await insert('preview', null, 10);
+    const awaitingReview = await insert('update', { ...readyResult, contentReview: { ...readyResult.contentReview, approved: false } }, 9);
+    const ready = await insert('update', readyResult, 1);
+    const future = await insert('update', readyResult, -10, 'future.example.org');
+    expect((await jobs.claim())?.id).toBe(ready.id);
+    // Ready updates retain both the website exclusion and the two-worker limit.
+    expect(await jobs.claim()).toBeNull();
+    const otherSite = await insert('preview', null, 5, 'other.example.org');
+    expect((await jobs.claim())?.id).toBe(otherSite.id);
+    expect(await jobs.claim()).toBeNull();
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ state: 'succeeded', leaseOwner: null, leaseExpiresAt: null })
+      .where(eq(schema.fanfictionJobs.id, ready.id));
+    expect((await jobs.claim())?.id).toBe(download.id);
+    expect((await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, awaitingReview.id)))[0].state).toBe('queued');
+    expect((await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, future.id)))[0].state).toBe('queued');
+  }, 60_000);
   it('restarts an outdated unpublished review using current settings and an idempotent job identity', async () => {
     const original = await readFile(target);
     const job = await claim();
