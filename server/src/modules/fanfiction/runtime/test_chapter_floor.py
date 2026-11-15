@@ -50,7 +50,7 @@ class ChapterFloorTests(unittest.TestCase):
         url = 'https://www.scribblehub.com/series/623932/on-astral-tides/'
         def entry(title, n):
             return {'title': 'Chapter ' + str(n), 'site_title': title,
-                    'url': f'https://www.scribblehub.com/read/623932/on-astral-tides/chapter/{n}/'}
+                    'url': f'https://www.scribblehub.com/read/623932-on-astral-tides/chapter/{n}/'}
         entries = [entry('Five Hundred And Twenty-Four', 1), entry('Side One Hundred And Seventy-Five - Aiko', 2),
                    entry('Five Hundred And Twenty-Five - Contains Status', 3),
                    entry('Side One Hundred And Seventy-Six - Aiko', 4), entry('Chapter 526 - Next', 5),
@@ -69,7 +69,7 @@ class ChapterFloorTests(unittest.TestCase):
         from fanficfare_wrapper import run
         url = 'https://www.scribblehub.com/series/623932/on-astral-tides/'
         def entry(title, n):
-            return {'title': title, 'url': f'https://www.scribblehub.com/read/623932/on-astral-tides/chapter/{n}/'}
+            return {'title': title, 'url': f'https://www.scribblehub.com/read/623932-on-astral-tides/chapter/{n}/'}
         available = [entry('Five Hundred And Twenty-Five', 525), entry('Side One Hundred And Seventy-Six - Aiko', 176)]
         cutoff = {'version': 1, 'storyUrl': url, 'minimum': [525, 176], 'extraChapterUrls': []}
         original = os.getcwd()

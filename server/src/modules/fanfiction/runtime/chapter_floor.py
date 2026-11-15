@@ -26,7 +26,7 @@ def story_id(url):
     parts = urlsplit(url)
     site = (parts.hostname or '').removeprefix('www.')
     pattern = {'royalroad.com': r'^/fiction/(\d+)(?:/|$)',
-               'scribblehub.com': r'^/(?:series|read)/(\d+)(?:/|$)'}.get(site)
+               'scribblehub.com': r'^/(?:series|read)/(\d+)(?:[-/]|$)'}.get(site)
     match = re.match(pattern, parts.path) if pattern else None
     if (parts.scheme not in ('http', 'https') or parts.username or parts.password or parts.port or not match):
         raise PolicyError('The continuation cutoff belongs to a different story')
