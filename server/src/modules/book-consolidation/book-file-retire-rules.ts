@@ -8,11 +8,21 @@
  * - `newer-wins`: one row per user (or device) on each file; the newer survives on the surviving file.
  * - `survivor-wins`: the surviving file's row is kept, the loser's moves only when the survivor has none.
  * - `drop`: the loser's rows are derived data and are deleted.
+ * - `block`: retained revisions or managed imports prevent retiring the file.
  * - `primary`: the book's primary file moves to the survivor.
  */
-export type BookFileRetireRuleKind = 'repoint' | 'newer-wins' | 'survivor-wins' | 'drop' | 'primary';
+export type BookFileRetireRuleKind = 'repoint' | 'newer-wins' | 'survivor-wins' | 'drop' | 'primary' | 'block';
 
 export const BOOK_FILE_RETIRE_RULES: Readonly<Record<string, BookFileRetireRuleKind>> = {
+  'book_dock_managed_imports.book_file_id': 'block',
+  'book_file_revisions.book_file_id': 'block',
+  'canonical_reading_events.book_file_id': 'block',
+  'fanfiction_discovery_candidates.book_file_id': 'block',
+  'fanfiction_sources.book_file_id': 'block',
+  'koreader_installed_copies.book_file_id': 'block',
+  'reading_event_heads.book_file_id': 'block',
+  'reading_position_acknowledgements.book_file_id': 'block',
+  'revision_publications.book_file_id': 'block',
   'books.primary_file_id': 'primary',
   'reading_progress.book_file_id': 'newer-wins',
   'reading_sessions.book_file_id': 'repoint',

@@ -4,6 +4,7 @@ function makeService() {
   const bookRepo = {
     findLibraryIdByBookId: vi.fn(),
     findFileById: vi.fn(),
+    findAccessibleFiles: vi.fn(),
     findPrimaryFilesByBookIds: vi.fn(),
     findCards: vi.fn(),
     findCardsByBookIds: vi.fn(),
@@ -13,11 +14,21 @@ function makeService() {
     findById: vi.fn(),
     updateMetadataFields: vi.fn(),
   };
-  const service = new BookReadService(bookRepo as never);
-  return { service, bookRepo };
+  const scope = { visibleIdsOrAll: vi.fn().mockResolvedValue(null) };
+  const service = new BookReadService(bookRepo as never, scope as never);
+  return { service, bookRepo, scope };
 }
 
 describe('BookReadService', () => {
+  it('passes credential-limited library ids to file queries', async () => {
+    const { service, bookRepo, scope } = makeService();
+    const user = { id: 7, active: true } as never;
+    scope.visibleIdsOrAll.mockResolvedValue([5] as never);
+    await service.findAccessibleFiles([9], user);
+    expect(scope.visibleIdsOrAll).toHaveBeenCalledWith(user);
+    expect(bookRepo.findAccessibleFiles).toHaveBeenCalledWith([9], user, [5]);
+  });
+
   it('delegates read queries to BookRepository', () => {
     const { service, bookRepo } = makeService();
     bookRepo.findLibraryIdByBookId.mockReturnValue(3);

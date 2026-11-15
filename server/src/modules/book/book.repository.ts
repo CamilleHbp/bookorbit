@@ -1758,15 +1758,13 @@ export class BookRepository {
     return !!row;
   }
 
-  async findAccessibleFiles(fileIds: number[], user: import('../../common/types/request-user').RequestUser) {
+  async findAccessibleFiles(fileIds: number[], user: import('../../common/types/request-user').RequestUser, libraryIds: number[] | null) {
     if (fileIds.length > 100) throw new BadRequestException('File access batches are limited to 100');
     if (!fileIds.length || !user.active) return [];
-    const access = user.isSuperuser
-      ? []
-      : [
-          sql`exists (select 1 from ${schema.userLibraryAccess} access where access.user_id = ${user.id} and access.library_id = ${books.libraryId})`,
-          ...(user.contentFilters ? buildContentFilterClauses(user.contentFilters, this.db) : []),
-        ];
+    const access = [
+      libraryIds === null ? undefined : libraryIds.length ? inArray(books.libraryId, libraryIds) : sql`false`,
+      ...(!user.isSuperuser && user.contentFilters ? buildContentFilterClauses(user.contentFilters, this.db) : []),
+    ];
     return this.db
       .select({
         id: bookFiles.id,

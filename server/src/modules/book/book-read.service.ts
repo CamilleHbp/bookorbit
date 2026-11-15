@@ -1,3 +1,4 @@
+import { LibraryScopeService } from '../../common/library-scope/library-scope.service';
 import { Injectable } from '@nestjs/common';
 import { SQL } from 'drizzle-orm';
 
@@ -5,14 +6,17 @@ import { BookRepository } from './book.repository';
 
 @Injectable()
 export class BookReadService {
-  constructor(private readonly bookRepo: BookRepository) {}
+  constructor(
+    private readonly bookRepo: BookRepository,
+    private readonly libraryScope: LibraryScopeService,
+  ) {}
 
   findLibraryIdByBookId(bookId: number) {
     return this.bookRepo.findLibraryIdByBookId(bookId);
   }
 
-  findAccessibleFiles(fileIds: number[], user: import('../../common/types/request-user').RequestUser) {
-    return this.bookRepo.findAccessibleFiles(fileIds, user);
+  async findAccessibleFiles(fileIds: number[], user: import('../../common/types/request-user').RequestUser) {
+    return this.bookRepo.findAccessibleFiles(fileIds, user, await this.libraryScope.visibleIdsOrAll(user));
   }
 
   findFileById(fileId: number) {

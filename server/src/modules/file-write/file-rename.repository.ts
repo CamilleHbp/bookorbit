@@ -1,4 +1,3 @@
-import { deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
 import { FanfictionLocationService } from '../fanfiction/fanfiction-location.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray } from 'drizzle-orm';

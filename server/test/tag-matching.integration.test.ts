@@ -50,7 +50,11 @@ describe.skipIf(!configPath)('persistent tag matching', () => {
         { provide: DB, useValue: db },
         {
           provide: LibraryService,
-          useValue: { findAccessibleLibraryIds: () => Promise.resolve([libraryId]), verifyAdministration: () => Promise.resolve(undefined) },
+          useValue: {
+            findAccessibleLibraryIds: () => Promise.resolve([libraryId]),
+            findEditableLibraryIds: () => Promise.resolve([libraryId]),
+            verifyAdministration: () => Promise.resolve(undefined),
+          },
         },
       ],
     }).compile();

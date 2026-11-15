@@ -4,9 +4,6 @@ import { storageConfig } from '../../config/config';
 import { RevisionFileModule } from '../book-revision/revision-file.module';
 import { BookDockManagedUploadService } from './book-dock-managed-upload.service';
 import { BookDockManagedService } from './book-dock-managed.service';
-import { ConfigService } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
-import type { StringValue } from 'ms';
 
 import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { AuthModule } from '../auth/auth.module';

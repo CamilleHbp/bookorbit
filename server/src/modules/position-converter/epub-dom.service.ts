@@ -133,7 +133,7 @@ interface SpineCacheEntry {
 }
 
 function versionOf(entry: SpineCacheEntry): string {
-  return `${entry.format}:${entry.mtimeMs}:${entry.absolutePath}`;
+  return `${entry.format}:${entry.identity}:${entry.absolutePath}`;
 }
 
 @Injectable()
@@ -172,7 +172,7 @@ export class EpubDomService {
     if (!entry) return null;
 
     try {
-      const zip = await unzipper.Open.file(entry.absolutePath);
+      const zip = await openConversionArchive(entry.absolutePath);
       const chapters: Array<{ chapterIndex: number; text: string }> = [];
       let total = 0;
       for (const [chapterIndex, href] of entry.spine.hrefs.entries()) {

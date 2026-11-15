@@ -1,3 +1,4 @@
+import { FanfictionLocationService } from '../fanfiction/fanfiction-location.service';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { BOOK_MERGE_FIELDS, type BookMergeField } from '@bookorbit/types';
 
@@ -88,7 +89,10 @@ export interface RetireFileInput {
  */
 @Injectable()
 export class BookConsolidationService {
-  constructor(private readonly repository: BookConsolidationRepository) {}
+  constructor(
+    private readonly repository: BookConsolidationRepository,
+    private readonly locations: FanfictionLocationService,
+  ) {}
 
   async consolidate(tx: ConsolidationTx, input: ConsolidateInput): Promise<ConsolidateResult> {
     const { targetBookId: k, sourceBookId: s } = input;
@@ -98,6 +102,7 @@ export class BookConsolidationService {
     const target = locked.find((row) => row.id === k);
     const source = locked.find((row) => row.id === s);
     if (!target || !source) throw new NotFoundException('Book not found');
+    await this.locations.assertMergeSafe(tx, s);
     if (target.libraryId !== source.libraryId && input.destination?.libraryId === undefined) {
       throw new ConflictException('Books in different libraries cannot be merged.');
     }

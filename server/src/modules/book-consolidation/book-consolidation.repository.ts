@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { AUDIO_FORMAT_LIST, BOOK_LINK_MAX_MEMBERS } from '@bookorbit/types';
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -686,6 +686,8 @@ export class BookConsolidationRepository {
   async moveSystemRows(tx: ConsolidationTx, targetBookId: number, sourceBookId: number, hiddenRequestIds: number[]): Promise<void> {
     const k = targetBookId;
     const s = sourceBookId;
+    await tx.execute(sql`update book_dock_managed_imports set book_id = ${k} where book_id = ${s}`);
+    await tx.execute(sql`update fanfiction_activity set book_id = ${k} where book_id = ${s}`);
     await tx.execute(sql`update file_write_log set book_id = ${k} where book_id = ${s}`);
     await tx.execute(sql`update email_send_log set book_id = ${k} where book_id = ${s}`);
     const keep = hiddenRequestIds.length > 0 ? sql`and id not in ${hiddenRequestIds}` : sql``;
@@ -858,6 +860,19 @@ export class BookConsolidationRepository {
   async retireFileRow(tx: ConsolidationTx, loserFileId: number, survivorFileId: number): Promise<void> {
     const l = loserFileId;
     const w = survivorFileId;
+    const retainedReferences = [
+      sql`exists (select 1 from book_dock_managed_imports where book_file_id = ${l})`,
+      sql`exists (select 1 from book_file_revisions where book_file_id = ${l})`,
+      sql`exists (select 1 from canonical_reading_events where book_file_id = ${l})`,
+      sql`exists (select 1 from fanfiction_discovery_candidates where book_file_id = ${l})`,
+      sql`exists (select 1 from fanfiction_sources where book_file_id = ${l})`,
+      sql`exists (select 1 from koreader_installed_copies where book_file_id = ${l})`,
+      sql`exists (select 1 from reading_event_heads where book_file_id = ${l})`,
+      sql`exists (select 1 from reading_position_acknowledgements where book_file_id = ${l})`,
+      sql`exists (select 1 from revision_publications where book_file_id = ${l})`,
+    ];
+    const retained = rowsOf<{ present: boolean }>(await tx.execute(sql`select (${sql.join(retainedReferences, sql` or `)}) as present`));
+    if (retained[0]?.present) throw new ConflictException('This file has saved revisions or device copies and cannot be merged.');
     const newerWins = async (table: SQL, key: SQL, stamp: SQL) => {
       await tx.execute(sql`
         delete from ${table} x using ${table} y

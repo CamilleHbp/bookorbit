@@ -18,6 +18,14 @@ export type BookMergeRuleKind =
   'reparent' | 'repoint' | 'reconcile' | 'fill' | 'union' | 'follow-audio' | 'follow-entitlement' | 'drop' | 'block-if-active' | 'flatten';
 
 export const BOOK_MERGE_RULES: Readonly<Record<string, BookMergeRuleKind>> = {
+  'book_dock_managed_imports.book_id': 'repoint',
+  'fanfiction_activity.book_id': 'repoint',
+  'fanfiction_discovery_candidates.book_id': 'drop',
+  'fanfiction_sources.book_id': 'block-if-active',
+  'tag_matching_exclusions.book_id': 'drop',
+  'tag_matching_job_items.book_id': 'drop',
+  'tag_matching_snapshots.book_id': 'drop',
+
   'book_files.book_id': 'reparent',
   'book_files.book_id+library_folder_id': 'reparent',
 
@@ -88,6 +96,8 @@ export const BOOK_MERGE_RULES: Readonly<Record<string, BookMergeRuleKind>> = {
 
 /** Columns whose foreign key is ON DELETE SET NULL. Deleting the source would orphan them, so none may be left to the delete. */
 export const BOOK_MERGE_SET_NULL_COLUMNS = [
+  'book_dock_managed_imports.book_id',
+  'fanfiction_activity.book_id',
   'book_requests.matched_book_id',
   'book_requests.target_book_id',
   'email_send_log.book_id',

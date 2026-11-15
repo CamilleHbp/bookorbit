@@ -39,12 +39,9 @@ export class TagMatchingManagementService {
     });
   }
   async bookScope(user: RequestUser, requireEditor = false): Promise<SQL> {
-    const ids = await this.libraries.findAccessibleLibraryIds(user);
+    const ids = await (requireEditor ? this.libraries.findEditableLibraryIds(user) : this.libraries.findAccessibleLibraryIds(user));
     return and(
       ids.length ? inArray(s.books.libraryId, ids) : sql`false`,
-      requireEditor && !user.isSuperuser
-        ? sql`exists (select 1 from ${s.userLibraryAccess} where ${s.userLibraryAccess.libraryId}=${s.books.libraryId} and ${s.userLibraryAccess.userId}=${user.id} and ${s.userLibraryAccess.accessLevel} in ('editor','owner'))`
-        : undefined,
       ...(!user.isSuperuser ? buildContentFilterClauses(user.contentFilters, this.db) : []),
     )!;
   }

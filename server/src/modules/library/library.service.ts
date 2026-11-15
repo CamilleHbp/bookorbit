@@ -99,6 +99,7 @@ export class LibraryService {
     const [library] = await this.libraryRepo.findById(libraryId);
     if (!library) throw new NotFoundException('Library not found');
     if (!user.active) throw new ForbiddenException('Account is inactive');
+    await this.libraryScope.assertLevel(user, libraryId, 'owner');
     if (user.isSuperuser) return;
     const access = await this.libraryRepo.findUserAccess(user.id, libraryId);
     if (!user.permissions.includes(Permission.ManageLibraries) || access?.accessLevel !== 'owner') {

@@ -30,13 +30,6 @@ import { BookRevisionModule } from '../book-revision/book-revision.module';
     forwardRef(() => NotificationModule),
     forwardRef(() => BookMetadataFetchModule),
     BookConsolidationModule,
-    JwtModule.registerAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.getOrThrow<string>('auth.jwtSecret'),
-        signOptions: { expiresIn: config.getOrThrow<StringValue | number>('auth.jwtExpiresIn') },
-      }),
-    }),
     BookRevisionModule,
   ],
   controllers: [ScannerController],
