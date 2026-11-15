@@ -18,6 +18,7 @@ export function shouldRetryJob(kind: FanfictionJobKind, attempts: number, code: 
         'runtime_unavailable',
         'worker_lease_expired',
         'chapter_storage_failed',
+        'tag_matches_changed',
       ].includes(code)
     );
   }
