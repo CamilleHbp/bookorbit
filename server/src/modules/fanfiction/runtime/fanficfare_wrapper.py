@@ -358,7 +358,8 @@ def failure_code(error):
         return 'unsupported_story_url'
     if isinstance(error, sqlite3.Error) and getattr(error, 'sqlite_errorcode', None) in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB):
         return 'chapter_storage_damaged'
-    if isinstance(error, sqlite3.Error) or isinstance(error, OSError) and error.errno in (28, 30):
+    from chapter_checkpoint import CheckpointStorageError
+    if isinstance(error, (sqlite3.Error, CheckpointStorageError)) or isinstance(error, OSError) and error.errno in (28, 30):
         return 'chapter_storage_failed'
     if isinstance(error, PolicyError):
         return error.code
