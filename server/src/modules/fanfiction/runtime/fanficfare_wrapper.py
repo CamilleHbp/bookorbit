@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from chapter_store import recover_chapters
 from chapter_locks import preserve_chapter_locks
+from chapter_floor import read_policy, apply_policy, preserve_policy, validate_output
 from update_check import UpdateCheck
 import publisher_edition
 from tag_matching import install as install_tag_matching, matched_preview
@@ -261,6 +262,12 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     install_tag_matching(story, adapter.getConfigSection(), request.get('tagMatching') or {'version': 0, 'rules': []})
     preview = matched_preview(story, story_preview(adapter, story))
     canonical = preview['canonicalUrl']
+    continuation = read_policy('input.epub') if operation in ('update', 'refresh') else None
+    if continuation is not None:
+        apply_policy(adapter, continuation, canonical)
+        continuation_chapters = adapter.get_chapters()
+        configuration.set('overrides', 'update_preserve_deleted_chapters', 'false')
+        preview = matched_preview(story, story_preview(adapter, story))
     chapter_count = preview['chapterCount']
     if operation == 'preview':
         return finish(preview)
@@ -310,6 +317,9 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     validate_epub('output.epub', LIBRARY_EPUB_LIMIT if operation in ('update', 'refresh') else NEW_EPUB_LIMIT)
     if operation in ('update', 'refresh'):
         preserve_chapter_locks('input.epub', 'output.epub')
+        preserve_policy('input.epub', 'output.epub', continuation)
+        if continuation is not None:
+            validate_output('output.epub', continuation_chapters)
     check.save('output.epub')
     return finish({'preview': matched_preview(adapter.story, story_preview(adapter, adapter.story)), 'output': 'output.epub'})
 
