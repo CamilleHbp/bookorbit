@@ -23,6 +23,11 @@ const reviewEditor = ref<InstanceType<typeof StoryMetadataReview>>()
 const fields = ref<InstanceType<typeof StoryMetadataFields>>()
 const form = ref<HTMLFormElement>()
 const canSave = computed(() => Boolean(current.value?.review) || hasPermission(Permission.LibraryEditMetadata))
+const usesAttentionEditor = computed(
+  () =>
+    scope.value === 'attention' ||
+    (scope.value === 'pending' && Boolean(current.value?.source.attentionCode) && current.value?.source.attentionCode !== 'metadata_review_required'),
+)
 const summary = computed(() =>
   t(scope.value === 'attention' ? 'fanfiction.attentionReview.summary' : 'fanfiction.reviewQueue.summary', {
     saved: savedCount.value,
@@ -41,7 +46,7 @@ async function saveFields() {
 }
 function beforeUnload(event: BeforeUnloadEvent) {
   const committed = current.value?.review ? reviewEditor.value?.commitPending() : fields.value?.commitPending()
-  if (committed === false || queue.hasDrafts.value || busy.value || (scope.value === 'attention' && attentionEditor.value?.hasUnsavedInput())) {
+  if (committed === false || queue.hasDrafts.value || busy.value || (usesAttentionEditor.value && attentionEditor.value?.hasUnsavedInput())) {
     event.preventDefault()
     event.returnValue = ''
   }
@@ -135,7 +140,7 @@ onBeforeUnmount(() => {
       </div>
       <p v-if="!current.loaded && busy" role="status" class="py-8 text-sm text-muted-foreground">{{ t('common.loading') }}</p>
       <StoryAttentionEditor
-        v-if="scope === 'attention' && current.loaded"
+        v-if="usesAttentionEditor && current.loaded"
         ref="attentionEditor"
         :key="current.source.id"
         :source="current.source"

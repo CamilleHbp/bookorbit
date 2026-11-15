@@ -82,7 +82,7 @@ defineExpose({ canLeave, hasUnsavedInput })
         />
       </template>
     </StoryUpdatesTab>
-    <div v-if="!state.metadataReview.value" class="space-y-2">
+    <div v-if="!state.canReviewMetadata.value" class="space-y-2">
       <p role="status" class="text-sm text-muted-foreground">
         {{
           t(resolved ? 'fanfiction.attentionReview.resolved' : running ? 'fanfiction.attentionReview.running' : 'fanfiction.attentionReview.pending')

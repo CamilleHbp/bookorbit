@@ -42,6 +42,7 @@ const {
   discardContent,
   allowed,
   metadataReview,
+  canReviewMetadata,
   metadataChoices,
   deferMetadata,
   discardMetadata,
@@ -127,9 +128,9 @@ onMounted(() => {
       <RouterLink :to="{ name: 'fanfiction' }" class="text-primary underline">{{ t('fanfiction.title') }}</RouterLink>
     </div>
     <template v-if="allowed && source">
-      <Button v-if="metadataReview && reviewDeferred" @click="resumeMetadataReview">{{ t('fanfiction.metadataReview.title') }}</Button>
+      <Button v-if="canReviewMetadata && reviewDeferred" @click="resumeMetadataReview">{{ t('fanfiction.metadataReview.title') }}</Button>
       <StoryMetadataReview
-        v-else-if="metadataReview"
+        v-else-if="canReviewMetadata && metadataReview"
         ref="metadataEditor"
         v-model="metadataChoices"
         :review="metadataReview.review"
@@ -162,7 +163,7 @@ onMounted(() => {
         <option v-for="item in sources" :key="item.id" :value="item.id">{{ item.title }}</option>
       </select>
       <div
-        v-if="(!reviewMode || !metadataReview) && (!reviewMode || !job?.result?.contentReview)"
+        v-if="(!reviewMode || !canReviewMetadata) && (!reviewMode || !job?.result?.contentReview)"
         class="border-border bg-card space-y-3 rounded-xl border p-4"
       >
         <a :href="source.canonicalUrl" target="_blank" rel="noopener noreferrer" class="text-primary break-words underline">{{
@@ -278,10 +279,12 @@ onMounted(() => {
           >
         </div>
       </form>
-      <div v-if="job && (!reviewMode || !metadataReview)" role="status" class="border-border rounded-xl border p-4 text-sm">
+      <div v-if="job && (!reviewMode || !canReviewMetadata)" role="status" class="border-border rounded-xl border p-4 text-sm">
         {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }}
         <StoryUpdateOutcome :job="job" />
-        <p v-if="job.errorCode && !job.result?.contentReview" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
+        <p v-if="job.errorCode && (!job.result?.contentReview || job.result.contentReview.approved)" class="text-destructive">
+          {{ t(`fanfiction.errors.${job.errorCode}`) }}
+        </p>
         <Button v-if="!reviewMode && ['review_required', 'source_chapter_reduction'].includes(job.errorCode ?? '')" variant="outline" as-child>
           <RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.maintenance.defaultPolicy') }}</RouterLink>
         </Button>
@@ -310,8 +313,8 @@ onMounted(() => {
         </div>
         <Button
           v-if="
-            !job.result?.contentReview &&
-            !metadataReview &&
+            (!job.result?.contentReview || job.result.contentReview.approved) &&
+            !canReviewMetadata &&
             !canApproveReplacement &&
             ['failed', 'cancelled', 'configuration_blocked', 'review_required'].includes(job.state)
           "

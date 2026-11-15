@@ -57,6 +57,38 @@ describe('story review editor navigation', () => {
     return router
   }
   const button = (text: string) => wrapper.findAll('button').find((item) => item.text() === text)!
+  it('opens chapter approval when a pending metadata review also needs content review', async () => {
+    const source = {
+      id: '1',
+      bookId: 1,
+      libraryId: 5,
+      title: 'Story 1',
+      site: 'example.org',
+      canonicalUrl: 'https://example.org/story',
+      state: 'review_required',
+      attentionCode: 'content_review_required',
+      metadataReviewPending: true,
+    }
+    vi.mocked(api).mockImplementation(async (path) => {
+      const url = String(path)
+      const data = url.includes('/sources?')
+        ? { items: [source], nextCursor: null, total: 1 }
+        : url.endsWith('/sources/1')
+          ? source
+          : url.endsWith('/metadata-review')
+            ? review
+            : url.includes('pendingDownloadsOnly=true')
+              ? {
+                  items: [{ id: 'chapters', kind: 'update', state: 'review_required', result: { contentReview: { approved: false } } }],
+                  nextCursor: null,
+                }
+              : { items: [], nextCursor: null }
+      return new Response(JSON.stringify(data))
+    })
+    await open()
+    expect(button('Use website version')).toBeDefined()
+    expect(button('Save & next')).toBeUndefined()
+  })
   it('commits a typed tag to the local draft before skipping and restores it on Previous', async () => {
     await open()
     expect(wrapper.text()).toContain('Story 1 / 42')

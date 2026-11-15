@@ -74,6 +74,37 @@ describe('attention repair editor', () => {
     return router
   }
   const button = (label: string) => wrapper.findAll('button').find((item) => item.text() === label)!
+  it('shows chapter approval before metadata that belongs to the uninstalled update', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      const path = String(url)
+      if (path.endsWith('/sources/source')) return respond({ ...source, attentionCode: 'content_review_required' })
+      if (path.includes('pendingDownloadsOnly=true'))
+        return respond({
+          items: [{ id: 'chapters', kind: 'update', state: 'review_required', result: { contentReview: { approved: false } } }],
+          nextCursor: null,
+        })
+      return base(url, options)
+    })
+    await open()
+    expect(button('Use website version')).toBeDefined()
+    expect(button('Save & next')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('Review story metadata')
+  })
+  it('offers retry when an approved chapter update fails before metadata is installed', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    vi.mocked(api).mockImplementation(async (url, options) => {
+      if (String(url).includes('pendingDownloadsOnly=true'))
+        return respond({
+          items: [{ id: 'chapters', kind: 'update', state: 'failed', result: { contentReview: { approved: true } } }],
+          nextCursor: null,
+        })
+      return base(url, options)
+    })
+    await open()
+    expect(button('Retry')).toBeDefined()
+    expect(button('Save & next')).toBeUndefined()
+  })
   it('offers Save & next on standalone Story updates and continues into the attention queue', async () => {
     const router = await open(true)
     await button('Save & next').trigger('click')
