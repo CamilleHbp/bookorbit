@@ -67,6 +67,7 @@ defineExpose({ focusTitle })
         t('book.detail.editMetadata.match.query.title')
       }}</span>
       <textarea
+        spellcheck="false"
         :id="`${id}-title`"
         ref="titleInput"
         v-model="form.title"

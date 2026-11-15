@@ -7,6 +7,7 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { lucideIconsPlugin } from './build/vite-plugin-lucide-icons'
+import { inputDefaults } from './input-defaults'
 
 const apiAgent = new Agent({ keepAlive: true })
 /** Lets a second dev client point at a throwaway API instance, so restart testing leaves the main stack alone. */
@@ -22,7 +23,7 @@ export default defineConfig({
     __VUE_I18N_LEGACY_API__: false,
   },
   plugins: [
-    vue(),
+    vue({ template: { compilerOptions: { nodeTransforms: [inputDefaults] } } }),
     vueDevTools(),
     tailwindcss(),
     lucideIconsPlugin(),
