@@ -22,6 +22,7 @@ import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 import type { FastifyReply } from 'fastify';
 import { RouteConfig } from '@nestjs/platform-fastify';
+import { KeyReadSafe } from '../../common/decorators/api-key-policy.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { contentDispositionHeader } from '../../common/utils/content-disposition.utils';
@@ -29,6 +30,7 @@ import { fileValidators, planFileResponse, type FileConditionalHeaders } from '.
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
 import { Auditable } from '../../common/decorators/auditable.decorator';
 import { ForbidPermission } from '../../common/decorators/forbid-permission.decorator';
+import { ResolvesMergedBook } from '../../common/decorators/resolves-merged-book.decorator';
 import { imageContentTypeFromPath } from '../../common/image-content-type';
 import type { RequestUser } from '../../common/types/request-user';
 import { FileWriteService } from '../file-write/file-write.service';
@@ -61,7 +63,7 @@ import { UpdateBookFileDto } from './dto/update-book-file.dto';
 import { SetStatusDto } from '../user-book-status/dto/set-status.dto';
 import { Permission, AuditAction, AuditResource } from '@bookorbit/types';
 import type { BookDeletionAuditMeta } from '@bookorbit/types';
-import type { BookQuery } from '@bookorbit/types';
+import type { BookIsbnCandidates, BookQuery } from '@bookorbit/types';
 import { UpdateBookMetadataLocksDto } from '../book-metadata-lock/dto/update-book-metadata-locks.dto';
 import { UpdateReadAloudSyncSettingsDto } from './dto/update-read-aloud-sync-settings.dto';
 
@@ -154,6 +156,7 @@ export class BookController {
   }
 
   @Post('query')
+  @KeyReadSafe()
   globalQuery(@Body(BookQueryPipe) query: BookQuery, @CurrentUser() user: RequestUser) {
     return this.bookService.globalQuery(user, query);
   }
@@ -227,6 +230,7 @@ export class BookController {
   }
 
   @Post('export')
+  @KeyReadSafe()
   @RequirePermission(Permission.LibraryDownload)
   @ForbidPermission(Permission.DemoRestricted, 'Demo-restricted account cannot perform bulk downloads')
   async exportBooks(@Body() dto: ExportBooksDto, @CurrentUser() user: RequestUser, @Res() reply: FastifyReply) {
@@ -249,6 +253,7 @@ export class BookController {
   }
 
   @Post('metadata-export/preflight')
+  @KeyReadSafe()
   @RequirePermission(Permission.LibraryDownload)
   @ForbidPermission(Permission.DemoRestricted, 'Demo-restricted account cannot perform bulk downloads')
   metadataExportPreflight(@Body() dto: MetadataExportDto, @CurrentUser() user: RequestUser) {
@@ -256,6 +261,7 @@ export class BookController {
   }
 
   @Post('metadata-export/download')
+  @KeyReadSafe()
   @RequirePermission(Permission.LibraryDownload)
   @ForbidPermission(Permission.DemoRestricted, 'Demo-restricted account cannot perform bulk downloads')
   async downloadMetadataExport(@Body() dto: MetadataExportDto, @CurrentUser() user: RequestUser, @Res() reply: FastifyReply) {
@@ -350,6 +356,7 @@ export class BookController {
     await this.bookService.updateSensitiveCover(id, dto.sensitiveCover, user);
   }
 
+  @ResolvesMergedBook({ params: ['id'] })
   @Get(':id/cover')
   @RouteConfig({ compress: false })
   async getCover(
@@ -385,6 +392,7 @@ export class BookController {
     reply.send(createReadStream(coverPath));
   }
 
+  @ResolvesMergedBook({ params: ['id'] })
   @Get(':id/thumbnail')
   @RouteConfig({ compress: false })
   async getThumbnail(
@@ -596,6 +604,7 @@ export class BookController {
     await this.bookService.deleteFile(fileId, user);
   }
 
+  @ResolvesMergedBook({ params: ['id'] })
   @Get(':id/audio-progress')
   async getAudioProgress(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: RequestUser) {
     return (await this.bookService.getAudioProgress(user.id, id, user)) ?? null;
@@ -607,6 +616,7 @@ export class BookController {
     await this.bookService.saveAudioProgress(user.id, id, dto, user);
   }
 
+  @ResolvesMergedBook({ params: ['id'] })
   @Patch(':id/personal-note')
   updatePersonalNote(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePersonalNoteDto, @CurrentUser() user: RequestUser) {
     return this.bookService.updatePersonalNote(id, dto, user);
@@ -694,6 +704,12 @@ export class BookController {
     return this.bookService.getMetadataFromFile(id, user);
   }
 
+  @Get(':id/isbn-candidates')
+  @RequirePermission(Permission.LibraryEditMetadata)
+  getIsbnCandidates(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: RequestUser): Promise<BookIsbnCandidates> {
+    return this.bookService.getIsbnCandidates(id, user);
+  }
+
   @Post(':id/write-and-rename')
   @RequirePermission(Permission.LibraryEditMetadata)
   @Auditable({
@@ -730,6 +746,7 @@ export class BookController {
     return this.bookService.updateReadAloudSyncMode(id, dto.mode, user);
   }
 
+  @ResolvesMergedBook({ params: ['id'] })
   @Patch(':id/status')
   setReadStatus(@Param('id', ParseIntPipe) id: number, @Body() dto: SetStatusDto, @CurrentUser() user: RequestUser) {
     return this.bookService.setReadStatus(id, dto, user);
@@ -749,7 +766,7 @@ export class BookController {
   })
   async bulkSetStatus(@Body() dto: BulkSetStatusDto, @CurrentUser() user: RequestUser) {
     const ids = await this.bookService.resolveSelectionToIds(dto, user);
-    return this.bookService.bulkSetStatus(ids, dto.status, user);
+    return this.bookService.bulkSetStatus(ids, dto, user);
   }
 
   @Post('bulk-set-rating')

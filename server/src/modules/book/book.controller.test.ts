@@ -141,6 +141,7 @@ function makeController() {
     bulkReExtractCover: vi.fn(),
     reExtractCover: vi.fn(),
     bulkSetMetadata: vi.fn(),
+    bulkSetStatus: vi.fn(),
     bulkEditMetadata: vi.fn(),
     bulkUpdateTags: vi.fn(),
     getExportFiles: vi.fn(),
@@ -164,6 +165,7 @@ function makeController() {
     updateMetadataLocks: vi.fn(),
     refreshMetadata: vi.fn(),
     getMetadataFromFile: vi.fn(),
+    getIsbnCandidates: vi.fn(),
     writeAndRename: vi.fn(),
     verifyBookAccess: vi.fn(),
     getKoboState: vi.fn(),
@@ -522,6 +524,18 @@ describe('BookController', () => {
     expect(raw.write).toHaveBeenNthCalledWith(1, `data: ${JSON.stringify({ bookId: 9, success: true })}\n\n`);
     expect(raw.write).toHaveBeenNthCalledWith(2, `data: ${JSON.stringify({ done: true, processed: 1, failed: 0 })}\n\n`);
     expect(raw.end).toHaveBeenCalled();
+  });
+
+  it('forwards explicit reading dates through the bulk status route', async () => {
+    const { controller, bookService } = makeController();
+    const user = makeUser();
+    const dto = { bookIds: [7, 9], status: 'read' as const, startedAt: '2026-01-01', finishedAt: null };
+    bookService.resolveSelectionToIds.mockResolvedValue([7, 9]);
+
+    await controller.bulkSetStatus(dto, user);
+
+    expect(bookService.resolveSelectionToIds).toHaveBeenCalledWith(dto, user);
+    expect(bookService.bulkSetStatus).toHaveBeenCalledWith([7, 9], dto, user);
   });
 
   it.each(['bulkRefreshMetadata', 'bulkReExtractCover'] as const)('rejects an unauthorized %s selection before starting SSE', async (method) => {
@@ -995,6 +1009,7 @@ describe('BookController', () => {
     bookService.updateMetadataLocks.mockResolvedValue({ id: 7, lockedFields: ['title'] });
     bookService.refreshMetadata.mockResolvedValue({ id: 7 });
     bookService.getMetadataFromFile.mockResolvedValue({ title: 'File Title' });
+    bookService.getIsbnCandidates.mockResolvedValue({ readable: true, candidates: [] });
     bookService.getKoboState.mockResolvedValue({ eligibleForKoboSync: false, syncCollections: [], readingState: null, snapshots: [] });
     bookService.getDetail.mockResolvedValue({ id: 7, title: 'Detail' });
 
@@ -1005,6 +1020,7 @@ describe('BookController', () => {
     await controller.updateMetadataLocks(7, { lockedFields: ['title'] } as never, user);
     await controller.refreshMetadata(7, 'true', user);
     await controller.getMetadataFromFile(7, user);
+    await controller.getIsbnCandidates(7, user);
     await controller.getKoboState(7, user);
     await controller.setReadStatus(7, { status: 'reading' } as never, user);
     await controller.getDetail(7, user);
@@ -1018,6 +1034,7 @@ describe('BookController', () => {
     expect(bookService.updateMetadataLocks).toHaveBeenCalledWith(7, ['title'], user);
     expect(bookService.refreshMetadata).toHaveBeenCalledWith(7, true, user);
     expect(bookService.getMetadataFromFile).toHaveBeenCalledWith(7, user);
+    expect(bookService.getIsbnCandidates).toHaveBeenCalledWith(7, user);
     expect(bookService.getKoboState).toHaveBeenCalledWith(7, user);
     expect(bookService.setReadStatus).toHaveBeenCalledWith(7, { status: 'reading' }, user);
     expect(bookService.getDetail).toHaveBeenCalledWith(7, user);

@@ -1,6 +1,9 @@
 import type { Mock } from 'vitest';
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
+import type { AccessLevel } from '@bookorbit/types';
+import { LibraryScopeService } from '../../common/library-scope/library-scope.service';
+import { LibraryOperationGate } from '../../common/services/library-operation-gate.service';
 import type { RequestUser } from '../../common/types/request-user';
 import { BookMovePlannerService } from './book-move-planner.service';
 import { BookMoveService } from './book-move.service';
@@ -72,6 +75,21 @@ let fileWatcherService: { stopWatcher: ReturnType<typeof vi.fn>; startWatcher: R
 let scanGateway: { emitBookTransferred: ReturnType<typeof vi.fn> };
 let notificationService: { notify: ReturnType<typeof vi.fn> };
 let service: BookMoveService;
+let libraryGate: LibraryOperationGate;
+
+type GrantRow = { libraryId: number; userId: number; accessLevel: AccessLevel };
+
+/** Reads the grant rows each test hands the move repository, so one fixture drives both. */
+function scopeFromGrants(): LibraryScopeService {
+  const grants = async () => (await moveRepo.findLibraryAccess([])) as GrantRow[];
+  return new LibraryScopeService({
+    findAllIds: () => Promise.resolve([1, 2, 3]),
+    findGrantedLevels: async (userId: number, levels?: readonly AccessLevel[]) =>
+      (await grants())
+        .filter((row) => row.userId === userId && (!levels || levels.includes(row.accessLevel)))
+        .map((row) => ({ id: row.libraryId, accessLevel: row.accessLevel })),
+  } as never);
+}
 
 function buildService(): BookMoveService {
   return new BookMoveService(
@@ -84,6 +102,8 @@ function buildService(): BookMoveService {
     fileWatcherService as never,
     scanGateway as never,
     notificationService as never,
+    libraryGate,
+    scopeFromGrants(),
   );
 }
 
@@ -126,6 +146,7 @@ beforeEach(() => {
     isCrossPlatformPathSanitizationEnabled: vi.fn().mockResolvedValue(false),
   };
   scannerService = { isScanRunning: vi.fn().mockReturnValue(false), startScanAsync: vi.fn() };
+  libraryGate = new LibraryOperationGate();
   fileWatcherService = { stopWatcher: vi.fn().mockResolvedValue(undefined), startWatcher: vi.fn().mockResolvedValue(undefined) };
   scanGateway = { emitBookTransferred: vi.fn() };
   notificationService = { notify: vi.fn().mockResolvedValue(undefined) };
@@ -278,10 +299,50 @@ describe('preview', () => {
 
 describe('execute guards', () => {
   it('refuses when a scan is running on any involved library', async () => {
-    scannerService.isScanRunning.mockImplementation((libraryId: number) => libraryId === 1);
+    const releaseScan = libraryGate.tryAcquire(1, 'scan');
+
+    await expect(service.execute(makeDto(), USER, collectProgress().options)).rejects.toThrow(/scan is running/);
+    expect(fileWatcherService.stopWatcher).not.toHaveBeenCalled();
+    expect(libraryGate.current(2)).toBeNull();
+
+    releaseScan?.();
+  });
+
+  it('refuses while a merge or bulk rename holds a library and leaves the other library free', async () => {
+    const releaseMerge = libraryGate.tryAcquire(2, 'book_merge');
 
     await expect(service.execute(makeDto(), USER, collectProgress().options)).rejects.toBeInstanceOf(ConflictException);
-    expect(fileWatcherService.stopWatcher).not.toHaveBeenCalled();
+    expect(libraryGate.current(1)).toBeNull();
+
+    releaseMerge?.();
+  });
+
+  it('frees the libraries when the job row cannot be created', async () => {
+    moveRepo.createJob.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(service.execute(makeDto(), USER, collectProgress().options)).rejects.toThrow('db down');
+    expect(libraryGate.current(1)).toBeNull();
+    expect(libraryGate.current(2)).toBeNull();
+  });
+
+  it('frees the libraries and closes the job when the watchers cannot be stopped', async () => {
+    moveRepo.findWatchedLibraryIds.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(service.execute(makeDto(), USER, collectProgress().options)).rejects.toThrow('db down');
+    expect(libraryGate.current(1)).toBeNull();
+    expect(libraryGate.current(2)).toBeNull();
+    expect(moveRepo.finishJob).toHaveBeenCalledWith(101, 'failed', { succeeded: 0, merged: 0, failed: 0, skipped: 0 }, 'db down');
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  it('restarts a watcher it stopped before another one failed to stop', async () => {
+    fileWatcherService.stopWatcher.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('close failed'));
+
+    await expect(service.execute(makeDto(), USER, collectProgress().options)).rejects.toThrow('close failed');
+    expect(libraryGate.current(1)).toBeNull();
+    expect(libraryGate.current(2)).toBeNull();
+    expect(fileWatcherService.startWatcher).toHaveBeenCalledWith(1, ['/libA']);
+    expect(fileWatcherService.startWatcher).toHaveBeenCalledWith(2, ['/libB']);
   });
 
   it('refuses a second concurrent move touching the same library', async () => {

@@ -6,6 +6,7 @@ import type {
   BookMetadataLockField,
   BookCommunityRating,
   CustomMetadataBookValue,
+  LinkedBookSummary,
   ComicMetadataFields,
   BookCoverSlot,
   CoverAspectRatio,
@@ -92,4 +93,7 @@ export class BookDetailDto {
   lockedFields: BookMetadataLockField[];
   collections: { id: number; name: string }[];
   fileWriteStatus: BookFileWriteStatus;
+  linkedBooks: LinkedBookSummary[];
+  linkGroupId: number | null;
+  linkIsLead: boolean;
 }

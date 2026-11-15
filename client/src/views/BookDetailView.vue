@@ -3,7 +3,8 @@ import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { computed, defineAsyncComponent, onMounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Permission, type BookDetail, type BookMetadataLockField } from '@bookorbit/types'
+import { toast } from 'vue-sonner'
+import { Permission, type BookDetail, type BookLinksChangedEvent, type BookMergedEvent, type BookMetadataLockField } from '@bookorbit/types'
 import { BOOK_STORY_ADMIN_KEY, useBookStory } from '@/features/fanfiction/composables/useBookStory'
 import BookDetailLayout from '@/features/book/components/detail/BookDetailLayout.vue'
 import DetailsTab from '@/features/book/components/detail/tabs/DetailsTab.vue'
@@ -57,7 +58,7 @@ const tab = computed(() => {
   return requested === 'edit' && detail.value && !canEditMetadata.value ? 'details' : requested
 })
 
-const { detail, loading, notFound, fetch } = useBookDetail()
+const { detail, loading, notFound, mergedInto, fetch } = useBookDetail()
 const canEditMetadata = computed(() => hasLibraryPermission('library_edit_metadata', detail.value?.libraryId, 'editor'))
 const parentLibrary = computed(() =>
   detail.value?.libraryId != null && detail.value.libraryName ? { id: detail.value.libraryId, name: detail.value.libraryName } : null,
@@ -113,7 +114,7 @@ watch(
   },
 )
 
-const { onBookMissing, onBookRestored, onBookMoved, onBookTransferred, onBookProgressChanged } = useBookEvents()
+const { onBookMissing, onBookRestored, onBookMoved, onBookTransferred, onBookProgressChanged, onBookMerged, onBookLinksChanged } = useBookEvents()
 onBookMissing((bookIds) => {
   if (detail.value && bookIds.includes(detail.value.id)) {
     detail.value = { ...detail.value, status: 'missing' }
@@ -130,6 +131,44 @@ onBookTransferred((event) => {
 })
 onBookProgressChanged((event) => {
   if (event.bookId === bookId.value) fetch(event.bookId)
+})
+
+/** A merged-away id lives on as the kept book: replace the URL so Back does not return to a dead page (E8). */
+let pendingMergeRedirect: number | null = null
+
+function redirectToMergedBook(targetBookId: number) {
+  // The socket event and the sheet's own result can both report one merge.
+  if (targetBookId === bookId.value || targetBookId === pendingMergeRedirect) return
+  pendingMergeRedirect = targetBookId
+  toast.info(t('book.merge.redirected'))
+  void router.replace({ name: 'book-detail', params: { bookId: targetBookId }, query: route.query }).finally(() => {
+    pendingMergeRedirect = null
+  })
+}
+
+function handleBookMerged(event: BookMergedEvent) {
+  if (event.sourceBookIds.includes(bookId.value)) redirectToMergedBook(event.targetBookId)
+  else if (event.targetBookId === bookId.value) void fetch(bookId.value)
+}
+
+onBookMerged(handleBookMerged)
+
+function refreshLinks() {
+  void fetch(bookId.value)
+}
+
+/** A link made or removed anywhere changes this page's "Also available as" row and its menu. */
+function handleLinksChanged(event: BookLinksChangedEvent) {
+  const current = detail.value
+  if (!current) return
+  const touched = event.bookIds.includes(current.id) || (current.linkedBooks ?? []).some((book) => event.bookIds.includes(book.bookId))
+  if (touched) refreshLinks()
+}
+
+onBookLinksChanged(handleLinksChanged)
+
+watch(mergedInto, (targetBookId) => {
+  if (targetBookId !== null) redirectToMergedBook(targetBookId)
 })
 
 watch(bookId, (id) => fetch(id), { immediate: true })
@@ -195,7 +234,14 @@ function onChaptersChanged() {
           as loading. They revalidate silently on activation instead.
         -->
         <KeepAlive :include="KEPT_ALIVE_TABS">
-          <DetailsTab v-if="tab === 'details'" :book="detail" @saved="onMetadataSaved" @moved="handleMovedToLibrary" />
+          <DetailsTab
+            v-if="tab === 'details'"
+            :book="detail"
+            @saved="onMetadataSaved"
+            @moved="handleMovedToLibrary"
+            @merged="handleBookMerged"
+            @links-changed="refreshLinks"
+          />
           <EditMetadataTab
             v-else-if="tab === 'edit' && canEditMetadata"
             :book="detail"

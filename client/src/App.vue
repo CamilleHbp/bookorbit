@@ -1,12 +1,9 @@
 <script setup lang="ts">
-import { computed, provide, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { toast } from 'vue-sonner'
-import { INIT_OPTIONS_KEY, THEME_KEY } from 'vue-echarts'
 import { useChangePasswordDialog } from '@/composables/useChangePasswordDialog'
-import { useChartTokens } from '@/composables/useChartTokens'
-import { buildChartTheme } from '@/lib/echarts'
 import ChangePasswordDialog from '@/features/auth/ChangePasswordDialog.vue'
 import WhatsNewDialog from '@/features/whats-new/WhatsNewDialog.vue'
 import { useWhatsNew } from '@/features/whats-new/composables/useWhatsNew'
@@ -33,7 +30,6 @@ const TOASTER_MOBILE_OFFSET = {
 }
 
 const { isOpen } = useChangePasswordDialog()
-const chartTokens = useChartTokens()
 
 const route = useRoute()
 const { user } = useAuth()
@@ -60,12 +56,6 @@ watch(
 watch(
   () => route.name,
   (name) => syncPopup(name as string | undefined),
-)
-
-provide(INIT_OPTIONS_KEY, { renderer: 'svg' })
-provide(
-  THEME_KEY,
-  computed(() => buildChartTheme(chartTokens.value)),
 )
 </script>
 

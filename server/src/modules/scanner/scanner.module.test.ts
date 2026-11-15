@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { CommonModule } from '../../common/common.module';
 import { SelfWriteRegistryModule } from '../../common/self-write-registry.module';
 
 vi.mock('../auth/auth.module', () => ({ AuthModule: class AuthModule {} }));
@@ -9,6 +10,8 @@ vi.mock('../achievement/achievement.module', () => ({ AchievementModule: class A
 
 import { AchievementModule } from '../achievement/achievement.module';
 import { AuthModule } from '../auth/auth.module';
+import { BookConsolidationModule } from '../book-consolidation/book-consolidation.module';
+import { BookRevisionModule } from '../book-revision/book-revision.module';
 import { BookCoverStoreModule } from '../book-cover-store/book-cover-store.module';
 import { BookMetadataFetchModule } from '../book-metadata-fetch/book-metadata-fetch.module';
 import { MetadataModule } from '../metadata/metadata.module';
@@ -31,9 +34,12 @@ describe('ScannerModule', () => {
     expect(imports[2]).toBe(AuthModule);
     expect(imports[3]).toBe(AchievementModule);
     expect(imports[4]).toBe(SelfWriteRegistryModule);
-    expect(imports[5]).toEqual(expect.objectContaining({ forwardRef: expect.any(Function) }));
+    expect(imports[5]).toBe(CommonModule);
     expect(imports[6]).toEqual(expect.objectContaining({ forwardRef: expect.any(Function) }));
-    expect(imports[7]).toEqual(expect.objectContaining({ module: expect.any(Function) }));
+    expect(imports[7]).toEqual(expect.objectContaining({ forwardRef: expect.any(Function) }));
+    expect(imports[8]).toBe(BookConsolidationModule);
+    expect(imports[9]).toBe(BookRevisionModule);
+    expect(imports).toHaveLength(10);
 
     expect(Reflect.getMetadata('controllers', ScannerModule)).toEqual([ScannerController]);
     expect(Reflect.getMetadata('providers', ScannerModule)).toEqual([

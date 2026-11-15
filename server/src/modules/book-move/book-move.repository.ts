@@ -1,4 +1,4 @@
-import { deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
+import { bumpKoreaderHashRevisions, deleteBooksWithHashInvalidation } from '../../db/book-file-hash-history';
 import { FanfictionLocationService } from '../fanfiction/fanfiction-location.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
@@ -96,6 +96,8 @@ export interface ApplyBookMoveInput {
   fileUpdates: BookFileMoveUpdate[];
   /** When set, this book in the target library is replaced by the moved book. */
   mergeDuplicateBookId?: number | null;
+  /** Folds the replaced book into the moved one when readers have data on it; false leaves it to be deleted. */
+  absorbDuplicate?: (tx: Parameters<Parameters<Db['transaction']>[0]>[0], duplicateBookId: number) => Promise<boolean>;
 }
 
 @Injectable()
@@ -379,7 +381,8 @@ export class BookMoveRepository {
 
         if (duplicate && duplicate.libraryId === input.targetLibraryId) {
           await this.locations.assertMergeSafe(tx, duplicate.id);
-          await deleteBooksWithHashInvalidation(tx, eq(books.id, duplicate.id));
+          const absorbed = input.absorbDuplicate ? await input.absorbDuplicate(tx, duplicate.id) : false;
+          if (!absorbed) await deleteBooksWithHashInvalidation(tx, eq(books.id, duplicate.id));
           mergedBookId = duplicate.id;
         }
       }
@@ -414,6 +417,7 @@ export class BookMoveRepository {
       }
 
       await reselectPrimaryFile(tx, input.bookId, input.targetLibraryId);
+      await bumpKoreaderHashRevisions(tx, [current.libraryId, input.targetLibraryId]);
 
       await this.locations.moveBook(tx, input.bookId, current.libraryId, input.targetLibraryId, input.targetFolderId);
       await this.locations.updatePaths(

@@ -128,6 +128,7 @@ function makeService(
     positionConverter?: unknown;
     seriesMemberships?: unknown;
     seriesExpectedCount?: unknown;
+    metadataExtraction?: unknown;
   } = {},
 ) {
   const bookRepo = {
@@ -180,6 +181,10 @@ function makeService(
     findIdsByWhere: vi.fn(),
     findDistinctLibraryIdsByWhere: vi.fn(),
     findCardsCollapsed: vi.fn(),
+    findCardsLinkCollapsed: vi.fn(),
+    hasCollapsibleLinks: vi.fn().mockResolvedValue(false),
+    findLinkedBookIds: vi.fn().mockResolvedValue([]),
+    findCardLinks: vi.fn().mockResolvedValue(new Map()),
     findJumpBuckets: vi.fn(),
     findJumpBucketsCollapsed: vi.fn(),
     findTemporalJumpBuckets: vi.fn(),
@@ -187,8 +192,8 @@ function makeService(
     checkBookPassesContentFilters: vi.fn().mockResolvedValue(true),
   };
   const libraryService = {
-    verifyUserAccess: vi.fn().mockResolvedValue(undefined),
-    verifyUserAccessLevel: vi.fn().mockResolvedValue(undefined),
+    verifyAccess: vi.fn().mockResolvedValue(undefined),
+    verifyAccessLevel: vi.fn().mockResolvedValue(undefined),
     findAll: vi.fn().mockResolvedValue([]),
     findOne: vi.fn().mockResolvedValue({ readingThreshold: 1, markAsFinishedPercentComplete: 99 }),
   };
@@ -346,7 +351,7 @@ function makeService(
     undefined,
     readingEvents,
     undefined,
-    undefined,
+    overrides.metadataExtraction as never,
     overrides.positionConverter as never,
   );
 
@@ -446,6 +451,37 @@ describe('BookService', () => {
     mockParseFb2File.mockReset();
     mockParseMobiFile.mockReset();
     mockParsePdfFile.mockReset();
+  });
+
+  describe('findLinkGroupMembers', () => {
+    it('returns the members this user may see, as summaries without the group id', async () => {
+      const { service } = makeService();
+      vi.spyOn(service, 'accessibleBooksWhere').mockResolvedValue('access-where' as never);
+      const member = {
+        groupId: 9,
+        bookId: 1,
+        libraryId: 2,
+        libraryName: 'Ebooks',
+        title: 'Kindred',
+        formats: ['epub'],
+        mediaKind: 'ebook',
+        status: 'present',
+        isLead: true,
+      };
+      const findMembers = vi.fn().mockResolvedValue([member]);
+      Object.assign(service, { linkMembers: { findMembers } });
+
+      await expect(service.findLinkGroupMembers(9, makeUser())).resolves.toEqual([
+        { bookId: 1, libraryId: 2, libraryName: 'Ebooks', title: 'Kindred', formats: ['epub'], mediaKind: 'ebook', status: 'present', isLead: true },
+      ]);
+      expect(findMembers).toHaveBeenCalledWith([9], 'access-where');
+    });
+
+    it('returns nothing when links are not available', async () => {
+      const { service } = makeService();
+
+      await expect(service.findLinkGroupMembers(9, makeUser())).resolves.toEqual([]);
+    });
   });
 
   describe('download naming', () => {
@@ -566,7 +602,7 @@ describe('BookService', () => {
 
       const plan = await service.getExportFiles([1, 2], user, 'primary');
 
-      expect(libraryService.verifyUserAccess).toHaveBeenCalledWith(user.id, 77, false);
+      expect(libraryService.verifyAccess).toHaveBeenCalledWith(expect.objectContaining({ id: user.id, isSuperuser: false }), 77);
       expect(plan.projectedBytes).toBe(300);
       expect(plan.files).toEqual([
         { absolutePath: '/books/a.epub', zipPath: 'Duplicate.epub', sizeBytes: 100 },
@@ -968,7 +1004,7 @@ describe('BookService', () => {
     it('does not resolve a cover for a book the user cannot access', async () => {
       const { service, bookRepo, libraryService, coverStore } = makeService();
       bookRepo.findLibraryIdByBookId.mockResolvedValue(5);
-      libraryService.verifyUserAccess.mockRejectedValue(new ForbiddenException('no access'));
+      libraryService.verifyAccess.mockRejectedValue(new ForbiddenException('no access'));
 
       await expect(service.getThumbnailPath(9, makeUser())).rejects.toThrow(NotFoundException);
 
@@ -1051,7 +1087,7 @@ describe('BookService', () => {
         metadata: { title: 'New Title', isbn10: '0306406152', isbn13: '9780306406157' },
         diagnostics: makeMetadataFetchDiagnostics({ resolvedFieldCount: 3 }),
       });
-      expect(libraryService.verifyUserAccessLevel).toHaveBeenCalledWith(user.id, 7, false, 'editor');
+      expect(libraryService.verifyAccessLevel).toHaveBeenCalledWith(expect.objectContaining({ id: user.id, isSuperuser: false }), 7, 'editor');
       expect(pipeline.runWithSources).toHaveBeenCalledWith(
         {
           title: 'Old Title',
@@ -2551,7 +2587,7 @@ describe('BookService', () => {
       const result = await service.bulkReExtractCover([1, 2], user, onProgress);
 
       expect(result).toEqual({ processed: 2, updated: 1 });
-      expect(libraryService.verifyUserAccessLevel).toHaveBeenCalledWith(user.id, 7, false, 'editor');
+      expect(libraryService.verifyAccessLevel).toHaveBeenCalledWith(expect.objectContaining({ id: user.id, isSuperuser: false }), 7, 'editor');
       expect(onProgress).toHaveBeenCalledTimes(2);
       expect(onProgress).toHaveBeenNthCalledWith(1, 1);
       expect(onProgress).toHaveBeenNthCalledWith(2, 2);
@@ -2857,7 +2893,7 @@ describe('BookService', () => {
 
       const result = await service.deleteBooks([3, 4], user);
 
-      expect(libraryService.verifyUserAccess).toHaveBeenCalledTimes(2);
+      expect(libraryService.verifyAccess).toHaveBeenCalledTimes(2);
       expect(bookRepo.deleteByIdsAndInvalidateScanState).toHaveBeenCalledWith([3, 4]);
       expect(mockRm).toHaveBeenCalledWith('/tmp/books/covers/3', { recursive: true, force: true });
       expect(mockRm).toHaveBeenCalledWith('/tmp/books/covers/4', { recursive: true, force: true });
@@ -2918,6 +2954,7 @@ describe('BookService', () => {
         handleUnlinkDir: vi.fn().mockResolvedValue({ type: 'noop' }),
       };
       const scanner = {
+        ownsPath: vi.fn().mockResolvedValue(true),
         bufferBookMissingEvent: vi.fn(),
         bufferBooksUnavailableNotification: vi.fn(),
       };
@@ -3114,7 +3151,7 @@ describe('BookService', () => {
         { id: 3, libraryId: 7 },
         { id: 4, libraryId: 9 },
       ]);
-      libraryService.verifyUserAccess.mockRejectedValue(new ForbiddenException());
+      libraryService.verifyAccess.mockRejectedValue(new ForbiddenException());
       await expect(service.deleteBooks([3, 4], makeUser())).rejects.toBeInstanceOf(ForbiddenException);
       expect(bookRepo.findAllFilesByBookIds).not.toHaveBeenCalled();
       expect(bookRepo.deleteByIdsAndInvalidateScanState).not.toHaveBeenCalled();
@@ -3314,7 +3351,7 @@ describe('BookService', () => {
 
       bookRepo.findFileById.mockResolvedValue({ id: 7, bookId: 10, libraryId: 1, absolutePath: '/books/a.m4b', format: 'm4b' });
       bookRepo.upsertProgress.mockResolvedValue(undefined);
-      libraryService.verifyUserAccess.mockResolvedValue(undefined);
+      libraryService.verifyAccess.mockResolvedValue(undefined);
       libraryService.findOne = vi.fn().mockResolvedValue({ readingThreshold: 1, markAsFinishedPercentComplete: 99 });
 
       await service.saveProgress(user.id, 7, { percentage: 25, positionSeconds: 900 } as never, user);
@@ -3344,7 +3381,7 @@ describe('BookService', () => {
 
       bookRepo.findFileById.mockResolvedValue({ id: 8, bookId: 11, libraryId: 2, absolutePath: '/books/b.epub', format: 'epub' });
       bookRepo.upsertProgress.mockResolvedValue(undefined);
-      libraryService.verifyUserAccess.mockResolvedValue(undefined);
+      libraryService.verifyAccess.mockResolvedValue(undefined);
       libraryService.findOne = vi.fn().mockResolvedValue({ readingThreshold: 3, markAsFinishedPercentComplete: 97 });
 
       await service.saveProgress(user.id, 8, { percentage: 50 } as never, user);
@@ -3381,7 +3418,7 @@ describe('BookService', () => {
 
       bookRepo.findFileById.mockResolvedValue({ id: 8, bookId: 11, libraryId: 2, absolutePath: '/books/b.epub', format: 'epub' });
       bookRepo.upsertProgress.mockResolvedValue(undefined);
-      libraryService.verifyUserAccess.mockResolvedValue(undefined);
+      libraryService.verifyAccess.mockResolvedValue(undefined);
       libraryService.findOne = vi.fn().mockResolvedValue({ readingThreshold: 3, markAsFinishedPercentComplete: 97 });
       userBookStatusService.autoUpdate.mockRejectedValueOnce(new Error('status update failed'));
 
@@ -3421,7 +3458,7 @@ describe('BookService', () => {
       bookRepo.upsertProgress.mockResolvedValue(undefined);
       bookRepo.isKoboTwoWayProgressSyncEnabled.mockResolvedValue(true);
       bookRepo.syncKoboReadingStateFromProgress.mockResolvedValue(true);
-      libraryService.verifyUserAccess.mockResolvedValue(undefined);
+      libraryService.verifyAccess.mockResolvedValue(undefined);
       libraryService.findOne = vi.fn().mockResolvedValue({ readingThreshold: 4, markAsFinishedPercentComplete: 90 });
 
       await service.saveProgress(
@@ -3453,7 +3490,7 @@ describe('BookService', () => {
       bookRepo.findFileById.mockResolvedValue({ id: 8, bookId: 11, libraryId: 2, absolutePath: '/books/b.epub', format });
       bookRepo.upsertProgress.mockResolvedValue(undefined);
       bookRepo.isKoboTwoWayProgressSyncEnabled.mockResolvedValue(false);
-      libraryService.verifyUserAccess.mockResolvedValue(undefined);
+      libraryService.verifyAccess.mockResolvedValue(undefined);
       libraryService.findOne = vi.fn().mockResolvedValue({ readingThreshold: 4, markAsFinishedPercentComplete: 90 });
 
       await service.saveProgress(user.id, 8, { percentage: 50 } as never, user);
@@ -3473,7 +3510,7 @@ describe('BookService', () => {
         made.bookRepo.findProgress.mockResolvedValue(
           previousPercentage == null ? null : { percentage: previousPercentage, cfi: 'epubcfi(/6/40)', pageNumber: null },
         );
-        made.libraryService.verifyUserAccess.mockResolvedValue(undefined);
+        made.libraryService.verifyAccess.mockResolvedValue(undefined);
         made.libraryService.findOne = vi.fn().mockResolvedValue({ readingThreshold: 4, markAsFinishedPercentComplete: 90 });
         return { ...made, user };
       };
@@ -3584,7 +3621,7 @@ describe('BookService', () => {
           made.bookRepo.upsertProgress.mockResolvedValue(undefined);
           made.bookRepo.isKoboTwoWayProgressSyncEnabled.mockResolvedValue(false);
           made.bookRepo.findProgress.mockResolvedValue({ percentage: 32, cfi: 'epubcfi(/6/40!/4/20/1:0)', pageNumber: null });
-          made.libraryService.verifyUserAccess.mockResolvedValue(undefined);
+          made.libraryService.verifyAccess.mockResolvedValue(undefined);
           made.libraryService.findOne = vi.fn().mockResolvedValue({ readingThreshold: 4, markAsFinishedPercentComplete: 90 });
           return { ...made, user, positionConverter, audiobookEbookProgressSync };
         };
@@ -3659,7 +3696,7 @@ describe('BookService', () => {
 
       bookRepo.findFileById.mockResolvedValue({ id: 8, bookId: 11, libraryId: 2, absolutePath: '/books/b.epub', format });
       bookRepo.upsertProgress.mockResolvedValue(undefined);
-      libraryService.verifyUserAccess.mockResolvedValue(undefined);
+      libraryService.verifyAccess.mockResolvedValue(undefined);
       libraryService.findOne = vi.fn().mockResolvedValue({ readingThreshold: 1, markAsFinishedPercentComplete: 99 });
 
       await service.saveProgress(user.id, 8, { percentage: 50 } as never, user);
@@ -3768,7 +3805,7 @@ describe('BookService', () => {
         pagination: { page: 1, size: 5 },
       } as never);
 
-      expect(libraryService.verifyUserAccess).toHaveBeenCalledWith(42, 7, false);
+      expect(libraryService.verifyAccess).toHaveBeenCalledWith(expect.objectContaining({ id: 42, isSuperuser: false }), 7);
       expect(bookRepo.findCards).toHaveBeenCalledWith({
         where: 'WHERE',
         orderBy: ['ORDER'],
@@ -3854,7 +3891,7 @@ describe('BookService', () => {
         maxBuckets: 24,
       } as never);
 
-      expect(libraryService.verifyUserAccess).toHaveBeenCalledWith(42, 7, false);
+      expect(libraryService.verifyAccess).toHaveBeenCalledWith(expect.objectContaining({ id: 42, isSuperuser: false }), 7);
       expect(queryBuilder.buildOrderBy).toHaveBeenCalledWith([{ field: 'title', dir: 'asc' }], 42, undefined, {});
       expect(bookRepo.findJumpBuckets).toHaveBeenCalledWith(
         expect.objectContaining({ where: 'WHERE', field: 'title', kind: 'letter', userId: 42, maxBuckets: 24, orderBy: ['ORDER'] }),
@@ -3931,6 +3968,25 @@ describe('BookService', () => {
         expect.objectContaining({ where: 'WHERE', sort: [{ field: 'title', dir: 'asc' }], userId: 9 }),
       );
       expect(bookRepo.findJumpBuckets).not.toHaveBeenCalled();
+    });
+
+    it('executeJumpBucketsQuery folds links the way the listing does when collapseLinked finds a group', async () => {
+      const { service, queryBuilder, bookRepo } = makeService();
+      bookRepo.hasCollapsibleLinks.mockResolvedValue(true);
+      queryBuilder.buildOrderBy.mockReturnValue(['ORDER'] as never);
+      bookRepo.findJumpBuckets.mockResolvedValue({ buckets: [], total: 0, kind: 'letter', granularity: null });
+      bookRepo.findTemporalJumpBuckets.mockResolvedValue({ buckets: [], total: 0, kind: 'temporal', granularity: null });
+      bookRepo.findJumpBucketsCollapsed.mockResolvedValue({ buckets: [], total: 0, kind: 'letter', granularity: null });
+
+      const base = { pagination: { page: 0, size: 50 }, maxBuckets: 24, collapseLinked: true };
+      await service.executeJumpBucketsQuery(9, 'WHERE' as never, { ...base, sort: [{ field: 'title', dir: 'asc' }] } as never);
+      await service.executeJumpBucketsQuery(9, 'WHERE' as never, { ...base, sort: [{ field: 'addedAt', dir: 'desc' }] } as never);
+      await service.executeJumpBucketsQuery(9, 'WHERE' as never, { ...base, sort: [{ field: 'title', dir: 'asc' }], collapseSeries: true } as never);
+
+      expect(bookRepo.hasCollapsibleLinks).toHaveBeenCalledWith('WHERE');
+      expect(bookRepo.findJumpBuckets).toHaveBeenCalledWith(expect.objectContaining({ orderBy: ['ORDER'], collapseLinked: true }));
+      expect(bookRepo.findTemporalJumpBuckets).toHaveBeenCalledWith(expect.objectContaining({ linkCollapseOrderBy: ['ORDER'] }));
+      expect(bookRepo.findJumpBucketsCollapsed).toHaveBeenCalledWith(expect.objectContaining({ collapseLinked: true }));
     });
 
     it('executeJumpBucketsQuery ignores collapseSeries when the filter targets a series', async () => {
@@ -5505,6 +5561,35 @@ describe('BookService', () => {
       await expect(service.getMetadataFromFile(1, user)).resolves.toEqual({});
     });
 
+    it('getIsbnCandidates reads the primary file through metadata extraction', async () => {
+      const candidates = {
+        readable: true,
+        candidates: [{ isbn13: '9780306406157', isbn10: '0306406152', edition: 'ebook', context: 'eISBN 978-0-306-40615-7' }],
+      };
+      const metadataExtraction = { findIsbnCandidates: vi.fn().mockResolvedValue(candidates) };
+      const { service, bookRepo } = makeService({ metadataExtraction });
+      const user = makeUser();
+      const access = vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
+      bookRepo.findPrimaryFile.mockResolvedValue({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/dune.epub', format: 'epub' });
+
+      await expect(service.getIsbnCandidates(3, user)).resolves.toEqual(candidates);
+      expect(access).toHaveBeenCalledWith(3, user);
+      expect(metadataExtraction.findIsbnCandidates).toHaveBeenCalledWith('/books/dune.epub', 'epub');
+    });
+
+    it('getIsbnCandidates rejects a book without a primary file and reports a file without a format as unreadable', async () => {
+      const metadataExtraction = { findIsbnCandidates: vi.fn() };
+      const { service, bookRepo } = makeService({ metadataExtraction });
+      vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
+      bookRepo.findPrimaryFile
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ updatedAt: new Date('2026-01-01'), absolutePath: '/books/a.bin', format: null });
+
+      await expect(service.getIsbnCandidates(1, makeUser())).rejects.toThrow(NotFoundException);
+      await expect(service.getIsbnCandidates(1, makeUser())).resolves.toEqual({ readable: false, candidates: [] });
+      expect(metadataExtraction.findIsbnCandidates).not.toHaveBeenCalled();
+    });
+
     it('getMetadataFromFile returns an empty object for unsupported but known file formats', async () => {
       const { service, bookRepo } = makeService();
       vi.spyOn(service, 'verifyBookAccess').mockResolvedValue(undefined);
@@ -5828,7 +5913,7 @@ describe('BookService', () => {
 
       const result = await service.facetsForLibrary(user, 7, facetQuery(filter, 'dune'));
 
-      expect(libraryService.verifyUserAccess).toHaveBeenCalledWith(42, 7, false);
+      expect(libraryService.verifyAccess).toHaveBeenCalledWith(expect.objectContaining({ id: 42, isSuperuser: false }), 7);
       const scope = { accessibleLibraryIds: [7], implicitLibraryId: 7, userId: 42, timeZone: 'Europe/Berlin', contentFilters };
       expect(queryBuilder.buildWhere).toHaveBeenCalledWith(filter, { ...scope, q: 'dune' });
       expect(queryBuilder.buildWhere).toHaveBeenCalledWith(undefined, scope);
@@ -5846,7 +5931,7 @@ describe('BookService', () => {
 
       await service.facetsForLibrary(user, 7, facetQuery({ type: 'group', join: 'AND', rules: [unreadRule] }));
 
-      expect(libraryService.verifyUserAccess).toHaveBeenCalledWith(3, 7, true);
+      expect(libraryService.verifyAccess).toHaveBeenCalledWith(expect.objectContaining({ id: 3, isSuperuser: true }), 7);
       expect(queryBuilder.buildWhere.mock.calls.length).toBeGreaterThan(0);
       for (const [, ctx] of queryBuilder.buildWhere.mock.calls) {
         expect((ctx as { contentFilters?: unknown }).contentFilters).toBeUndefined();
@@ -5950,7 +6035,7 @@ describe('BookService', () => {
 
     it('refuses before querying when the user cannot see the library', async () => {
       const { service, libraryService, bookRepo } = makeFacetService();
-      libraryService.verifyUserAccess.mockRejectedValue(new ForbiddenException('No library access'));
+      libraryService.verifyAccess.mockRejectedValue(new ForbiddenException('No library access'));
 
       await expect(service.facetsForLibrary(makeUser(), 7, facetQuery(undefined))).rejects.toBeInstanceOf(ForbiddenException);
       expect(bookRepo.countWhere).not.toHaveBeenCalled();
@@ -6068,7 +6153,123 @@ describe('BookService', () => {
       });
       expect(bookRepo.findCards).not.toHaveBeenCalled();
       expect(queryBuilder.buildOrderBy).not.toHaveBeenCalled();
-      expect(result).toEqual({ items: [], total: 0, page: 1, size: 25 });
+      expect(result).toEqual({ items: [], total: 0, page: 1, size: 25, bookTotal: 0 });
+    });
+
+    it('reports the series-collapsed book total beside the card total', async () => {
+      const { service, bookRepo } = makeService();
+      vi.spyOn(BookQueryBuilder, 'hasSeriesSelectionFilter').mockReturnValue(false);
+      bookRepo.findCardsCollapsed.mockResolvedValue({ ...emptyCardQueryResult, total: 3, bookTotal: 7 });
+
+      const result = await service.executeBooksQuery(12, undefined, { pagination: { page: 0, size: 50 }, sort: [], collapseSeries: true });
+
+      expect(result.total).toBe(3);
+      expect(result.bookTotal).toBe(7);
+    });
+
+    it('leaves bookTotal out and skips the link probe when no collapse flag is set', async () => {
+      const { service, bookRepo, queryBuilder } = makeService();
+      queryBuilder.buildOrderBy.mockReturnValue(['order-by']);
+      bookRepo.findCards.mockResolvedValue({ ...emptyCardQueryResult, total: 4 });
+
+      const result = await service.executeBooksQuery(12, 'where' as never, { pagination: { page: 0, size: 50 }, sort: [] });
+
+      expect(bookRepo.hasCollapsibleLinks).not.toHaveBeenCalled();
+      expect(bookRepo.findCardsLinkCollapsed).not.toHaveBeenCalled();
+      expect(result).not.toHaveProperty('bookTotal');
+    });
+
+    it('runs the plain query and reports bookTotal = total when no link group has two matching members', async () => {
+      const { service, bookRepo, queryBuilder } = makeService();
+      queryBuilder.buildOrderBy.mockReturnValue(['order-by']);
+      bookRepo.hasCollapsibleLinks.mockResolvedValue(false);
+      bookRepo.findCards.mockResolvedValue({ ...emptyCardQueryResult, total: 4 });
+
+      const result = await service.executeBooksQuery(12, 'where' as never, { pagination: { page: 0, size: 50 }, sort: [], collapseLinked: true });
+
+      expect(bookRepo.hasCollapsibleLinks).toHaveBeenCalledWith('where');
+      expect(bookRepo.findCards).toHaveBeenCalled();
+      expect(bookRepo.findCardsLinkCollapsed).not.toHaveBeenCalled();
+      expect(result.total).toBe(4);
+      expect(result.bookTotal).toBe(4);
+    });
+
+    it('folds linked books with the listing order when a link group matches twice', async () => {
+      const { service, bookRepo, queryBuilder } = makeService();
+      queryBuilder.buildOrderBy.mockReturnValue(['order-by']);
+      bookRepo.hasCollapsibleLinks.mockResolvedValue(true);
+      bookRepo.findCardsLinkCollapsed.mockResolvedValue({ ...emptyCardQueryResult, total: 5, bookTotal: 6 });
+
+      const result = await service.executeBooksQuery(12, 'where' as never, { pagination: { page: 1, size: 10 }, sort: [], collapseLinked: true });
+
+      expect(bookRepo.findCardsLinkCollapsed).toHaveBeenCalledWith({ where: 'where', orderBy: ['order-by'], limit: 10, offset: 10, userId: 12 });
+      expect(bookRepo.findCards).not.toHaveBeenCalled();
+      expect(result.total).toBe(5);
+      expect(result.bookTotal).toBe(6);
+    });
+
+    it('folds links inside the series-collapsed query when both flags are set', async () => {
+      const { service, bookRepo } = makeService();
+      vi.spyOn(BookQueryBuilder, 'hasSeriesSelectionFilter').mockReturnValue(false);
+      bookRepo.hasCollapsibleLinks.mockResolvedValue(true);
+      bookRepo.findCardsCollapsed.mockResolvedValue({ ...emptyCardQueryResult, total: 2, bookTotal: 5 });
+
+      const result = await service.executeBooksQuery(12, undefined, {
+        pagination: { page: 0, size: 50 },
+        sort: [],
+        collapseSeries: true,
+        collapseLinked: true,
+      });
+
+      expect(bookRepo.findCardsCollapsed).toHaveBeenCalledWith(expect.objectContaining({ collapseLinked: true }));
+      expect(bookRepo.findCardsLinkCollapsed).not.toHaveBeenCalled();
+      expect(result.bookTotal).toBe(5);
+    });
+
+    it('attaches link info for the viewer and skips series stacks', async () => {
+      const { service, bookRepo, queryBuilder } = makeService();
+      vi.spyOn(BookQueryBuilder, 'hasSeriesSelectionFilter').mockReturnValue(false);
+      vi.spyOn(service, 'accessibleBooksWhere').mockResolvedValue('access-where' as never);
+      queryBuilder.buildOrderBy.mockReturnValue(['order-by']);
+      const row = (id: number) => ({
+        id,
+        status: 'present',
+        primaryFileId: null,
+        folderPath: `/books/${id}`,
+        addedAt: new Date('2026-01-01T00:00:00.000Z'),
+        title: `Book ${id}`,
+        seriesName: null,
+        seriesIndex: null,
+        publishedYear: null,
+        language: null,
+        rating: null,
+      });
+      bookRepo.findCards.mockResolvedValue({ ...emptyCardQueryResult, rows: [row(1), row(2)], total: 2 });
+      bookRepo.findLinkedBookIds.mockResolvedValue([1]);
+      const info = { groupId: 9, books: [{ bookId: 3, libraryId: 4, formats: ['m4b'], mediaKind: 'audiobook' }], memberCount: 2 };
+      bookRepo.findCardLinks.mockResolvedValue(new Map([[1, info]]));
+
+      const result = await service.executeBooksQuery(
+        12,
+        undefined,
+        { pagination: { page: 0, size: 50 }, sort: [] },
+        { viewer: makeUser({ id: 12 }) },
+      );
+
+      expect(bookRepo.findLinkedBookIds).toHaveBeenCalledWith([1, 2]);
+      expect(bookRepo.findCardLinks).toHaveBeenCalledWith([1], 'access-where');
+      expect(result.items.find((card) => card.id === 1)?.linked).toEqual(info);
+      expect(result.items.find((card) => card.id === 2)).not.toHaveProperty('linked');
+    });
+
+    it('does not look up links when no viewer is given', async () => {
+      const { service, bookRepo, queryBuilder } = makeService();
+      queryBuilder.buildOrderBy.mockReturnValue(['order-by']);
+      bookRepo.findCards.mockResolvedValue(emptyCardQueryResult);
+
+      await service.executeBooksQuery(12, undefined, { pagination: { page: 0, size: 50 }, sort: [] });
+
+      expect(bookRepo.findLinkedBookIds).not.toHaveBeenCalled();
     });
 
     it('passes collection ordering context to a collapsed collectionOrder query', async () => {
@@ -6265,7 +6466,7 @@ describe('BookService', () => {
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy).toHaveBeenCalledWith(
-        '[book.list_query] [end] userId=12 page=0 size=50 filterCount=0 sortFields=0 collapseSeries=false resultCount=0 durationMs=600 - slow query',
+        '[book.list_query] [end] userId=12 page=0 size=50 filterCount=0 sortFields=0 collapseSeries=false collapseLinked=false resultCount=0 durationMs=600 - slow query',
       );
     });
 
@@ -6285,7 +6486,7 @@ describe('BookService', () => {
 
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy).toHaveBeenCalledWith(
-        '[book.list_query] [end] userId=12 page=0 size=50 filterCount=0 sortFields=0 collapseSeries=true resultCount=0 durationMs=600 - slow query',
+        '[book.list_query] [end] userId=12 page=0 size=50 filterCount=0 sortFields=0 collapseSeries=true collapseLinked=false resultCount=0 durationMs=600 - slow query',
       );
     });
 
@@ -6314,7 +6515,7 @@ describe('BookService', () => {
       });
 
       expect(warnSpy).toHaveBeenCalledWith(
-        '[book.list_query] [end] userId=77 page=2 size=25 filterCount=2 sortFields=2 collapseSeries=false resultCount=0 durationMs=900 - slow query',
+        '[book.list_query] [end] userId=77 page=2 size=25 filterCount=2 sortFields=2 collapseSeries=false collapseLinked=false resultCount=0 durationMs=900 - slow query',
       );
     });
   });
@@ -6360,14 +6561,14 @@ describe('BookService', () => {
       queryBuilder.buildWhere.mockReturnValue('where-clause');
       bookRepo.findDistinctLibraryIdsByWhere.mockResolvedValue([5, 9]);
       const error = new ForbiddenException('Insufficient library access level');
-      libraryService.verifyUserAccessLevel.mockImplementation((_userId: number, libraryId: number) =>
+      libraryService.verifyAccessLevel.mockImplementation((_userId: number, libraryId: number) =>
         libraryId === 9 ? Promise.reject(error) : Promise.resolve(),
       );
 
       await expect(service.resolveSelectionToIds({ query: {} }, user, 'editor')).rejects.toBe(error);
       expect(bookRepo.findDistinctLibraryIdsByWhere).toHaveBeenCalledWith('where-clause');
-      expect(libraryService.verifyUserAccessLevel).toHaveBeenCalledWith(user.id, 5, false, 'editor');
-      expect(libraryService.verifyUserAccessLevel).toHaveBeenCalledWith(user.id, 9, false, 'editor');
+      expect(libraryService.verifyAccessLevel).toHaveBeenCalledWith(expect.objectContaining({ id: user.id, isSuperuser: false }), 5, 'editor');
+      expect(libraryService.verifyAccessLevel).toHaveBeenCalledWith(expect.objectContaining({ id: user.id, isSuperuser: false }), 9, 'editor');
       expect(bookRepo.findIdsByWhere).not.toHaveBeenCalled();
       expect(bookRepo.findLibraryIdsByBookIds).not.toHaveBeenCalled();
     });
@@ -6843,7 +7044,7 @@ describe('sensitive cover access', () => {
   it('checks library access before reading or updating the flag', async () => {
     const { service, bookRepo, libraryService } = makeService();
     bookRepo.findLibraryIdByBookId.mockResolvedValue(4);
-    libraryService.verifyUserAccess.mockRejectedValue(new ForbiddenException());
+    libraryService.verifyAccess.mockRejectedValue(new ForbiddenException());
     await expect(service.updateSensitiveCover(7, true, makeUser())).rejects.toThrow(NotFoundException);
     await expect(service.shouldHideSensitiveCover(7, makeUser())).rejects.toThrow(NotFoundException);
     expect(bookRepo.updateSensitiveCover).not.toHaveBeenCalled();

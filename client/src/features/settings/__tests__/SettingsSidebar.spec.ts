@@ -89,7 +89,7 @@ describe('SettingsSidebar', () => {
     const personal = mountSidebar({ rail: true })
     expect(personal.findAll('[data-testid="rail-group"]')).toHaveLength(2)
     expect(personal.findAll('[data-testid="settings-sidebar-rail-item"]').map((node) => node.text())).toContain('Missing-field reminders')
-    expect(mountSidebar({ rail: true, perms: ['manage_libraries'] }).findAll('[data-testid="rail-group"]')).toHaveLength(2)
+    expect(mountSidebar({ rail: true, perms: ['manage_libraries'] }).findAll('[data-testid="rail-group"]')).toHaveLength(3)
   })
 
   it('applies notification access rules in collapsed rail mode', () => {

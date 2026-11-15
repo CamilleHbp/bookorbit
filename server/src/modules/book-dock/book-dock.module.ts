@@ -4,9 +4,6 @@ import { storageConfig } from '../../config/config';
 import { RevisionFileModule } from '../book-revision/revision-file.module';
 import { BookDockManagedUploadService } from './book-dock-managed-upload.service';
 import { BookDockManagedService } from './book-dock-managed.service';
-import { ConfigService } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
-import type { StringValue } from 'ms';
 
 import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { AuthModule } from '../auth/auth.module';
@@ -23,6 +20,7 @@ import { BookDockEventsService } from './book-dock-events.service';
 import { BookDockFinalizeService } from './book-dock-finalize.service';
 import { BookDockGateway } from './book-dock.gateway';
 import { BookDockIngestService } from './book-dock-ingest.service';
+import { BookDockJoinService } from './book-dock-join.service';
 import { BookDockMetadataService } from './book-dock-metadata.service';
 import { BookDockProcessingStateService } from './book-dock-processing-state.service';
 import { BookDockWatcherService } from './book-dock-watcher.service';
@@ -43,13 +41,6 @@ import { BookDockRepository } from './book-dock.repository';
     MetadataScoreModule,
     forwardRef(() => NotificationModule),
     AppSettingsModule,
-    JwtModule.registerAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.getOrThrow<string>('auth.jwtSecret'),
-        signOptions: { expiresIn: config.getOrThrow<StringValue | number>('auth.jwtExpiresIn') },
-      }),
-    }),
   ],
   controllers: [BookDockController],
   providers: [
@@ -62,6 +53,7 @@ import { BookDockRepository } from './book-dock.repository';
     BookDockMetadataService,
     BookDockProcessingStateService,
     BookDockFinalizeService,
+    BookDockJoinService,
     BookDockWatcherService,
     BookDockGateway,
   ],

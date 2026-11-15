@@ -16,7 +16,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     id: 'libraryBooks',
     use: [Permission.LibraryDownload, Permission.LibraryUpload, Permission.LibraryEditMetadata, Permission.LibraryGenerateReadAloud],
-    manage: [Permission.LibraryDeleteBooks],
+    manage: [Permission.LibraryDeleteBooks, Permission.LibraryMergeBooks],
   },
   {
     id: 'bookRequests',
@@ -24,8 +24,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     manage: [Permission.ManageBookRequests],
   },
   {
-    id: 'devices',
-    use: [Permission.KoboSync, Permission.KoreaderSync, Permission.OpdsAccess],
+    id: 'devicesAccess',
+    use: [Permission.KoboSync, Permission.KoreaderSync, Permission.OpdsAccess, Permission.ApiKeys],
     manage: [],
   },
   {

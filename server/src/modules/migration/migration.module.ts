@@ -1,9 +1,6 @@
 import { TagMatchingModule } from '../tag-matching/tag-matching.module';
 import { ReadingAttemptEventsModule } from '../user-book-status/reading-attempt-events.module';
 import { Module, forwardRef } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
-import type { StringValue } from 'ms';
 
 import { AuthModule } from '../auth/auth.module';
 import { NotificationModule } from '../notification/notification.module';
@@ -38,21 +35,7 @@ import { MigrationExecutorService } from './executor/migration-executor.service'
 import { MigrationReportingService } from './reporting/migration-reporting.service';
 
 @Module({
-  imports: [
-    TagMatchingModule,
-    ReadingAttemptEventsModule,
-    AuthModule,
-    forwardRef(() => NotificationModule),
-    ScannerModule,
-    BookCoverStoreModule,
-    JwtModule.registerAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.getOrThrow<string>('auth.jwtSecret'),
-        signOptions: { expiresIn: config.getOrThrow<StringValue | number>('auth.jwtExpiresIn') },
-      }),
-    }),
-  ],
+  imports: [TagMatchingModule, ReadingAttemptEventsModule, AuthModule, forwardRef(() => NotificationModule), ScannerModule, BookCoverStoreModule],
   controllers: [MigrationController],
   providers: [
     MigrationRepository,

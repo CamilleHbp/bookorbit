@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SECRET_INPUT_ATTRS } from '@/lib/secret-input'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { FanfictionConnection, FanfictionJob, FanfictionSource } from '@bookorbit/types'
@@ -181,11 +182,11 @@ function date(value: string) {
           >{{ t('fanfiction.connections.password')
           }}<input
             v-model="password"
-            type="password"
-            autocomplete="current-password"
+            type="text"
+            v-bind="SECRET_INPUT_ATTRS"
             maxlength="4096"
             :disabled="busy"
-            class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
+            class="input-secret border-input bg-background block min-h-11 w-full rounded-md border px-3"
         /></label>
       </template>
       <Button v-if="signInUrl" variant="outline" as-child>
@@ -220,10 +221,10 @@ function date(value: string) {
           }}<input
             v-model="cookieValue"
             :required="!!cookieName"
-            type="password"
-            autocomplete="off"
+            type="text"
+            v-bind="SECRET_INPUT_ATTRS"
             :disabled="busy"
-            class="border-input bg-background block min-h-11 w-full rounded-md border px-3"
+            class="input-secret border-input bg-background block min-h-11 w-full rounded-md border px-3"
         /></label>
       </details>
       <details :key="site" class="space-y-3" @toggle="toggleSettings">
@@ -241,10 +242,6 @@ function date(value: string) {
               class="border-input bg-background block w-full rounded-md border p-3 font-mono text-sm"
             />
           </label>
-          <p class="text-sm text-muted-foreground">{{ t('fanfiction.connections.proxyHelp') }}</p>
-          <pre class="overflow-x-auto rounded-md bg-muted p-3 text-sm">
-[defaults]
-use_flaresolverr_proxy: true</pre>
           <RouterLink class="text-sm text-primary underline underline-offset-4" :to="{ name: 'tools-tag-matching' }">{{
             t('tagMatching.title')
           }}</RouterLink>

@@ -1,3 +1,4 @@
+import { LibraryScopeService } from '../../common/library-scope/library-scope.service';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { Permission } from '@bookorbit/types';
@@ -24,6 +25,7 @@ describe('Fanfiction library administration scope', () => {
         FanfictionAccessService,
         LibraryService,
         { provide: UserService, useValue: users },
+        { provide: LibraryScopeService, useValue: { assertLevel: vi.fn().mockResolvedValue(undefined) } },
         { provide: LibraryRepository, useValue: libraries },
         { provide: ConfigService, useValue: { get: () => '/tmp' } },
       ],
