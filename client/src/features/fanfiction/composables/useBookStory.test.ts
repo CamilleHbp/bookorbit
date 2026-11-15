@@ -293,6 +293,24 @@ describe('book story administration', () => {
     expect(mockApi.mock.calls.some(([url]) => String(url).endsWith('/jobs/existing-job'))).toBe(true)
     expect(mockApi.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
   })
+  it('recovers a pending chapter review after reopening and approves the existing job', async () => {
+    mockApi.mockImplementation(async (url, options) => {
+      const path = String(url)
+      if (path.includes('pendingDownloadsOnly=true'))
+        return response({ items: [{ id: 'chapter-review', kind: 'update', state: 'review_required' }], nextCursor: null })
+      if (path.endsWith('/jobs/chapter-review/content-review') && options?.method === 'POST')
+        return response({ id: 'chapter-review', kind: 'update', state: 'queued' })
+      return pages(path)
+    })
+    const model = scope.run(() => useBookStory(7, 5, true))!
+    await flush()
+    expect(model.job.value?.id).toBe('chapter-review')
+    expect(model.job.value?.state).toBe('review_required')
+    await model.approveContent()
+    const approval = mockApi.mock.calls.find(([url]) => String(url).endsWith('/jobs/chapter-review/content-review'))
+    expect(JSON.parse(String(approval?.[1]?.body))).toEqual({ action: 'apply' })
+    expect(mockApi.mock.calls.some(([url]) => String(url).endsWith('/sources/story/check'))).toBe(false)
+  })
   it('bounds repeated status failures and allows an explicit refresh to resume polling', async () => {
     let statusRequests = 0
     mockApi.mockImplementation((url) => {

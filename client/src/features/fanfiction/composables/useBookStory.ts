@@ -237,6 +237,10 @@ export function useBookStory(
     if (!valid(id) || source.value?.id !== current.id || job.value) return
     job.value = page.items[0] ?? null
     if (job.value) return
+    const pending = await request<FanfictionJobPage>(`${base.value}/jobs?sourceId=${current.id}&pendingDownloadsOnly=true&limit=1`)
+    if (!valid(id) || source.value?.id !== current.id || job.value) return
+    job.value = pending.items[0] ?? null
+    if (job.value) return
     const recent = await request<FanfictionJobPage>(`${base.value}/jobs?sourceId=${current.id}&kind=replacement&limit=1`)
     if (!valid(id) || source.value?.id !== current.id || job.value) return
     const candidate = recent.items[0]
