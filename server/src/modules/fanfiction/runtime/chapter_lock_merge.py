@@ -1,5 +1,6 @@
 """Three-way insertion merging for local chapter edits."""
 from difflib import SequenceMatcher
+from collections import Counter
 import json
 import posixpath
 from urllib.parse import unquote, urlsplit
@@ -92,19 +93,36 @@ def merge_additions(base, local, fresh, base_hash, local_hash, fresh_hash):
     local_keys = [node_key(n, local_hash) for n in edited]
     new_keys = [node_key(n, fresh_hash) for n in new]
     boundaries, positions = local_positions(old_keys, local_keys)
+    old_counts, local_counts = Counter(old_keys), Counter(local_keys)
+    ambiguous = {key for key, count in old_counts.items() if count > 1 and local_counts[key] != count}
+
+    def insertion_position(index):
+        if index == 0:
+            return 0
+        if index == len(old):
+            return len(edited)
+        if old_keys[index - 1] in ambiguous or old_keys[index] in ambiguous:
+            # An unchanged unique neighbour anchors additions beside repeated text.
+            for neighbour, offset in ((index, 0), (index - 1, 1)):
+                if (old_counts[old_keys[neighbour]] == 1 and neighbour in positions and
+                        local_keys[positions[neighbour]] == old_keys[neighbour]):
+                    return positions[neighbour] + offset
+            conflict()
+        if index not in boundaries:
+            conflict()
+        return boundaries[index]
+
     additions = {}
     replacements = {}
     for tag, a, b, c, d in SequenceMatcher(None, old_keys, new_keys, autojunk=False).get_opcodes():
         if tag == 'equal':
             continue
         if tag == 'insert':
-            if a not in boundaries:
-                conflict()
-            additions.setdefault(boundaries[a], []).extend(new[c:d])
+            additions.setdefault(insertion_position(a), []).extend(new[c:d])
         elif tag == 'replace':
             cursor = c
             for old_index in range(a, b):
-                if old_index not in positions:
+                if old_index not in positions or old_keys[old_index] in ambiguous:
                     conflict()
                 index = positions[old_index]
                 candidates = []
@@ -118,15 +136,11 @@ def merge_additions(base, local, fresh, base_hash, local_hash, fresh_hash):
                     conflict()
                 fresh_index, merged = candidates[0]
                 if fresh_index > cursor:
-                    if old_index not in boundaries:
-                        conflict()
-                    additions.setdefault(boundaries[old_index], []).extend(new[cursor:fresh_index])
+                    additions.setdefault(insertion_position(old_index), []).extend(new[cursor:fresh_index])
                 replacements[index] = merged
                 cursor = fresh_index + 1
             if cursor < d:
-                if b not in boundaries:
-                    conflict()
-                additions.setdefault(boundaries[b], []).extend(new[cursor:d])
+                additions.setdefault(insertion_position(b), []).extend(new[cursor:d])
         else:
             conflict()
     result = local.cloneNode(False)

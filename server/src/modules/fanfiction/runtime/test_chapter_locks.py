@@ -6,7 +6,7 @@ from unittest.mock import patch
 from zipfile import ZipFile, ZIP_STORED
 
 from chapter_locks import preserve_chapter_locks, LOCK, elements
-from chapter_lock_merge import BASELINE, baseline_data
+from chapter_lock_merge import BASELINE, ChapterLockConflict, baseline_data, merge_additions
 from publisher_edition import parse
 from safe_transport import PolicyError
 
@@ -37,6 +37,19 @@ def epub(path, docs, assets=None):
 
 
 class ChapterLocksTest(unittest.TestCase):
+    def test_repeated_passages_use_unique_anchors_and_reject_ambiguous_positions(self):
+        def body(text):return elements(parse(chapter(text)), 'body')[0]
+        baseline=body('<p>Opening</p><p>Repeated</p><p>Repeated</p><p>Ending</p>')
+        local=body('<p>Opening</p><p>Local replacement</p><p>Repeated</p><p>Ending</p>')
+        resolver=lambda path:path
+        for text in ('<p>Opening</p><p>Repeated</p><p>Added</p><p>Repeated</p><p>Ending</p>',
+                     '<p>Opening</p><p>Repeated plus</p><p>Repeated</p><p>Ending</p>'):
+            with self.assertRaises(ChapterLockConflict):
+                merge_additions(baseline, local, body(text), resolver, resolver, resolver)
+        fresh=body('<p>Opening</p><p>Added</p><p>Repeated</p><p>Repeated</p><p>Ending</p>')
+        text=merge_additions(baseline, local, fresh, resolver, resolver, resolver).toxml()
+        self.assertLess(text.index('Added'),text.index('Local replacement'))
+
     def test_real_runtime_preserves_edits_and_merges_additions_on_update_and_refresh(self):
         from fanficfare.adapters.adapter_test1 import TestSiteAdapter
         from fanficfare_wrapper import run
