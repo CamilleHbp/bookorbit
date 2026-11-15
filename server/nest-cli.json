@@ -13,6 +13,7 @@
       "modules/fanfiction/runtime/chapter_floor.py",
       "modules/fanfiction/runtime/controlled_config.py",
       "modules/fanfiction/runtime/chapter_store.py",
+      "modules/fanfiction/runtime/chapter_checkpoint.py",
       "modules/fanfiction/runtime/update_check.py",
       "modules/fanfiction/runtime/website_catalog.py",
       "modules/fanfiction/runtime/publisher_edition.py",
