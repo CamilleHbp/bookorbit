@@ -46,6 +46,72 @@ def stamp(path, value, lock=False):
 
 
 class ChapterFloorTests(unittest.TestCase):
+    def test_scribblehub_main_and_side_cutoffs_use_source_titles(self):
+        url = 'https://www.scribblehub.com/series/623932/on-astral-tides/'
+        def entry(title, n):
+            return {'title': 'Chapter ' + str(n), 'site_title': title,
+                    'url': f'https://www.scribblehub.com/read/623932/on-astral-tides/chapter/{n}/'}
+        entries = [entry('Five Hundred And Twenty-Four', 1), entry('Side One Hundred And Seventy-Five - Aiko', 2),
+                   entry('Five Hundred And Twenty-Five - Contains Status', 3),
+                   entry('Side One Hundred And Seventy-Six - Aiko', 4), entry('Chapter 526 - Next', 5),
+                   entry('Announcement', 6), entry('Bonus scene', 7), entry('One - Restored', 8)]
+        cutoff = {'version': 1, 'storyUrl': url, 'minimum': [525, 176], 'extraChapterUrls': [entries[6]['url']]}
+        validate_policy(cutoff)
+        adapter = Mock(); adapter.get_chapters.return_value = entries
+        apply_policy(adapter, cutoff, url)
+        self.assertEqual(adapter.chapterInfos, entries[2:5] + [entries[6]])
+        with self.assertRaises(PolicyError): validate_policy({**cutoff, 'minimum': [525]})
+        with self.assertRaises(PolicyError): validate_policy({**cutoff, 'extraChapterUrls': [chapter('', 1)['url']]})
+        with self.assertRaises(PolicyError): apply_policy(adapter, cutoff, url.replace('623932', '999'))
+
+    def test_scribblehub_updates_and_refreshes_keep_published_chapters_out(self):
+        from fanficfare.adapters.adapter_scribblehubcom import ScribbleHubComAdapter
+        from fanficfare_wrapper import run
+        url = 'https://www.scribblehub.com/series/623932/on-astral-tides/'
+        def entry(title, n):
+            return {'title': title, 'url': f'https://www.scribblehub.com/read/623932/on-astral-tides/chapter/{n}/'}
+        available = [entry('Five Hundred And Twenty-Five', 525), entry('Side One Hundred And Seventy-Six - Aiko', 176)]
+        cutoff = {'version': 1, 'storyUrl': url, 'minimum': [525, 176], 'extraChapterUrls': []}
+        original = os.getcwd()
+        def metadata(adapter):
+            adapter.story.setMetadata('title', 'Source title')
+            adapter.story.addToList('author', 'Author')
+            adapter.story.addToList('authorId', '1')
+            adapter.story.addToList('authorUrl', 'https://www.scribblehub.com/profile/1')
+            adapter.story.setMetadata('datePublished', datetime(2024, 1, 1))
+            adapter.story.setMetadata('dateUpdated', datetime(2026, 1, 1))
+            for c in available: adapter.add_chapter(c['title'], c['url'])
+        def text(adapter, chapter_url):
+            return adapter.utf8FromSoup(chapter_url, adapter.make_soup('<p>Source chapter '+chapter_url+'</p>'))
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                os.chdir(directory)
+                request = {'operation': 'download', 'url': url, 'configuration': '[defaults]\nuse_flaresolverr_proxy:false\n',
+                           'checkStatePath': str(Path(directory)/'check.json')}
+                with patch.object(ScribbleHubComAdapter, 'extractChapterUrlsAndMetadata', autospec=True, side_effect=metadata), patch.object(ScribbleHubComAdapter, 'getChapterText', autospec=True, side_effect=text) as fetched:
+                    run(request)
+                    Path('output.epub').replace('input.epub')
+                    stamp('input.epub', cutoff)
+                    available[:0] = [entry('One', 1), entry('Five Hundred And Twenty-Four', 524),
+                                     entry('Side One Hundred And Seventy-Five - Aiko', 175)]
+                    available.append(entry('Five Hundred And Twenty-Six', 526))
+                    available.append(entry('Side One Hundred And Seventy-Seven - Aiko', 177))
+                    expected = available[3:]
+                    for operation in ('update', 'refresh'):
+                        request['operation'] = operation
+                        fetched.reset_mock()
+                        self.assertEqual(run(request)['preview']['chapterCount'], 4)
+                        self.assertEqual({call.args[1] for call in fetched.call_args_list}, {c['url'] for c in expected})
+                        self.assertEqual(read_policy('output.epub'), cutoff)
+                        validate_output('output.epub', expected)
+                        Path('output.epub').replace('input.epub')
+                    request['operation'] = 'update'
+                    fetched.reset_mock()
+                    self.assertEqual(run(request)['output'], 'input.epub')
+                    fetched.assert_not_called()
+            finally:
+                os.chdir(original)
+
     def test_single_and_arc_cutoffs_exclude_restored_and_reordered_early_chapters(self):
         for minimum, titles in [([88], ['Chapter 87 - Covered', 'Chapter 88 - First', 'Chapter 100 - Part II']),
                                 ([10, 20], ['10-19 Covered', '10-20 First', '11-1 Next arc'])]:
