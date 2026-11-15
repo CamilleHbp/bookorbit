@@ -40,7 +40,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { FANFICTION_WEBSITE_ACCESS_ERRORS, type FanfictionPreview } from '@bookorbit/types';
 import { DB } from '../src/db';
 import * as schema from '../src/db/schema';
-import { storageConfig } from '../src/config/config';
+import { audioToolsConfig, storageConfig } from '../src/config/config';
 import { FileLockService } from '../src/common/file-lock.service';
 import type { RequestUser } from '../src/common/types/request-user';
 import { BookRevisionService } from '../src/modules/book-revision/book-revision.service';
@@ -197,6 +197,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         FileLockService,
         { provide: DB, useValue: db },
         { provide: storageConfig.KEY, useValue: storage },
+        { provide: audioToolsConfig.KEY, useValue: audioToolsConfig() },
         { provide: FanfictionAccessService, useValue: { administer: () => Promise.resolve(), defaultUpdatePolicy: () => Promise.resolve('review') } },
         { provide: FanficfareRuntimeService, useValue: runtime },
         { provide: UserService, useValue: { findByIdWithPermissions: () => Promise.resolve(user) } },
@@ -322,6 +323,67 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       void zip.finalize();
     });
   }
+  it('restarts an outdated unpublished review using current settings and an idempotent job identity', async () => {
+    const original = await readFile(target);
+    const job = await claim();
+    await jobs.finish(job, 'review_required', null, 'review_required');
+    await db
+      .update(schema.fanfictionSources)
+      .set({ version: source.version + 1, updatesEnabled: false })
+      .where(eq(schema.fanfictionSources.id, source.id));
+    const fresh = await jobs.retry(libraryId, job.id, user);
+    expect(fresh.id).not.toBe(job.id);
+    expect(fresh.state).toBe('queued');
+    expect((await jobs.retry(libraryId, job.id, user)).id).toBe(fresh.id);
+    const claimed = (await jobs.claim())!;
+    expect(claimed.sourceVersion).toBe(source.version + 1);
+    expect(await sources.get(libraryId, source.id, user)).toMatchObject({ state: 'paused', attentionCode: null, tracking: { enabled: false } });
+    expect(await readFile(target)).toEqual(original);
+  }, 60_000);
+  it('preserves staged bytes instead of restarting an outdated review', async () => {
+    const original = await readFile(target);
+    const [custom] = await db
+      .insert(schema.tags)
+      .values({ name: `custom-${randomUUID()}` })
+      .returning();
+    await db.insert(schema.bookTags).values({ bookId: source.bookId!, tagId: custom.id });
+    runtime.update.mockImplementationOnce(async (_operation, _url, _document, _prepare, consume) =>
+      consume(output, { ...preview, tags: ['Changed source tag'] }),
+    );
+    const job = await claim();
+    const result = await run(job);
+    expect(result?.metadataReview?.beforeUpdate).toBe(true);
+    await jobs.finish(job, 'review_required', result, 'metadata_review_required');
+    await db
+      .update(schema.fanfictionSources)
+      .set({ version: source.version + 1 })
+      .where(eq(schema.fanfictionSources.id, source.id));
+    await expect(jobs.retry(libraryId, job.id, user)).rejects.toThrow('Review');
+    expect((await jobs.get(libraryId, job.id, user)).state).toBe('review_required');
+    expect(await readFile(target)).toEqual(original);
+    await db.update(schema.fanfictionJobs).set({ result: null, errorCode: 'review_required' }).where(eq(schema.fanfictionJobs.id, job.id));
+    await db
+      .update(schema.fanfictionSources)
+      .set({ metadataReviewPending: false, attentionCode: 'review_required' })
+      .where(eq(schema.fanfictionSources.id, source.id));
+    await expect(jobs.retry(libraryId, job.id, user)).rejects.toThrow('Source settings changed');
+    expect(await readFile(target)).toEqual(original);
+  }, 60_000);
+  it('keeps metadata reviews waiting for chapter completion out of the metadata-only queue', async () => {
+    await db.update(schema.fanfictionSources).set({ metadataReviewPending: true }).where(eq(schema.fanfictionSources.id, source.id));
+    expect((await sources.list(libraryId, { reviewScope: 'pending', limit: 25 }, user)).items.map((item) => item.id)).toContain(source.id);
+    const queued = await sources.check(libraryId, source.id, 'update', randomUUID(), user);
+    expect((await sources.list(libraryId, { reviewScope: 'pending', limit: 25 }, user)).items).toEqual([]);
+    await jobs.claim();
+    expect((await sources.list(libraryId, { reviewScope: 'pending', limit: 25 }, user)).items).toEqual([]);
+    await db.update(schema.fanfictionJobs).set({ state: 'review_required' }).where(eq(schema.fanfictionJobs.id, queued.id));
+    await db.update(schema.fanfictionSources).set({ attentionCode: 'content_review_required' }).where(eq(schema.fanfictionSources.id, source.id));
+    expect((await sources.list(libraryId, { reviewScope: 'pending', limit: 25 }, user)).items).toEqual([]);
+    expect((await sources.list(libraryId, { reviewScope: 'attention', limit: 25 }, user)).items.map((item) => item.id)).toContain(source.id);
+    await db.update(schema.fanfictionJobs).set({ state: 'succeeded' }).where(eq(schema.fanfictionJobs.id, queued.id));
+    await db.update(schema.fanfictionSources).set({ attentionCode: 'metadata_review_required' }).where(eq(schema.fanfictionSources.id, source.id));
+    expect((await sources.list(libraryId, { reviewScope: 'pending', limit: 25 }, user)).items.map((item) => item.id)).toContain(source.id);
+  }, 60_000);
   it('publishes verified new chapters while keeping a custom title, personal tags and independent metadata review', async () => {
     await chapterEpub(target, ['Original chapter']);
     await chapterEpub(output, ['Original chapter', 'New chapter']);
@@ -1284,13 +1346,22 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
         tx,
         source.bookId!,
         { key: `fanfiction:${source.id}`, libraryId },
-        { title: 'My library title', description: '', authors: ['My author'], tags: ['Personal, tag'], genres: ['Fantasy'] },
+        { title: 'My library title', description: '', authors: ['My author'], tags: ['Personal, tag'] },
       ),
     );
+    await module.get(MetadataService).replaceGenres(source.bookId!, ['Fantasy'], { emitEvent: false });
     await db
       .update(schema.fanfictionSources)
       .set({ categories: { fandoms: ['Fandom'], relationships: [], characters: [], warnings: [], rating: '' }, storyStatus: 'Completed' })
       .where(eq(schema.fanfictionSources.id, source.id));
+    for (const filter of [
+      { search: 'My author' },
+      { tag: 'Personal, tag' },
+      { genre: 'fantasy' },
+      { fandom: 'fandom' },
+      { publication: 'complete' as const },
+    ])
+      expect((await sources.list(libraryId, { limit: 10, ...filter }, user)).items, JSON.stringify(filter)).toHaveLength(1);
     const matches = await sources.list(
       libraryId,
       { limit: 10, search: 'My author', tag: 'Personal, tag', genre: 'fantasy', fandom: 'fandom', publication: 'complete', sort: 'updated' },
@@ -1305,7 +1376,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     });
     expect((await sources.list(libraryId, { limit: 10, genre: 'Romance' }, user)).items).toEqual([]);
     expect((await sources.list(libraryId, { limit: 10, view: 'new' }, user)).items).toEqual([]);
-  });
+  }, 60_000);
   it('uses only the current reader position and excludes generated pages from chapter counts', async () => {
     const [file] = await db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, fileId));
     const [revision] = await db.select().from(schema.bookFileRevisions).where(eq(schema.bookFileRevisions.id, file.currentRevisionId!));

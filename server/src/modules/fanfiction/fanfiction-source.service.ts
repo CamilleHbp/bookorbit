@@ -94,7 +94,7 @@ export class FanfictionSourceService {
       if (!job?.result?.metadataReview || !source.bookId) return null;
       if (!job.result.metadataDeferred && !job.result.metadataReview.beforeUpdate && job.result.noChange && job.result.revisionId)
         return this.reviews.upgradeUnchangedReview(tx, job, source);
-      if (job.result.metadataReview.beforeUpdate && ['queued', 'running'].includes(job.state)) return null;
+      if (['queued', 'running'].includes(job.state)) return null;
       if (job.result.metadataReview.beforeUpdate && job.result.preparedUpdate) return this.reviews.refresh(tx, job, source);
       const snapshot = await this.managedMetadata.snapshot(
         tx,

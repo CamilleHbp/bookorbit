@@ -514,6 +514,18 @@ export class FanfictionJobService {
         .for('update');
       if (!job) throw new NotFoundException('Fanfiction job not found in this library');
       if (job.kind !== 'source_batch' && job.userId !== user.id) throw new ForbiddenException('This operation uses another person’s website login');
+      if (job.kind === 'update' || job.kind === 'refresh') {
+        const [restarted] = await tx
+          .select()
+          .from(jobs)
+          .where(and(eq(jobs.libraryId, libraryId), eq(jobs.userId, user.id), eq(jobs.idempotencyKey, job.id)))
+          .limit(1);
+        if (restarted) {
+          if (restarted.sourceId !== job.sourceId || restarted.kind !== job.kind)
+            throw new ConflictException('Operation identity was reused with different input');
+          return this.view(restarted);
+        }
+      }
       if (job.result?.contentReview && !job.result.contentReview.approved) throw new ConflictException('Review the changed chapters before retrying');
       if (job.kind === 'source_batch' && job.userId !== user.id && !user.isSuperuser)
         throw new ForbiddenException('This story check belongs to another user');
@@ -554,6 +566,46 @@ export class FanfictionJobService {
           !job.result?.metadataReview
         ) {
           return this.updateStory(source, 'update', job.id, user, false, undefined, tx);
+        }
+        if (
+          source &&
+          source.state !== 'unlinked' &&
+          source.maintainerUserId === user.id &&
+          source.attentionCode === job.errorCode &&
+          job.sourceVersion !== null &&
+          source.version !== job.sourceVersion &&
+          (job.kind === 'update' || job.kind === 'refresh') &&
+          !source.metadataReviewPending &&
+          !job.result?.revisionId &&
+          !job.result?.preparedUpdate &&
+          !job.result?.contentReview &&
+          !job.result?.metadataReview
+        ) {
+          const [publication] = await tx
+            .select({ id: schema.revisionPublications.id })
+            .from(schema.revisionPublications)
+            .where(and(eq(schema.revisionPublications.ownerKey, job.id), sql`${schema.revisionPublications.state} <> 'failed'`))
+            .limit(1);
+          if (!publication) {
+            const startedAt = Date.now();
+            this.logger.log(
+              `[fanfiction.retry] [start] libraryId=${libraryId} sourceId=${source.id} jobId=${job.id} kind=${job.kind} sourceVersion=${source.version} - restarting outdated story check`,
+            );
+            try {
+              const state = source.updatesEnabled ? 'active' : 'paused';
+              await tx.update(schema.fanfictionSources).set({ state, attentionCode: null }).where(eq(schema.fanfictionSources.id, source.id));
+              const next = await this.updateStory({ ...source, state, attentionCode: null }, job.kind, job.id, user, false, undefined, tx);
+              this.logger.log(
+                `[fanfiction.retry] [end] libraryId=${libraryId} sourceId=${source.id} jobId=${job.id} nextJobId=${next.id} durationMs=${Date.now() - startedAt} - queued current story settings`,
+              );
+              return next;
+            } catch (error) {
+              this.logger.warn(
+                `[fanfiction.retry] [fail] libraryId=${libraryId} sourceId=${source.id} jobId=${job.id} durationMs=${Date.now() - startedAt} errorClass=RetryError error="could not restart outdated check" - story check was not restarted`,
+              );
+              throw error;
+            }
+          }
         }
         if (!source || source.state === 'unlinked' || (job.sourceVersion !== null && source.version !== job.sourceVersion && !job.result?.revisionId))
           throw new ConflictException('Source settings changed; review the pending operation before retrying');
