@@ -10,6 +10,7 @@
       "modules/fanfiction/runtime/fanficfare_wrapper.py",
       "modules/fanfiction/runtime/chapter_locks.py",
       "modules/fanfiction/runtime/chapter_lock_merge.py",
+      "modules/fanfiction/runtime/chapter_floor.py",
       "modules/fanfiction/runtime/controlled_config.py",
       "modules/fanfiction/runtime/website_catalog.py",
       "modules/fanfiction/runtime/safe_transport.py",
