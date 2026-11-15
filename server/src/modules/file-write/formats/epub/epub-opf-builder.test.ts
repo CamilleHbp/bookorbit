@@ -87,6 +87,31 @@ function saveRepeatedly(opfXml: string, payload: BookWritePayload, saves: number
   return outputs;
 }
 
+describe('EPUB continuation cutoffs', () => {
+  it.each([
+    ['2.0', ''],
+    ['2.0', 'opf'],
+    ['3.0', ''],
+    ['3.0', 'opf'],
+  ] as const)('keeps the cutoff across repeated metadata saves for EPUB %s with prefix "%s"', (version, prefix) => {
+    const cutoff = JSON.stringify({ version: 1, storyUrl: 'https://www.royalroad.com/fiction/83294', minimum: [88], extraChapterUrls: [] });
+    const encoded = cutoff.replaceAll('"', '&quot;');
+    const opf = opfDocument(
+      version,
+      prefix,
+      (p) => `${sourceMetadata(p)}
+        <${p}meta name="bookorbit:chapter-floor" content="${encoded}" />
+        <${p}meta name="bookorbit:custom:outdated" content="old" />`,
+    );
+
+    for (const output of saveRepeatedly(opf, { title: 'Updated continuation', seriesName: 'Series', seriesIndex: '6' }, 3)) {
+      const metas = metadataElements(output);
+      expect(metas.filter((node) => node.attrs.name === 'bookorbit:chapter-floor').map((node) => node.attrs.content)).toEqual([cutoff]);
+      expect(metas.some((node) => node.attrs.name === 'bookorbit:custom:outdated')).toBe(false);
+    }
+  });
+});
+
 const FULL_PAYLOAD: BookWritePayload = {
   title: 'Dune',
   subtitle: 'Book One',
