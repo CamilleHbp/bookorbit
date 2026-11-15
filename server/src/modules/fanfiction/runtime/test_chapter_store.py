@@ -1,5 +1,4 @@
 import os
-import sqlite3
 from contextlib import closing
 import tempfile
 import unittest
@@ -95,15 +94,15 @@ class ChapterRecoveryTest(unittest.TestCase):
                     self.assertTrue(any(name.endswith('.webp') for name in epub.namelist()))
                     self.assertIn(b'Body', epub.read(next(name for name in epub.namelist() if name.endswith('file0001.xhtml'))))
                 Path('output.epub').unlink()
-                with closing(sqlite3.connect(Path(directory, 'normal', 'chapters.sqlite'))) as db, db:
-                    db.execute("UPDATE chapters SET body=x'ff' WHERE rowid=(SELECT min(rowid) FROM chapters)")
+                from chapter_checkpoint import digest
+                next(Path(directory, 'normal', 'v2', 'chapters').rglob(digest(first.encode()) + '.chapter')).write_bytes(b'broken')
                 before_repair = len(calls)
                 run({**payload, 'operation': 'download'})
                 self.assertEqual(len(calls), before_repair + 1)
                 self.assertEqual(calls[-1], first)
                 Path('output.epub').unlink()
-                with closing(sqlite3.connect(Path(directory, 'normal', 'chapters.sqlite'))) as db, db:
-                    db.execute("UPDATE images SET data=x'00'")
+                for image in Path(directory, 'normal', 'v2', 'images').glob('*/*'):
+                    image.write_bytes(b'broken')
                 before_repair = len(calls)
                 run({**payload, 'operation': 'download'})
                 self.assertEqual(len(calls), before_repair + 1)
