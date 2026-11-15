@@ -92,6 +92,19 @@ describe('private FanFicFare runtime session output', () => {
     );
     expect(consume).not.toHaveBeenCalled();
   });
+  it('stops publication and explains a protected chapter conflict', async () => {
+    output.response = { ok: false, code: 'chapter_lock_conflict', errorClass: 'ChapterLockConflict' };
+    const consume = vi.fn();
+    await expect(
+      service.update('refresh', 'https://example.org/story', { configuration: '', cookies: [] }, async () => {}, consume),
+    ).rejects.toMatchObject({
+      response: {
+        errorCode: 'chapter_lock_conflict',
+        message: 'The website changed protected content. Review the locked chapter before updating.',
+      },
+    });
+    expect(consume).not.toHaveBeenCalled();
+  });
   it.each([false, true])('binds a verified scan to the retained EPUB only when noChange=%s', async (noChange) => {
     const scope = { libraryId: 3, userId: 4, sourceId: randomUUID() };
     const root = join(tmpdir(), 'fanfiction', 'chapters', '3', '4', scope.sourceId);

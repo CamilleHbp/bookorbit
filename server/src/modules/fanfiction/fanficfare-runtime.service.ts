@@ -394,7 +394,15 @@ export class FanficfareRuntimeService {
               this.logger.warn(
                 `[fanfiction.runtime] [fail] operation=${request.operation} durationMs=${Date.now() - startedAt} errorClass=${diagnostic(response.errorClass)} errorCode=${diagnostic(response.code)} location=${diagnostic(response.errorLocation)} httpStatus=${Number.isInteger(response.httpStatus) && response.httpStatus! >= 400 && response.httpStatus! <= 599 ? response.httpStatus : 'unknown'} - story operation failed`,
               );
-              return reject(new BadRequestException({ message: 'FanFicFare could not complete the operation', errorCode: response.code }));
+              return reject(
+                new BadRequestException({
+                  message:
+                    response.code === 'chapter_lock_conflict'
+                      ? 'The website changed protected content. Review the locked chapter before updating.'
+                      : 'FanFicFare could not complete the operation',
+                  errorCode: response.code,
+                }),
+              );
             }
             resolve(response);
           } catch {

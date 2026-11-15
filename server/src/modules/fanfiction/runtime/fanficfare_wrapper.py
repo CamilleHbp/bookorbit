@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from chapter_store import recover_chapters
+from chapter_locks import preserve_chapter_locks
 from update_check import UpdateCheck
 import publisher_edition
 from tag_matching import install as install_tag_matching, matched_preview
@@ -224,7 +225,10 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
             save_cookies(transport.export_cookies())
         return result
     if url in publisher_edition.EDITIONS:
-        return finish(publisher_edition.edition(request, transport))
+        result = publisher_edition.edition(request, transport)
+        if operation in ('update', 'refresh') and result.get('output') == 'output.epub':
+            preserve_chapter_locks('input.epub', 'output.epub')
+        return finish(result)
     configuration = make_configuration(url, ini, transport)
     if configuration.getConfig('use_flaresolverr_proxy', False):
         if not isinstance(transport, FlareSolverrTransport):
@@ -304,6 +308,8 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         os.fsync(output.fileno())
     report_progress({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
     validate_epub('output.epub', LIBRARY_EPUB_LIMIT if operation in ('update', 'refresh') else NEW_EPUB_LIMIT)
+    if operation in ('update', 'refresh'):
+        preserve_chapter_locks('input.epub', 'output.epub')
     check.save('output.epub')
     return finish({'preview': matched_preview(adapter.story, story_preview(adapter, adapter.story)), 'output': 'output.epub'})
 
