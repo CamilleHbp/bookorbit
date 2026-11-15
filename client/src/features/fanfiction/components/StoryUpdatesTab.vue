@@ -34,7 +34,7 @@ async function saveReview() {
   else if (libraryId) await router.push({ name: 'fanfiction', query: { tab: 'review', review: 'attention', libraryId } })
 }
 defineExpose({ commitPending })
-const { t } = useI18n()
+const { t, te } = useI18n()
 const {
   updatePolicy,
   keepUpdated,
@@ -83,6 +83,12 @@ const {
   moreSources,
 } = props.state
 const decision = computed(() => chapterDecision(job.value?.result?.changes))
+function errorLabel(code: string | null | undefined) {
+  const key = `fanfiction.errors.${code}`
+  return code ? (te(key) ? t(key) : t('fanfiction.errors.runtime_failed')) : ''
+}
+const sourceError = computed(() => errorLabel(source.value?.attentionCode))
+const jobError = computed(() => errorLabel(job.value?.errorCode))
 const connecting = ref(false)
 function showLogin() {
   connecting.value = true
@@ -174,7 +180,7 @@ onMounted(() => {
           {{ t((source.tracking?.enabled ?? source.state !== 'paused') ? 'fanfiction.maintenance.enabled' : 'fanfiction.maintenance.paused') }}
           <span v-if="source.wordCount !== null"> · {{ t('fanfiction.wordCount', { count: source.wordCount }) }}</span>
         </p>
-        <p v-if="source.attentionCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${source.attentionCode}`) }}</p>
+        <p v-if="source.attentionCode" class="text-destructive text-sm">{{ sourceError }}</p>
         <Button
           v-if="source.attentionCode === 'source_not_found' && canUpdate && source.bookFileId && !source.metadataReviewPending"
           variant="outline"
@@ -283,7 +289,7 @@ onMounted(() => {
         {{ t(`fanfiction.kinds.${job.kind}`) }} · {{ t(`fanfiction.states.${job.state}`) }}
         <StoryUpdateOutcome :job="job" />
         <p v-if="job.errorCode && (!job.result?.contentReview || job.result.contentReview.approved)" class="text-destructive">
-          {{ t(`fanfiction.errors.${job.errorCode}`) }}
+          {{ jobError }}
         </p>
         <Button v-if="!reviewMode && ['review_required', 'source_chapter_reduction'].includes(job.errorCode ?? '')" variant="outline" as-child>
           <RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.maintenance.defaultPolicy') }}</RouterLink>

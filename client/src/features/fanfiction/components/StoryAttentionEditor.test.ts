@@ -96,7 +96,9 @@ describe('attention repair editor', () => {
     vi.mocked(api).mockImplementation(async (url, options) => {
       if (String(url).includes('pendingDownloadsOnly=true'))
         return respond({
-          items: [{ id: 'chapters', kind: 'update', state: 'failed', result: { contentReview: { approved: true } } }],
+          items: [
+            { id: 'chapters', kind: 'update', state: 'failed', errorCode: 'tag_matches_changed', result: { contentReview: { approved: true } } },
+          ],
           nextCursor: null,
         })
       return base(url, options)
@@ -104,6 +106,8 @@ describe('attention repair editor', () => {
     await open()
     expect(button('Retry')).toBeDefined()
     expect(button('Save & next')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('fanfiction.errors.tag_matches_changed')
+    expect(wrapper.text()).toContain('This task could not finish. Retry it.')
   })
   it('offers Save & next on standalone Story updates and continues into the attention queue', async () => {
     const router = await open(true)
