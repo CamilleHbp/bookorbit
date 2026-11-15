@@ -26,7 +26,7 @@ from website_catalog import website_catalog
 from controlled_config import make_configuration, merge_configuration, validate_ini
 from epub_policy import LIBRARY_EPUB_LIMIT, NEW_EPUB_LIMIT, validate_epub
 from image_processing import install_image_processing
-from safe_transport import ConfigurationError, PolicyError, SafeTransport, install_network_guard, validate_url
+from safe_transport import ConfigurationError, PolicyError, ResponseLimitError, SafeTransport, install_network_guard, validate_url
 from fanfiction_net_login import login_fanfiction_net
 from scribblehub_login import login_scribblehub
 from flaresolverr_transport import FlareSolverrTransport
@@ -42,6 +42,30 @@ class RecognitionNeedsAccess(Exception):
 class RecognitionTransport(SafeTransport):
     def request(self, method, url, parameters=None, headers=None):
         raise RecognitionNeedsAccess()
+
+
+def install_bounded_otw_chapters(adapter):
+    from fanficfare.adapters.base_otw_adapter import BaseOTWAdapter
+    if not isinstance(adapter, BaseOTWAdapter) or getattr(adapter, '_bookorbit_bounded_otw', False):
+        return
+    original = adapter.getChapterTextNum
+
+    def chapter(url, index):
+        try:
+            return original(url, index)
+        except ResponseLimitError:
+            if not adapter.use_full_work_soup or not adapter.getConfig('use_view_full_work', True):
+                raise
+            # Keep efficient whole-work reads for small stories and retry oversized
+            # works by chapter without relaxing the transport's response budget.
+            adapter.use_full_work_soup = False
+            adapter.full_work_soup = None
+            adapter.full_work_chapters = None
+            logging.getLogger(__name__).warning('[fanfiction.chapter_fetch] [fail] errorClass=ResponseLimitError fallback=chapter - whole-work response exceeded its budget')
+            return original(url, index)
+
+    adapter.getChapterTextNum = chapter
+    adapter._bookorbit_bounded_otw = True
 
 
 def story_adapter(configuration, url):
@@ -258,6 +282,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         login_fanfiction_net(adapter, transport)
         adapter = story_adapter(configuration, url)
         story = adapter.getStoryMetadataOnly(get_cover=get_cover)
+    install_bounded_otw_chapters(adapter)
     empty_home = omit_empty_fictionlive_home(adapter)
     install_tag_matching(story, adapter.getConfigSection(), request.get('tagMatching') or {'version': 0, 'rules': []})
     preview = matched_preview(story, story_preview(adapter, story))

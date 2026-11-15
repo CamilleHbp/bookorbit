@@ -12,6 +12,68 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_large_ao3_story_uses_bounded_chapter_requests(self):
+        from fanficfare import adapters
+        from controlled_config import make_configuration
+        from fanficfare_wrapper import install_bounded_otw_chapters
+        from safe_transport import ResponseLimitError, SafeTransport
+        url = 'https://archiveofourown.org/works/123456'
+        adapter = adapters.getAdapter(make_configuration(url, '', SafeTransport()), url)
+        first = url + '/chapters/123457'
+        adapter.add_chapter('First', first)
+        adapter.add_chapter('Second', url + '/chapters/123458')
+        install_bounded_otw_chapters(adapter)
+        page = '<html><body><div class="preface group"></div><div id="chapters"><div class="userstuff module"><p>First chapter text</p></div></div></body></html>'
+
+        def request(chapter_url):
+            if 'view_full_work=true' in chapter_url:
+                raise ResponseLimitError('Whole work exceeds the response budget')
+            return page
+        with patch.object(adapter, 'get_request', side_effect=request) as fetch:
+            result = adapter.getChapterTextNum(first, 0)
+        self.assertIn('First chapter text', result)
+        self.assertEqual(fetch.call_count, 2)
+        self.assertIn('view_full_work=true', fetch.call_args_list[0].args[0])
+        self.assertNotIn('view_full_work=true', fetch.call_args_list[1].args[0])
+        with patch.object(adapter, 'get_request', return_value=page) as fetch:
+            adapter.getChapterTextNum(url + '/chapters/123458', 1)
+        self.assertEqual(fetch.call_count, 1)
+        self.assertNotIn('view_full_work=true', fetch.call_args.args[0])
+
+    def test_small_ao3_story_keeps_one_whole_work_request(self):
+        from fanficfare import adapters
+        from controlled_config import make_configuration
+        from fanficfare_wrapper import install_bounded_otw_chapters
+        from safe_transport import SafeTransport
+        url = 'https://archiveofourown.org/works/123456'
+        adapter = adapters.getAdapter(make_configuration(url, '', SafeTransport()), url)
+        first = url + '/chapters/123457'
+        adapter.add_chapter('First', first)
+        adapter.add_chapter('Second', url + '/chapters/123458')
+        install_bounded_otw_chapters(adapter)
+        page = '<html><body><div class="preface group"></div><div id="chapter-1"><div class="userstuff module"><p>First chapter text</p></div></div><div id="chapter-2"><div class="userstuff module"><p>Second chapter text</p></div></div></body></html>'
+        with patch.object(adapter, 'get_request', return_value=page) as fetch:
+            self.assertIn('First chapter text', adapter.getChapterTextNum(first, 0))
+            self.assertIn('Second chapter text', adapter.getChapterTextNum(url + '/chapters/123458', 1))
+        self.assertEqual(fetch.call_count, 1)
+        self.assertIn('view_full_work=true', fetch.call_args.args[0])
+
+    def test_oversized_ao3_chapter_still_fails_at_the_response_limit(self):
+        from fanficfare import adapters
+        from controlled_config import make_configuration
+        from fanficfare_wrapper import install_bounded_otw_chapters
+        from safe_transport import ResponseLimitError, SafeTransport
+        url = 'https://archiveofourown.org/works/123456'
+        adapter = adapters.getAdapter(make_configuration(url, '', SafeTransport()), url)
+        first = url + '/chapters/123457'
+        adapter.add_chapter('First', first)
+        adapter.add_chapter('Second', url + '/chapters/123458')
+        install_bounded_otw_chapters(adapter)
+        with patch.object(adapter, 'get_request', side_effect=ResponseLimitError('Response budget exceeded')) as fetch:
+            with self.assertRaises(ResponseLimitError):
+                adapter.getChapterTextNum(first, 0)
+        self.assertEqual(fetch.call_count, 2)
+
     def test_preview_without_a_rulebook_has_no_mapping_version(self):
         from fanficfare.adapters.adapter_test1 import TestSiteAdapter
         with patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'):
