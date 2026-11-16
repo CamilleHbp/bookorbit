@@ -352,41 +352,49 @@ export class FanficfareRuntimeService {
         let bytes = 0;
         let failed = false;
         let timedOut = false;
-        const stop = () => {
+        let stopReason = 'process_exit';
+        const stop = (reason: string) => {
+          stopReason = reason;
           failed = true;
           child.kill('SIGKILL');
         };
+        const abort = () => stop('cancelled');
         const timer = setTimeout(() => {
           timedOut = true;
-          stop();
+          stop('deadline');
         }, timeoutMs);
-        signal?.addEventListener('abort', stop, { once: true });
+        signal?.addEventListener('abort', abort, { once: true });
         child.stdout.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
-          if (bytes > 1024 * 1024) stop();
+          if (bytes > 1024 * 1024) stop('output_limit');
           else chunks.push(chunk);
         });
         child.stderr.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
-          if (bytes > 1024 * 1024) stop();
+          if (bytes > 1024 * 1024) stop('output_limit');
           else progress.feed(chunk);
         });
         child.stdin.on('error', () => {
           /* Early process exit is handled by close. */
         });
         child.once('error', () => {
+          stopReason = 'process_error';
           failed = true;
         });
-        child.once('close', (code) => {
+        child.once('close', (code, exitSignal) => {
           clearTimeout(timer);
-          signal?.removeEventListener('abort', stop);
-          if (failed || code !== 0)
+          signal?.removeEventListener('abort', abort);
+          if (failed || code !== 0) {
+            this.logger.warn(
+              `[fanfiction.runtime] [fail] operation=${request.operation} durationMs=${Date.now() - startedAt} errorClass=ProcessExit reason=${stopReason} exitCode=${Number.isInteger(code) ? code : 'none'} signal=${typeof exitSignal === 'string' ? exitSignal.replace(/[^A-Z0-9]/g, '').slice(0, 32) : 'none'} outputBytes=${bytes} - story worker exited before returning a result`,
+            );
             return reject(
               new ServiceUnavailableException({
                 message: 'Story download could not finish',
                 errorCode: timedOut ? 'download_timeout' : 'runtime_unavailable',
               }),
             );
+          }
           try {
             const response = JSON.parse(Buffer.concat(chunks).toString('utf8')) as RuntimeResponse;
             if (response.ok !== true) {
