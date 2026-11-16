@@ -409,6 +409,24 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect(await jobs.claim()).toBeNull();
     expect(await sources.get(libraryId, source.id, user)).toEqual(originalSource);
     expect(await readFile(target)).toEqual(original);
+    const importReview = {
+      approved: true,
+      preview,
+      values: { title: preview.title, description: '', authors: preview.authors, tags: [], genres: [] },
+    };
+    const [approvedAttempt] = await db
+      .insert(schema.fanfictionJobs)
+      .values({
+        ...attempt,
+        id: randomUUID(),
+        idempotencyKey: randomUUID(),
+        state: 'failed',
+        sourceId: source.id,
+        result: { importReview },
+      })
+      .returning();
+    const recovered = await jobs.retry(libraryId, approvedAttempt.id, user);
+    expect(recovered).toMatchObject({ state: 'succeeded', result: { bookId: source.bookId, importReview } });
     // An unmatched URL still follows the normal retry path.
     const [unmatched] = await db
       .insert(schema.fanfictionJobs)
