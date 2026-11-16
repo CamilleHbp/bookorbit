@@ -3,6 +3,22 @@ from tag_matching import resolve, install, matched_preview
 
 
 class MatchingTests(unittest.TestCase):
+    def test_forum_update_dates_do_not_return_as_new_tag_reviews(self):
+        class Story:
+            def getSubjectTags(self):
+                return ['Last Update: 2026/11/16', 'Last Update Year/Month: 2026/11', '1930s', 'Time Travel']
+            def getList(self, name): return []
+            def getMetadata(self, name): return ''
+        for source in ('forums.spacebattles.com', 'forums.sufficientvelocity.com', 'forum.questionablequesting.com'):
+            story = Story()
+            install(story, source, {'version': 1, 'rules': []})
+            preview = matched_preview(story, {})
+            self.assertEqual([label['value'] for label in preview['rawLabels']], ['1930s', 'Time Travel'])
+            self.assertEqual(preview['pendingLabelCount'], 2)
+        story = Story()
+        install(story, 'archiveofourown.org', {'version': 1, 'rules': []})
+        self.assertEqual(matched_preview(story, {})['pendingLabelCount'], 4)
+
     def setUp(self):
         self.rules = [
             {'source': None, 'field': 'tags', 'value': 'old', 'targets': [{'field': 'tags', 'name': 'canonical'}]},
