@@ -365,6 +365,11 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     await insert('update', { ...readyResult, preview: { ...preview, labelMappingVersion: 1 } }, 8);
     const ready = await insert('update', readyResult, 1);
     const future = await insert('update', readyResult, -10, 'future.example.org');
+    const checkpointed = await insert('update', null, 2);
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ result: { progress: { stage: 'downloading', totalChapters: 10, completedChapters: 4 } } })
+      .where(eq(schema.fanfictionJobs.id, checkpointed.id));
     const restore = await insert('rollback', null, 0);
     expect((await jobs.claim())?.id).toBe(restore.id);
     await db
@@ -381,6 +386,11 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       .update(schema.fanfictionJobs)
       .set({ state: 'succeeded', leaseOwner: null, leaseExpiresAt: null })
       .where(eq(schema.fanfictionJobs.id, ready.id));
+    expect((await jobs.claim())?.id).toBe(checkpointed.id);
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ state: 'succeeded', leaseOwner: null, leaseExpiresAt: null })
+      .where(eq(schema.fanfictionJobs.id, checkpointed.id));
     expect((await jobs.claim())?.id).toBe(download.id);
     expect((await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, awaitingReview.id)))[0].state).toBe('queued');
     expect((await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, future.id)))[0].state).toBe('queued');

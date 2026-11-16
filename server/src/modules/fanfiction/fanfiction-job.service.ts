@@ -911,6 +911,12 @@ export class FanfictionJobService {
             (!versions.has(row.libraryId) || row.result.preview.labelMappingVersion === versions.get(row.libraryId)) &&
             (!row.result.contentReview || row.result.contentReview.approved),
         ) ??
+        candidates.find(
+          (row) =>
+            chapterDownloadKinds.some((kind) => kind === row.kind) &&
+            ['downloading', 'packaging', 'importing', 'finalizing'].includes(row.result?.progress?.stage ?? '') &&
+            (row.result?.progress?.completedChapters ?? 0) > 0,
+        ) ??
         candidates[0];
       if (!candidate) return null;
       const [claimed] = await tx
