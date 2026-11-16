@@ -330,11 +330,13 @@ export class FanficfareRuntimeService {
       : browserDownload
         ? 7_200_000
         : this.config.timeoutMs;
+    const browserSession = !control && this.config.flaresolverrUrl ? `bookorbit-${randomUUID()}` : undefined;
     const input = JSON.stringify({
       ...request,
       timeoutSeconds: Math.ceil((control ? timeoutMs : this.config.timeoutMs) / 1000),
       ...(browserDownload ? { browserTimeoutSeconds: 7200 } : {}),
       ...(this.config.flaresolverrUrl ? { flaresolverrUrl: this.config.flaresolverrUrl } : {}),
+      ...(browserSession ? { browserSession } : {}),
     });
     if (Buffer.byteLength(input) > 8 * 1024 * 1024) throw new BadRequestException('FanFicFare input limit exceeded');
     if (!control) this.active++;
@@ -427,7 +429,50 @@ export class FanficfareRuntimeService {
       return response.result;
     } finally {
       await progress.flush().catch(() => {});
+      if (browserSession) await this.releaseBrowserSession(browserSession, request.operation);
       if (!control) this.active--;
+    }
+  }
+
+  private async releaseBrowserSession(session: string, operation: RuntimeRequest['operation']): Promise<void> {
+    const startedAt = Date.now();
+    try {
+      const endpoint = new URL(this.config.flaresolverrUrl!);
+      if (endpoint.protocol !== 'http:' || endpoint.username || endpoint.password || endpoint.pathname !== '/v1' || endpoint.search || endpoint.hash)
+        return;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd: 'sessions.destroy', session }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (response.ok) {
+        await response.body?.cancel();
+        return;
+      }
+      // Python normally closes the session first. FlareSolverr reports an
+      // already-removed session as HTTP 500 rather than an idempotent success.
+      const reader = response.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let bytes = 0;
+      try {
+        while (reader) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytes += value.length;
+          if (bytes > 4096) throw new Error('Browser cleanup response limit');
+          chunks.push(value);
+        }
+      } finally {
+        await reader?.cancel();
+      }
+      const result = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { status?: string; message?: string };
+      if (response.status !== 500 || result.status !== 'error' || result.message !== "Error: The session doesn't exist.")
+        throw new Error('Browser cleanup failed');
+    } catch {
+      this.logger.warn(
+        `[fanfiction.browser_cleanup] [fail] operation=${operation} durationMs=${Date.now() - startedAt} errorClass=BrowserCleanupError - temporary browser session cleanup deferred`,
+      );
     }
   }
 

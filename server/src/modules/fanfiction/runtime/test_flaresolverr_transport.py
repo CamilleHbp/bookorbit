@@ -9,6 +9,24 @@ URL = 'https://www.scribblehub.com/series/747093/collide-gamer/'
 
 
 class SolverTest(unittest.TestCase):
+    def test_creation_timeout_keeps_the_parent_session_for_retry_and_cleanup(self):
+        session = 'bookorbit-11111111-1111-4111-8111-111111111111'
+        transport = FlareSolverrTransport('http://solver:8191/v1', session_id=session)
+        transport.enable_for(URL)
+        with patch('flaresolverr_transport.public_addresses', return_value=[]), patch.object(transport, 'call_solver', side_effect=TimeoutError) as call:
+            with self.assertRaises(TimeoutError):
+                transport._request('GET', URL)
+            self.assertEqual(transport.session, session)
+            call.side_effect = None
+            call.return_value = {'status': 'ok', 'solution': {'status': 200, 'url': URL, 'response': '<h1>Story</h1>', 'cookies': []}}
+            transport._request('GET', URL)
+            self.assertEqual(sum(c.args[0]['cmd'] == 'sessions.create' for c in call.call_args_list), 1)
+            transport.close()
+            self.assertEqual(call.call_args.args[0], {'cmd': 'sessions.destroy', 'session': session})
+            self.assertIsNone(transport.session)
+        with self.assertRaises(PolicyError):
+            FlareSolverrTransport('http://solver:8191/v1', session_id='another-users-session')
+
     def setUp(self):
         self.transport = FlareSolverrTransport('http://solver:8191/v1')
         self.transport.enable_for(URL)

@@ -39,10 +39,14 @@ vi.mock('node:child_process', async () => {
 
 const cookie = { name: 'session', value: 'private-renewal', domain: 'example.org', path: '/', secure: true, hostOnly: true };
 describe('private FanFicFare runtime session output', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
   let service: FanficfareRuntimeService;
   let runtimeConfig: { python: string; maxWorkers: number; timeoutMs: number; flaresolverrUrl?: string };
   beforeEach(async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, body: { cancel: vi.fn().mockResolvedValue(undefined) } }));
     runtimeConfig = { python: 'controlled-python', maxWorkers: 2, timeoutMs: 1000 };
     const module = await Test.createTestingModule({
       providers: [
@@ -82,6 +86,32 @@ describe('private FanFicFare runtime session output', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('reason=process_exit exitCode=none signal=SIGKILL outputBytes='));
     expect(JSON.stringify(warn.mock.calls)).not.toContain('private-story');
     expect(JSON.stringify(warn.mock.calls)).not.toContain('private-renewal');
+  });
+  it.each([false, true])('destroys only its own browser session after a forced worker exit, including cleanup failure=%s', async (cleanupFails) => {
+    runtimeConfig.flaresolverrUrl = 'http://solver:8191/v1';
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    if (cleanupFails) vi.mocked(fetch).mockRejectedValue(new Error('private browser diagnostic'));
+    output.exitCode = null;
+    output.signal = 'SIGKILL';
+    await expect(service.execute({ operation: 'download' }, '/unused')).rejects.toMatchObject({ response: { errorCode: 'runtime_unavailable' } });
+    expect(output.request.browserSession).toMatch(/^bookorbit-[a-f0-9-]{36}$/);
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(runtimeConfig.flaresolverrUrl),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ cmd: 'sessions.destroy', session: output.request.browserSession }),
+      }),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('private browser diagnostic');
+  });
+  it('accepts an already-closed session without logging a false cleanup failure', async () => {
+    runtimeConfig.flaresolverrUrl = 'http://solver:8191/v1';
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ status: 'error', message: "Error: The session doesn't exist." }), { status: 500 }),
+    );
+    await service.execute({ operation: 'download' }, '/unused');
+    expect(warn).not.toHaveBeenCalled();
   });
   it.each(['input.epub', 'output.epub'])('validates and consumes the runtime %s result', async (path) => {
     const preview = {

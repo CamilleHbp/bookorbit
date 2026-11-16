@@ -236,7 +236,7 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     timeout = min(7200, max(1, request.get('timeoutSeconds', 1800)))
     if validate_url(url)[1].removeprefix('www.') == 'royalroad.com' and operation in ('download', 'update', 'refresh'):
         timeout = min(7200, max(1, request.get('browserTimeoutSeconds', timeout)))
-    transport = FlareSolverrTransport(request['flaresolverrUrl'], timeout=timeout) if request.get('flaresolverrUrl') else SafeTransport(timeout=timeout)
+    transport = FlareSolverrTransport(request['flaresolverrUrl'], session_id=request.get('browserSession'), timeout=timeout) if request.get('flaresolverrUrl') else SafeTransport(timeout=timeout)
     transport.load_cookies(request.get('cookies', []))
     try:
         return run_story(request, transport, operation, url, ini, save_cookies, report_progress)
