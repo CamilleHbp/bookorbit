@@ -22,7 +22,9 @@ class UpdateCheckTest(unittest.TestCase):
                 adapter.story.img_store.get_imgs.return_value = []
                 request = {'operation': 'update', 'checkStatePath': str(Path(directory) / 'state.json'),
                            'configuration': 'private', 'tagMatching': {'version': 1, 'rules': []}}
-                preview = {'status': 'Completed', 'chapterCount': 1, 'tags': ['old-tag'], 'genres': []}
+                preview = {'status': 'Completed', 'chapterCount': 1, 'tags': ['old-tag'], 'genres': [],
+                           'rawLabels': [{'field': 'fandoms', 'value': 'Original source label'}],
+                           'categories': {'fandoms': ['old-tag']}, 'pendingLabelCount': 1, 'labelMappingVersion': 1}
                 with patch('update_check.time.time', return_value=1000):
                     old = UpdateCheck(request, adapter, preview)
                     old.save('input.epub')
@@ -33,9 +35,12 @@ class UpdateCheckTest(unittest.TestCase):
                     current = old.chapter_directory('chapters')
                     self.assertEqual((Path(current) / 'completed.chapter').read_bytes(), b'downloaded body')
                     updated = UpdateCheck({**request, 'tagMatching': {'version': 2, 'rules': ['new match']}},
-                                          adapter, {**preview, 'tags': ['new-tag'], 'genres': ['new-genre']})
+                                          adapter, {**preview, 'tags': ['new-tag'], 'genres': ['new-genre'],
+                                                    'categories': {'fandoms': ['new-tag']},
+                                                    'pendingLabelCount': 0, 'labelMappingVersion': 2})
                     self.assertFalse(updated.unchanged())
                     self.assertEqual(updated.chapter_directory('chapters'), current)
+                    self.assertNotEqual(UpdateCheck(request, adapter, {**preview, 'rawLabels': []}).chapter_directory('chapters'), current)
                     self.assertNotEqual(UpdateCheck({**request, 'configuration': 'changed'}, adapter, preview).chapter_directory('chapters'), current)
                     adapter.get_chapters.return_value.append({'url': 'new chapter', 'title': 'Two'})
                     self.assertNotEqual(UpdateCheck(request, adapter, preview).chapter_directory('chapters'), current)
