@@ -8,7 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 
-const output = vi.hoisted(() => ({ response: {} as unknown, request: {} as Record<string, unknown> }));
+const output = vi.hoisted(() => ({
+  response: {} as unknown,
+  request: {} as Record<string, unknown>,
+  exitCode: 0 as number | null,
+  signal: undefined as string | undefined,
+}));
 vi.mock('node:child_process', async () => {
   const { EventEmitter } = await import('node:events');
   const { PassThrough } = await import('node:stream');
@@ -25,7 +30,7 @@ vi.mock('node:child_process', async () => {
       child.stdin.once('finish', () => {
         output.request = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
         child.stdout.write(JSON.stringify(output.response));
-        child.emit('close', 0);
+        child.emit('close', output.exitCode, output.signal);
       });
       return child;
     }),
@@ -48,6 +53,8 @@ describe('private FanFicFare runtime session output', () => {
     }).compile();
     service = module.get(FanficfareRuntimeService);
     output.response = { ok: true, result: { title: 'Public preview' }, cookies: [cookie] };
+    output.exitCode = 0;
+    output.signal = undefined;
   });
   it('keeps an incremental update incremental when chapter changes require review', async () => {
     output.response = { ok: true, result: { reviewRequired: 'identity_mismatch' } };
@@ -64,6 +71,17 @@ describe('private FanFicFare runtime session output', () => {
       chapterDirectory: expect.stringContaining('/3/4/11111111-1111-4111-8111-111111111111/incremental'),
       checkStatePath: expect.stringContaining('/3/4/11111111-1111-4111-8111-111111111111/check.json'),
     });
+  });
+  it('records process termination without logging the request or private runtime output', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    output.exitCode = null;
+    output.signal = 'SIGKILL';
+    await expect(service.execute({ operation: 'download', url: 'https://example.org/private-story' }, '/unused')).rejects.toMatchObject({
+      response: { errorCode: 'runtime_unavailable' },
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('reason=process_exit exitCode=none signal=SIGKILL outputBytes='));
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('private-story');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('private-renewal');
   });
   it.each(['input.epub', 'output.epub'])('validates and consumes the runtime %s result', async (path) => {
     const preview = {
