@@ -10,6 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from zipfile import ZipFile, ZIP_DEFLATED
+from xml.parsers import expat
 
 from epub_policy import LIBRARY_EPUB_LIMIT, validate_epub
 from publisher_edition import package, parse
@@ -24,7 +25,49 @@ def elements(doc, name):
     return [n for n in doc.getElementsByTagName('*') if n.localName == name]
 
 
-def chapters(archive):
+def chapter_metadata(data):
+    """Read strict XML metadata without parsing an unrelated legacy body."""
+    parser = expat.ParserCreate(namespace_separator='|')
+    metadata = {}
+    depth = 0
+    head = False
+
+    class HeadComplete(Exception):
+        pass
+
+    def reject(*_args):
+        raise PolicyError('Unexpected XML declaration')
+
+    def start(name, attributes):
+        nonlocal depth, head
+        depth += 1
+        name = name.rsplit('|', 1)[-1]
+        if depth == 2 and name == 'head':
+            head = True
+        if head and name == 'meta':
+            metadata[attributes.get('name', '')] = attributes.get('content', '')
+
+    def end(name):
+        nonlocal depth
+        if head and depth == 2 and name.rsplit('|', 1)[-1] == 'head':
+            raise HeadComplete()
+        depth -= 1
+
+    parser.StartElementHandler = start
+    parser.EndElementHandler = end
+    parser.StartDoctypeDeclHandler = reject
+    parser.EntityDeclHandler = reject
+    parser.ExternalEntityRefHandler = reject
+    try:
+        # Bound header work independently of chapter length. Locked bodies are
+        # still parsed in full before any local content is copied or merged.
+        parser.Parse(data[:2 * 1024 * 1024], True)
+    except HeadComplete:
+        return metadata
+    raise PolicyError('Chapter header is missing')
+
+
+def chapters(archive, metadata_only=False):
     opf_path, opf = package(archive)
     items = {n.getAttribute('id'): n for n in elements(opf, 'item')}
     found = {}
@@ -38,8 +81,11 @@ def chapters(archive):
         # FanFicFare chapters carry their stable source URL in the head.
         if b'chapterurl' not in data:
             continue
-        doc = parse(data)
-        metas = {n.getAttribute('name'): n.getAttribute('content') for n in elements(doc, 'meta')}
+        if metadata_only:
+            metas = chapter_metadata(data)
+        else:
+            doc = parse(data)
+            metas = {n.getAttribute('name'): n.getAttribute('content') for n in elements(doc, 'meta')}
         url = metas.get('chapterurl')
         if not url or urlsplit(url).scheme not in ('http', 'https'):
             continue
@@ -56,7 +102,7 @@ def preserve_chapter_locks(previous, output):
     temporary = None
     try:
         with ZipFile(previous) as old, ZipFile(output) as new:
-            _, old_opf, saved = chapters(old)
+            _, old_opf, saved = chapters(old, metadata_only=True)
             locked = {key: value for key, value in saved.items() if value[2]}
             if not locked:
                 return 0

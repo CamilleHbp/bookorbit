@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile, ZIP_STORED
 
-from chapter_locks import preserve_chapter_locks, LOCK, elements
+from chapter_locks import preserve_chapter_locks, LOCK, elements, chapter_metadata, chapters
 from chapter_lock_merge import BASELINE, ChapterLockConflict, baseline_data, merge_additions
 from publisher_edition import parse
 from safe_transport import PolicyError
@@ -37,6 +37,62 @@ def epub(path, docs, assets=None):
 
 
 class ChapterLocksTest(unittest.TestCase):
+    def test_legacy_unlocked_body_does_not_block_a_valid_replacement_or_hide_a_lock(self):
+        from xml.parsers.expat import ExpatError
+        from fanficfare_wrapper import failure_code
+        with tempfile.TemporaryDirectory() as directory:
+            old, new = [Path(directory)/n for n in ('old.epub', 'new.epub')]
+            for locked in (False, True):
+                epub(old, {'one.xhtml': chapter('<p>Legacy unescaped < text</p>', locked=locked)})
+                epub(new, {'one.xhtml': chapter('<p>Valid website chapter</p>')})
+                before = new.read_bytes()
+                if locked:
+                    with self.assertRaises(ExpatError) as raised:
+                        preserve_chapter_locks(old, new)
+                    self.assertEqual(failure_code(raised.exception), 'invalid_epub')
+                else:
+                    self.assertEqual(preserve_chapter_locks(old, new), 0)
+                self.assertEqual(new.read_bytes(), before)
+            with ZipFile(old) as archive, self.assertRaises(ExpatError):
+                chapters(archive)
+
+    def test_header_reader_rejects_malformed_xml_and_entities_and_ignores_body_metadata(self):
+        from xml.parsers.expat import ExpatError
+        self.assertEqual(chapter_metadata(chapter('<meta name="' + LOCK + '" content="true"/>'))['chapterurl'], URL)
+        self.assertNotIn(LOCK, chapter_metadata(chapter('<meta name="' + LOCK + '" content="true"/>')))
+        with self.assertRaises(ExpatError):
+            chapter_metadata(chapter('Body').replace(b'<title>', b'<title broken="'))
+        for declaration in (b'<!DOCTYPE html>', b'<!DOCTYPE html [<!ENTITY private SYSTEM "file:///private">]>'):
+            with self.assertRaises(PolicyError):
+                chapter_metadata(declaration + chapter('Body'))
+
+    def test_real_update_replaces_malformed_unlocked_legacy_xhtml_without_modifying_the_input(self):
+        from fanficfare.adapters.adapter_test1 import TestSiteAdapter
+        from fanficfare_wrapper import run
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory, patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'), patch.object(TestSiteAdapter, 'getChapterText', return_value='<p>Website chapter.</p>'):
+            try:
+                os.chdir(directory)
+                request = {'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': ''}
+                run(request)
+                with ZipFile('output.epub') as source, ZipFile('input.epub', 'w') as old:
+                    target = next(n for n in source.namelist() if n.endswith('.xhtml') and b'name="chapterurl"' in source.read(n))
+                    for info in source.infolist():
+                        data = source.read(info.filename)
+                        if info.filename == target:
+                            data = data.replace(b'Website chapter.', b'Legacy unescaped < text.')
+                        old.writestr(info, data)
+                Path('output.epub').unlink()
+                original = Path('input.epub').read_bytes()
+                result = run({**request, 'operation': 'update', 'checkStatePath': str(Path(directory)/'state.json')})
+                self.assertEqual(result['output'], 'output.epub')
+                self.assertEqual(Path('input.epub').read_bytes(), original)
+                with ZipFile('output.epub') as output:
+                    parse(output.read(target))
+                    self.assertIn(b'Website chapter.', output.read(target))
+            finally:
+                os.chdir(cwd)
+
     def test_repeated_passages_use_unique_anchors_and_reject_ambiguous_positions(self):
         def body(text):return elements(parse(chapter(text)), 'body')[0]
         baseline=body('<p>Opening</p><p>Repeated</p><p>Repeated</p><p>Ending</p>')

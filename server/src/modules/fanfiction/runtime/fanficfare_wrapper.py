@@ -21,6 +21,7 @@ import sqlite3
 import time
 import traceback
 from zipfile import BadZipFile
+from xml.parsers.expat import ExpatError
 
 from website_catalog import website_catalog
 from controlled_config import make_configuration, merge_configuration, validate_ini
@@ -379,7 +380,7 @@ def failure_code(error):
         return 'authentication_required'
     if name == 'PersonalIniFailed':
         return 'configuration_blocked'
-    if isinstance(error, BadZipFile):
+    if isinstance(error, (BadZipFile, ExpatError)):
         return 'invalid_epub'
     if name in ('InvalidStoryURL', 'UnknownSite'):
         return 'unsupported_story_url'
