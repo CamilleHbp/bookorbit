@@ -197,11 +197,21 @@ export class FanfictionRecoveryService {
             { expectedVersion: preview.labelMappingVersion },
           );
         const replacement = job.kind === 'replacement' ? job.result?.replacement : undefined;
+        const restoredChapterCount = job.kind === 'rollback' ? await this.catalog.chapterCount(tx, bookFileId, job.libraryId, revisionId) : null;
         await tx
           .update(sources)
           .set({
             state: job.result?.metadataReview ? 'review_required' : 'paused',
             ...(job.result?.metadataReview ? { attentionCode: 'metadata_review_required' } : {}),
+            ...(job.kind === 'rollback'
+              ? {
+                  state: 'paused' as const,
+                  updatesEnabled: false,
+                  metadataReviewPending: false,
+                  attentionCode: null,
+                  chapterCount: restoredChapterCount ?? source.chapterCount,
+                }
+              : {}),
             nextCheckAt: null,
             lastUpdatedAt: sql`now()`,
             updatedAt: sql`now()`,

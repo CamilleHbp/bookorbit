@@ -15,6 +15,22 @@ export class RevisionCatalogService {
     private readonly coordination: RevisionCoordinationService,
   ) {}
 
+  async chapterCount(tx: DatabaseTransaction, bookFileId: number, libraryId: number, revisionId: string) {
+    const [revision] = await tx
+      .select({
+        chapterCount: sql<
+          number | null
+        >`(select nullif(count(*), 0)::int from jsonb_array_elements(${schema.bookFileRevisions.chapters}) chapter where chapter->>'sourceUrl' is not null)`,
+      })
+      .from(schema.bookFileRevisions)
+      .innerJoin(schema.bookFiles, eq(schema.bookFiles.id, schema.bookFileRevisions.bookFileId))
+      .innerJoin(schema.books, eq(schema.books.id, schema.bookFiles.bookId))
+      .where(and(eq(schema.bookFileRevisions.id, revisionId), eq(schema.bookFiles.id, bookFileId), eq(schema.books.libraryId, libraryId)))
+      .limit(1);
+    if (!revision) throw new NotFoundException('Revision not found in this library');
+    return revision.chapterCount;
+  }
+
   async lockCurrent(tx: DatabaseTransaction, bookFileId: number, libraryId: number, revisionId: string) {
     await this.coordination.lockFile(tx, bookFileId);
     const [file] = await tx
