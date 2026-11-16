@@ -533,10 +533,10 @@ export class FanfictionJobService {
       if (
         !restart &&
         job.kind === 'import' &&
-        !job.sourceId &&
         !job.input?.collectionId &&
         ['failed', 'configuration_blocked'].includes(job.state) &&
-        Object.keys(job.result ?? {}).every((key) => key === 'progress')
+        ((!job.sourceId && Object.keys(job.result ?? {}).every((key) => key === 'progress')) ||
+          (!!job.sourceId && job.result?.importReview?.approved && !job.result.revisionId && !job.result.preparedUpdate))
       ) {
         const existing = await this.completeExistingImport(tx, job);
         if (existing) return existing;
@@ -767,8 +767,8 @@ export class FanfictionJobService {
       .where(
         and(
           eq(schema.fanfictionSources.libraryId, job.libraryId),
-          eq(schema.fanfictionSources.canonicalUrl, job.url),
-          sql`${schema.fanfictionSources.state} <> 'unlinked'`,
+          job.sourceId ? eq(schema.fanfictionSources.id, job.sourceId) : eq(schema.fanfictionSources.canonicalUrl, job.url),
+          notInArray(schema.fanfictionSources.state, ['unlinked', 'pending']),
           sql`${schema.fanfictionSources.bookId} is not null`,
           sql`${schema.fanfictionSources.bookFileId} is not null`,
         ),
@@ -791,6 +791,8 @@ export class FanfictionJobService {
           leaseOwner: null,
           leaseExpiresAt: null,
           result: {
+            ...job.result,
+            progress: undefined,
             sourceId: source.id,
             bookId: source.bookId,
             bookFileId: source.bookFileId,

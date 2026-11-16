@@ -48,10 +48,10 @@ const needsLogin = computed(() => loginErrors.includes(props.job.errorCode ?? ''
 const loginSourceId = computed(() => (needsLogin.value ? (props.job.result?.sourceId ?? null) : null))
 const canRetry = computed(
   () =>
+    props.canManage &&
     !active.value &&
-    !needsLogin.value &&
-    !props.job.result?.contentReview &&
-    !props.job.result?.metadataReview &&
+    (!props.job.result?.contentReview || props.job.result.contentReview.approved) &&
+    (!props.job.result?.metadataReview?.beforeUpdate || props.job.result.preparedUpdate?.approved) &&
     (!props.job.result?.importReview || props.job.result.importReview.approved) &&
     retryStates.includes(props.job.state),
 )
