@@ -28,6 +28,11 @@ class UpdateCheck:
                        for image in adapter.story.img_store.get_imgs()],
         }
         self.fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+        # Tag decisions must refresh EPUB metadata, but do not change downloaded
+        # chapter bodies. Keep those checkpoints reusable while labels are reviewed.
+        chapter_payload = {key: value for key, value in payload.items() if key != 'tagMatching'}
+        chapter_payload['preview'] = {key: value for key, value in preview.items() if key not in ('tags', 'genres')}
+        self.chapter_fingerprint = hashlib.sha256(json.dumps(chapter_payload, sort_keys=True, default=str).encode()).hexdigest()
         self.saved = {}
         if self.path:
             try:
@@ -52,8 +57,18 @@ class UpdateCheck:
             return directory
         # A failed verification can resume, but cannot reuse chapters from an older
         # source fingerprint, installed revision, or periodic verification window.
-        identity = f'{self.fingerprint}:{self.input_hash}:{int(self.now // VERIFY_INTERVAL)}'
-        return str(Path(directory) / hashlib.sha256(identity.encode()).hexdigest())
+        identity = f'{self.chapter_fingerprint}:{self.input_hash}:{int(self.now // VERIFY_INTERVAL)}'
+        current = Path(directory) / hashlib.sha256(identity.encode()).hexdigest()
+        legacy_identity = f'{self.fingerprint}:{self.input_hash}:{int(self.now // VERIFY_INTERVAL)}'
+        legacy = Path(directory) / hashlib.sha256(legacy_identity.encode()).hexdigest()
+        # Migrate only a checkpoint matching the current full source fingerprint.
+        # Other old folders may contain stale source text and must not be reused.
+        if not current.exists() and legacy.is_dir():
+            try:
+                legacy.rename(current)
+            except FileExistsError:
+                pass
+        return str(current)
 
     def save(self, output):
         if not self.path:

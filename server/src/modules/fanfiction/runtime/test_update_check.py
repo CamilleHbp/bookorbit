@@ -9,6 +9,42 @@ from update_check import UpdateCheck, VERIFY_INTERVAL
 
 
 class UpdateCheckTest(unittest.TestCase):
+    def test_tag_reviews_refresh_metadata_without_restarting_current_chapters(self):
+        import hashlib
+        original = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                os.chdir(directory)
+                Path('input.epub').write_bytes(b'saved book')
+                adapter = Mock()
+                adapter.get_chapters.return_value = [{'url': 'chapter', 'title': 'One'}]
+                adapter.story.getMetadataRaw.return_value = '2026-11-12'
+                adapter.story.img_store.get_imgs.return_value = []
+                request = {'operation': 'update', 'checkStatePath': str(Path(directory) / 'state.json'),
+                           'configuration': 'private', 'tagMatching': {'version': 1, 'rules': []}}
+                preview = {'status': 'Completed', 'chapterCount': 1, 'tags': ['old-tag'], 'genres': []}
+                with patch('update_check.time.time', return_value=1000):
+                    old = UpdateCheck(request, adapter, preview)
+                    old.save('input.epub')
+                    identity = f'{old.fingerprint}:{old.input_hash}:0'
+                    legacy = Path('chapters') / hashlib.sha256(identity.encode()).hexdigest()
+                    legacy.mkdir(parents=True)
+                    (legacy / 'completed.chapter').write_bytes(b'downloaded body')
+                    current = old.chapter_directory('chapters')
+                    self.assertEqual((Path(current) / 'completed.chapter').read_bytes(), b'downloaded body')
+                    updated = UpdateCheck({**request, 'tagMatching': {'version': 2, 'rules': ['new match']}},
+                                          adapter, {**preview, 'tags': ['new-tag'], 'genres': ['new-genre']})
+                    self.assertFalse(updated.unchanged())
+                    self.assertEqual(updated.chapter_directory('chapters'), current)
+                    self.assertNotEqual(UpdateCheck({**request, 'configuration': 'changed'}, adapter, preview).chapter_directory('chapters'), current)
+                    adapter.get_chapters.return_value.append({'url': 'new chapter', 'title': 'Two'})
+                    self.assertNotEqual(UpdateCheck(request, adapter, preview).chapter_directory('chapters'), current)
+                    adapter.get_chapters.return_value.pop()
+                    Path('input.epub').write_bytes(b'changed saved book')
+                    self.assertNotEqual(UpdateCheck(request, adapter, preview).chapter_directory('chapters'), current)
+            finally:
+                os.chdir(original)
+
     def test_managed_updates_skip_unchanged_chapters_and_periodically_catch_silent_edits(self):
         from fanficfare.adapters.adapter_test1 import TestSiteAdapter
         from fanficfare_wrapper import run
