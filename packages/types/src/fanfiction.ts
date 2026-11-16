@@ -550,7 +550,7 @@ export interface FanfictionChapterChanges {
   incompletePreview?: boolean;
   differentStory?: boolean;
   unmatched?: boolean;
-  safety?: "insert_only" | "append_only" | "unchanged" | "review_required";
+  safety?: "insert_only" | "append_only" | "content_only" | "unchanged" | "review_required";
   removed?: number;
   inserted?: boolean;
   reordered?: boolean;

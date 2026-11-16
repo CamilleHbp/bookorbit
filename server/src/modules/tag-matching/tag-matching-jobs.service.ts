@@ -273,7 +273,7 @@ export class TagMatchingJobsService {
     let missingFandom = false;
     const fandomReviewed = snapshots.some((snapshot) => snapshot.sourceKey === 'manual:fandom');
     for (const snapshot of snapshots) {
-      const result = await this.matching.resolve(tx, rulebookId, snapshot.source, snapshot.labels, snapshot.sourceKey);
+      const result = await this.matching.resolve(tx, rulebookId, snapshot.source, snapshot.labels, snapshot.sourceKey, { tags, genres });
       unresolved += result.pending.length;
       if (includeLabels) {
         for (const label of snapshot.labels) {

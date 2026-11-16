@@ -52,7 +52,11 @@ describe.skipIf(!configPath)('persistent tag matching', () => {
           provide: LibraryService,
           useValue: {
             findAccessibleLibraryIds: () => Promise.resolve([libraryId]),
-            findEditableLibraryIds: () => Promise.resolve([libraryId]),
+            findEditableLibraryIds: async (request: RequestUser) => {
+              if (request.isSuperuser) return [libraryId];
+              const access = await db.select().from(s.userLibraryAccess).where(eq(s.userLibraryAccess.userId, request.id));
+              return access.filter((row) => row.accessLevel === 'editor' || row.accessLevel === 'owner').map((row) => row.libraryId);
+            },
             verifyAdministration: () => Promise.resolve(undefined),
           },
         },
@@ -100,6 +104,52 @@ describe.skipIf(!configPath)('persistent tag matching', () => {
   afterAll(async () => {
     await module?.close();
     await pool?.end();
+  });
+  it('reuses exact tags already on this book without creating aliases or repeating reviews', async () => {
+    await db.update(s.tags).set({ name: 'Existing   Tag' }).where(eq(s.tags.id, tagId));
+    await db.insert(s.bookTags).values({ bookId, tagId, managedOnly: false });
+    const version = (await management.own(user))!.version;
+    await sync([{ field: 'tags', value: ' existing tag ' }]);
+    expect((await management.review(user, new MatchingPageDto())).total).toBe(0);
+    expect((await management.list(user, new MatchingPageDto())).total).toBe(0);
+    expect((await management.own(user))!.version).toBe(version);
+    expect((await tags()).map((tag) => tag.tagId)).toEqual([tagId]);
+    const jobs = module.get(TagMatchingJobsService);
+    const preview = await jobs.create(user, []);
+    await jobs.advance(user, preview.id);
+    expect((await jobs.items(user, preview.id, 1, 25)).items[0].change).toMatchObject({ unresolved: 0, addedTags: [], removedTags: [] });
+    const detail = await jobs.details(user, preview.id, bookId, 1, 25);
+    expect(detail.labels).toEqual([expect.objectContaining({ status: 'matched', targets: [expect.objectContaining({ id: tagId })] })]);
+    // Removing the assignment must reopen the unresolved label instead of silently
+    // learning a global rule from another book's tags.
+    await db.delete(s.bookTags).where(eq(s.bookTags.bookId, bookId));
+    expect((await management.review(user, new MatchingPageDto())).items).toEqual([
+      expect.objectContaining({ value: ' existing tag ', bookCount: 1 }),
+    ]);
+  });
+  it('clears old pending observations immediately when the tag is assigned later', async () => {
+    await sync([{ field: 'tags', value: tagName }]);
+    expect((await management.review(user, new MatchingPageDto())).total).toBe(1);
+    await db.insert(s.bookTags).values({ bookId, tagId, managedOnly: false });
+    expect((await management.review(user, new MatchingPageDto())).total).toBe(0);
+  });
+  it('keeps genuine unknown labels while accepting existing genres and fandom assignments', async () => {
+    await db
+      .update(s.tags)
+      .set({ name: 'fandom.' + tagName })
+      .where(eq(s.tags.id, tagId));
+    await db.insert(s.bookTags).values({ bookId, tagId, managedOnly: false });
+    await db.insert(s.bookGenres).values({ bookId, genreId, managedOnly: false });
+    await sync([
+      { field: 'characters', value: 'Named character' },
+      { field: 'tags', value: 'Unknown tag' },
+      { field: 'genres', value: genreName },
+    ]);
+    expect((await management.review(user, new MatchingPageDto())).items).toEqual([expect.objectContaining({ value: 'Unknown tag' })]);
+    const jobs = module.get(TagMatchingJobsService);
+    const preview = await jobs.create(user, []);
+    await jobs.advance(user, preview.id);
+    expect((await jobs.items(user, preview.id, 1, 25)).items[0].change.unresolved).toBe(1);
   });
   it('migrates website rules through approved targets without overriding cleanup suppression', async () => {
     await save('tags', 'old target', [{ field: 'tags', id: tagId }]);

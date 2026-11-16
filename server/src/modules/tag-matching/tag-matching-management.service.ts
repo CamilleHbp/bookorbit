@@ -144,6 +144,13 @@ export class TagMatchingManagementService {
         sql`, `,
       )}))`,
       unresolved,
+      // Story genres are managed manually, and labels already assigned to this book
+      // need no decision. Evaluate this live so removals can reopen a real review.
+      sql`not (${o.field}='genres' and ${o.sourceKey} like 'fanfiction:%')`,
+      sql`not exists (select 1 from book_tags assigned join tags canonical on canonical.id=assigned.tag_id
+        where assigned.book_id=${o.bookId} and lower(btrim(regexp_replace(normalize(canonical.name, NFC), '\\s+', ' ', 'g')))=${o.key})`,
+      sql`not exists (select 1 from book_genres assigned join genres canonical on canonical.id=assigned.genre_id
+        where assigned.book_id=${o.bookId} and lower(btrim(regexp_replace(normalize(canonical.name, NFC), '\\s+', ' ', 'g')))=${o.key})`,
       scope,
       query.search ? ilike(o.value, `%${query.search}%`) : undefined,
       query.field ? eq(o.field, query.field) : undefined,
@@ -198,6 +205,8 @@ export class TagMatchingManagementService {
             where evidence.book_id=${snapshots.bookId} and evidence.source_key=${snapshots.sourceKey}
               and not exists (select 1 from tag_matching_rules specific where r.source='' and specific.rulebook_id=r.rulebook_id
                 and specific.field=r.field and specific.key=r.key and specific.source=evidence.source))`,
+          sql`not exists (select 1 from book_tags assigned join tags fandom on fandom.id=assigned.tag_id
+            where assigned.book_id=${snapshots.bookId} and fandom.name like 'fandom.%')`,
           sql`exists (select 1 from tag_matching_observations evidence where evidence.book_id=${snapshots.bookId} and evidence.source_key=${snapshots.sourceKey} and evidence.status='suppressed')`,
           sql`not exists (select 1 from tag_matching_snapshots decision where decision.book_id=${snapshots.bookId} and decision.source_key='manual:fandom' and decision.rulebook_id=${own.id})`,
         ),

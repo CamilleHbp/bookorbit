@@ -101,7 +101,16 @@ export function storyUpdateSafety(
   const unchanged = identifiable && !removed && !reordered && before.every((chapter, i) => comparisonHash(chapter) === comparisonHash(retained[i]));
   const inserted = identifiable && sharedAfter.length > 0 && newIds.slice(0, newIds.lastIndexOf(sharedAfter.at(-1))).some((id) => !oldSet.has(id));
   return {
-    safety: !unchanged ? 'review_required' : inserted ? 'insert_only' : after.length > before.length ? 'append_only' : 'unchanged',
+    safety:
+      !identifiable || removed || reordered
+        ? 'review_required'
+        : !unchanged
+          ? 'content_only'
+          : inserted
+            ? 'insert_only'
+            : after.length > before.length
+              ? 'append_only'
+              : 'unchanged',
     ...(removed &&
     before.some((c) => /^https:\/\/storiesonline\.net\/[sn]\/\d+:/.test(c.sourceUrl ?? '')) &&
     after.some((c, i) => !oldSet.has(newIds[i]) && /^https:\/\/storiesonline\.net\/[sn]\/\d+\/[^/]+\/\d+/.test(c.sourceUrl ?? ''))

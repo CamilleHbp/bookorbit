@@ -176,7 +176,14 @@ export class TagMatchingService {
     return this.db.transaction((tx) => this.sync(tx, bookId, input));
   }
 
-  async resolve(tx: Executor, rulebookId: number, source: string, labels: IncomingLabel[], sourceKey = '') {
+  async resolve(
+    tx: Executor,
+    rulebookId: number,
+    source: string,
+    labels: IncomingLabel[],
+    sourceKey = '',
+    assigned?: { tags: Array<{ id: number; name: string }>; genres: Array<{ id: number; name: string }> },
+  ) {
     const manualGenres = sourceKey.startsWith('fanfiction:');
     const genreLabels = manualGenres ? labels.filter((label) => label.field === 'genres') : [];
     if (manualGenres) labels = labels.filter((label) => label.field !== 'genres');
@@ -239,13 +246,41 @@ export class TagMatchingService {
             ? []
             : (byRule.get(r.id) ?? []).filter((target) => target.field === 'tags' && names.get(`tags:${target.id}`)?.startsWith('fandom.')),
       }));
-    const resolved = matchLabels(source, labels, active);
+    let resolved = matchLabels(source, labels, active);
+    if (assigned) {
+      // Reuse exact assignments on this book only. This never creates a global alias
+      // or invents a canonical tag from a source label.
+      const existing = new Map<string, LabelTarget[]>();
+      for (const field of ['tags', 'genres'] as const) {
+        for (const row of assigned[field]) {
+          names.set(`${field}:${row.id}`, row.name);
+          const key = labelKey(row.name);
+          const targets = existing.get(key) ?? [];
+          targets.push({ field, id: row.id });
+          existing.set(key, targets);
+        }
+      }
+      const manualGenreLabels: IncomingLabel[] = [];
+      for (const label of resolved.pending) {
+        const targets = (existing.get(labelKey(label.value)) ?? []).filter((target) => !manualGenres || target.field !== 'genres');
+        if (targets.length) active.push({ source, field: label.field, value: label.value, targets });
+        else if (manualGenres && existing.has(labelKey(label.value))) manualGenreLabels.push(label);
+      }
+      resolved = matchLabels(source, labels, active);
+      if (manualGenreLabels.length) {
+        const manualKeys = new Set(manualGenreLabels.map((label) => JSON.stringify([label.field, labelKey(label.value)])));
+        resolved.pending = resolved.pending.filter((label) => !manualKeys.has(JSON.stringify([label.field, labelKey(label.value)])));
+        resolved.ignored.push(...manualGenreLabels);
+      }
+    }
     return {
       ...resolved,
       ignored: [...resolved.ignored, ...genreLabels],
       names,
       rules: active,
-      hasFandom: resolved.targets.some((target) => target.field === 'tags' && names.get(`tags:${target.id}`)?.startsWith('fandom.')),
+      hasFandom:
+        !!assigned?.tags.some((tag) => tag.name.startsWith('fandom.')) ||
+        resolved.targets.some((target) => target.field === 'tags' && names.get(`tags:${target.id}`)?.startsWith('fandom.')),
     };
   }
 
@@ -349,7 +384,20 @@ export class TagMatchingService {
         validateLabels(input);
       }
 
-      const resolved = await this.resolve(tx, binding.id, input.source, input.labels, input.sourceKey);
+      const tags = await tx
+        .select({ id: s.tags.id, name: s.tags.name })
+        .from(s.bookTags)
+        .innerJoin(s.tags, eq(s.tags.id, s.bookTags.tagId))
+        .where(eq(s.bookTags.bookId, bookId))
+        .limit(1001);
+      const genres = await tx
+        .select({ id: s.genres.id, name: s.genres.name })
+        .from(s.bookGenres)
+        .innerJoin(s.genres, eq(s.genres.id, s.bookGenres.genreId))
+        .where(eq(s.bookGenres.bookId, bookId))
+        .limit(1001);
+      if (tags.length > 1000 || genres.length > 1000) throw new BadRequestException('Book labels exceed the supported matching limits');
+      const resolved = await this.resolve(tx, binding.id, input.source, input.labels, input.sourceKey, { tags, genres });
       const pending = new Set(resolved.pending.map((l) => JSON.stringify([l.field, labelKey(l.value)])));
       const ignored = new Set(resolved.ignored.map((l) => JSON.stringify([l.field, labelKey(l.value)])));
       const suppressed = new Set(resolved.suppressed.map((l) => JSON.stringify([l.field, labelKey(l.value)])));
