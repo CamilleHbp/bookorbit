@@ -27,6 +27,10 @@ def elements(doc, name):
 
 def chapter_metadata(data):
     """Read strict XML metadata without parsing an unrelated legacy body."""
+    # Older downloads used literal hearts such as <3 in titles and their meta
+    # values. A digit cannot start an XML element. Escape that literal text
+    # without repairing attribute structure or relaxing lock metadata.
+    data = re.sub(rb'<(?=[0-9])', b'&lt;', data[:2 * 1024 * 1024])
     parser = expat.ParserCreate(namespace_separator='|')
     metadata = {}
     depth = 0
@@ -44,7 +48,7 @@ def chapter_metadata(data):
         name = name.rsplit('|', 1)[-1]
         if depth == 2 and name == 'head':
             head = True
-        if head and name == 'meta':
+        if head and depth == 3 and name == 'meta':
             metadata[attributes.get('name', '')] = attributes.get('content', '')
 
     def end(name):

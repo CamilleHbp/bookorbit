@@ -37,6 +37,29 @@ def epub(path, docs, assets=None):
 
 
 class ChapterLocksTest(unittest.TestCase):
+    def test_legacy_title_hearts_do_not_block_unlocked_chapter_replacement(self):
+        from xml.parsers.expat import ExpatError
+        with tempfile.TemporaryDirectory() as directory:
+            old, new = [Path(directory)/n for n in ('old.epub', 'new.epub')]
+            for locked in (False, True):
+                data = chapter('<p>Saved chapter.</p>', locked=locked).replace(b'</title>', b' <3</title>')
+                data = data.replace(b'</head>', b'<meta name="chaptertitle" content="Saved title <3"/></head>')
+                epub(old, {'one.xhtml': data})
+                epub(new, {'one.xhtml': chapter('<p>Updated chapter.</p>')})
+                before = old.read_bytes(), new.read_bytes()
+                if locked:
+                    self.assertEqual(chapter_metadata(data)[LOCK], 'true')
+                    with self.assertRaises(ExpatError):
+                        preserve_chapter_locks(old, new)
+                else:
+                    self.assertEqual(preserve_chapter_locks(old, new), 0)
+                self.assertEqual(chapter_metadata(data)['chaptertitle'], 'Saved title <3')
+                self.assertEqual((old.read_bytes(), new.read_bytes()), before)
+
+    def test_title_markup_cannot_act_as_chapter_lock_metadata(self):
+        data = chapter('Body').replace(b'</title>', b'<meta name="bookorbit:chapter-lock" content="true"/></title>')
+        self.assertNotIn(LOCK, chapter_metadata(data))
+
     def test_legacy_unlocked_body_does_not_block_a_valid_replacement_or_hide_a_lock(self):
         from xml.parsers.expat import ExpatError
         from fanficfare_wrapper import failure_code
