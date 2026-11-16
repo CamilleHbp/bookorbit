@@ -531,6 +531,17 @@ export class FanfictionJobService {
         throw new ForbiddenException('This story check belongs to another user');
       if (['queued', 'running', 'succeeded', 'no_change'].includes(job.state)) return this.view(job);
       if (
+        !restart &&
+        job.kind === 'import' &&
+        !job.sourceId &&
+        !job.input?.collectionId &&
+        ['failed', 'configuration_blocked'].includes(job.state) &&
+        Object.keys(job.result ?? {}).every((key) => key === 'progress')
+      ) {
+        const existing = await this.completeExistingImport(tx, job);
+        if (existing) return existing;
+      }
+      if (
         restart &&
         (job.kind !== 'import' ||
           !['failed', 'cancelled'].includes(job.state) ||
@@ -749,6 +760,57 @@ export class FanfictionJobService {
     }
   }
 
+  private async completeExistingImport(tx: DatabaseTransaction, job: typeof jobs.$inferSelect) {
+    const [source] = await tx
+      .select()
+      .from(schema.fanfictionSources)
+      .where(
+        and(
+          eq(schema.fanfictionSources.libraryId, job.libraryId),
+          eq(schema.fanfictionSources.canonicalUrl, job.url),
+          sql`${schema.fanfictionSources.state} <> 'unlinked'`,
+          sql`${schema.fanfictionSources.bookId} is not null`,
+          sql`${schema.fanfictionSources.bookFileId} is not null`,
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (!source?.bookId || !source.bookFileId) return null;
+    const startedAt = Date.now();
+    this.logger.log(
+      `[fanfiction.retry_existing] [start] libraryId=${job.libraryId} sourceId=${source.id} jobId=${job.id} bookId=${source.bookId} - resolving an earlier import attempt`,
+    );
+    try {
+      const [updated] = await tx
+        .update(jobs)
+        .set({
+          state: 'succeeded',
+          sourceId: source.id,
+          errorCode: null,
+          cancellationRequested: false,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          result: {
+            sourceId: source.id,
+            bookId: source.bookId,
+            bookFileId: source.bookFileId,
+            existingStory: { id: source.id, title: source.title, bookId: source.bookId, attentionCode: source.attentionCode },
+          },
+          updatedAt: sql`now()`,
+        })
+        .where(eq(jobs.id, job.id))
+        .returning();
+      this.logger.log(
+        `[fanfiction.retry_existing] [end] libraryId=${job.libraryId} sourceId=${source.id} jobId=${job.id} bookId=${source.bookId} durationMs=${Date.now() - startedAt} - earlier attempt resolved with the saved story`,
+      );
+      return this.view(updated);
+    } catch (error) {
+      this.logger.warn(
+        `[fanfiction.retry_existing] [fail] libraryId=${job.libraryId} sourceId=${source.id} jobId=${job.id} durationMs=${Date.now() - startedAt} errorClass=RetryError error="could not resolve existing story" - earlier attempt was not changed`,
+      );
+      throw error;
+    }
+  }
   async claim() {
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(184719, 1)`);
@@ -828,13 +890,22 @@ export class FanfictionJobService {
         .orderBy(asc(jobs.runAfter), asc(jobs.id))
         .limit(100)
         .for('update', { skipLocked: true });
-      // Finish approved updates within the due batch before starting another download.
+      const rulebooks = candidates.length
+        ? await tx
+            .select({ libraryId: schema.libraryTagRulebooks.libraryId, version: schema.tagRulebooks.version })
+            .from(schema.libraryTagRulebooks)
+            .innerJoin(schema.tagRulebooks, eq(schema.tagRulebooks.id, schema.libraryTagRulebooks.rulebookId))
+            .where(inArray(schema.libraryTagRulebooks.libraryId, [...new Set(candidates.map((row) => row.libraryId))]))
+        : [];
+      const versions = new Map(rulebooks.map((row) => [row.libraryId, row.version]));
+      // Stale tag plans need another download, so only current approvals get priority.
       const candidate =
         candidates.find(
           (row) =>
             (row.kind === 'update' || row.kind === 'refresh') &&
             row.result?.preparedUpdate?.approved &&
             row.result.preview &&
+            (!versions.has(row.libraryId) || row.result.preview.labelMappingVersion === versions.get(row.libraryId)) &&
             (!row.result.contentReview || row.result.contentReview.approved),
         ) ?? candidates[0];
       if (!candidate) return null;
