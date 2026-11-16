@@ -1,6 +1,7 @@
 """Atomic recovery of completed FanFicFare chapters and the illustrations they use."""
 import json
 import re
+import time
 import zlib
 from contextlib import closing, contextmanager
 
@@ -12,6 +13,10 @@ from safe_transport import DownloadLimitError, SourceResponseError
 IMAGE = re.compile(r'images/ffdl-([0-9a-fA-F-]+)\.([a-zA-Z0-9]+)')
 
 
+class ChapterDownloadYield(Exception):
+    pass
+
+
 @contextmanager
 def recover_chapters(adapter, directory, canonical, transport):
     if not directory:
@@ -19,6 +24,7 @@ def recover_chapters(adapter, directory, canonical, transport):
         return
     with closing(ChapterCheckpoint(directory)) as store:
         downloaded = 0
+        checkpointed = 0
         original = adapter.getChapterTextNum
         story_key = digest(canonical.encode())
 
@@ -32,7 +38,12 @@ def recover_chapters(adapter, directory, canonical, transport):
             occurrences[url] = count + 1
 
         def chapter(url, index):
-            nonlocal downloaded
+            nonlocal downloaded, checkpointed
+            # Yield only after durable new progress, with headroom before the
+            # runtime's 600-second CPU cap. The next worker reuses these chapters.
+            if checkpointed and time.process_time() >= 480:
+                transport.failure = ChapterDownloadYield()
+                raise transport.failure
             identity = adapter.normalize_chapterurl(url)
             if index in duplicates:
                 identity += '\0' + str(duplicates[index])
@@ -91,6 +102,7 @@ def recover_chapters(adapter, directory, canonical, transport):
                 image_hash = store.put_image(image['data'])
                 references.append((match.group(), image_hash, image['ext'], image['mime']))
             store.save(key, body, json.dumps(references))
+            checkpointed += 1
             downloaded += 1
             return html
 

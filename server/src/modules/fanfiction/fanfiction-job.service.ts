@@ -955,14 +955,15 @@ export class FanfictionJobService {
     return rows.length === 1;
   }
 
-  async yieldBatch(job: typeof jobs.$inferSelect, result: FanfictionJob['result']): Promise<boolean> {
+  async yieldBatch(job: typeof jobs.$inferSelect, result?: FanfictionJob['result']): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       await this.assertOwnership(job, tx);
       const rows = await tx
         .update(jobs)
         .set({
           state: 'queued',
-          result,
+          ...(result !== undefined ? { result } : {}),
+          errorCode: null,
           attempts: 0,
           leaseOwner: null,
           leaseExpiresAt: null,

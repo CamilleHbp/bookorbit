@@ -12,6 +12,70 @@ from safe_transport import SafeTransport
 
 
 class ChapterRecoveryTest(unittest.TestCase):
+    def test_full_download_does_not_publish_a_partial_epub_when_a_cpu_slice_yields(self):
+        from chapter_store import ChapterDownloadYield
+        original = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory:
+            os.chdir(directory)
+            self.addCleanup(os.chdir, original)
+            request = {'operation': 'download', 'url': 'https://test1.com/?sid=1', 'configuration': '',
+                       'chapterDirectory': str(Path(directory, 'chapters'))}
+            calls = []
+
+            def chapter(adapter, url):
+                calls.append(url)
+                return '<div>Complete chapter</div>'
+
+            with patch.object(TestSiteAdapter, 'getSiteURLPattern', return_value=r'^https?://test1\.com/?\?sid=\d+$'), \
+                    patch.object(TestSiteAdapter, 'getChapterText', chapter):
+                with patch('chapter_store.time.process_time', return_value=481), self.assertRaises(ChapterDownloadYield):
+                    run(request)
+                self.assertEqual(len(calls), 1)
+                saved = calls[0]
+                Path('output.epub').unlink()
+                with patch('chapter_store.time.process_time', return_value=1):
+                    result = run(request)
+                self.assertEqual(result['output'], 'output.epub')
+                self.assertEqual(calls.count(saved), 1)
+
+    def test_cpu_slice_yields_after_a_durable_chapter_and_resumes_without_refetching_it(self):
+        from chapter_store import ChapterDownloadYield, recover_chapters
+        from fanficfare_wrapper import failure_code
+        adapter = Mock()
+        adapter.get_chapters.return_value = [{'url': 'first'}, {'url': 'second'}]
+        adapter.normalize_chapterurl.side_effect = lambda url: url
+        adapter.getChapterTextNum.side_effect = lambda url, index: '<p>' + url + '</p>'
+        original = adapter.getChapterTextNum
+        transport = Mock(failure=None)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('chapter_store.time.process_time', return_value=481):
+                with recover_chapters(adapter, directory, 'story', transport):
+                    self.assertEqual(adapter.getChapterTextNum('first', 0), '<p>first</p>')
+                    with self.assertRaises(ChapterDownloadYield) as raised:
+                        adapter.getChapterTextNum('second', 1)
+                    self.assertIs(transport.failure, raised.exception)
+                    self.assertEqual(failure_code(raised.exception), 'chapter_download_yielded')
+                self.assertIs(adapter.getChapterTextNum, original)
+            with patch('chapter_store.time.process_time', return_value=1):
+                with recover_chapters(adapter, directory, 'story', Mock(failure=None)):
+                    self.assertEqual(adapter.getChapterTextNum('first', 0), '<p>first</p>')
+                    self.assertEqual(adapter.getChapterTextNum('second', 1), '<p>second</p>')
+            self.assertEqual(original.call_count, 2)
+
+    def test_empty_ranges_do_not_count_as_durable_progress_for_a_cpu_slice(self):
+        from chapter_store import recover_chapters
+        adapter = Mock()
+        adapter.get_chapters.return_value = [{'url': 'first'}, {'url': 'second'}]
+        adapter.normalize_chapterurl.side_effect = lambda url: url
+        adapter.getSiteDomain.return_value = 'fiction.live'
+        adapter.getChapterTextNum.return_value = ''
+        transport = Mock(failure=None)
+        with tempfile.TemporaryDirectory() as directory, patch('chapter_store.time.process_time', return_value=481):
+            with recover_chapters(adapter, directory, 'story', transport):
+                self.assertEqual(adapter.getChapterTextNum('first', 0), '<div></div>')
+                self.assertEqual(adapter.getChapterTextNum('second', 1), '<div></div>')
+            self.assertIsNone(transport.failure)
+
     def test_synthetic_home_is_omitted_only_for_an_empty_fictionlive_range(self):
         from fanficfare_wrapper import omit_empty_fictionlive_home
         adapter = Mock()
