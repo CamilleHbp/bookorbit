@@ -297,6 +297,14 @@ class ConfigurationTest(unittest.TestCase):
         self.assertEqual(failure_code(ResponseLimitError('Expanded HTTP response limit exceeded')), 'response_too_large')
         self.assertEqual(failure_code(DownloadTimeoutError('Download deadline exceeded')), 'download_timeout')
 
+    def test_unrevealed_ao3_works_are_distinct_from_transient_download_failures(self):
+        from fanficfare.exceptions import FailedToDownload
+        from fanficfare_wrapper import failure_code
+        message = 'Site says: "This work is part of an ongoing challenge and will be revealed soon!"'
+        self.assertEqual(failure_code(FailedToDownload(message)), 'source_unrevealed')
+        self.assertEqual(failure_code(FailedToDownload('Temporary connection failure')), 'source_failed')
+        self.assertEqual(failure_code(ValueError(message)), 'source_failed')
+
     def test_wrapped_website_errors_keep_the_http_status_without_exposing_the_response(self):
         from fanficfare.exceptions import HTTPErrorFFF, FailedToDownload, StoryDoesNotExist
         from fanficfare_wrapper import failure_code, http_error_status

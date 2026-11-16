@@ -14,6 +14,7 @@ export function shouldRetryJob(kind: FanfictionJobKind, attempts: number, code: 
         'source_failed',
         'source_rate_limited',
         'source_unavailable',
+        'source_unrevealed',
         'download_timeout',
         'runtime_unavailable',
         'worker_lease_expired',
@@ -35,7 +36,8 @@ export function shouldRetryJob(kind: FanfictionJobKind, attempts: number, code: 
   );
 }
 
-export function retryDelaySeconds(kind: FanfictionJobKind, attempts: number): number {
+export function retryDelaySeconds(kind: FanfictionJobKind, attempts: number, code?: string | null): number {
+  if (code === 'source_unrevealed') return 86400;
   const ceiling = isChapterDownload(kind) ? 3600 : 300;
   const delay = Math.min(ceiling, 15 * 2 ** Math.min(attempts, 8));
   return Math.min(ceiling, delay + Math.floor(Math.random() * 15));
