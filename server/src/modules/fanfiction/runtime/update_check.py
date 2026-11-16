@@ -31,7 +31,8 @@ class UpdateCheck:
         # Tag decisions must refresh EPUB metadata, but do not change downloaded
         # chapter bodies. Keep those checkpoints reusable while labels are reviewed.
         chapter_payload = {key: value for key, value in payload.items() if key != 'tagMatching'}
-        chapter_payload['preview'] = {key: value for key, value in preview.items() if key not in ('tags', 'genres')}
+        matched_fields = {'tags', 'genres', 'categories', 'pendingLabelCount', 'labelMappingVersion'}
+        chapter_payload['preview'] = {key: value for key, value in preview.items() if key not in matched_fields}
         self.chapter_fingerprint = hashlib.sha256(json.dumps(chapter_payload, sort_keys=True, default=str).encode()).hexdigest()
         self.saved = {}
         if self.path:
