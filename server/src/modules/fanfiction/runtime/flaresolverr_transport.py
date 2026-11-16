@@ -1,5 +1,6 @@
 import http.client
 import json
+import re
 import time
 import uuid
 from urllib.parse import urlencode, urlsplit
@@ -20,8 +21,11 @@ class SolverConnection(http.client.HTTPConnection):
 
 
 class FlareSolverrTransport(SafeTransport):
-    def __init__(self, endpoint, **kwargs):
+    def __init__(self, endpoint, session_id=None, **kwargs):
         super().__init__(**kwargs)
+        if session_id is not None and (not isinstance(session_id, str) or not re.fullmatch(r'bookorbit-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', session_id)):
+            raise PolicyError('Invalid browser session identity')
+        self.session_id = session_id
         self.hosts = set()
         self.session = None
         self.endpoint = urlsplit(endpoint)
@@ -57,9 +61,11 @@ class FlareSolverrTransport(SafeTransport):
         cookies = [{'name': c.name, 'value': c.value, 'domain': c.domain, 'path': c.path}
                    for c in self.cookies if (c.name, c.value) in selected and c.domain.lstrip('.') in self.hosts]
         if self.session is None:
-            session = 'bookorbit-' + str(int(time.time())) + '-' + uuid.uuid4().hex
-            self.call_solver({'cmd': 'sessions.create', 'session': session}, min(30, remaining))
+            session = self.session_id or 'bookorbit-' + str(int(time.time())) + '-' + uuid.uuid4().hex
+            # Creation can succeed after our socket times out. Retain its identity
+            # before the call so retries and cleanup do not abandon that browser.
             self.session = session
+            self.call_solver({'cmd': 'sessions.create', 'session': session}, min(30, remaining))
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise DownloadTimeoutError('Download deadline exceeded')
