@@ -342,7 +342,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       },
       contentReview: { approved: true, previousState: 'active' as const },
     };
-    const insert = async (kind: 'preview' | 'update', result: typeof readyResult | null, minutesAgo: number, site = preview.site) => {
+    const insert = async (kind: 'preview' | 'update' | 'rollback', result: typeof readyResult | null, minutesAgo: number, site = preview.site) => {
       const [job] = await db
         .insert(schema.fanfictionJobs)
         .values({
@@ -365,6 +365,12 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     await insert('update', { ...readyResult, preview: { ...preview, labelMappingVersion: 1 } }, 8);
     const ready = await insert('update', readyResult, 1);
     const future = await insert('update', readyResult, -10, 'future.example.org');
+    const restore = await insert('rollback', null, 0);
+    expect((await jobs.claim())?.id).toBe(restore.id);
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ state: 'succeeded', leaseOwner: null, leaseExpiresAt: null })
+      .where(eq(schema.fanfictionJobs.id, restore.id));
     expect((await jobs.claim())?.id).toBe(ready.id);
     // Ready updates retain both the website exclusion and the two-worker limit.
     expect(await jobs.claim()).toBeNull();

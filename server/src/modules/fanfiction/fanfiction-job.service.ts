@@ -902,6 +902,7 @@ export class FanfictionJobService {
       const versions = new Map(rulebooks.map((row) => [row.libraryId, row.version]));
       // Stale tag plans need another download, so only current approvals get priority.
       const candidate =
+        candidates.find((row) => row.kind === 'rollback') ??
         candidates.find(
           (row) =>
             (row.kind === 'update' || row.kind === 'refresh') &&
@@ -909,7 +910,8 @@ export class FanfictionJobService {
             row.result.preview &&
             (!versions.has(row.libraryId) || row.result.preview.labelMappingVersion === versions.get(row.libraryId)) &&
             (!row.result.contentReview || row.result.contentReview.approved),
-        ) ?? candidates[0];
+        ) ??
+        candidates[0];
       if (!candidate) return null;
       const [claimed] = await tx
         .update(jobs)
