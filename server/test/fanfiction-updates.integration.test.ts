@@ -1407,6 +1407,60 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect(history.items.filter((row) => row.canRollback)).toHaveLength(1);
     expect(history.currentRevisionId).toBe(result?.revisionId);
   }, 60_000);
+  it.each([false, true])(
+    'restores chapter counts and disabled checks with the retained EPUB, recovery=%s',
+    async (recover) => {
+      const catalog = module.get(RevisionCatalogService);
+      await chapterEpub(target, ['original first chapter', 'original second chapter']);
+      await revisions.observeFile(fileId, {});
+      const original = await catalog.current(fileId, libraryId);
+      const originalBytes = await readFile(target);
+      await db.update(schema.fanfictionSources).set({ chapterCount: 2 }).where(eq(schema.fanfictionSources.id, source.id));
+      await chapterEpub(output, ['original first chapter', 'original second chapter', 'new third chapter']);
+      runtime.update.mockImplementationOnce(async (_operation, _url, _document, prepare, consume) => {
+        await prepare(join(directory, 'before-restore.epub'));
+        return consume(output, { ...preview, chapterCount: 3 });
+      });
+      const updateJob = await claim();
+      const update = await run(updateJob);
+      await jobs.finish(updateJob, 'succeeded', update);
+      expect((await sources.get(libraryId, source.id, user)).chapterCount).toBe(3);
+      await sources.rollback(
+        libraryId,
+        source.id,
+        {
+          idempotencyKey: randomUUID(),
+          revisionId: original.id,
+          expectedRevisionId: update!.revisionId!,
+        },
+        user,
+      );
+      const rollbackJob = (await jobs.claim())!;
+      const rollback = module.get(FanfictionRollbackService);
+      if (recover) {
+        vi.spyOn(sources, 'completeRollback').mockRejectedValueOnce(new ConflictException('Completion interrupted'));
+        await expect(rollback.run(rollbackJob, authorize, new AbortController().signal)).rejects.toThrow('Completion interrupted');
+        await jobs.finish(rollbackJob, 'failed', null, 'runtime_failed');
+        await module.get(FanfictionRecoveryService).recover();
+        expect((await jobs.get(libraryId, rollbackJob.id, user)).state).toBe('succeeded');
+      } else {
+        const result = await rollback.run(rollbackJob, authorize, new AbortController().signal);
+        await jobs.finish(rollbackJob, 'succeeded', result);
+      }
+      expect(await sources.get(libraryId, source.id, user)).toMatchObject({
+        chapterCount: 2,
+        state: 'paused',
+        metadataReviewPending: false,
+        nextCheckAt: null,
+        tracking: { enabled: false },
+      });
+      expect(await readFile(target)).toEqual(originalBytes);
+      await expect(db.transaction((tx) => catalog.chapterCount(tx, fileId, libraryId + 1, original.id))).rejects.toThrow(
+        'Revision not found in this library',
+      );
+    },
+    60_000,
+  );
   it('rejects a retained EPUB whose bytes changed after choosing rollback', async () => {
     const catalog = module.get(RevisionCatalogService);
     const original = await catalog.current(fileId, libraryId);

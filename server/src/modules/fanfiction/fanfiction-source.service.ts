@@ -385,10 +385,12 @@ export class FanfictionSourceService {
   async completeRollback(job: Job, revisionId: string) {
     return this.db.transaction(async (tx) => {
       const source = await this.assertUpdatable(job, tx);
+      const chapterCount = await this.catalog.chapterCount(tx, source.bookFileId!, job.libraryId, revisionId);
       await tx
         .update(sources)
         .set({
           state: 'paused',
+          chapterCount: chapterCount ?? source.chapterCount,
           updatesEnabled: false,
           metadataReviewPending: false,
           nextCheckAt: null,
