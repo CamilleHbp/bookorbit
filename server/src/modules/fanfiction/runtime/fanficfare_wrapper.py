@@ -422,6 +422,8 @@ def failure_code(error):
         return 'source_unavailable'
     if name == 'StoryDoesNotExist' or status in (404, 410):
         return 'source_not_found'
+    if name == 'FailedToDownload' and 'this work is part of an ongoing challenge and will be revealed soon!' in str(error).casefold():
+        return 'source_unrevealed'
     return 'source_failed'
 
 

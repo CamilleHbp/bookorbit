@@ -1011,7 +1011,7 @@ export class FanfictionJobService {
           leaseOwner: null,
           leaseExpiresAt: null,
           updatedAt: sql`now()`,
-          ...(state === 'queued' ? { runAfter: sql`now() + (${retryDelaySeconds(job.kind, job.attempts)} * interval '1 second')` } : {}),
+          ...(state === 'queued' ? { runAfter: sql`now() + (${retryDelaySeconds(job.kind, job.attempts, errorCode)} * interval '1 second')` } : {}),
         })
         .where(this.owned(job))
         .returning();

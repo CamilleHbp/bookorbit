@@ -458,6 +458,7 @@ export const FANFICTION_WEBSITE_ACCESS_ERRORS = [
   "storiesonline_membership_expired",
   "source_failed",
   "source_unavailable",
+  "source_unrevealed",
   "source_rate_limited",
   "download_timeout",
   "fanfiction_net_browser_verification",

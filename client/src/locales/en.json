@@ -16051,6 +16051,7 @@
       "access_revoked": "Library administration access was revoked.",
       "source_failed": "The story could not be downloaded. Try again, or open the website to check access.",
       "source_not_found": "The original story was not found. Check its URL or open the website. Your saved copy is still available.",
+      "source_unrevealed": "This story is hidden in an unrevealed collection. Your saved copy is still available. We will check again tomorrow.",
       "source_rate_limited": "The website is limiting requests. Wait a few minutes before trying again.",
       "source_unavailable": "The website is temporarily unavailable. Try again later.",
       "runtime_failed": "This task could not finish. Retry it. If it fails again, contact your administrator.",
