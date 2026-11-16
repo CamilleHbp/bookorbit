@@ -602,15 +602,29 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     );
     expect(await sources.metadataReview(libraryId, source.id, user)).toBeNull();
   }, 180000);
-  it('keeps rewritten chapters staged until explicit review and publishes once after approval', async () => {
+  it('publishes identifiable rewritten chapters automatically without removals or reordering', async () => {
     await chapterEpub(target, ['Original chapter']);
     await chapterEpub(output, ['Rewritten chapter', 'New chapter']);
+    await revisions.observeFile(fileId, {});
+    await db.update(schema.fanfictionSources).set({ updatePolicy: 'safe', updatesEnabled: true }).where(eq(schema.fanfictionSources.id, source.id));
+    const job = await claim();
+    const result = await run(job);
+    expect(result?.contentReview).toBeUndefined();
+    expect(result?.changes).toMatchObject({ safety: 'content_only', changed: 1, removed: 0, reordered: false });
+    await jobs.finish(job, 'succeeded', result);
+    expect(await readFile(target)).toEqual(await readFile(output));
+    expect(runtime.update).toHaveBeenCalledTimes(1);
+  }, 180000);
+  it('still stages a removed chapter for explicit review before publishing', async () => {
+    await chapterEpub(target, ['Original chapter', 'Chapter to preserve']);
+    await chapterEpub(output, ['Rewritten chapter']);
     await revisions.observeFile(fileId, {});
     await db.update(schema.fanfictionSources).set({ updatePolicy: 'safe', updatesEnabled: true }).where(eq(schema.fanfictionSources.id, source.id));
     const original = await readFile(target);
     const job = await claim();
     const result = await run(job);
     expect(result?.contentReview?.approved).toBe(false);
+    expect(result?.changes?.removed).toBe(1);
     await jobs.finish(job, 'review_required', result, 'content_review_required');
     expect(await readFile(target)).toEqual(original);
     await expect(jobs.retry(libraryId, job.id, user)).rejects.toThrow('Review');

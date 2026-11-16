@@ -2,6 +2,15 @@ import type { FanfictionMetadataField, FanfictionMetadataValues } from '@bookorb
 
 export const storyTags = (tags: string[]) => [...new Set(tags.map((tag) => tag.trim().slice(0, 200)).filter(Boolean))].sort();
 
+export function storyTagChanges(current: string[], incoming: string[], managed: string[]) {
+  const present = new Set(storyTags(current));
+  const remote = new Set(storyTags(incoming));
+  return {
+    added: [...remote].filter((tag) => !present.has(tag)),
+    removed: storyTags(managed).filter((tag) => present.has(tag) && !remote.has(tag)),
+  };
+}
+
 export function planStoryMetadata(
   current: FanfictionMetadataValues,
   incoming: FanfictionMetadataValues,
@@ -26,7 +35,8 @@ export function planStoryMetadata(
   const baseline = storyTags(previous?.tags ?? managed);
   const remote = storyTags(incoming.tags);
   if (!locked.includes('tags') && JSON.stringify(baseline) !== JSON.stringify(remote)) {
-    if (tagPolicy === 'automatic') values.tags = remote;
+    const changes = storyTagChanges(current.tags, remote, managed);
+    if (tagPolicy === 'automatic' || (!changes.added.length && !changes.removed.length)) values.tags = remote;
     else fields.push('tags');
   }
   return { fields, values };

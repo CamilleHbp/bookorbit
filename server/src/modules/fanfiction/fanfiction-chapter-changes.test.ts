@@ -18,12 +18,17 @@ it('accepts identifiable unchanged chapters, ignoring explicitly generated pages
     chapters: [{ ...chapter('title'), generated: true }, chapter('one', 'https://example.org/1'), chapter('two', 'https://example.org/2')],
   };
   const next = { ...original, chapters: [...original.chapters, chapter('three', 'https://example.org/3')] };
+  expect(
+    storyUpdateSafety(original, {
+      ...original,
+      chapters: [original.chapters[0], chapter('one', 'https://example.org/1', 'rewritten'), original.chapters[2]],
+    }).safety,
+  ).toBe('content_only');
   expect(storyUpdateSafety(original, next).safety).toBe('append_only');
   expect(storyUpdateSafety(original, original).safety).toBe('unchanged');
   for (const chapters of [
     original.chapters.slice(0, 2),
     [original.chapters[0], original.chapters[2], original.chapters[1]],
-    [original.chapters[0], chapter('one', 'https://example.org/1', 'rewritten'), original.chapters[2]],
     [...original.chapters, chapter('unknown')],
     [...original.chapters, chapter('duplicate', 'https://example.org/1')],
   ])
@@ -58,7 +63,7 @@ it('compares the relative order of shared chapters for every adapter', () => {
   const mixed = manifest('first', 'a', 'middle', 'b', 'c', 'last');
   expect(storyUpdateSafety(old, mixed).safety).toBe('insert_only');
   mixed.chapters[3].textHash = 'edited';
-  expect(storyUpdateSafety(old, mixed).safety).toBe('review_required');
+  expect(storyUpdateSafety(old, mixed).safety).toBe('content_only');
   expect(storyUpdateSafety(old, manifest('a', 'x', 'c')).safety).toBe('review_required');
   expect(storyUpdateSafety(old, manifest('a', 'x', 'c', 'b')).safety).toBe('review_required');
   expect(storyUpdateSafety(old, manifest('a', 'x', 'b', 'x', 'c')).safety).toBe('review_required');
@@ -77,12 +82,12 @@ it('identifies fiction.live ranges by story and start while preserving ordinary 
   const old = manifest('fiction.live', 20, 'old');
   const next = manifest('fiction.live', 30, 'new');
   expect(storyChapterChanges(old, next)).toMatchObject({ changed: 1, added: [] });
-  expect(storyUpdateSafety(old, next)).toEqual({ removed: 0, reordered: false, safety: 'review_required' });
+  expect(storyUpdateSafety(old, next)).toEqual({ removed: 0, reordered: false, safety: 'content_only' });
   expect(storyUpdateSafety(old, manifest('fiction.live', 30, 'old')).safety).toBe('unchanged');
   expect(storyUpdateSafety(manifest('example.org', 20, 'old'), manifest('example.org', 30, 'new')).removed).toBe(1);
 });
 
-it('matches unique StoriesOnline chapter titles across URL formats but still flags changed text and ambiguous titles', () => {
+it('matches unique StoriesOnline chapter titles across URL formats and accepts edits while still flagging ambiguous titles', () => {
   const saved = chapter('Chapter 1', 'https://storiesonline.net/s/123:999/chapter-2-wrong-slug');
   const proposed = chapter('Chapter 1', 'https://storiesonline.net/s/123/current-title/1');
   const manifest = (...chapters: RevisionChapter[]): EpubRevisionManifest => ({
@@ -95,7 +100,7 @@ it('matches unique StoriesOnline chapter titles across URL formats but still fla
   expect(storyUpdateSafety(manifest(saved), manifest(proposed)).safety).toBe('unchanged');
   const edited = { ...proposed, textHash: 'edited' };
   expect(storyChapterChanges(manifest(saved), manifest(edited))).toMatchObject({ changed: 1, added: [] });
-  expect(storyUpdateSafety(manifest(saved), manifest(edited)).safety).toBe('review_required');
+  expect(storyUpdateSafety(manifest(saved), manifest(edited)).safety).toBe('content_only');
   expect(storyUpdateSafety(manifest(saved), manifest({ ...proposed, sourceUrl: 'https://storiesonline.net/s/124/current-title/1' })).removed).toBe(1);
   expect(
     storyUpdateSafety(manifest(saved), manifest(proposed, { ...proposed, sourceUrl: 'https://storiesonline.net/s/123/current-title/2' })).safety,
@@ -114,4 +119,10 @@ it('keeps repeated chapter titles distinct when the website replaces every URL',
   expect(storyUpdateSafety(saved, next)).toMatchObject({ safety: 'unchanged', removed: 0 });
   expect(storyChapterChanges(saved, next)).toMatchObject({ changed: 0, added: [] });
   expect(storyUpdateSafety(saved, { ...next, chapters: [next.chapters[1], next.chapters[0], next.chapters[2]] }).reordered).toBe(true);
+});
+
+it('requires review when zero removals and no reordering cannot establish chapter identity', () => {
+  const previous = { version: 1 as const, contentHash: '', metadataHash: '', coverHash: null, chapters: [chapter('one')] };
+  const next = { ...previous, chapters: [chapter('one', undefined, 'edited')] };
+  expect(storyUpdateSafety(previous, next)).toMatchObject({ safety: 'review_required', removed: 0, reordered: false });
 });

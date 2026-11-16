@@ -13,7 +13,7 @@ import { ManagedMetadataService } from '../metadata/managed-metadata.service';
 import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
-import { planStoryMetadata, storyTags } from './fanfiction-metadata-review';
+import { planStoryMetadata, storyTagChanges, storyTags } from './fanfiction-metadata-review';
 import { validateFanfictionPreview } from './fanfiction-preview';
 
 const jobs = schema.fanfictionJobs;
@@ -96,11 +96,12 @@ export class FanfictionReviewService {
         previous?.result?.preview,
         source.tagPolicy,
       );
-      const remote = storyTags(preview.tags);
+      const tagChanges = storyTagChanges(snapshot.current.tags, preview.tags, snapshot.managedTags);
       if (deferMetadata) {
         for (const field of previous?.result?.metadataReview?.fields ?? []) {
           if (
             !snapshot.lockedFields.includes(field) &&
+            (field !== 'tags' || tagChanges.added.length > 0 || tagChanges.removed.length > 0) &&
             JSON.stringify(snapshot.current[field]) !== JSON.stringify(preview[field]) &&
             !plan.fields.includes(field)
           )
@@ -140,8 +141,7 @@ export class FanfictionReviewService {
                 tags: {
                   custom: snapshot.customTags,
                   managed: snapshot.managedTags,
-                  added: remote.filter((tag) => !snapshot.managedTags.includes(tag)),
-                  removed: snapshot.managedTags.filter((tag) => !remote.includes(tag)),
+                  ...tagChanges,
                 },
                 choices: stored.result?.metadataReview?.choices,
               },
@@ -165,7 +165,7 @@ export class FanfictionReviewService {
       prepared.baseline,
       source.tagPolicy,
     );
-    const remote = storyTags(review.incoming.tags);
+    const tagChanges = storyTagChanges(snapshot.current.tags, review.incoming.tags, snapshot.managedTags);
     const updated = {
       ...review,
       current: snapshot.current,
@@ -175,8 +175,7 @@ export class FanfictionReviewService {
       tags: {
         custom: snapshot.customTags,
         managed: snapshot.managedTags,
-        added: remote.filter((tag) => !snapshot.managedTags.includes(tag)),
-        removed: snapshot.managedTags.filter((tag) => !remote.includes(tag)),
+        ...tagChanges,
       },
     };
     await tx
