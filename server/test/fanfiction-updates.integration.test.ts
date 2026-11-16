@@ -324,8 +324,14 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     });
   }
   it('finishes approved updates before older downloads within the due batch', async () => {
+    const [rulebook] = await db
+      .insert(schema.tagRulebooks)
+      .values({ userId: user.id, version: 2 })
+      .onConflictDoUpdate({ target: schema.tagRulebooks.userId, set: { version: 2 } })
+      .returning();
+    await db.insert(schema.libraryTagRulebooks).values({ libraryId, rulebookId: rulebook.id });
     const readyResult = {
-      preview,
+      preview: { ...preview, labelMappingVersion: 2 },
       preparedUpdate: {
         noChange: true,
         previousState: 'active' as const,
@@ -356,6 +362,7 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     };
     const download = await insert('preview', null, 10);
     const awaitingReview = await insert('update', { ...readyResult, contentReview: { ...readyResult.contentReview, approved: false } }, 9);
+    await insert('update', { ...readyResult, preview: { ...preview, labelMappingVersion: 1 } }, 8);
     const ready = await insert('update', readyResult, 1);
     const future = await insert('update', readyResult, -10, 'future.example.org');
     expect((await jobs.claim())?.id).toBe(ready.id);
@@ -371,6 +378,48 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
     expect((await jobs.claim())?.id).toBe(download.id);
     expect((await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, awaitingReview.id)))[0].state).toBe('queued');
     expect((await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, future.id)))[0].state).toBe('queued');
+  }, 60_000);
+  it('resolves a failed pre-preview import with the saved story without repeating website access', async () => {
+    const original = await readFile(target);
+    const originalSource = await sources.get(libraryId, source.id, user);
+    const [attempt] = await db
+      .insert(schema.fanfictionJobs)
+      .values({
+        libraryId,
+        userId: user.id,
+        tokenVersion: user.tokenVersion,
+        idempotencyKey: randomUUID(),
+        kind: 'import',
+        state: 'configuration_blocked',
+        url: source.canonicalUrl,
+        site: source.site,
+        errorCode: 'access_denied',
+        result: { progress: { stage: 'metadata' } },
+      })
+      .returning();
+    await expect(jobs.retry(libraryId, attempt.id, { ...user, id: user.id + 1, isSuperuser: true })).rejects.toBeInstanceOf(ForbiddenException);
+    const resolved = await jobs.retry(libraryId, attempt.id, user);
+    expect(resolved).toMatchObject({
+      state: 'succeeded',
+      errorCode: null,
+      result: { sourceId: source.id, bookId: source.bookId, bookFileId: fileId, existingStory: { id: source.id, bookId: source.bookId } },
+    });
+    expect((await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, attempt.id)))[0].sourceId).toBe(source.id);
+    expect((await jobs.retry(libraryId, attempt.id, user)).id).toBe(attempt.id);
+    expect(await jobs.claim()).toBeNull();
+    expect(await sources.get(libraryId, source.id, user)).toEqual(originalSource);
+    expect(await readFile(target)).toEqual(original);
+    // An unmatched URL still follows the normal retry path.
+    const [unmatched] = await db
+      .insert(schema.fanfictionJobs)
+      .values({
+        ...attempt,
+        id: randomUUID(),
+        idempotencyKey: randomUUID(),
+        url: 'https://example.org/story/another',
+      })
+      .returning();
+    expect((await jobs.retry(libraryId, unmatched.id, user)).state).toBe('queued');
   }, 60_000);
   it('restarts an outdated unpublished review using current settings and an idempotent job identity', async () => {
     const original = await readFile(target);
