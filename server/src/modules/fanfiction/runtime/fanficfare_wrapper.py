@@ -194,20 +194,42 @@ def story_preview(adapter, story):
 
 class ProgressReporter:
     def __init__(self, emit):
-        self.emit = emit
+        self.sink = emit
         self.last_sent = 0
         self.total = 0
         self.downloaded = None
+        self.state = {'stage': 'metadata'}
+
+    def emit(self, value):
+        if value.get('stage') != self.state['stage']:
+            self.state = {'stage': value['stage']}
+        self.state.update(value)
+        self.last_sent = time.monotonic()
+        self.sink(dict(self.state))
+
+    def activity(self, activity, chapter=None, title=None):
+        self.state['activity'] = activity
+        if chapter is not None:
+            if self.state.get('currentChapter') != chapter:
+                self.state.pop('illustration', None)
+            self.state['currentChapter'] = chapter
+            if title is not None:
+                self.state['currentChapterTitle'] = title
+        if activity == 'illustrations':
+            self.state['illustration'] = self.state.get('illustration', 0) + 1
+        now = time.monotonic()
+        if now - self.last_sent >= 1:
+            self.last_sent = now
+            self.sink(dict(self.state))
 
     def chapters(self, fraction, _url):
         completed = min(self.total, max(0, round(fraction * self.total)))
-        now = time.monotonic()
-        if completed < self.total and now - self.last_sent < 1:
-            return
-        self.last_sent = now
         counts = {'completedChapters': completed, 'totalChapters': self.total}
         if self.downloaded is not None:
             counts['reusedChapters'] = max(0, completed - self.downloaded())
+        self.state.update(counts)
+        if completed < self.total and time.monotonic() - self.last_sent < 1:
+            return
         self.emit({'stage': 'downloading', **counts})
         if completed == self.total:
             self.emit({'stage': 'packaging', **counts})
@@ -246,6 +268,8 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
 
 def run_story(request, transport, operation, url, ini, save_cookies, report_progress):
     from fanficfare import adapters, writers
+    progress = ProgressReporter(report_progress)
+    transport.report_activity = progress.activity
     def finish(result):
         if save_cookies is not None:
             save_cookies(transport.export_cookies())
@@ -270,7 +294,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
             configuration.set('overrides', option, 'false')
         configuration.set('overrides', 'update_check_recent_chapters', '0')
     adapter = story_adapter(configuration, url)
-    report_progress({'stage': 'metadata'})
+    progress.emit({'stage': 'metadata'})
     login_scribblehub(adapter, allow_public=operation in ('download', 'update', 'refresh'))
     # FanFicFare caches metadata, so the writer cannot fetch a skipped cover later.
     get_cover = operation in ('download', 'update', 'refresh')
@@ -301,7 +325,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         raise PolicyError('Unsupported integration operation')
     check = UpdateCheck(request, adapter, preview)
     if operation == 'update' and check.unchanged():
-        report_progress({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
+        progress.emit({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
         return finish({'preview': preview, 'output': 'input.epub'})
     if operation in ('update', 'refresh'):
         from fanficfare.epubutils import get_update_data
@@ -329,9 +353,8 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
                 if not adapter.oldchaptersmap:
                     adapter.oldchapters = None
     with open('output.epub', 'xb') as output:
-        progress = ProgressReporter(report_progress)
         progress.total = chapter_count
-        report_progress({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
+        progress.emit({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
         with recover_chapters(adapter, check.chapter_directory(request.get('chapterDirectory')), canonical, transport) as downloaded:
             progress.downloaded = downloaded
             writers.getWriter('epub', configuration, adapter).writeStory(outstream=output, notification=progress.chapters)
@@ -339,7 +362,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
             raise transport.failure
         output.flush()
         os.fsync(output.fileno())
-    report_progress({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
+    progress.emit({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
     validate_epub('output.epub', LIBRARY_EPUB_LIMIT if operation in ('update', 'refresh') else NEW_EPUB_LIMIT)
     if operation in ('update', 'refresh'):
         preserve_chapter_locks('input.epub', 'output.epub')

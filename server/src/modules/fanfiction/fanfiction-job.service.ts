@@ -940,7 +940,7 @@ export class FanfictionJobService {
     await this.db
       .update(jobs)
       .set({
-        result: sql`coalesce(${jobs.result}, '{}'::jsonb) || ${JSON.stringify({ progress })}::jsonb`,
+        result: sql`coalesce(${jobs.result}, '{}'::jsonb) || ${JSON.stringify({ progress: { ...progress, updatedAt: new Date().toISOString() } })}::jsonb`,
         updatedAt: sql`now()`,
       })
       .where(and(this.owned(job), eq(jobs.libraryId, job.libraryId), eq(jobs.userId, job.userId), eq(jobs.cancellationRequested, false)));

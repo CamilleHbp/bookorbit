@@ -13374,5 +13374,59 @@
     },
     "book": "Livre",
     "searching": "Recherche de correspondances…"
+  },
+  "fanfiction": {
+    "liveActivity": {
+      "title": "Activité des histoires",
+      "live": "Actualisation automatique",
+      "disconnected": "Actualisation en pause",
+      "checked": "Dernière vérification à {time}",
+      "lastCheck": "Dernière vérification de la bibliothèque",
+      "downloadingCount": "{count} en cours",
+      "waitingCount": "{count} en attente",
+      "attentionCount": "À vérifier : {count}",
+      "retryAt": "Prochaine tentative à partir de {time}. Les chapitres téléchargés sont conservés.",
+      "justNow": "Mis à jour à l’instant",
+      "minutesAgo": "Mis à jour il y a {count, plural, one {# minute} other {# minutes}}",
+      "connected": "Toujours en cours",
+      "wait": {
+        "website_busy": "En attente de la fin du téléchargement d’une autre histoire de {site}.",
+        "downloads_busy": "En attente d’une place. D’autres histoires sont en cours.",
+        "ready": "En attente de son tour pour démarrer.",
+        "recovery": "Reconnexion après une interruption. Les chapitres téléchargés sont conservés.",
+        "cancelling": "Arrêt après l’étape en cours."
+      },
+      "step": {
+        "website": "En attente de la réponse du site.",
+        "chapter": "Lecture du chapitre {chapter}.",
+        "illustrations": "Préparation des illustrations de ce chapitre.",
+        "saving": "Enregistrement du chapitre terminé.",
+        "resuming": "Vérification des chapitres déjà téléchargés."
+      },
+      "chapter": "Chapitre {chapter} sur {total}",
+      "chapterTitle": "{position} : {title}",
+      "illustration": "Préparation de l’illustration {count}."
+    },
+    "progress": {
+      "metadata": "Lecture des informations de l’histoire",
+      "downloading": "Téléchargement des chapitres",
+      "packaging": "Préparation de votre livre",
+      "validating": "Vérification de votre livre",
+      "importing": "Ajout à votre bibliothèque",
+      "finalizing": "Finalisation",
+      "cancelling": "Annulation…",
+      "retrying": "En attente d’une nouvelle tentative automatique",
+      "ready": "Chapitres prêts : {completed} sur {total}",
+      "attempt": "Essai {count}",
+      "nextAttempt": "Prochaine tentative automatique à {time}",
+      "failedDuring": "Arrêt pendant : {stage}"
+    },
+    "refresh": "Actualiser",
+    "downloads": {
+      "details": "Détails du téléchargement"
+    },
+    "attentionReview": {
+      "start": "Vérifier les histoires"
+    }
   }
 }

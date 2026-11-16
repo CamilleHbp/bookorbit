@@ -4,13 +4,20 @@ import { needsImportReview } from '../composables/useImportReview'
 import TagReviewNotice from './TagReviewNotice.vue'
 import StoryUpdateOutcome from './StoryUpdateOutcome.vue'
 import { computed } from 'vue'
+import { useDownloadActivity } from '../composables/useDownloadActivity'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import { CircleAlert, CircleCheck, Clock, LoaderCircle } from '@lucide/vue'
 import type { FanfictionJob } from '@bookorbit/types'
 
-const props = defineProps<{ job: FanfictionJob }>()
+const props = defineProps<{ job: FanfictionJob; lastContactAt?: string | null }>()
 const { t, locale } = useI18n()
+const {
+  message: activityMessage,
+  freshness,
+  connected,
+  chapter,
+} = useDownloadActivity(() => ({ progress: props.job.result?.progress, lastContactAt: props.lastContactAt }))
 const progress = computed(() => props.job.result?.progress)
 const active = computed(() => ['queued', 'running'].includes(props.job.state))
 const succeeded = computed(() => ['succeeded', 'no_change'].includes(props.job.state))
@@ -41,7 +48,6 @@ const percentage = computed(() => {
   if (!progress.value?.totalChapters || progress.value.stage !== 'downloading') return undefined
   return Math.min(100, Math.round((100 * (progress.value.completedChapters ?? 0)) / progress.value.totalChapters))
 })
-const barStyle = computed(() => ({ width: percentage.value === undefined ? '35%' : `${percentage.value}%` }))
 const errorText = computed(() => {
   const key = `fanfiction.errors.${props.job.errorCode}`
   return !active.value && !reviewing.value && props.job.errorCode ? t(key, t('fanfiction.errors.runtime_failed')) : ''
@@ -69,26 +75,27 @@ const lastStage = computed(() =>
       <span class="font-medium">{{ status }}</span>
       <span v-if="job.attempts > 1" class="text-muted-foreground ml-auto">{{ t('fanfiction.progress.attempt', { count: job.attempts }) }}</span>
     </div>
+    <p v-if="active && job.state === 'running' && chapter" class="text-sm font-medium break-words">{{ chapter }}</p>
+    <p v-if="active && job.state === 'running' && activityMessage" class="text-sm text-muted-foreground">{{ activityMessage }}</p>
+    <p v-if="active && job.state === 'running' && freshness" class="text-xs text-muted-foreground">
+      {{ freshness }}<span v-if="connected"> · {{ t('fanfiction.liveActivity.connected') }}</span>
+    </p>
     <p v-if="nextAttempt" class="text-muted-foreground text-sm">
       <time :datetime="job.nextAttemptAt">{{ t('fanfiction.progress.nextAttempt', { time: nextAttempt }) }}</time>
     </p>
     <template v-if="['import', 'update', 'refresh'].includes(job.kind) && (progress || (job.kind === 'import' && (active || succeeded)))">
-      <div
+      <progress
         v-if="active && !nextAttempt"
         role="progressbar"
+        :value="percentage"
+        max="100"
         :aria-label="status"
         :aria-valuenow="percentage"
         :aria-valuetext="chapterLabel || status"
         :aria-valuemin="0"
         :aria-valuemax="100"
-        class="bg-muted h-2 overflow-hidden rounded-full"
-      >
-        <div
-          class="bg-primary h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
-          :class="{ 'motion-safe:animate-pulse': percentage === undefined && active }"
-          :style="barStyle"
-        />
-      </div>
+        class="block h-2 w-full overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary [&::-moz-progress-bar]:bg-primary"
+      />
       <div v-if="chapterLabel && !succeeded" class="text-muted-foreground flex justify-between gap-2 text-xs">
         <span>{{ chapterLabel }}</span
         ><span v-if="percentage !== undefined">{{ percentage }}%</span>

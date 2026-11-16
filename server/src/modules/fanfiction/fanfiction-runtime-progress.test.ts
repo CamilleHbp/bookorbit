@@ -12,6 +12,50 @@ describe('runtime progress protocol', () => {
     await reader.flush();
     expect(sink).toHaveBeenCalledWith({ stage: 'downloading', completedChapters: 4, totalChapters: 10 });
   });
+  it('accepts bounded activity data without trusting a child-supplied timestamp or text', async () => {
+    const sink = vi.fn().mockResolvedValue(undefined);
+    const reader = new FanfictionRuntimeProgress(sink);
+    reader.feed(
+      line({
+        stage: 'downloading',
+        completedChapters: 3,
+        totalChapters: 10,
+        activity: 'illustrations',
+        currentChapter: 4,
+        updatedAt: 'forged',
+        message: 'private',
+      }),
+    );
+    await reader.flush();
+    expect(sink).toHaveBeenLastCalledWith({
+      stage: 'downloading',
+      completedChapters: 3,
+      totalChapters: 10,
+      activity: 'illustrations',
+      currentChapter: 4,
+    });
+    reader.feed(line({ stage: 'metadata', activity: 'private text' }));
+    reader.feed(line({ stage: 'downloading', completedChapters: 3, totalChapters: 10, currentChapter: 11 }));
+    await reader.flush();
+    expect(sink).toHaveBeenCalledTimes(1);
+  });
+  it('keeps chapter names and illustration counts bounded without rejecting Unicode titles', async () => {
+    const sink = vi.fn().mockResolvedValue(undefined);
+    const reader = new FanfictionRuntimeProgress(sink);
+    const base = { stage: 'downloading', completedChapters: 3, totalChapters: 10, currentChapter: 4, activity: 'illustrations' };
+    reader.feed(line({ ...base, currentChapterTitle: '📖'.repeat(160), illustration: 7 }));
+    await reader.flush();
+    expect(sink.mock.calls[0][0]).toMatchObject({ currentChapterTitle: '📖'.repeat(160), illustration: 7 });
+    for (const value of [
+      { currentChapterTitle: 'x'.repeat(161) },
+      { currentChapterTitle: 'not\na title' },
+      { illustration: -1 },
+      { illustration: 10001 },
+    ])
+      reader.feed(line({ ...base, ...value }));
+    await reader.flush();
+    expect(sink).toHaveBeenCalledTimes(1);
+  });
   it('ignores invalid counts, malformed data and diagnostics', async () => {
     const sink = vi.fn();
     const reader = new FanfictionRuntimeProgress(sink);

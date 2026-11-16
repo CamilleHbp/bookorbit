@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { canReviewDownload, storyIssueRoute } from '../composables/storyReview'
 import { RouterLink, useRouter } from 'vue-router'
@@ -7,6 +7,7 @@ import { ArrowUpRight, CircleCheck, CloudDownload } from '@lucide/vue'
 import type { FanfictionDownloadRow, FanfictionJob, FanfictionSourceBatchStatus } from '@bookorbit/types'
 import { Button } from '@/components/ui/button'
 import { sections, useDownloadQueue } from '../composables/useDownloadQueue'
+import DownloadActivity from './DownloadActivity.vue'
 import DownloadSection from './DownloadSection.vue'
 import FanfictionLibraryStatus from './FanfictionLibraryStatus.vue'
 import DownloadRow from './DownloadRow.vue'
@@ -25,6 +26,11 @@ const { snapshot, busy, error, lastSeen, refresh, reload, offsets } = useDownloa
 const visible = computed(() => sections.filter((key) => key === 'running' || snapshot.value?.totals[key]))
 const selected = ref<FanfictionDownloadRow>()
 const detail = ref<InstanceType<typeof DownloadJobDetail>>()
+watch(snapshot, (page) => {
+  if (!selected.value?.jobId) return
+  const current = page?.items.find((row) => row.jobId === selected.value?.jobId && !row.groupKey)
+  if (current) selected.value = current
+})
 let opener: HTMLElement | null = null
 const list = ref<HTMLElement>()
 function inspect(row: FanfictionDownloadRow) {
@@ -53,11 +59,29 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
         <button type="button" class="text-primary underline" @click="refresh">{{ t('fanfiction.refresh') }}</button>
       </p>
     </div>
-    <p v-if="!snapshot && !error" role="status">{{ t('common.loading') }}</p>
-    <FanfictionLibraryStatus :library-id="libraryId" :job="checkJob" :summary="checkSummary" :checking="checking" :show-actions="checkError"
-      ><slot name="check-details"
-    /></FanfictionLibraryStatus>
-    <div class="flex flex-wrap justify-end">
+    <div v-if="!snapshot && !error" role="status" aria-busy="true" class="space-y-4 rounded-xl border border-border p-5">
+      <span class="sr-only">{{ t('common.loading') }}</span>
+      <div class="h-5 w-36 rounded bg-muted motion-safe:animate-pulse" />
+      <div class="h-4 w-64 max-w-full rounded bg-muted motion-safe:animate-pulse" />
+    </div>
+    <DownloadActivity v-if="snapshot" :snapshot="snapshot" :checked-at="lastSeen" :error="error" :busy="busy" @refresh="refresh">
+      <Button as-child class="min-h-11"
+        ><RouterLink :to="{ name: 'fanfiction', query: { tab: 'review', review: 'attention', libraryId } }">{{
+          t('fanfiction.attentionReview.start')
+        }}</RouterLink></Button
+      >
+    </DownloadActivity>
+    <details :open="checking || checkError" class="border-b border-border pb-3">
+      <summary
+        class="min-h-11 cursor-pointer py-3 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        {{ t('fanfiction.liveActivity.lastCheck') }}
+      </summary>
+      <FanfictionLibraryStatus :library-id="libraryId" :job="checkJob" :summary="checkSummary" :checking="checking" :show-actions="checkError"
+        ><slot name="check-details"
+      /></FanfictionLibraryStatus>
+    </details>
+    <div v-if="!snapshot" class="flex flex-wrap justify-end">
       <Button as-child class="min-h-11"
         ><RouterLink :to="{ name: 'fanfiction', query: { tab: 'review', review: 'attention', libraryId } }">{{
           t('fanfiction.attentionReview.start')
@@ -71,7 +95,7 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
         :library-id="libraryId"
         :section="key"
         :title="t(`fanfiction.downloads.${key}`)"
-        :count="snapshot.totals[key]"
+        :count="snapshot.storyCounts?.[key] ?? snapshot.totals[key]"
       >
         <p v-if="key === 'running' && !snapshot.totals.running" class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
           <CloudDownload class="size-4" aria-hidden="true" />{{ t('fanfiction.downloads.idle') }}

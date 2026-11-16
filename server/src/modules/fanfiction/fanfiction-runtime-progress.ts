@@ -22,7 +22,7 @@ export class FanfictionRuntimeProgress {
       try {
         const value = JSON.parse(line.slice(19)) as FanfictionImportProgress;
         if (!['metadata', 'downloading', 'packaging', 'validating'].includes(value.stage)) continue;
-        const { completedChapters, totalChapters, reusedChapters } = value;
+        const { completedChapters, totalChapters, reusedChapters, activity, currentChapter, currentChapterTitle, illustration } = value;
         if (
           value.stage !== 'metadata' &&
           (!Number.isInteger(totalChapters) ||
@@ -35,8 +35,24 @@ export class FanfictionRuntimeProgress {
           continue;
         if (reusedChapters !== undefined && (!Number.isInteger(reusedChapters) || reusedChapters < 0 || reusedChapters > (completedChapters ?? 0)))
           continue;
+        if (activity !== undefined && !['website', 'chapter', 'illustrations', 'saving', 'resuming'].includes(activity)) continue;
+        if (currentChapter !== undefined && (!Number.isInteger(currentChapter) || currentChapter < 1 || currentChapter > (totalChapters ?? 10_000)))
+          continue;
+        if (
+          currentChapterTitle !== undefined &&
+          (typeof currentChapterTitle !== 'string' ||
+            currentChapterTitle.length > 320 ||
+            [...currentChapterTitle].length > 160 ||
+            [...currentChapterTitle].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))
+        )
+          continue;
+        if (illustration !== undefined && (!Number.isInteger(illustration) || illustration < 1 || illustration > 10_000)) continue;
         this.pending = {
           stage: value.stage,
+          ...(activity !== undefined ? { activity } : {}),
+          ...(currentChapter !== undefined ? { currentChapter } : {}),
+          ...(currentChapterTitle !== undefined ? { currentChapterTitle } : {}),
+          ...(illustration !== undefined ? { illustration } : {}),
           ...(reusedChapters !== undefined ? { reusedChapters } : {}),
           ...(value.stage !== 'metadata' ? { completedChapters, totalChapters } : {}),
         };

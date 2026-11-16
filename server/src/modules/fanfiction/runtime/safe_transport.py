@@ -121,6 +121,7 @@ class SafeTransport:
         self.remaining_requests = max_requests
         self.deadline = time.monotonic() + timeout
         self.failure = None
+        self.report_activity = lambda activity, chapter=None, title=None: None
         self.browser_connections = {}
         self.cookies = http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(
             strict_ns_domain=http.cookiejar.DefaultCookiePolicy.DomainStrictNonDomain))
@@ -164,6 +165,7 @@ class SafeTransport:
     def request(self, method, url, parameters=None, headers=None):
         if self.failure is not None:
             raise self.failure
+        self.report_activity('illustrations' if any(key.lower() == 'accept' and value.startswith('image/') for key, value in (headers or {}).items()) else 'website')
         try:
             for attempt in range(3):
                 try:

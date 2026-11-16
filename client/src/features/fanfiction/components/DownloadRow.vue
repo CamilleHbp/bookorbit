@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { canReviewDownload, storyIssueRoute } from '../composables/storyReview'
 import { computed, ref, useId } from 'vue'
+import { useDownloadActivity } from '../composables/useDownloadActivity'
 import { useI18n } from 'vue-i18n'
 import { ChevronRight, ArrowUpRight, Download } from '@lucide/vue'
 import type { FanfictionDownloadRow } from '@bookorbit/types'
@@ -27,6 +28,7 @@ const reason = computed(() => {
   return row.code ? t(`fanfiction.errors.${row.code}`, fallback) : row.issue ? fallback : ''
 })
 const verificationUrl = computed(() => safeVerificationUrl(props.row))
+const { message: activityMessage, freshness, connected, chapter } = useDownloadActivity(() => props.row)
 const progress = computed(() => props.row.progress)
 const percent = computed(() =>
   progress.value?.stage === 'downloading' && progress.value.totalChapters
@@ -51,21 +53,29 @@ function inspectMember(row: FanfictionDownloadRow) {
 </script>
 <template>
   <article v-if="row.section === 'running'" class="my-3 space-y-4 rounded-xl bg-primary px-5 py-5 text-primary-foreground sm:px-7">
-    <div class="flex items-center gap-2 text-sm">
-      <Download class="size-4" aria-hidden="true" />{{ t(row.progress ? `fanfiction.progress.${row.progress.stage}` : 'fanfiction.states.running')
-      }}<span class="ms-auto">{{ row.site }}</span>
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+      <Download class="size-4 shrink-0" aria-hidden="true" />{{
+        t(row.progress ? `fanfiction.progress.${row.progress.stage}` : 'fanfiction.states.running')
+      }}<span class="ms-auto max-w-full break-words">{{ row.site }}</span>
     </div>
-    <div class="flex items-baseline justify-between gap-3">
-      <h3 class="min-w-0 font-serif text-2xl leading-tight break-words sm:text-3xl">{{ row.title }}</h3>
-      <strong v-if="percent !== null" class="shrink-0 text-2xl tabular-nums">{{ percent }}%</strong>
+    <div class="flex flex-wrap items-baseline justify-between gap-3">
+      <h3 class="min-w-0 grow basis-48 font-serif text-2xl leading-tight break-words sm:text-3xl">{{ row.title }}</h3>
+      <strong v-if="percent !== null" class="ms-auto shrink-0 text-2xl tabular-nums">{{ percent }}%</strong>
     </div>
+    <p v-if="chapter" class="text-sm font-medium leading-relaxed break-words">{{ chapter }}</p>
+    <p v-if="activityMessage" :id="`${id}-activity`" class="text-sm leading-relaxed">{{ activityMessage }}</p>
     <progress
       v-if="percent !== null"
       class="block h-2 w-full overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-primary-foreground/25 [&::-webkit-progress-value]:bg-primary-foreground [&::-moz-progress-bar]:bg-primary-foreground"
       :value="percent"
       max="100"
       :aria-label="row.title"
+      :aria-describedby="activityMessage ? `${id}-activity` : undefined"
     />
+    <p v-if="freshness" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      <span>{{ freshness }}</span
+      ><span v-if="connected">{{ t('fanfiction.liveActivity.connected') }}</span>
+    </p>
     <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
       <span v-if="progress?.totalChapters">{{
         t('fanfiction.progress.ready', {
@@ -121,6 +131,9 @@ function inspectMember(row: FanfictionDownloadRow) {
           /></RouterLink>
           <p v-else class="font-medium break-words">{{ row.title }}</p></template
         >
+        <p v-if="activityMessage && (row.section === 'queued' || row.section === 'retrying')" class="mt-1 text-sm text-foreground">
+          {{ activityMessage }}
+        </p>
         <p v-if="reason" class="max-w-prose text-sm text-muted-foreground">{{ reason }}</p>
         <RouterLink
           v-if="verificationUrl && row.bookId && row.code === 'fanfiction_net_browser_verification' && !row.groupKey"
@@ -137,7 +150,7 @@ function inspectMember(row: FanfictionDownloadRow) {
         >
           {{ t('fanfiction.connections.verifyStory') }}<ArrowUpRight class="size-4" aria-hidden="true" />
         </a>
-        <time v-if="row.nextAttemptAt" :datetime="row.nextAttemptAt" class="text-sm tabular-nums">{{
+        <time v-if="row.nextAttemptAt && !row.waitingFor" :datetime="row.nextAttemptAt" class="text-sm tabular-nums">{{
           t('fanfiction.progress.nextAttempt', { time })
         }}</time>
         <p v-else-if="row.issue === 'website' && row.section === 'attention'" class="text-xs text-muted-foreground">

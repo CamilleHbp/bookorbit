@@ -16060,10 +16060,10 @@
     "progress": {
       "metadata": "Reading story details",
       "downloading": "Downloading chapters",
-      "packaging": "Creating EPUB",
-      "validating": "Checking EPUB",
-      "importing": "Adding to library",
-      "finalizing": "Finishing import",
+      "packaging": "Preparing your book",
+      "validating": "Checking your book",
+      "importing": "Adding to your library",
+      "finalizing": "Finishing up",
       "cancelling": "Cancelling…",
       "retrying": "Waiting to retry automatically",
       "ready": "{completed} of {total} chapters ready",
@@ -16685,6 +16685,37 @@
       "emptyFiltered": "No changes of this kind yet.",
       "older": "Older",
       "newer": "Newer"
+    },
+    "liveActivity": {
+      "title": "Story activity",
+      "live": "Auto-updating",
+      "disconnected": "Updates paused",
+      "checked": "Last checked at {time}",
+      "lastCheck": "Last library check",
+      "downloadingCount": "{count} in progress",
+      "waitingCount": "{count} waiting",
+      "attentionCount": "Needs attention: {count}",
+      "retryAt": "Next try from {time}. Downloaded chapters are kept.",
+      "justNow": "Updated just now",
+      "minutesAgo": "Updated {count, plural, one {# minute} other {# minutes}} ago",
+      "connected": "Still working",
+      "wait": {
+        "website_busy": "Waiting for another story from {site} to finish.",
+        "downloads_busy": "Waiting for a download slot. Other stories are in progress.",
+        "ready": "Waiting for its turn to start.",
+        "recovery": "Reconnecting after an interruption. Downloaded chapters are kept.",
+        "cancelling": "Stopping after the current step."
+      },
+      "step": {
+        "website": "Waiting for the website to respond.",
+        "chapter": "Reading chapter {chapter}.",
+        "illustrations": "Getting this chapter’s illustrations ready.",
+        "saving": "Saving the completed chapter.",
+        "resuming": "Checking chapters already downloaded."
+      },
+      "chapter": "Chapter {chapter} of {total}",
+      "chapterTitle": "{position}: {title}",
+      "illustration": "Preparing illustration {count}."
     }
   },
   "koreaderCopies": {

@@ -12,6 +12,23 @@ from safe_transport import PolicyError
 
 
 class ConfigurationTest(unittest.TestCase):
+    def test_live_activity_is_throttled_keeps_counts_and_resets_between_stages(self):
+        from fanficfare_wrapper import ProgressReporter
+        events = []
+        reporter = ProgressReporter(events.append)
+        reporter.total = 10
+        with patch('fanficfare_wrapper.time.monotonic', return_value=10):
+            reporter.emit({'stage': 'downloading', 'completedChapters': 3, 'totalChapters': 10})
+            for _ in range(100):
+                reporter.activity('illustrations', 4)
+            self.assertEqual(len(events), 1)
+        with patch('fanficfare_wrapper.time.monotonic', return_value=12):
+            reporter.activity('website', 4)
+            self.assertEqual(events[-1], {'stage': 'downloading', 'completedChapters': 3, 'totalChapters': 10, 'activity': 'website', 'currentChapter': 4, 'illustration': 100})
+            reporter.emit({'stage': 'validating', 'completedChapters': 10, 'totalChapters': 10})
+            self.assertNotIn('activity', events[-1])
+            self.assertNotIn('currentChapter', events[-1])
+
     def test_large_ao3_story_uses_bounded_chapter_requests(self):
         from fanficfare import adapters
         from controlled_config import make_configuration
