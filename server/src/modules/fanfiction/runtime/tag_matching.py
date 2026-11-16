@@ -1,5 +1,6 @@
 """Apply the account's approved vocabulary before writing EPUB subjects."""
 import unicodedata
+import re
 
 
 def key(value):
@@ -11,6 +12,15 @@ ORIGINAL_WORK = {'original work', 'original works', 'original fiction', 'origina
 
 BROAD = {'m/m', 'f/f', 'f/m', 'm/f', 'male/male', 'female/female',
          'female/male', 'male/female', 'gen', 'multi', 'other'}
+
+
+FORUM_SOURCES = {'forums.spacebattles.com', 'forums.sufficientvelocity.com', 'forum.questionablequesting.com'}
+UPDATE_LABEL = re.compile(r'last update(?: year/month)?: [0-9]{4}/[0-9]{2}(?:/[0-9]{2})?')
+
+
+def generated_update_label(source, label):
+    return (source.removeprefix('www.') in FORUM_SOURCES and label['field'] in ('tags', 'genres')
+            and UPDATE_LABEL.fullmatch(key(label['value'])) is not None)
 
 
 def resolve(source, labels, rules):
@@ -64,6 +74,9 @@ def install(story, source, policy):
         rating = story.getMetadata('rating')
         if rating:
             labels.append({'field': 'rating', 'value': rating})
+        # Forum adapters generate a new date label on each update. Story dates
+        # already have dedicated metadata and must not create recurring tag reviews.
+        labels = [label for label in labels if not generated_update_label(source, label)]
         # The preview contract only carries versions of configured rulebooks.
         version = {'labelMappingVersion': policy['version']} if policy['version'] > 0 else {}
         return {**resolve(source, labels, policy['rules']), 'rawLabels': labels, **version}
