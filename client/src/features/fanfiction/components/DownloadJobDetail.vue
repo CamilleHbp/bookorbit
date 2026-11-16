@@ -132,7 +132,7 @@ defineExpose({ canLeave })
           >
         </div>
       </div>
-      <ImportProgress v-else :job="job" />
+      <ImportProgress v-else :job="job" :last-contact-at="row.lastContactAt" />
       <div class="flex flex-wrap items-center gap-3">
         <RouterLink
           v-if="bookId"

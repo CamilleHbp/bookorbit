@@ -10,6 +10,7 @@ import { FanficfareRuntimeService } from './fanficfare-runtime.service';
 
 const output = vi.hoisted(() => ({
   response: {} as unknown,
+  stderr: '',
   request: {} as Record<string, unknown>,
   exitCode: 0 as number | null,
   signal: undefined as string | undefined,
@@ -29,6 +30,7 @@ vi.mock('node:child_process', async () => {
       child.stdin.on('data', (chunk: Buffer) => chunks.push(chunk));
       child.stdin.once('finish', () => {
         output.request = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>;
+        if (output.stderr) child.stderr.write(output.stderr);
         child.stdout.write(JSON.stringify(output.response));
         child.emit('close', output.exitCode, output.signal);
       });
@@ -57,6 +59,7 @@ describe('private FanFicFare runtime session output', () => {
     }).compile();
     service = module.get(FanficfareRuntimeService);
     output.response = { ok: true, result: { title: 'Public preview' }, cookies: [cookie] };
+    output.stderr = '';
     output.exitCode = 0;
     output.signal = undefined;
   });
@@ -75,6 +78,14 @@ describe('private FanFicFare runtime session output', () => {
       chapterDirectory: expect.stringContaining('/3/4/11111111-1111-4111-8111-111111111111/incremental'),
       checkStatePath: expect.stringContaining('/3/4/11111111-1111-4111-8111-111111111111/check.json'),
     });
+  });
+  it('streams live progress beyond the final response budget without stopping a long download', async () => {
+    output.stderr = ('BOOKORBIT_PROGRESS ' + JSON.stringify({ stage: 'metadata', activity: 'website' }) + '\n').repeat(20000);
+    const progress = vi.fn().mockResolvedValue(undefined);
+    await expect(service.execute({ operation: 'download' }, '/unused', undefined, undefined, progress)).resolves.toEqual({ title: 'Public preview' });
+    expect(progress).toHaveBeenCalled();
+    output.response = { ok: true, result: 'x'.repeat(1024 * 1024 + 1) };
+    await expect(service.execute({ operation: 'download' }, '/unused')).rejects.toMatchObject({ response: { errorCode: 'runtime_unavailable' } });
   });
   it('records process termination without logging the request or private runtime output', async () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});

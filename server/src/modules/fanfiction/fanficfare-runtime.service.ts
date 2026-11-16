@@ -352,6 +352,8 @@ export class FanficfareRuntimeService {
         });
         const chunks: Buffer[] = [];
         let bytes = 0;
+        let stdoutBytes = 0;
+        let stderrBytes = 0;
         let failed = false;
         let timedOut = false;
         let stopReason = 'process_exit';
@@ -368,12 +370,14 @@ export class FanficfareRuntimeService {
         signal?.addEventListener('abort', abort, { once: true });
         child.stdout.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
-          if (bytes > 1024 * 1024) stop('output_limit');
+          stdoutBytes += chunk.length;
+          if (stdoutBytes > 1024 * 1024) stop('output_limit');
           else chunks.push(chunk);
         });
         child.stderr.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
-          if (bytes > 1024 * 1024) stop('output_limit');
+          stderrBytes += chunk.length;
+          if (stderrBytes > 16 * 1024 * 1024) stop('output_limit');
           else progress.feed(chunk);
         });
         child.stdin.on('error', () => {

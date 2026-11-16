@@ -139,6 +139,11 @@ export type FanfictionJobState =
 
 export interface FanfictionImportProgress {
   stage: "metadata" | "downloading" | "packaging" | "validating" | "importing" | "finalizing";
+  activity?: "website" | "chapter" | "illustrations" | "saving" | "resuming";
+  currentChapter?: number;
+  currentChapterTitle?: string;
+  illustration?: number;
+  updatedAt?: string;
   completedChapters?: number;
   reusedChapters?: number;
   totalChapters?: number;
@@ -563,6 +568,8 @@ export type FanfictionDownloadSection = "running" | "queued" | "retrying" | "att
 export type FanfictionDownloadIssue = "website" | "login" | "chapter" | "metadata" | "import" | "story" | "stopped" | "unknown";
 
 export interface FanfictionDownloadRow {
+  waitingFor?: "scheduled_retry" | "website_busy" | "downloads_busy" | "ready" | "recovery" | "cancelling";
+  lastContactAt?: string | null;
   verificationUrl?: string | null;
   id: string;
   section: FanfictionDownloadSection;
@@ -593,6 +600,7 @@ export interface FanfictionGroupRetryResult {
 }
 
 export interface FanfictionDownloadQueue {
+  storyCounts?: Record<FanfictionDownloadSection, number>;
   items: FanfictionDownloadRow[];
   totals: Record<FanfictionDownloadSection, number>;
   recent: NonNullable<FanfictionJobPage["recentDownloads"]>;

@@ -30,7 +30,8 @@ def recover_chapters(adapter, directory, canonical, transport):
 
         occurrences = {}
         duplicates = {}
-        for index, info in enumerate(adapter.get_chapters()):
+        chapter_list = adapter.get_chapters()
+        for index, info in enumerate(chapter_list):
             url = adapter.normalize_chapterurl(info['url'])
             count = occurrences.get(url, 0)
             if count:
@@ -48,6 +49,8 @@ def recover_chapters(adapter, directory, canonical, transport):
             if index in duplicates:
                 identity += '\0' + str(duplicates[index])
             key = (story_key, digest(identity.encode()))
+            title = ' '.join(str(chapter_list[index].get('title', '')).split())[:160] if 0 <= index < len(chapter_list) else ''
+            transport.report_activity('resuming', index + 1, title)
             row = store.load(key)
             if row:
                 body, references, legacy = row
@@ -75,6 +78,7 @@ def recover_chapters(adapter, directory, canonical, transport):
                             return IMAGE.sub(lambda match: replacements.get(match.group(), match.group()), stored.decode('utf-8'))
                 except (ValueError, TypeError, UnicodeError, zlib.error):
                     pass  # A damaged chapter is repaired without discarding other progress.
+            transport.report_activity('chapter', index + 1, title)
             html = original(url, index)
             if transport.failure is not None:
                 raise transport.failure
@@ -101,6 +105,7 @@ def recover_chapters(adapter, directory, canonical, transport):
                     raise DownloadLimitError('Chapter illustration exceeds the EPUB entry limit')
                 image_hash = store.put_image(image['data'])
                 references.append((match.group(), image_hash, image['ext'], image['mime']))
+            transport.report_activity('saving', index + 1, title)
             store.save(key, body, json.dumps(references))
             checkpointed += 1
             downloaded += 1

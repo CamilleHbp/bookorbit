@@ -82,7 +82,7 @@ describe('import progress', () => {
     const wrapper = mount(ImportProgress, {
       props: { job: job({ result: { progress: { stage: 'importing', completedChapters: 40, totalChapters: 40 } } }) },
     })
-    expect(wrapper.text()).toContain('Adding to library')
+    expect(wrapper.text()).toContain('Adding to your library')
     expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBeUndefined()
     wrapper.unmount()
   })

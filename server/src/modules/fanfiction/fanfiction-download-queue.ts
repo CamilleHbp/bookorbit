@@ -1,6 +1,6 @@
 import type { FanfictionDownloadQueue, FanfictionDownloadRow } from '@bookorbit/types';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import * as schema from '../../db/schema';
 import type { FanfictionDownloadsDto } from './dto/fanfiction-job.dto';
 
@@ -82,9 +82,22 @@ export function retryGroupMembers(
   `);
 }
 
+export function downloadWaitReason(
+  job: Pick<typeof schema.fanfictionJobs.$inferSelect, 'state' | 'site' | 'runAfter' | 'leaseExpiresAt' | 'cancellationRequested'>,
+  activeSites: string[],
+  now: Date,
+): FanfictionDownloadRow['waitingFor'] {
+  if (job.cancellationRequested && ['queued', 'running'].includes(job.state)) return 'cancelling';
+  if (job.state === 'running' && (!job.leaseExpiresAt || job.leaseExpiresAt <= now)) return 'recovery';
+  if (job.state !== 'queued') return undefined;
+  if (job.runAfter > now) return 'scheduled_retry';
+  if (activeSites.includes(job.site)) return 'website_busy';
+  return activeSites.length >= 2 ? 'downloads_busy' : 'ready';
+}
+
 export async function downloadQueue(db: NodePgDatabase<typeof schema>, libraryId: number, userId: number, dto: FanfictionDownloadsDto) {
   // Jobs own active transfers. Source attention also covers library data created before durable jobs.
-  const result = await db.execute<{ item: FanfictionDownloadRow; total: number }>(sql`
+  const result = await db.execute<{ item: FanfictionDownloadRow; total: number; story_total: number }>(sql`
     ${downloadEntries(libraryId, userId)}, grouped as (
       select *, count(*) over grp as members, min(retry_at) over grp as first_retry,
         row_number() over (partition by coalesce(group_key,job_id::text,source_id::text) order by updated_at desc, coalesce(job_id,source_id)) as representative
@@ -94,6 +107,7 @@ export async function downloadQueue(db: NodePgDatabase<typeof schema>, libraryId
       window grp as (partition by coalesce(group_key,job_id::text,source_id::text))
     ), ranked as (
       select *, count(*) over (partition by section)::int as total,
+        sum(${dto.group ? sql`1` : sql`members`}) over (partition by section)::int as story_total,
         row_number() over (partition by section order by (group_key is not null) desc, members desc, updated_at desc, coalesce(job_id,source_id)) as position
       from grouped where ${dto.group ? sql`true` : sql`representative=1`}
     )
@@ -105,11 +119,53 @@ export async function downloadQueue(db: NodePgDatabase<typeof schema>, libraryId
       'nextAttemptAt',${dto.group ? sql`retry_at` : sql`first_retry`},'progress',progress,
       'unmatched',coalesce((changes->>'unmatched')::boolean,false),'removed',coalesce((changes->>'removed')::int,0),'changed',coalesce((changes->>'changed')::int,0),
       'inserted',coalesce((changes->>'inserted')::boolean,false),'reordered',coalesce((changes->>'reordered')::boolean,false),'currentChapters',current_chapters,'proposedChapters',proposed_chapters
-    ) as item,total from ranked
+    ) as item,total,story_total from ranked
     where position between least(${dto.offset}, ((total-1)/20)*20)+1 and least(${dto.offset}, ((total-1)/20)*20)+20
     order by section,position
   `);
   const totals: FanfictionDownloadQueue['totals'] = { running: 0, queued: 0, retrying: 0, attention: 0 };
-  for (const { item, total } of result.rows) totals[item.section] = total;
-  return { items: result.rows.map((row) => row.item), totals };
+  const storyCounts = { ...totals };
+  for (const { item, total, story_total } of result.rows) {
+    totals[item.section] = total;
+    storyCounts[item.section] = story_total;
+  }
+  const ids = result.rows.flatMap(({ item }) => (item.jobId ? [item.jobId] : []));
+  const jobs = schema.fanfictionJobs;
+  const [owned, active] = await Promise.all([
+    ids.length
+      ? db
+          .select({
+            id: jobs.id,
+            state: jobs.state,
+            site: jobs.site,
+            runAfter: jobs.runAfter,
+            leaseExpiresAt: jobs.leaseExpiresAt,
+            cancellationRequested: jobs.cancellationRequested,
+          })
+          .from(jobs)
+          .where(and(eq(jobs.libraryId, libraryId), eq(jobs.userId, userId), inArray(jobs.id, ids)))
+      : Promise.resolve([]),
+    db
+      .select({ site: jobs.site })
+      .from(jobs)
+      .where(and(eq(jobs.libraryId, libraryId), eq(jobs.userId, userId), eq(jobs.state, 'running'), gt(jobs.leaseExpiresAt, sql`now()`)))
+      .limit(2),
+  ]);
+  const byId = new Map(owned.map((job) => [job.id, job] as const));
+  const now = new Date();
+  const items = result.rows.map(({ item }) => {
+    const job = item.jobId ? byId.get(item.jobId) : undefined;
+    if (!job) return item;
+    return {
+      ...item,
+      waitingFor: downloadWaitReason(
+        item.groupKey && item.nextAttemptAt ? { ...job, runAfter: new Date(item.nextAttemptAt) } : job,
+        active.map((row) => row.site),
+        now,
+      ),
+      // Claim and renew extend the worker's contact signal by 60 seconds.
+      lastContactAt: job.state === 'running' && job.leaseExpiresAt ? new Date(job.leaseExpiresAt.getTime() - 60_000).toISOString() : null,
+    };
+  });
+  return { items, totals, storyCounts };
 }
