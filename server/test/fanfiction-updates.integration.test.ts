@@ -455,6 +455,24 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       .returning();
     expect((await jobs.retry(libraryId, unmatched.id, user)).state).toBe('queued');
   }, 60_000);
+  it('continues a CPU slice with current persisted progress and review choices without failure backoff', async () => {
+    const original = await readFile(target);
+    const job = await claim();
+    const progress = { stage: 'downloading' as const, totalChapters: 20, completedChapters: 12, reusedChapters: 8 };
+    await db
+      .update(schema.fanfictionJobs)
+      .set({ attempts: 8, errorCode: 'runtime_unavailable', result: { progress, chapterRestartId: job.id } })
+      .where(eq(schema.fanfictionJobs.id, job.id));
+    expect(await jobs.yieldBatch(job)).toBe(true);
+    const next = await jobs.get(libraryId, job.id, user);
+    expect(next).toMatchObject({ state: 'queued', attempts: 0, errorCode: null, result: { progress, chapterRestartId: job.id } });
+    const [row] = await db.select().from(schema.fanfictionJobs).where(eq(schema.fanfictionJobs.id, job.id));
+    expect(row.leaseOwner).toBeNull();
+    expect(row.leaseExpiresAt).toBeNull();
+    expect(row.runAfter.getTime() - Date.now()).toBeLessThan(2000);
+    await expect(jobs.yieldBatch(job)).rejects.toThrow();
+    expect(await readFile(target)).toEqual(original);
+  }, 60_000);
   it('restarts an outdated unpublished review using current settings and an idempotent job identity', async () => {
     const original = await readFile(target);
     const job = await claim();

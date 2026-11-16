@@ -17,6 +17,40 @@ import { FanfictionSourceBatchService } from './fanfiction-source-batch.service'
 import { UserService } from '../user/user.service';
 
 describe('Fanfiction queued execution', () => {
+  it.each(['import', 'update', 'refresh'])('continues a checkpointed %s CPU slice without recording a website failure', async (kind) => {
+    const job = { id: 'job', kind, libraryId: 5, userId: 7, tokenVersion: 1, attempts: 8, url: 'https://example.org/story' };
+    const jobs = {
+      claim: vi.fn().mockResolvedValueOnce(job).mockResolvedValue(null),
+      yieldBatch: vi.fn().mockResolvedValue(true),
+      finish: vi.fn(),
+    };
+    const connections = { session: vi.fn().mockResolvedValue({ document: {}, connection: { id: 'connection', generation: 1 } }), outcome: vi.fn() };
+    const operation = { run: vi.fn().mockRejectedValue(new BadRequestException({ errorCode: 'chapter_download_yielded' })) };
+    const module = await Test.createTestingModule({
+      providers: [
+        FanfictionWorkerService,
+        { provide: TagMatchingService, useValue: { runtimePolicy: vi.fn() } },
+        { provide: FanfictionJobService, useValue: jobs },
+        { provide: FanfictionConnectionService, useValue: connections },
+        { provide: FanfictionImportService, useValue: operation },
+        { provide: FanfictionUpdateService, useValue: operation },
+        { provide: FanfictionAccessService, useValue: { administer: vi.fn() } },
+        { provide: UserService, useValue: { findByIdWithPermissions: vi.fn().mockResolvedValue({ id: 7, tokenVersion: 1 }) } },
+      ],
+    })
+      .useMocker(() => ({}))
+      .compile();
+    const worker = module.get(FanfictionWorkerService);
+    try {
+      await worker.tick();
+      await vi.waitFor(() => expect(jobs.yieldBatch).toHaveBeenCalledWith(job));
+      expect(jobs.finish).not.toHaveBeenCalled();
+      expect(connections.outcome).not.toHaveBeenCalled();
+    } finally {
+      await worker.onModuleDestroy();
+      await module.close();
+    }
+  });
   it.each(['update', 'refresh'])('loads the current website connection for every approved %s', async (kind) => {
     const job = {
       id: 'job',

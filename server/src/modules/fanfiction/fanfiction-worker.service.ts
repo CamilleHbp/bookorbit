@@ -3,7 +3,7 @@ import { ForbiddenException, ServiceUnavailableException, HttpException, Injecta
 import { Interval } from '@nestjs/schedule';
 import type { FanfictionJob, FanfictionImportProgress } from '@bookorbit/types';
 import { UserService } from '../user/user.service';
-import { shouldRetryJob } from './fanfiction-download-retry';
+import { isChapterDownload, shouldRetryJob } from './fanfiction-download-retry';
 import { FanfictionJobService } from './fanfiction-job.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionConnectionService } from './fanfiction-connection.service';
@@ -189,6 +189,14 @@ export class FanfictionWorkerService implements OnModuleDestroy {
           'source_browser_verification',
           'storiesonline_membership_expired',
         ].includes(code);
+      if (code === 'chapter_download_yielded' && isChapterDownload(job.kind)) {
+        await this.authorized(job);
+        const committed = await this.jobs.yieldBatch(job);
+        this.logger.log(
+          `[fanfiction.job] [end] jobId=${job.id} libraryId=${job.libraryId} durationMs=${Date.now() - startedAt} committed=${committed} - saved chapter progress queued for continuation`,
+        );
+        return;
+      }
       if (connection) await this.connections.outcome(connection, job.userId, code);
       await this.jobs.finish(
         job,

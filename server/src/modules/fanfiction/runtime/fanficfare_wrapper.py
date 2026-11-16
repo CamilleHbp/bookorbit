@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from chapter_store import recover_chapters
+from chapter_store import ChapterDownloadYield, recover_chapters
 from chapter_locks import preserve_chapter_locks
 from chapter_floor import read_policy, apply_policy, preserve_policy, validate_output
 from update_check import UpdateCheck
@@ -367,6 +367,8 @@ def http_error_status(error):
 
 
 def failure_code(error):
+    if isinstance(error, ChapterDownloadYield):
+        return 'chapter_download_yielded'
     name = type(error).__name__
     status = http_error_status(error)
     if name == 'AdultCheckRequired':
