@@ -150,11 +150,12 @@ export class FanfictionWorkerService implements OnModuleDestroy {
               ? 'import_review_required'
               : null;
       const needsReview = !!storyReview || (result?.selection?.failed ?? 0) > 0;
-      if (job.sourceId && result?.bookFileId && !needsReview && ['import', 'update', 'refresh'].includes(job.kind)) {
+      const chapterSource = job.sourceId ?? result?.sourceId;
+      if (chapterSource && result?.bookFileId && (!needsReview || result.preparedUpdate) && isChapterDownload(job.kind)) {
         const scope = {
           libraryId: job.libraryId,
           userId: job.userId,
-          sourceId: job.sourceId,
+          sourceId: chapterSource,
           restartId: job.kind === 'refresh' ? job.id : job.kind === 'import' ? job.result?.chapterRestartId : undefined,
         };
         if (await this.jobs.renew(job)) await this.runtime.releaseChapters(scope);

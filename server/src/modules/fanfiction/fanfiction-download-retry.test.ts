@@ -4,6 +4,8 @@ import { retryDelaySeconds, shouldRetryJob } from './fanfiction-download-retry';
 describe('background chapter retries', () => {
   it.each(['import', 'update', 'refresh'] as const)('keeps %s recoverable after repeated interruptions', (kind) => {
     expect(shouldRetryJob(kind, 32, 'source_failed', false)).toBe(true);
+    expect(shouldRetryJob(kind, 32, 'download_memory_limit', false)).toBe(true);
+    expect(shouldRetryJob(kind, 32, 'download_storage_low', false)).toBe(true);
     expect(shouldRetryJob(kind, 32, 'runtime_failed', true)).toBe(true);
     expect(shouldRetryJob(kind, 2, 'source_not_found', false)).toBe(false);
     expect(shouldRetryJob(kind, 2, 'source_policy_blocked', false)).toBe(false);

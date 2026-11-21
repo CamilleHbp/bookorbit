@@ -7,10 +7,11 @@ import type {
   FanfictionConnectionDocument,
   FanfictionRecognizedUrl,
 } from '@bookorbit/types';
+import { downloadPressure } from './download-resources';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, opendir, readFile, rename, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { validateFanfictionPreview } from './fanfiction-preview';
@@ -43,6 +44,7 @@ export class FanficfareRuntimeService {
   // so repeated legacy-library checks do not repeatedly start Python for the same batch.
   private readonly recognized = new Map<string, FanfictionRecognizedUrl>();
   private active = 0;
+  private nextWorkspaceSweep = 0;
   private controlPending = 0;
   private controlTail: Promise<unknown> = Promise.resolve();
 
@@ -166,7 +168,7 @@ export class FanficfareRuntimeService {
 
   async releaseChapters(scope: ChapterScope) {
     try {
-      await rm(this.chapterDirectory(scope)!, { recursive: true, force: true });
+      await rm(this.chapterDirectory(scope)!, { recursive: true, force: true, maxRetries: 3 });
     } catch {
       this.logger.warn(
         `[fanfiction.chapter_cleanup] [fail] libraryId=${scope.libraryId} sourceId=${scope.sourceId} - saved chapter cleanup deferred`,
@@ -344,6 +346,10 @@ export class FanficfareRuntimeService {
     const startedAt = Date.now();
     const progress = new FanfictionRuntimeProgress(reportProgress);
     try {
+      const isDownload = ['download', 'update', 'refresh'].includes(request.operation);
+      const pressure = isDownload ? await downloadPressure(workspace) : undefined;
+      if (pressure) throw new ServiceUnavailableException({ message: 'Download is waiting for server resources', errorCode: pressure });
+      if (signal?.aborted) throw new ServiceUnavailableException('FanFicFare operation cancelled');
       const response = await new Promise<Extract<RuntimeResponse, { ok: true }>>((resolve, reject) => {
         const child = spawn(this.config.python, ['-I', join(__dirname, 'runtime', 'fanficfare_wrapper.py')], {
           cwd: workspace,
@@ -363,6 +369,21 @@ export class FanficfareRuntimeService {
           failed = true;
           child.kill('SIGKILL');
         };
+        let checking = false;
+        let closed = false;
+        const checkPressure = async () => {
+          if (checking || failed) return;
+          checking = true;
+          try {
+            const reason = await downloadPressure(workspace);
+            if (reason && !closed && !failed) stop(reason);
+          } catch {
+            if (!closed && !failed) stop('resource_check_failed');
+          } finally {
+            checking = false;
+          }
+        };
+        const monitor = isDownload ? setInterval(() => void checkPressure(), 1000) : undefined;
         const abort = () => stop('cancelled');
         const timer = setTimeout(() => {
           timedOut = true;
@@ -389,6 +410,8 @@ export class FanficfareRuntimeService {
           failed = true;
         });
         child.once('close', (code, exitSignal) => {
+          closed = true;
+          clearInterval(monitor);
           clearTimeout(timer);
           signal?.removeEventListener('abort', abort);
           if (failed || code !== 0) {
@@ -398,7 +421,11 @@ export class FanficfareRuntimeService {
             return reject(
               new ServiceUnavailableException({
                 message: 'Story download could not finish',
-                errorCode: timedOut ? 'download_timeout' : 'runtime_unavailable',
+                errorCode: timedOut
+                  ? 'download_timeout'
+                  : ['download_memory_limit', 'download_storage_low'].includes(stopReason)
+                    ? stopReason
+                    : 'runtime_unavailable',
               }),
             );
           }
@@ -488,11 +515,35 @@ export class FanficfareRuntimeService {
   private async workspace<T>(operation: (directory: string) => Promise<T>): Promise<T> {
     const root = join(this.storage.appDataPath, 'fanfiction', 'runtime');
     await mkdir(root, { recursive: true, mode: 0o700 });
+    if (Date.now() >= this.nextWorkspaceSweep) {
+      this.nextWorkspaceSweep = Date.now() + 60 * 60_000;
+      await this.sweepWorkspaces(root).catch(() => this.logger.warn('[fanfiction.workspace_cleanup] [fail] - temporary folder cleanup deferred'));
+    }
     const directory = await mkdtemp(join(root, 'operation-'));
+    // Other replicas can sweep this shared directory during a long publication.
+    const heartbeat = setInterval(() => {
+      const now = new Date();
+      void utimes(directory, now, now).catch(() => {});
+    }, 60_000);
+    heartbeat.unref();
     try {
       return await operation(directory);
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      clearInterval(heartbeat);
+      await rm(directory, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }
+
+  private async sweepWorkspaces(root: string) {
+    const cutoff = Date.now() - 24 * 60 * 60_000;
+    for await (const entry of await opendir(root)) {
+      if (!entry.isDirectory() || !/^operation-[a-zA-Z0-9]{6}$/.test(entry.name)) continue;
+      const directory = join(root, entry.name);
+      const info = await lstat(directory).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+        return undefined;
+      });
+      if (info?.isDirectory() && info.mtimeMs < cutoff) await rm(directory, { recursive: true, force: true, maxRetries: 3 });
     }
   }
 }

@@ -117,11 +117,11 @@ def recognize_urls(urls):
 
 def limits(operation):
     resource.setrlimit(resource.RLIMIT_CPU, (600, 600))
-    size_limit = LIBRARY_EPUB_LIMIT if operation in ('update', 'refresh') else NEW_EPUB_LIMIT
-    resource.setrlimit(resource.RLIMIT_FSIZE, (size_limit, size_limit))
     resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
-    if sys.platform == 'linux':
-        resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
+    if operation not in ('download', 'update', 'refresh'):
+        resource.setrlimit(resource.RLIMIT_FSIZE, (NEW_EPUB_LIMIT, NEW_EPUB_LIMIT))
+        if sys.platform == 'linux':
+            resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
 
 
 def metadata_count(story, key, maximum):
@@ -260,7 +260,11 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     timeout = min(7200, max(1, request.get('timeoutSeconds', 1800)))
     if validate_url(url)[1].removeprefix('www.') == 'royalroad.com' and operation in ('download', 'update', 'refresh'):
         timeout = min(7200, max(1, request.get('browserTimeoutSeconds', timeout)))
-    transport = FlareSolverrTransport(request['flaresolverrUrl'], session_id=request.get('browserSession'), timeout=timeout) if request.get('flaresolverrUrl') else SafeTransport(timeout=timeout)
+    budgets = {'timeout': timeout}
+    if operation in ('download', 'update', 'refresh'):
+        # Per-response and request-count checks still bound each source operation.
+        budgets['max_bytes'] = sys.maxsize
+    transport = FlareSolverrTransport(request['flaresolverrUrl'], session_id=request.get('browserSession'), **budgets) if request.get('flaresolverrUrl') else SafeTransport(**budgets)
     transport.load_cookies(request.get('cookies', []))
     try:
         return run_story(request, transport, operation, url, ini, save_cookies, report_progress)
@@ -358,6 +362,11 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
                 # for a different chapter or conceal newly published intro content.
                 if not adapter.oldchaptersmap:
                     adapter.oldchapters = None
+        # Managed checks rebuild chapters from checkpoints. Release the previous
+        # book's images and parsed HTML before assembling the next revision.
+        del old
+        import gc
+        gc.collect()
     with open('output.epub', 'xb') as output:
         progress.total = chapter_count
         progress.emit({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
@@ -416,7 +425,9 @@ def failure_code(error):
     if isinstance(error, sqlite3.Error) and getattr(error, 'sqlite_errorcode', None) in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB):
         return 'chapter_storage_damaged'
     from chapter_checkpoint import CheckpointStorageError
-    if isinstance(error, (sqlite3.Error, CheckpointStorageError)) or isinstance(error, OSError) and error.errno in (28, 30):
+    if isinstance(error, OSError) and error.errno == 28:
+        return 'download_storage_low'
+    if isinstance(error, (sqlite3.Error, CheckpointStorageError)) or isinstance(error, OSError) and error.errno == 30:
         return 'chapter_storage_failed'
     if isinstance(error, PolicyError):
         return error.code

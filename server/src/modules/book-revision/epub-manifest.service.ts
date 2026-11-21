@@ -10,7 +10,6 @@ import { boundAnchorText, normalizeAnchorText, scalarLength } from './anchor-tex
 import { generatedPageText, isFanficfarePackage, semanticPackageMetadata, visibleChapterText } from './epub-semantic-metadata';
 import { checkEpubDirectoryBudget } from './epub-directory-budget';
 
-const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const MAX_ENTRY_BYTES = 32 * 1024 * 1024;
 const MAX_EXPANDED_BYTES = 512 * 1024 * 1024;
 const MAX_ENTRIES = 10_000;
@@ -216,7 +215,7 @@ export class EpubManifestService {
   }
 
   private async openPackage(path: string) {
-    if ((await stat(path)).size > MAX_ARCHIVE_BYTES) throw new BadRequestException('EPUB exceeds the archive size limit');
+    const expansionBudget = Math.max(MAX_EXPANDED_BYTES, (await stat(path)).size * 64);
     await checkEpubDirectoryBudget(path);
     let zip: unzipper.CentralDirectory;
     try {
@@ -230,7 +229,7 @@ export class EpubManifestService {
     for (const entry of zip.files) {
       const name = archivePath(entry.path);
       if (files.has(name)) throw new BadRequestException('EPUB contains duplicate archive entries');
-      if (entry.uncompressedSize > MAX_ENTRY_BYTES || (expanded += entry.uncompressedSize) > MAX_EXPANDED_BYTES) {
+      if (entry.uncompressedSize > MAX_ENTRY_BYTES || (expanded += entry.uncompressedSize) > expansionBudget) {
         throw new BadRequestException('EPUB exceeds the expanded size limit');
       }
       files.set(name, entry);

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { sameFileSignature } from './file-inspection';
 
-const MAX_BYTES = 512 * 1024 * 1024;
+import { requireStorageHeadroom } from '../../common/utils/storage-reserve';
 const BUFFER_BYTES = 128 * 1024;
 
 export async function snapshotRevisionFile(
@@ -15,8 +15,7 @@ export async function snapshotRevisionFile(
   sizeBytes: number,
   checkAccess: () => Promise<void>,
 ): Promise<FileHandle> {
-  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > MAX_BYTES)
-    throw new ConflictException('Revision exceeds the download size limit');
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0) throw new ConflictException('Invalid revision size');
   await checkAccess();
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const snapshotPath = join(directory, `${randomUUID()}.epub`);
@@ -28,6 +27,7 @@ export async function snapshotRevisionFile(
     try {
       const before = await input.stat({ bigint: true });
       if (!before.isFile() || before.size !== BigInt(sizeBytes)) throw new ConflictException('Revision file size changed');
+      await requireStorageHeadroom(directory, before.size);
       const hash = createHash('sha256');
       const buffer = Buffer.allocUnsafe(BUFFER_BYTES);
       const deadline = performance.now() + 120_000;
@@ -37,6 +37,7 @@ export async function snapshotRevisionFile(
         if (performance.now() > deadline) throw new ServiceUnavailableException('Revision snapshot exceeded its time limit');
         if (performance.now() - checkedAt >= 1000) {
           await checkAccess();
+          await requireStorageHeadroom(directory, before.size - BigInt(position));
           checkedAt = performance.now();
         }
         const { bytesRead } = await input.read(buffer, 0, Math.min(buffer.length, sizeBytes - position), position);
