@@ -316,7 +316,11 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     canonical = preview['canonicalUrl']
     continuation = read_policy('input.epub') if operation in ('update', 'refresh') else None
     if continuation is not None:
-        apply_policy(adapter, continuation, canonical)
+        if not apply_policy(adapter, continuation, canonical, 'input.epub'):
+            # The cutoff already verified the adapter identity. Keep the
+            # registered URL for the unchanged-edition result.
+            preview['canonicalUrl'] = url
+            return finish({'preview': preview, 'output': 'input.epub', 'unchangedEdition': True})
         continuation_chapters = adapter.get_chapters()
         configuration.set('overrides', 'update_preserve_deleted_chapters', 'false')
         preview = matched_preview(story, story_preview(adapter, story))
