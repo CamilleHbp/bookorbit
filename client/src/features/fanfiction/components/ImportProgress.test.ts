@@ -23,7 +23,7 @@ describe('import progress', () => {
     ['download_limit', 'This story exceeds the download limit'],
     ['response_too_large', 'A chapter or image is too large'],
     ['download_timeout', 'The story took too long'],
-    ['source_policy_blocked', 'A source request was blocked for safety'],
+    ['source_policy_blocked', 'Retry the story to see which check failed'],
     ['storiesonline_membership_expired', 'Do Not Renew to keep free access'],
     ['invalid_epub', 'The downloaded EPUB could not be safely opened'],
   ])('explains %s without blaming source settings', (errorCode, message) => {
@@ -95,8 +95,11 @@ describe('import progress', () => {
     wrapper.unmount()
   })
   it('distinguishes automatic retries from running downloads', () => {
-    const wrapper = mount(ImportProgress, { props: { job: job({ state: 'queued', attempts: 19, nextAttemptAt: '2026-11-11T09:00:00.000Z' }) } })
+    const wrapper = mount(ImportProgress, {
+      props: { job: job({ state: 'queued', attempts: 19, errorCode: 'source_browser_unavailable', nextAttemptAt: '2026-11-11T09:00:00.000Z' }) },
+    })
     expect(wrapper.text()).toContain('Waiting to retry automatically')
+    expect(wrapper.get('[role="alert"]').text()).toContain('browser service could not load')
     expect(wrapper.text()).toContain('Attempt 19')
     expect(wrapper.get('time').attributes('datetime')).toBe('2026-11-11T09:00:00.000Z')
     expect(wrapper.text()).toContain('Next automatic attempt')

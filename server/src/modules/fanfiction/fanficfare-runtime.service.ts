@@ -330,7 +330,8 @@ export class FanficfareRuntimeService {
       : browserDownload
         ? 7_200_000
         : this.config.timeoutMs;
-    const browserSession = !control && this.config.flaresolverrUrl ? `bookorbit-${randomUUID()}` : undefined;
+    const browserSession =
+      !control && this.config.flaresolverrUrl ? `bookorbit-${Math.floor(Date.now() / 1000)}-${randomUUID().replaceAll('-', '')}` : undefined;
     const input = JSON.stringify({
       ...request,
       timeoutSeconds: Math.ceil((control ? timeoutMs : this.config.timeoutMs) / 1000),

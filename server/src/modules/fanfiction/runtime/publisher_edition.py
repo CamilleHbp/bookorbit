@@ -22,10 +22,10 @@ STAMP = 'bookorbit:publisher-sha256'
 
 def parse(data):
     if len(data) > 2 * 1024 * 1024:
-        raise PolicyError('Publisher metadata exceeds its size limit')
+        raise PolicyError('Publisher metadata exceeds its size limit', code='publisher_edition_changed')
     text = data.decode('utf-8-sig')
     if '<!DOCTYPE' in text or '<!ENTITY' in text or '\0' in text:
-        raise PolicyError('Unexpected XML declaration')
+        raise PolicyError('Unexpected XML declaration', code='invalid_epub')
     return minidom.parseString(text)
 
 
@@ -43,10 +43,10 @@ def edition(request, transport):
     url = request['url']
     operation = request['operation']
     if operation not in ('preview', 'download', 'update', 'refresh'):
-        raise PolicyError('Unsupported publisher operation')
+        raise PolicyError('Unsupported publisher operation', code='runtime_unavailable')
     status, data, final = transport.request('GET', url)
     if status != 200 or final != url:
-        raise PolicyError('Publisher did not return the requested edition')
+        raise PolicyError('Publisher did not return the requested edition', code='publisher_edition_changed')
     digest = hashlib.sha256(data).hexdigest()
     path = Path('publisher.epub')
     path.write_bytes(data)
@@ -56,7 +56,7 @@ def edition(request, transport):
         title = value(doc.getElementsByTagNameNS(DC, 'title')[0])
         authors = [value(n) for n in doc.getElementsByTagNameNS(DC, 'creator')]
         if title.casefold() != EDITIONS[url].casefold() or 'Michael J. Cropo' not in authors:
-            raise PolicyError('The publisher returned a different book')
+            raise PolicyError('The publisher returned a different book', code='publisher_edition_changed')
         # The EPUB spine also contains front matter and splits long chapters.
         # The publisher numbers the story chapters in a separate public index.
         from bs4 import BeautifulSoup
@@ -64,12 +64,12 @@ def edition(request, transport):
         index_url = f'https://{SITE}/files/chapters/{number}/index.html'
         status, index, final = transport.request('GET', index_url)
         if status != 200 or final != index_url:
-            raise PolicyError('Publisher chapter list is unavailable')
+            raise PolicyError('Publisher chapter list is unavailable', code='publisher_edition_changed')
         numbers = [int(value) for link in BeautifulSoup(index, 'html.parser').select('a[href$=".doc"]')
                    for value in re.findall(r'Chapter (\d+)', link.get_text(strip=True), re.I)]
         numbers = sorted(set(numbers))
         if not numbers or numbers != list(range(1, len(numbers) + 1)):
-            raise PolicyError('Publisher chapter list is incomplete')
+            raise PolicyError('Publisher chapter list is incomplete', code='publisher_edition_changed')
         count = len(numbers) + (number == '3')  # Discovery begins with an unnumbered prologue.
 
         preview = dict(canonicalUrl=url, site=SITE, title=title, authors=authors, description='', chapterCount=count,

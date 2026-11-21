@@ -10,7 +10,7 @@ URL = 'https://www.scribblehub.com/series/747093/collide-gamer/'
 
 class SolverTest(unittest.TestCase):
     def test_creation_timeout_keeps_the_parent_session_for_retry_and_cleanup(self):
-        session = 'bookorbit-11111111-1111-4111-8111-111111111111'
+        session = 'bookorbit-1795276396-11111111111111111111111111111111'
         transport = FlareSolverrTransport('http://solver:8191/v1', session_id=session)
         transport.enable_for(URL)
         with patch('flaresolverr_transport.public_addresses', return_value=[]), patch.object(transport, 'call_solver', side_effect=TimeoutError) as call:
@@ -100,7 +100,13 @@ class SolverTest(unittest.TestCase):
             response.read.return_value = json.dumps({'status': 'error', 'message': 'secret-password'}).encode()
             with self.assertRaises(SourceResponseError) as failure:
                 self.transport.call_solver({'cmd': 'request.get'}, 5)
+            self.assertEqual(failure.exception.code, 'source_browser_unavailable')
             self.assertNotIn('secret-password', str(failure.exception))
+            response.status = 500
+            response.read.return_value = b'{"status":"error","message":"session not created: chrome not reachable"}'
+            with self.assertRaises(SourceResponseError) as startup:
+                self.transport.call_solver({'cmd': 'sessions.create'}, 5)
+            self.assertEqual(startup.exception.code, 'source_browser_start_failed')
             response.read.return_value = b'x' * (MAX_RESPONSE_BYTES + 1)
             with self.assertRaises(ResponseLimitError):
                 self.transport.call_solver({'cmd': 'request.get'}, 5)

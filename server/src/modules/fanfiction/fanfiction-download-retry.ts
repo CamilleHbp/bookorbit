@@ -12,6 +12,13 @@ export function shouldRetryJob(kind: FanfictionJobKind, attempts: number, code: 
       transient ||
       [
         'source_failed',
+        'source_browser_start_failed',
+        'source_browser_unavailable',
+        'source_response_invalid',
+        'source_chapter_empty',
+        'source_image_incomplete',
+        'source_connection_failed',
+        'source_dns_failed',
         'source_rate_limited',
         'source_unavailable',
         'source_unrevealed',

@@ -117,12 +117,12 @@ def make_configuration(url, ini, transport):
     class ControlledFetcher(Fetcher):
         def get_cookiejar(self, filename=None, mozilla=False):
             if filename:
-                raise PolicyError('Cookie files are disabled')
+                raise PolicyError('Cookie files are disabled', code='configuration_blocked')
             transport.cookies.autosave = False
             return transport.cookies
 
         def set_cookiejar(self, cookiejar):
-            raise PolicyError('Cookie storage must use the website connection')
+            raise PolicyError('Cookie storage must use the website connection', code='configuration_blocked')
 
         def request(self, method, url, headers=None, parameters=None):
             status, content, redirected = transport.request(method, url, parameters, headers)
@@ -152,7 +152,7 @@ def make_configuration(url, ini, transport):
             return self.fetcher
 
         def _read_file_opener(self, _filename):
-            raise PolicyError('Configuration file references are disabled')
+            raise PolicyError('Configuration file references are disabled', code='configuration_blocked')
 
         def set_sleep_override(self, _value):
             return None

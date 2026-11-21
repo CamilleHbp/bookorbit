@@ -125,7 +125,9 @@ function retry() {
       <p v-if="active" class="font-medium">{{ t('fanfiction.sourceReview.linkingWebsite', { website: websiteName }) }}</p>
       <p v-else class="font-medium">{{ t(`fanfiction.states.${targetJob.state}`) }}</p>
       <p v-if="targetJob.result?.selection">{{ t('fanfiction.discovery.selectionProgress', targetJob.result.selection) }}</p>
-      <p v-if="targetJob.errorCode" class="text-destructive">{{ t(`fanfiction.errors.${targetJob.errorCode}`) }}</p>
+      <p v-if="targetJob.errorCode" class="text-destructive">
+        {{ t(`fanfiction.errors.${targetJob.errorCode}`, t('fanfiction.errors.runtime_failed')) }}
+      </p>
       <Button v-if="active" variant="outline" :disabled="review.busy.value || targetJob.cancellationRequested" @click="cancel">{{
         t('fanfiction.cancel')
       }}</Button>
@@ -244,7 +246,9 @@ function retry() {
                 >{{ urlFor(book) }}<ExternalLink class="mt-1 size-3 shrink-0" aria-hidden="true"
               /></a>
               <p v-if="!reviewable(book)" class="text-sm font-medium">{{ t(`fanfiction.discovery.states.${book.state}`) }}</p>
-              <p v-if="book.errorCode" class="text-destructive text-sm">{{ t(`fanfiction.errors.${book.errorCode}`) }}</p>
+              <p v-if="book.errorCode" class="text-destructive text-sm">
+                {{ t(`fanfiction.errors.${book.errorCode}`, t('fanfiction.errors.runtime_failed')) }}
+              </p>
               <details v-if="reviewable(book) && discoverySources(book).length !== 1" open>
                 <summary class="text-muted-foreground min-h-11 cursor-pointer py-2 text-sm">{{ t('fanfiction.discovery.changeLink') }}</summary>
                 <div class="grid gap-3 sm:grid-cols-2">

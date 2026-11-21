@@ -22,8 +22,11 @@ def digest(data):
 def read_bounded(path, maximum):
     try:
         with path.open('rb') as stream:
-            data = stream.read(maximum + 1)
-        return data if len(data) <= maximum else None
+            size = os.fstat(stream.fileno()).st_size
+            if size > maximum:
+                return None
+            data = stream.read(size + 1)
+        return data if len(data) == size else None
     except FileNotFoundError:
         return None
     except OSError as error:

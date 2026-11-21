@@ -127,7 +127,9 @@ function date(value: string) {
         <div class="min-w-0 space-y-1">
           <p class="break-words font-medium">{{ row.name }}</p>
           <p v-if="row.count" class="text-sm text-muted-foreground">{{ t('fanfiction.connections.affected', { count: row.count }) }}</p>
-          <p v-else-if="row.login?.errorCode" class="text-sm text-destructive">{{ t(`fanfiction.errors.${row.login.errorCode}`) }}</p>
+          <p v-else-if="row.login?.errorCode" class="text-sm text-destructive">
+            {{ t(`fanfiction.errors.${row.login.errorCode}`, t('fanfiction.errors.runtime_failed')) }}
+          </p>
           <p v-else class="text-sm text-muted-foreground">
             {{
               row.login?.lastSuccessfulAt

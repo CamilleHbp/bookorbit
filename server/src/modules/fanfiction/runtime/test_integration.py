@@ -293,6 +293,13 @@ class ConfigurationTest(unittest.TestCase):
         self.assertEqual(failure_code(ConfigurationError('Unsafe setting')), 'configuration_blocked')
         self.assertEqual(failure_code(PolicyError('Unsafe destination')), 'source_policy_blocked')
         self.assertEqual(failure_code(ValueError('Invalid source content')), 'source_failed')
+        self.assertEqual(failure_code(MemoryError()), 'download_memory_limit')
+        from safe_transport import validate_url
+        for url, code in [('invalid url', 'source_url_invalid'), ('https://example.org/' + 'a' * 4100, 'source_url_too_long'),
+                          ('http://example.org/', 'source_url_protocol'), ('https://localhost/', 'source_private_address')]:
+            with self.subTest(code=code), self.assertRaises(PolicyError) as rejected:
+                validate_url(url)
+            self.assertEqual(failure_code(rejected.exception), code)
         self.assertEqual(failure_code(DownloadLimitError('Expanded download limit exceeded')), 'download_limit')
         self.assertEqual(failure_code(ResponseLimitError('Expanded HTTP response limit exceeded')), 'response_too_large')
         self.assertEqual(failure_code(DownloadTimeoutError('Download deadline exceeded')), 'download_timeout')

@@ -34,7 +34,7 @@ async function saveReview() {
   else if (libraryId) await router.push({ name: 'fanfiction', query: { tab: 'review', review: 'attention', libraryId } })
 }
 defineExpose({ commitPending })
-const { t, te } = useI18n()
+const { t } = useI18n()
 const {
   updatePolicy,
   keepUpdated,
@@ -85,7 +85,7 @@ const {
 const decision = computed(() => chapterDecision(job.value?.result?.changes))
 function errorLabel(code: string | null | undefined) {
   const key = `fanfiction.errors.${code}`
-  return code ? (te(key) ? t(key) : t('fanfiction.errors.runtime_failed')) : ''
+  return code ? t(key, t('fanfiction.errors.runtime_failed')) : ''
 }
 const sourceError = computed(() => errorLabel(source.value?.attentionCode))
 const jobError = computed(() => errorLabel(job.value?.errorCode))

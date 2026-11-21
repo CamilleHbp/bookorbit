@@ -17,6 +17,8 @@ import logging
 import os
 import re
 import resource
+import socket
+import ssl
 import sqlite3
 import time
 import traceback
@@ -82,11 +84,11 @@ def story_adapter(configuration, url):
 def recognize_urls(urls):
     from fanficfare import exceptions
     if not isinstance(urls, list) or not 0 < len(urls) <= 100:
-        raise PolicyError('URL recognition batch exceeds its limit')
+        raise PolicyError('URL recognition batch exceeds its limit', code='source_input_invalid')
     result = []
     for url in urls:
         if not isinstance(url, str) or len(url) > 4096:
-            raise PolicyError('Invalid URL recognition input')
+            raise PolicyError('Invalid URL recognition input', code='source_url_invalid')
         try:
             validate_url(url)
             if url in publisher_edition.EDITIONS:
@@ -176,7 +178,7 @@ def story_preview(adapter, story):
     validate_url(canonical)
     chapter_count = metadata_count(story, 'numChapters', 10_000)
     if not chapter_count:
-        raise PolicyError('Chapter count limit exceeded')
+        raise PolicyError('Chapter count limit exceeded', code='source_chapter_limit')
     return {
         'canonicalUrl': canonical,
         'site': adapter.getConfigSection(), 'title': story.getMetadata('title'),
@@ -238,7 +240,7 @@ class ProgressReporter:
 def run(request, save_cookies=None, report_progress=lambda progress: None):
     actual = importlib.metadata.version('FanFicFare')
     if actual != VERSION or importlib.metadata.version('curl_cffi') != '0.17.0':
-        raise PolicyError('Pinned FanFicFare runtime version does not match')
+        raise PolicyError('Pinned FanFicFare runtime version does not match', code='runtime_unavailable')
     install_image_processing()
     from fanficfare import adapters, writers
     operation = request.get('operation')
@@ -322,7 +324,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     if operation == 'preview':
         return finish(preview)
     if operation not in ('download', 'update', 'refresh'):
-        raise PolicyError('Unsupported integration operation')
+        raise PolicyError('Unsupported integration operation', code='runtime_unavailable')
     check = UpdateCheck(request, adapter, preview)
     if operation == 'update' and check.unchanged():
         progress.emit({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
@@ -414,8 +416,16 @@ def failure_code(error):
         return 'chapter_storage_failed'
     if isinstance(error, PolicyError):
         return error.code
+    if isinstance(error, MemoryError):
+        return 'download_memory_limit'
     if isinstance(error, TimeoutError):
         return 'download_timeout'
+    if isinstance(error, socket.gaierror):
+        return 'source_dns_failed'
+    if isinstance(error, ssl.SSLCertVerificationError):
+        return 'source_certificate_invalid'
+    if isinstance(error, ConnectionError):
+        return 'source_connection_failed'
     if status == 429:
         return 'source_rate_limited'
     if status is not None and status >= 500:
@@ -433,10 +443,10 @@ def main():
     try:
         raw = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)
         if len(raw) > 8 * 1024 * 1024:
-            raise PolicyError('Input limit exceeded')
+            raise PolicyError('Input limit exceeded', code='source_input_invalid')
         request = json.loads(raw)
         if not isinstance(request, dict):
-            raise PolicyError('Invalid integration request')
+            raise PolicyError('Invalid integration request', code='source_input_invalid')
         limits(request.get('operation'))
         def report_progress(progress):
             sys.stderr.write('BOOKORBIT_PROGRESS ' + json.dumps(progress) + '\n')

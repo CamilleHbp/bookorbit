@@ -16,7 +16,7 @@ def login_page(transport, method, url, parameters=None):
     if status >= 400:
         raise exceptions.HTTPErrorFFF(url, status, 'FanFiction.net sign-in request failed', b'')
     if urlsplit(final_url).netloc != HOST:
-        raise PolicyError('FanFiction.net sign-in left the website')
+        raise PolicyError('FanFiction.net sign-in left the website', code='source_redirect_blocked')
     page = BeautifulSoup(content, 'html.parser')
     if page.select_one('.g-recaptcha, .h-captcha, .cf-turnstile, [name="cf-turnstile-response"], [name="g-recaptcha-response"]'):
         raise exceptions.AccessDenied('FanFiction.net requires browser verification')
@@ -49,7 +49,7 @@ def login_fanfiction_net(adapter, story_transport):
         target = urljoin(base, form.get('action') or base)
         parsed = urlsplit(target)
         if parsed.scheme != 'https' or parsed.netloc != HOST:
-            raise PolicyError('FanFiction.net credentials require the original HTTPS host')
+            raise PolicyError('FanFiction.net credentials require the original HTTPS host', code='source_redirect_blocked')
         if parsed.path.rstrip('/') not in ('/login.php', '/login'):
             raise exceptions.FailedToDownload('FanFiction.net sign-in action is unsupported')
         values = {item['name']: item.get('value', '') for item in form.select('input[type="hidden"][name]:not([disabled])')}

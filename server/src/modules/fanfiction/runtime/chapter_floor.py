@@ -29,7 +29,7 @@ def story_id(url):
                'scribblehub.com': r'^/(?:series|read)/(\d+)(?:[-/]|$)'}.get(site)
     match = re.match(pattern, parts.path) if pattern else None
     if (parts.scheme not in ('http', 'https') or parts.username or parts.password or parts.port or not match):
-        raise PolicyError('The continuation cutoff belongs to a different story')
+        raise PolicyError('The continuation cutoff belongs to a different story', code='source_continuation_invalid')
     return site, match[1]
 
 
@@ -38,31 +38,31 @@ def chapter_id(url):
     match = re.search(r'/chapter/(\d+)(?:/|$)', parts.path)
     site, _ = story_id(url)
     if not match:
-        raise PolicyError('The continuation contains an invalid bonus chapter URL')
+        raise PolicyError('The continuation contains an invalid bonus chapter URL', code='source_continuation_invalid')
     return site, match[1]
 
 
 def validate_policy(policy):
     if (not isinstance(policy, dict) or set(policy) != {'version', 'storyUrl', 'minimum', 'extraChapterUrls'} or
             type(policy['version']) is not int or policy['version'] != 1):
-        raise PolicyError('The continuation cutoff is invalid')
+        raise PolicyError('The continuation cutoff is invalid', code='source_continuation_invalid')
     if not isinstance(policy['storyUrl'], str):
-        raise PolicyError('The continuation cutoff is invalid')
+        raise PolicyError('The continuation cutoff is invalid', code='source_continuation_invalid')
     site, _ = story_id(policy['storyUrl'])
     minimum = policy['minimum']
     if (not isinstance(minimum, list) or len(minimum) not in (1, 2) or
             any(type(n) is not int or not 0 <= n <= 999999 for n in minimum)):
-        raise PolicyError('The continuation chapter number is invalid')
+        raise PolicyError('The continuation chapter number is invalid', code='source_continuation_invalid')
     # ScribbleHub uses independent main and side-story numbering, rather than arcs.
     if site == 'scribblehub.com' and len(minimum) != 2:
-        raise PolicyError('A ScribbleHub continuation needs main and side chapter cutoffs')
+        raise PolicyError('A ScribbleHub continuation needs main and side chapter cutoffs', code='source_continuation_invalid')
     extras = policy['extraChapterUrls']
     if not isinstance(extras, list) or len(extras) > 100 or any(not isinstance(u, str) or len(u) > 2048 for u in extras):
-        raise PolicyError('The continuation bonus chapter list is invalid')
+        raise PolicyError('The continuation bonus chapter list is invalid', code='source_continuation_invalid')
     for url in extras:
         chapter_id(url)
         if story_id(url) != story_id(policy['storyUrl']):
-            raise PolicyError('A continuation bonus chapter belongs to a different story')
+            raise PolicyError('A continuation bonus chapter belongs to a different story', code='source_continuation_invalid')
     return policy
 
 
@@ -110,18 +110,18 @@ def read_policy(path):
         if not markers:
             return None
         if len(markers) != 1 or len(markers[0].getAttribute('content')) > 16384:
-            raise PolicyError('The continuation cutoff is invalid')
+            raise PolicyError('The continuation cutoff is invalid', code='source_continuation_invalid')
         try:
             return validate_policy(json.loads(markers[0].getAttribute('content')))
         except (ValueError, TypeError, KeyError) as error:
-            raise PolicyError('The continuation cutoff is invalid') from error
+            raise PolicyError('The continuation cutoff is invalid', code='source_continuation_invalid') from error
 
 
 def apply_policy(adapter, policy, canonical_url):
     if policy is None:
         return
     if story_id(canonical_url) != story_id(policy['storyUrl']):
-        raise PolicyError('The continuation cutoff belongs to a different story')
+        raise PolicyError('The continuation cutoff belongs to a different story', code='source_continuation_invalid')
     site, _ = story_id(canonical_url)
     minimum = tuple(policy['minimum'])
     pattern = (r'^\s*(?:Chapter\s+)?(\d+)\s*[-–]\s*(\d+)(?=\s|[:.]|$)' if len(minimum) == 2 else
@@ -141,7 +141,7 @@ def apply_policy(adapter, policy, canonical_url):
         if include:
             selected.append(chapter)
     if not selected:
-        raise PolicyError('No chapters are available after this continuation cutoff')
+        raise PolicyError('No chapters are available after this continuation cutoff', code='source_continuation_empty')
     adapter.chapterInfos = selected
     adapter.story.setMetadata('numChapters', len(selected))
 
@@ -185,4 +185,4 @@ def validate_output(output, selected):
     expected = Counter(chapter_id(c['url']) for c in selected)
     actual = Counter(chapter_id(url) for url, _ in written)
     if expected != actual:
-        raise PolicyError('The updated book does not match its continuation cutoff')
+        raise PolicyError('The updated book does not match its continuation cutoff', code='source_continuation_invalid')

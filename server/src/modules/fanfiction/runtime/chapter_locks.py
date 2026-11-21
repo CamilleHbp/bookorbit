@@ -40,7 +40,7 @@ def chapter_metadata(data):
         pass
 
     def reject(*_args):
-        raise PolicyError('Unexpected XML declaration')
+        raise PolicyError('Unexpected XML declaration', code='invalid_epub')
 
     def start(name, attributes):
         nonlocal depth, head
@@ -68,7 +68,7 @@ def chapter_metadata(data):
         parser.Parse(data[:2 * 1024 * 1024], True)
     except HeadComplete:
         return metadata
-    raise PolicyError('Chapter header is missing')
+    raise PolicyError('Chapter header is missing', code='chapter_lock_conflict')
 
 
 def chapters(archive, metadata_only=False):
@@ -129,11 +129,11 @@ def preserve_chapter_locks(previous, output):
                 if path in copied:
                     return copied[path]
                 if path not in old.namelist():
-                    raise PolicyError('A locked chapter resource is missing')
+                    raise PolicyError('A locked chapter resource is missing', code='chapter_lock_conflict')
                 data = old.read(path)
                 size += len(data)
                 if size > LIBRARY_EPUB_LIMIT:
-                    raise PolicyError('Locked chapter resources exceed the EPUB limit')
+                    raise PolicyError('Locked chapter resources exceed the EPUB limit', code='chapter_lock_conflict')
                 extension = posixpath.splitext(path)[1].lower()
                 if not re.fullmatch(r'\.[a-z0-9]{1,10}', extension):
                     extension = '.bin'
@@ -154,7 +154,7 @@ def preserve_chapter_locks(previous, output):
                 if path in chapter_paths:
                     target = chapter_paths[path]
                 elif path.endswith(('.html', '.xhtml')):
-                    raise PolicyError('A locked chapter links to a missing chapter')
+                    raise PolicyError('A locked chapter links to a missing chapter', code='chapter_lock_conflict')
                 else:
                     target = resource(path)
                 return posixpath.relpath(target, posixpath.dirname(destination) or '.') + ('#' + parts.fragment if parts.fragment else '')
@@ -170,7 +170,7 @@ def preserve_chapter_locks(previous, output):
                         if child.hasAttribute(attr):
                             child.setAttribute(attr, reference(child.getAttribute(attr), source, destination))
                     if child.hasAttribute('srcset'):
-                        raise PolicyError('Locked chapter srcset needs explicit resource references')
+                        raise PolicyError('Locked chapter srcset needs explicit resource references', code='chapter_lock_conflict')
                     if child.hasAttribute('style'):
                         child.setAttribute('style', rewrite_css(child.getAttribute('style'), source, destination))
                     if child.localName == 'style':
@@ -186,7 +186,7 @@ def preserve_chapter_locks(previous, output):
                 bodies = elements(local, 'body')
                 targets = elements(doc, 'body')
                 if len(bodies) != 1 or len(targets) != 1:
-                    raise PolicyError('Locked chapter body is invalid')
+                    raise PolicyError('Locked chapter body is invalid', code='chapter_lock_conflict')
                 body = doc.importNode(bodies[0], True)
                 rewrite(body, source, destination)
                 baseline_meta = next((n for n in elements(local, 'meta') if n.getAttribute('name') == BASELINE), None)
@@ -194,7 +194,7 @@ def preserve_chapter_locks(previous, output):
                     baseline_path = posixpath.normpath(posixpath.join(posixpath.dirname(source), unquote(baseline_meta.getAttribute('content'))))
                     baseline = json.loads(old.read(baseline_path))
                     if baseline.get('version') != 1 or not isinstance(baseline.get('resourceHashes'), dict):
-                        raise PolicyError('Locked chapter baseline is invalid')
+                        raise PolicyError('Locked chapter baseline is invalid', code='chapter_lock_conflict')
                     base = parse(baseline['html'].encode())
                     def base_hash(path):
                         resolved = posixpath.normpath(posixpath.join(posixpath.dirname(baseline['sourcePath']), path))
@@ -244,7 +244,7 @@ def preserve_chapter_locks(previous, output):
                     continue
                 identifier = 'bookorbit-preserved-' + hashlib.sha256(path.encode()).hexdigest()
                 if identifier in identifiers:
-                    raise PolicyError('Locked chapter resource identity conflicts with the updated book')
+                    raise PolicyError('Locked chapter resource identity conflicts with the updated book', code='chapter_lock_conflict')
                 item = opf.createElementNS(manifest.namespaceURI, 'item')
                 item.setAttribute('id', identifier)
                 item.setAttribute('href', posixpath.relpath(path, posixpath.dirname(opf_path) or '.'))
