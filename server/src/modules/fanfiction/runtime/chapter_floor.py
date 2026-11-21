@@ -117,7 +117,7 @@ def read_policy(path):
             raise PolicyError('The continuation cutoff is invalid', code='source_continuation_invalid') from error
 
 
-def apply_policy(adapter, policy, canonical_url):
+def apply_policy(adapter, policy, canonical_url, previous_path=None):
     if policy is None:
         return
     if story_id(canonical_url) != story_id(policy['storyUrl']):
@@ -141,9 +141,19 @@ def apply_policy(adapter, policy, canonical_url):
         if include:
             selected.append(chapter)
     if not selected:
+        if previous_path:
+            with ZipFile(previous_path) as archive:
+                _, saved = package(archive)
+                markers = saved.getElementsByTagNameNS(OPF, 'meta')
+                # Only the initial placeholder has this marker. The first
+                # successful chapter download replaces it with a normal EPUB.
+                if any(n.getAttribute('name') == 'bookorbit:awaiting-first-chapter' and
+                       n.getAttribute('content') == 'true' for n in markers):
+                    return False
         raise PolicyError('No chapters are available after this continuation cutoff', code='source_continuation_empty')
     adapter.chapterInfos = selected
     adapter.story.setMetadata('numChapters', len(selected))
+    return True
 
 
 def preserve_policy(previous, output, policy):
