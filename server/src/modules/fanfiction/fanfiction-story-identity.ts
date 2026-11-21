@@ -9,6 +9,10 @@ import type { FanficfareRuntimeService } from './fanficfare-runtime.service';
 type Recognized = Extract<FanfictionRecognizedUrl, { recognized: true }>;
 export const storyIdentity = (story: Recognized) => story.identityUrl ?? story.canonicalUrl;
 
+export function isUnresolvedAo3Chapter(story: Recognized): boolean {
+  return story.site === 'archiveofourown.org' && new URL(story.canonicalUrl).pathname.startsWith('/chapters/');
+}
+
 export async function sameStory(runtime: FanficfareRuntimeService, left: string, right: string, signal?: AbortSignal) {
   if (left === right) return true;
   const [a, b] = await runtime.recognize([left, right], signal);
@@ -16,7 +20,7 @@ export async function sameStory(runtime: FanficfareRuntimeService, left: string,
 }
 
 export async function recordedStories(runtime: FanficfareRuntimeService, choices: FanfictionRecognizedUrl[]) {
-  const recognized = choices.filter((url) => url.recognized);
+  const recognized = choices.filter((url) => url.recognized).filter((url) => !isUnresolvedAo3Chapter(url));
   const urls = [...new Set(recognized.map((url) => url.canonicalUrl))];
   if (urls.length < 2) return recognized;
   // Preserve the recorded URLs users were offered, including legacy records.

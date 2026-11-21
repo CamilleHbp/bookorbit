@@ -38,6 +38,8 @@ from flaresolverr_transport import FlareSolverrTransport
 
 VERSION = '4.63.0'
 TEST_SITES = {'test1.com', 'test2.com'}
+AO3_ALIASES = {'archive.transformativeworks.org', 'insecure.archiveofourown.org', 'secure.ao3.org'}
+ROYAL_ROAD_HOSTS = {'www.royalroad.com', 'royalroad.com', 'www.royalroadl.com', 'royalroadl.com'}
 
 
 class RecognitionNeedsAccess(Exception):
@@ -73,6 +75,13 @@ def install_bounded_otw_chapters(adapter):
     adapter._bookorbit_bounded_otw = True
 
 
+def normalize_ao3_url(url):
+    parsed = urlsplit(url)
+    if parsed.hostname in AO3_ALIASES:
+        return parsed._replace(netloc='archiveofourown.org').geturl()
+    return url
+
+
 def story_adapter(configuration, url):
     from fanficfare import adapters, exceptions
     try:
@@ -90,6 +99,17 @@ def fictionlive_story_url(adapter, title):
     return f'https://fiction.live/stories/{slug or "Story"}/{adapter.story_id}'
 
 
+def royal_road_story_url(canonical, candidates):
+    for value in candidates:
+        parsed = urlsplit(value)
+        if parsed.hostname not in ROYAL_ROAD_HOSTS:
+            continue
+        match = re.match(r'^(/fiction/[0-9]+)/([a-zA-Z0-9-]+)(?:/|$)', parsed.path)
+        if match and canonical.endswith(match[1]) and match[2] != 'chapter':
+            return f'{canonical}/{match[2]}'
+    return canonical
+
+
 def recognize_urls(urls):
     from fanficfare import exceptions
     if not isinstance(urls, list) or not 0 < len(urls) <= 100:
@@ -103,12 +123,15 @@ def recognize_urls(urls):
             if url in publisher_edition.EDITIONS:
                 result.append({'url': url, 'recognized': True, 'canonicalUrl': url, 'site': publisher_edition.SITE})
                 continue
-            adapter = story_adapter(make_configuration(url, '', RecognitionTransport()), url)
+            adapter_url = normalize_ao3_url(url)
+            adapter = story_adapter(make_configuration(adapter_url, '', RecognitionTransport()), adapter_url)
             canonical = adapter.url.replace('http://', 'https://', 1)
             site = adapter.getSiteDomain()
             if site == 'fiction.live':
                 # The adapter strips the title segment to identify stories by ID.
                 canonical = fictionlive_story_url(adapter, unquote(urlsplit(url).path.split('/')[2]))
+            elif site == 'www.royalroad.com':
+                canonical = royal_road_story_url(canonical, [url])
             validate_url(canonical)
             if site.removeprefix('www.') in TEST_SITES:
                 result.append({'url': url, 'recognized': False, 'reason': 'unsupported'})
@@ -185,10 +208,12 @@ def story_identity(adapter):
     return url
 
 
-def story_preview(adapter, story):
+def story_preview(adapter, story, url):
     canonical = story.getMetadata('storyUrl').replace('http://', 'https://', 1)
     if adapter.getSiteDomain() == 'fiction.live':
         canonical = fictionlive_story_url(adapter, story.getMetadata('title') or '')
+    elif adapter.getSiteDomain() == 'www.royalroad.com':
+        canonical = royal_road_story_url(story_identity(adapter), [chapter['url'] for chapter in adapter.get_chapters()] + [url])
     validate_url(canonical)
     chapter_count = metadata_count(story, 'numChapters', 10_000)
     if not chapter_count:
@@ -271,6 +296,7 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
         return {'valid': True}
     url = request.get('url')
     validate_url(url)
+    url = normalize_ao3_url(url)
     timeout = min(7200, max(1, request.get('timeoutSeconds', 1800)))
     if validate_url(url)[1].removeprefix('www.') == 'royalroad.com' and operation in ('download', 'update', 'refresh'):
         timeout = min(7200, max(1, request.get('browserTimeoutSeconds', timeout)))
@@ -330,7 +356,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     install_bounded_otw_chapters(adapter)
     empty_home = omit_empty_fictionlive_home(adapter)
     install_tag_matching(story, adapter.getConfigSection(), request.get('tagMatching') or {'version': 0, 'rules': []})
-    preview = matched_preview(story, story_preview(adapter, story))
+    preview = matched_preview(story, story_preview(adapter, story, url))
     canonical = preview['canonicalUrl']
     continuation = read_policy('input.epub') if operation in ('update', 'refresh') else None
     if continuation is not None:
@@ -341,15 +367,15 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
             return finish({'preview': preview, 'output': 'input.epub', 'unchangedEdition': True})
         continuation_chapters = adapter.get_chapters()
         configuration.set('overrides', 'update_preserve_deleted_chapters', 'false')
-        preview = matched_preview(story, story_preview(adapter, story))
+        preview = matched_preview(story, story_preview(adapter, story, url))
     chapter_count = preview['chapterCount']
     if operation == 'preview':
         return finish(preview)
     if operation not in ('download', 'update', 'refresh'):
         raise PolicyError('Unsupported integration operation', code='runtime_unavailable')
-    fictionlive = adapter.getSiteDomain() == 'fiction.live'
+    separate_story_url = adapter.getSiteDomain() in ('fiction.live', 'www.royalroad.com')
     # Keep the existing internal URL for saved verification and download checkpoints.
-    checkpoint_url = story_identity(adapter) if fictionlive else canonical
+    checkpoint_url = story_identity(adapter) if separate_story_url else canonical
     check = UpdateCheck(request, adapter, {**preview, 'canonicalUrl': checkpoint_url})
     if operation == 'update' and check.unchanged():
         progress.emit({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
@@ -387,7 +413,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     with open('output.epub', 'xb') as output:
         progress.total = chapter_count
         progress.emit({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
-        if fictionlive:
+        if separate_story_url:
             story.setMetadata('storyUrl', canonical)
         with recover_chapters(adapter, check.chapter_directory(request.get('chapterDirectory')), checkpoint_url, transport) as downloaded:
             progress.downloaded = downloaded
@@ -404,7 +430,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         if continuation is not None:
             validate_output('output.epub', continuation_chapters)
     check.save('output.epub')
-    return finish({'preview': matched_preview(adapter.story, story_preview(adapter, adapter.story)), 'output': 'output.epub'})
+    return finish({'preview': matched_preview(adapter.story, story_preview(adapter, adapter.story, url)), 'output': 'output.epub'})
 
 
 def execute_request(request, report_progress=lambda progress: None):

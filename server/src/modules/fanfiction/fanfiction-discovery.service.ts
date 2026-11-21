@@ -1,4 +1,4 @@
-import { recordedStories, sameStory, storyIdentity } from './fanfiction-story-identity';
+import { isUnresolvedAo3Chapter, recordedStories, sameStory, storyIdentity } from './fanfiction-story-identity';
 import { FanfictionConnectionService } from './fanfiction-connection.service';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, count, eq, gt, inArray, sql } from 'drizzle-orm';
@@ -57,12 +57,22 @@ export class FanfictionDiscoveryService {
           )
         : [];
       const known = existingUrls.filter((value) => value.recognized);
-      if (known.length && !known.every((value) => storyIdentity(value) === storyIdentity(url)))
+      const chapterOnly = isUnresolvedAo3Chapter(url);
+      if (!chapterOnly && known.some((value) => storyIdentity(value) !== storyIdentity(url)))
         throw new ConflictException('This URL does not match the story source recorded in the EPUB');
       const session = await this.connections.session(url.canonicalUrl, user, () => this.access.administer(user, libraryId));
       const remote = await this.runtime.preview(url.canonicalUrl, session.document, signal, session.saveCookies);
-      if (!(await sameStory(this.runtime, remote.canonicalUrl, url.canonicalUrl, signal)))
+      const [resolved] = await this.runtime.recognize([remote.canonicalUrl], signal);
+      if (
+        !resolved?.recognized ||
+        resolved.site !== url.site ||
+        isUnresolvedAo3Chapter(resolved) ||
+        (!chapterOnly && storyIdentity(resolved) !== storyIdentity(url))
+      )
         throw new ConflictException('The source URL changed. Check the story URL again.');
+      if (known.some((value) => storyIdentity(value) !== storyIdentity(url) && storyIdentity(value) !== storyIdentity(resolved)))
+        throw new ConflictException('This URL does not match the story source recorded in the EPUB');
+      const verifiedUrl = { ...resolved, url: url.url };
       await this.access.administer(user, libraryId);
       const candidate = await this.db.transaction(async (tx) => {
         await this.catalog.lockFileLocation(tx, libraryId, file);
@@ -77,7 +87,7 @@ export class FanfictionDiscoveryService {
             title: evidence.title,
             authors: evidence.authors,
             chapterCount: evidence.chapterCount,
-            urls: [url],
+            urls: [verifiedUrl],
             state: 'pending',
           })
           .onConflictDoNothing()
@@ -92,7 +102,7 @@ export class FanfictionDiscoveryService {
           throw new ConflictException('This book is already linked or being reviewed');
         const [updated] = await tx
           .update(candidates)
-          .set({ urls: [url], state: 'pending', errorCode: null, version: existing.version + 1, updatedAt: sql`now()` })
+          .set({ urls: [verifiedUrl], state: 'pending', errorCode: null, version: existing.version + 1, updatedAt: sql`now()` })
           .where(eq(candidates.id, existing.id))
           .returning();
         return updated;
@@ -106,7 +116,7 @@ export class FanfictionDiscoveryService {
         title: candidate.title,
         authors: candidate.authors,
         chapterCount: candidate.chapterCount,
-        canonicalUrl: url.canonicalUrl,
+        canonicalUrl: verifiedUrl.canonicalUrl,
         state: 'pending',
       };
     } catch (error) {
@@ -307,7 +317,12 @@ export class FanfictionDiscoveryService {
                   signal,
                 )
               : [];
-            const recognized = new Set(urls.filter((url) => url.recognized).map(storyIdentity));
+            const recognized = new Set(
+              urls
+                .filter((url) => url.recognized)
+                .filter((url) => !isUnresolvedAo3Chapter(url))
+                .map(storyIdentity),
+            );
             if (recognized.size || evidence.fanficfare)
               candidate = {
                 libraryId: job.libraryId,
