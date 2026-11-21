@@ -450,6 +450,49 @@ class ConfigurationTest(unittest.TestCase):
         self.assertNotEqual(key(a), key(b))
         self.assertNotEqual(key(a), key(c))
 
+    def test_fictionlive_recognizes_public_and_legacy_urls_offline(self):
+        from safe_transport import SafeTransport
+        legacy = 'https://fiction.live/stories//17CharacterIDhere'
+        public = 'https://fiction.live/stories/Example-Story/17CharacterIDhere'
+        with patch.object(SafeTransport, 'request', side_effect=AssertionError('Recognition must stay offline')):
+            result = run({'operation': 'recognize', 'urls': [legacy, public + '/home']})
+        self.assertEqual([entry['canonicalUrl'] for entry in result],
+                         [legacy.replace('/stories//', '/stories/Story/'), public])
+        self.assertEqual([entry['identityUrl'] for entry in result], [legacy, legacy])
+
+    def test_fictionlive_public_link_is_saved_when_refreshing_a_legacy_epub(self):
+        from fanficfare.adapters.adapter_fictionlive import FictionLiveAdapter
+        from fanficfare.epubutils import get_update_data
+
+        legacy = 'https://fiction.live/stories//17CharacterIDhere'
+        expected = 'https://fiction.live/stories/A-New-Story/17CharacterIDhere'
+        payload = {'url': legacy, 'configuration': '[defaults]\ninclude_images: false\n'}
+
+        def extract(adapter, get_cover=True):
+            adapter.extract_metadata({
+                't': 'A Néw Story!', 'cht': 1700000000000, 'rt': 1690000000000,
+                'contentRating': 'teen', 'u': [{'n': 'Writer', '_id': 'writer-id'}]
+            }, get_cover)
+            adapter.add_chapter('Chapter 1', legacy + '/home')
+
+        original = Path.cwd()
+        with tempfile.TemporaryDirectory() as folder:
+            try:
+                os.chdir(folder)
+                with patch.object(FictionLiveAdapter, 'doExtractChapterUrlsAndMetadata', extract), \
+                        patch.object(FictionLiveAdapter, 'getChapterText', return_value='<p>Story text.</p>'):
+                    self.assertEqual(run({**payload, 'operation': 'preview'})['canonicalUrl'], expected)
+                    with patch('fanficfare_wrapper.fictionlive_story_url', return_value=legacy):
+                        run({**payload, 'operation': 'download'})
+                    self.assertEqual(get_update_data('output.epub')[0], legacy)
+                    Path('output.epub').rename('input.epub')
+
+                    refreshed = run({**payload, 'operation': 'refresh', 'url': expected})
+                    self.assertEqual(refreshed['preview']['canonicalUrl'], expected)
+                    self.assertEqual(get_update_data('output.epub')[0], expected)
+            finally:
+                os.chdir(original)
+
     def test_site_catalog_excludes_fixture_adapters_and_recognition_is_bounded(self):
         self.assertFalse(any(site['id'] in ['test1.com', 'test2.com'] for site in run({'operation': 'sites'})['sites']))
         with self.assertRaises(PolicyError):
