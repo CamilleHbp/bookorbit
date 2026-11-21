@@ -450,6 +450,51 @@ class ConfigurationTest(unittest.TestCase):
         self.assertNotEqual(key(a), key(b))
         self.assertNotEqual(key(a), key(c))
 
+    def test_ao3_official_aliases_keep_the_work_id(self):
+        work = 'https://archiveofourown.org/works/12345'
+        urls = [f'https://{host}/works/12345/chapters/45678' for host in
+                ('archive.transformativeworks.org', 'insecure.archiveofourown.org', 'secure.ao3.org')]
+        recognized = run({'operation': 'recognize', 'urls': urls})
+        self.assertEqual([entry['canonicalUrl'] for entry in recognized], [work] * len(urls))
+        self.assertEqual([entry['url'] for entry in recognized], urls)
+
+    def test_royal_road_uses_the_published_slug_in_preview_and_epub(self):
+        from fanficfare.adapters.adapter_royalroadcom import RoyalRoadAdapter
+        from fanficfare.epubutils import get_update_data
+
+        identity = 'https://www.royalroad.com/fiction/12345'
+        public = identity + '/published-title'
+        chapter = public + '/chapter/67890/prologue'
+        [recognized] = run({'operation': 'recognize', 'urls': [chapter]})
+        self.assertEqual(recognized['canonicalUrl'], public)
+        self.assertEqual(recognized['identityUrl'], identity)
+
+        def extract(adapter, get_cover=True):
+            adapter.story.setMetadata('title', 'A Different Display Title')
+            adapter.story.setMetadata('author', 'Writer')
+            adapter.story.setMetadata('authorId', '123')
+            adapter.story.setMetadata('authorUrl', 'https://www.royalroad.com/profile/123')
+            adapter.add_chapter('Prologue', chapter)
+
+        payload = {'url': identity + '/old-title', 'configuration': '[defaults]\ninclude_images: false\n'}
+        original = Path.cwd()
+        with tempfile.TemporaryDirectory() as folder:
+            try:
+                os.chdir(folder)
+                with patch.object(RoyalRoadAdapter, 'doExtractChapterUrlsAndMetadata', extract), \
+                        patch.object(RoyalRoadAdapter, 'getChapterText', return_value='<p>Story text.</p>'):
+                    self.assertEqual(run({**payload, 'operation': 'preview'})['canonicalUrl'], public)
+                    with patch('fanficfare_wrapper.royal_road_story_url', return_value=identity):
+                        run({**payload, 'operation': 'download'})
+                    self.assertEqual(get_update_data('output.epub')[0], identity)
+                    Path('output.epub').rename('input.epub')
+
+                    refreshed = run({**payload, 'operation': 'refresh'})
+                    self.assertEqual(refreshed['preview']['canonicalUrl'], public)
+                    self.assertEqual(get_update_data('output.epub')[0], public)
+            finally:
+                os.chdir(original)
+
     def test_fictionlive_recognizes_public_and_legacy_urls_offline(self):
         from safe_transport import SafeTransport
         legacy = 'https://fiction.live/stories//17CharacterIDhere'
