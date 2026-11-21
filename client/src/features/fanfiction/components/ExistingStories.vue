@@ -27,7 +27,7 @@ onMounted(recover)
     <div v-if="job?.kind === 'discovery'" class="bg-muted space-y-2 rounded-md p-3 text-sm" role="status">
       <p class="font-medium">{{ t(`fanfiction.states.${job.state}`) }}</p>
       <p v-if="job.result?.discovery">{{ t('fanfiction.discovery.scanProgress', job.result.discovery) }}</p>
-      <p v-if="job.errorCode" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`) }}</p>
+      <p v-if="job.errorCode" class="text-destructive">{{ t(`fanfiction.errors.${job.errorCode}`, t('fanfiction.errors.runtime_failed')) }}</p>
       <Button v-if="active" variant="outline" :disabled="busy || job.cancellationRequested" @click="cancel">{{ t('fanfiction.cancel') }}</Button>
     </div>
     <p v-if="busy && !websites.length" role="status" class="text-muted-foreground py-8 text-sm">{{ t('fanfiction.discovery.loading') }}</p>

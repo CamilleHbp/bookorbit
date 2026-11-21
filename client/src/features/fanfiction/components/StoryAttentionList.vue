@@ -68,7 +68,7 @@ onScopeDispose(() => {
               story.metadataReviewPending
                 ? t('fanfiction.metadataReview.title')
                 : story.attentionCode
-                  ? t(`fanfiction.errors.${story.attentionCode}`)
+                  ? t(`fanfiction.errors.${story.attentionCode}`, t('fanfiction.errors.runtime_failed'))
                   : t('fanfiction.reviewStory')
             }}
           </p>

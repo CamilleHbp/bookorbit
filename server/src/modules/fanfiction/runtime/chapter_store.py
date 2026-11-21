@@ -88,7 +88,7 @@ def recover_chapters(adapter, directory, canonical, transport):
                 downloaded += 1
                 return '<div></div>'
             if not isinstance(html, str) or not html.strip():
-                raise SourceResponseError('Empty chapter returned by the source')
+                raise SourceResponseError('Empty chapter returned by the source', code='source_chapter_empty')
             body = html.encode('utf-8')
             check_storiesonline_notice(canonical, body)
             if len(body) > MAX_BODY:
@@ -100,7 +100,7 @@ def recover_chapters(adapter, directory, canonical, transport):
                 if not image:
                     continue  # A literal filename in the chapter need not be an embedded image.
                 if not image['data']:
-                    raise SourceResponseError('Chapter illustration is incomplete')
+                    raise SourceResponseError('Chapter illustration is incomplete', code='source_image_incomplete')
                 if len(image['data']) > MAX_BODY:
                     raise DownloadLimitError('Chapter illustration exceeds the EPUB entry limit')
                 image_hash = store.put_image(image['data'])

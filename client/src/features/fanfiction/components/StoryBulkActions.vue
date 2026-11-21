@@ -141,7 +141,7 @@ const failureGroups = computed(() => {
         {{ t(bulk.job.result?.selection?.tracked ? 'common.loading' : 'fanfiction.bulk.legacy') }}
       </p>
       <p v-if="bulk.job.errorCode && bulk.job.errorCode !== 'source_batch_review_required'" class="text-sm text-destructive">
-        {{ t(`fanfiction.errors.${bulk.job.errorCode}`) }}
+        {{ t(`fanfiction.errors.${bulk.job.errorCode}`, t('fanfiction.errors.runtime_failed')) }}
       </p>
       <p v-if="bulk.job.cancellationRequested && bulk.active" class="text-sm text-muted-foreground">{{ t('fanfiction.bulk.cancelHelp') }}</p>
       <details v-if="bulk.failures.length" :open="compact" :class="compact ? 'space-y-3' : 'border-t border-border pt-2'">
@@ -152,7 +152,7 @@ const failureGroups = computed(() => {
           {{ t('fanfiction.bulk.failures') }}
         </summary>
         <div v-for="group in failureGroups" :key="group.code" class="space-y-2 pb-3">
-          <p class="text-sm text-muted-foreground">{{ t(`fanfiction.errors.${group.code}`) }}</p>
+          <p class="text-sm text-muted-foreground">{{ t(`fanfiction.errors.${group.code}`, t('fanfiction.errors.runtime_failed')) }}</p>
           <ul class="space-y-1 text-sm">
             <li v-for="failure in group.failures" :key="failure.sourceId" class="flex min-w-0 flex-wrap items-center justify-between gap-2">
               <span class="min-w-0 flex-1 break-words font-medium">{{ failure.title }}</span>

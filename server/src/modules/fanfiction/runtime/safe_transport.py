@@ -18,6 +18,11 @@ MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 class PolicyError(Exception):
     code = 'source_policy_blocked'
 
+    def __init__(self, message, *, code=None):
+        super().__init__(message)
+        if code is not None:
+            self.code = code
+
 
 class ConfigurationError(PolicyError):
     code = 'configuration_blocked'
@@ -53,32 +58,37 @@ _connecting = contextvars.ContextVar('bookorbit_connecting', default=False)
 def install_network_guard():
     def audit(event, _args):
         if event in ('os.system', 'subprocess.Popen', 'os.posix_spawn', 'os.exec'):
-            raise PolicyError('Process execution is disabled')
+            raise PolicyError('Process execution is disabled', code='source_request_unsupported')
         if event == 'socket.connect' and not _connecting.get():
-            raise PolicyError('Requests must use the controlled transport')
+            raise PolicyError('Requests must use the controlled transport', code='source_request_unsupported')
     sys.addaudithook(audit)
 
 
 def validate_url(url):
-    if not isinstance(url, str) or len(url) > 4096 or any(ord(c) < 33 for c in url):
-        raise PolicyError('Invalid source URL')
-    parsed = urllib.parse.urlsplit(url)
+    if isinstance(url, str) and len(url) > 4096:
+        raise PolicyError('Source URL length exceeds limit', code='source_url_too_long')
+    if not isinstance(url, str) or any(ord(c) < 33 for c in url):
+        raise PolicyError('Invalid source URL', code='source_url_invalid')
     try:
+        parsed = urllib.parse.urlsplit(url)
         valid = parsed.scheme == 'https' and parsed.hostname and parsed.port in (None, 443)
-    except ValueError:
-        valid = False
+    except ValueError as error:
+        raise PolicyError('Invalid source URL', code='source_url_invalid') from error
     if not valid or parsed.username or parsed.password or '\\' in url or '%' in parsed.netloc:
-        raise PolicyError('Only public HTTPS sources on port 443 are allowed')
-    hostname = parsed.hostname.encode('idna').decode('ascii')
+        raise PolicyError('Only public HTTPS sources on port 443 are allowed', code='source_url_protocol')
+    try:
+        hostname = parsed.hostname.encode('idna').decode('ascii')
+    except UnicodeError as error:
+        raise PolicyError('Invalid source hostname', code='source_url_invalid') from error
     if hostname.endswith('.') or hostname == 'localhost' or hostname.endswith('.localhost'):
-        raise PolicyError('Local destinations are disabled')
+        raise PolicyError('Local destinations are disabled', code='source_private_address')
     return parsed, hostname
 
 
 def public_addresses(hostname):
     addresses = socket.getaddrinfo(hostname, 443, type=socket.SOCK_STREAM)
     if not addresses or len(addresses) > 32:
-        raise PolicyError('Invalid DNS response')
+        raise PolicyError('Invalid DNS response', code='source_dns_failed')
     for family, _, _, _, address in addresses:
         ip = ipaddress.ip_address(address[0])
         transitional = isinstance(ip, ipaddress.IPv6Address) and (
@@ -87,7 +97,7 @@ def public_addresses(hostname):
             or ip in ipaddress.IPv6Network('64:ff9b:1::/48')
         )
         if family not in (socket.AF_INET, socket.AF_INET6) or not ip.is_global or ip.is_multicast or transitional:
-            raise PolicyError('Private and local destinations are disabled')
+            raise PolicyError('Private and local destinations are disabled', code='source_private_address')
     return addresses
 
 
@@ -109,7 +119,7 @@ class PinnedConnection(http.client.HTTPSConnection):
             except OSError as error:
                 sock.close()
                 last_error = error
-        raise last_error or PolicyError('No public destination is available')
+        raise last_error or PolicyError('No public destination is available', code='source_dns_failed')
 
 
 class SafeTransport:
@@ -129,19 +139,19 @@ class SafeTransport:
 
     def load_cookies(self, cookies):
         if not isinstance(cookies, list) or len(cookies) > 200:
-            raise PolicyError('Cookie storage limit exceeded')
+            raise PolicyError('Cookie storage limit exceeded', code='source_session_invalid')
         for item in cookies:
             if not isinstance(item, dict):
-                raise PolicyError('Invalid profile cookie')
+                raise PolicyError('Invalid profile cookie', code='source_session_invalid')
             name, value, domain, path = (item.get(key) for key in ('name', 'value', 'domain', 'path'))
             if not all(isinstance(part, str) for part in (name, value, domain, path)) or not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]{1,256}", name) or len(value) > 4096 or not re.fullmatch(r'[\x20-\x7e]*', value) or len(domain) > 255 or len(path) > 4096 or not path.startswith('/') or re.search(r'[\x00-\x1f\x7f]', path):
-                raise PolicyError('Invalid profile cookie')
+                raise PolicyError('Invalid profile cookie', code='source_session_invalid')
             validate_url('https://' + domain.lstrip('.'))
             expires = item.get('expires')
             if expires is not None and (type(expires) is not int or not 0 <= expires <= 9007199254740991):
-                raise PolicyError('Invalid cookie expiry')
+                raise PolicyError('Invalid cookie expiry', code='source_session_invalid')
             if 'hostOnly' in item and not isinstance(item['hostOnly'], bool):
-                raise PolicyError('Invalid cookie domain scope')
+                raise PolicyError('Invalid cookie domain scope', code='source_session_invalid')
             self.cookies.set_cookie(http.cookiejar.Cookie(
                 version=0, name=name, value=value, port=None, port_specified=False,
                 domain=domain, domain_specified=not item.get('hostOnly', not domain.startswith('.')), domain_initial_dot=domain.startswith('.'),
@@ -165,6 +175,10 @@ class SafeTransport:
     def request(self, method, url, parameters=None, headers=None):
         if self.failure is not None:
             raise self.failure
+        # Some adapters pass unescaped spaces in chapter and illustration paths.
+        # Encode them only after the authority; validation still checks the host.
+        if isinstance(url, str) and ' ' in url:
+            url = re.sub(r'^(https://[^/?#]+)([/?#].*)$', lambda m: m[1] + m[2].replace(' ', '%20'), url)
         self.report_activity('illustrations' if any(key.lower() == 'accept' and value.startswith('image/') for key, value in (headers or {}).items()) else 'website')
         try:
             for attempt in range(3):
@@ -186,12 +200,12 @@ class SafeTransport:
 
     def _request(self, method, url, parameters=None, headers=None):
         if method not in ('GET', 'POST'):
-            raise PolicyError('Unsupported request method')
+            raise PolicyError('Unsupported request method', code='source_request_unsupported')
         body = None
         if parameters is not None:
             body = parameters if isinstance(parameters, bytes) else (parameters if isinstance(parameters, str) else urllib.parse.urlencode(parameters, doseq=True)).encode('utf-8')
             if len(body) > 2 * 1024 * 1024:
-                raise PolicyError('Request body limit exceeded')
+                raise PolicyError('Request body limit exceeded', code='source_request_too_large')
         for _ in range(6):
             parsed, hostname = validate_url(url)
             if time.monotonic() >= self.deadline:
@@ -223,7 +237,7 @@ class SafeTransport:
                 response = connection.getresponse()
                 self.cookies.extract_cookies(response, request)
                 if len(self.cookies) > 200:
-                    raise PolicyError('Cookie storage limit exceeded')
+                    raise PolicyError('Cookie storage limit exceeded', code='source_session_invalid')
                 if response.status in (301, 302, 303, 307, 308):
                     target = urllib.parse.urljoin(url, response.getheader('Location') or '')
                     target_url, target_host = validate_url(target)
@@ -238,7 +252,7 @@ class SafeTransport:
                     if response.status in (301, 302, 303) or storiesonline_callback:
                         method, body = 'GET', None
                     elif body is not None and target_host != hostname:
-                        raise PolicyError('Authenticated redirects cannot forward request bodies across sites')
+                        raise PolicyError('Authenticated redirects cannot forward request bodies across sites', code='source_redirect_blocked')
                     url = target
                     continue
                 if (hostname in ('www.fanfiction.net', 'fanfiction.net', 'm.fanfiction.net') and response.status == 403
@@ -249,7 +263,7 @@ class SafeTransport:
                 return response.status, self.read_body(response), url
             finally:
                 connection.close()
-        raise PolicyError('Redirect limit exceeded')
+        raise PolicyError('Redirect limit exceeded', code='source_redirect_limit')
 
     def close(self):
         for connection in self.browser_connections.values():
@@ -259,7 +273,7 @@ class SafeTransport:
     def read_body(self, response):
         encoding = response.getheader('Content-Encoding', 'identity').strip().lower()
         if encoding not in ('identity', 'gzip', 'deflate'):
-            raise SourceResponseError('Unsupported HTTP content encoding')
+            raise SourceResponseError('Unsupported HTTP content encoding', code='source_response_invalid')
         decoder = None if encoding == 'identity' else zlib.decompressobj(
             zlib.MAX_WBITS + 16 if encoding == 'gzip' else zlib.MAX_WBITS)
         content_buffer = bytearray()
@@ -283,7 +297,7 @@ class SafeTransport:
             try:
                 content = decoder.decompress(chunk, allowance + 1) if decoder else chunk
             except zlib.error as error:
-                raise SourceResponseError('Invalid compressed HTTP response') from error
+                raise SourceResponseError('Invalid compressed HTTP response', code='source_response_invalid') from error
             if time.monotonic() >= self.deadline:
                 raise DownloadTimeoutError('Download deadline exceeded')
             if len(content) > self.remaining_decoded_bytes:
@@ -291,10 +305,10 @@ class SafeTransport:
             if len(content) > allowance:
                 raise ResponseLimitError('Expanded HTTP response limit exceeded')
             if decoder and decoder.unused_data:
-                raise SourceResponseError('Unexpected data after compressed HTTP response')
+                raise SourceResponseError('Unexpected data after compressed HTTP response', code='source_response_invalid')
             self.remaining_decoded_bytes -= len(content)
             expanded += len(content)
             content_buffer.extend(content)
         if decoder and not decoder.eof:
-            raise SourceResponseError('Incomplete compressed HTTP response')
+            raise SourceResponseError('Incomplete compressed HTTP response', code='source_response_invalid')
         return bytes(content_buffer)

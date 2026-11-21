@@ -40,7 +40,7 @@ const logProps = { summary: null, kind: '' as const, page: 1, previous: false, n
 afterEach(() => localStorage.clear())
 
 describe('task cards', () => {
-  it('names the story and offers a login fix instead of a retry for sign-in failures', async () => {
+  it('names the story and offers login repair and retry for sign-in failures', async () => {
     const wrapper = mount(FanfictionTaskCard, {
       props: {
         job: job({ state: 'failed', errorCode: 'authentication_required', attempts: 3, sourceTitle: 'Paper Moons', result: { sourceId: 'source' } }),
@@ -54,7 +54,7 @@ describe('task cards', () => {
     expect(wrapper.text()).toContain('royalroad.com')
     const labels = wrapper.findAll('button').map((button) => button.text())
     expect(labels).toContain('Update website login')
-    expect(labels).not.toContain('Retry')
+    expect(labels).toContain('Retry')
     await wrapper
       .findAll('button')
       .find((button) => button.text() === 'Update website login')!

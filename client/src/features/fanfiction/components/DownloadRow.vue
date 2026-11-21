@@ -21,8 +21,7 @@ const reason = computed(() => {
   const row = props.row
   if (row.code === 'source_chapter_reduction' && !row.removed) return t('fanfiction.downloads.fewer')
   if (row.code === 'source_unrevealed') return t('fanfiction.errors.source_unrevealed')
-  if (row.section === 'retrying' && row.issue === 'website')
-    return t(row.code === 'source_rate_limited' ? 'fanfiction.downloads.throttled' : 'fanfiction.downloads.tryLater')
+  if (row.section === 'retrying' && row.code === 'source_rate_limited') return t('fanfiction.downloads.throttled')
   if (row.issue === 'chapter') return t(`fanfiction.downloads.${decision.value.key}`, { count: decision.value.count })
   if (row.code === 'source_failed') return t('fanfiction.downloads.checkFailed')
   const fallback = row.issue ? t(`fanfiction.downloads.issue.${row.issue}`) : t('fanfiction.errors.runtime_failed')

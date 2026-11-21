@@ -54,7 +54,7 @@ def login_scribblehub(adapter, allow_public=False):
     parsed = urlsplit(target)
     if (parsed.scheme != 'https' or parsed.netloc != 'www.scribblehub.com'
             or form.get('method', '').lower() != 'post'):
-        raise PolicyError('ScribbleHub login requires a same-site HTTPS form')
+        raise PolicyError('ScribbleHub login requires a same-site HTTPS form', code='source_redirect_blocked')
     parameters = {field['name']: field.get('value', '')
                   for field in form.select('input[type="hidden"][name]:not([disabled])')}
     submit = form.select_one('input[type="submit"][name], button[type="submit"][name]')

@@ -105,7 +105,7 @@ describe('private FanFicFare runtime session output', () => {
     output.exitCode = null;
     output.signal = 'SIGKILL';
     await expect(service.execute({ operation: 'download' }, '/unused')).rejects.toMatchObject({ response: { errorCode: 'runtime_unavailable' } });
-    expect(output.request.browserSession).toMatch(/^bookorbit-[a-f0-9-]{36}$/);
+    expect(output.request.browserSession).toMatch(/^bookorbit-\d{10}-[a-f0-9]{32}$/);
     expect(fetch).toHaveBeenCalledWith(
       new URL(runtimeConfig.flaresolverrUrl),
       expect.objectContaining({

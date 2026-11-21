@@ -76,7 +76,7 @@ class BrowserConnection:
         try:
             # Match the pinned curl_cffi release's Chrome profile, including its User-Agent.
             if curl.impersonate('chrome152') != 0:
-                raise PolicyError('Browser HTTP profile is unavailable')
+                raise PolicyError('Browser HTTP profile is unavailable', code='source_browser_unavailable')
             curl.setopt(CurlOpt.URL, 'https://' + self.host + target)
             curl.setopt(CurlOpt.RESOLVE, [(self.host + ':443:' + resolved).encode()])
             curl.setopt(CurlOpt.PROXY, b'')
@@ -102,7 +102,7 @@ class BrowserConnection:
                     raise failure from error
                 if error.code == 28:
                     raise TimeoutError('Website request timed out') from error
-                raise SourceResponseError('Website request could not complete') from error
+                raise SourceResponseError('Website request could not complete', code='source_connection_failed') from error
             if failure is not None:
                 raise failure
             self.response = BrowserResponse(curl.getinfo(CurlInfo.RESPONSE_CODE), bytes(response_headers), bytes(content))
