@@ -22,6 +22,8 @@ import ssl
 import sqlite3
 import time
 import traceback
+import unicodedata
+from urllib.parse import unquote, urlsplit
 from zipfile import BadZipFile
 from xml.parsers.expat import ExpatError
 
@@ -81,6 +83,13 @@ def story_adapter(configuration, url):
         return adapters.getAdapter(configuration, url.replace('https://', 'http://', 1))
 
 
+def fictionlive_story_url(adapter, title):
+    title = unicodedata.normalize('NFKD', title)
+    title = ''.join(c for c in title if not unicodedata.combining(c))
+    slug = re.sub(r'[^a-zA-Z0-9]+', '-', title).strip('-')[:150].rstrip('-')
+    return f'https://fiction.live/stories/{slug or "Story"}/{adapter.story_id}'
+
+
 def recognize_urls(urls):
     from fanficfare import exceptions
     if not isinstance(urls, list) or not 0 < len(urls) <= 100:
@@ -96,8 +105,11 @@ def recognize_urls(urls):
                 continue
             adapter = story_adapter(make_configuration(url, '', RecognitionTransport()), url)
             canonical = adapter.url.replace('http://', 'https://', 1)
-            validate_url(canonical)
             site = adapter.getSiteDomain()
+            if site == 'fiction.live':
+                # The adapter strips the title segment to identify stories by ID.
+                canonical = fictionlive_story_url(adapter, unquote(urlsplit(url).path.split('/')[2]))
+            validate_url(canonical)
             if site.removeprefix('www.') in TEST_SITES:
                 result.append({'url': url, 'recognized': False, 'reason': 'unsupported'})
             else:
@@ -175,6 +187,8 @@ def story_identity(adapter):
 
 def story_preview(adapter, story):
     canonical = story.getMetadata('storyUrl').replace('http://', 'https://', 1)
+    if adapter.getSiteDomain() == 'fiction.live':
+        canonical = fictionlive_story_url(adapter, story.getMetadata('title') or '')
     validate_url(canonical)
     chapter_count = metadata_count(story, 'numChapters', 10_000)
     if not chapter_count:
@@ -333,7 +347,10 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         return finish(preview)
     if operation not in ('download', 'update', 'refresh'):
         raise PolicyError('Unsupported integration operation', code='runtime_unavailable')
-    check = UpdateCheck(request, adapter, preview)
+    fictionlive = adapter.getSiteDomain() == 'fiction.live'
+    # Keep the existing internal URL for saved verification and download checkpoints.
+    checkpoint_url = story_identity(adapter) if fictionlive else canonical
+    check = UpdateCheck(request, adapter, {**preview, 'canonicalUrl': checkpoint_url})
     if operation == 'update' and check.unchanged():
         progress.emit({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
         return finish({'preview': preview, 'output': 'input.epub'})
@@ -370,7 +387,9 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     with open('output.epub', 'xb') as output:
         progress.total = chapter_count
         progress.emit({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
-        with recover_chapters(adapter, check.chapter_directory(request.get('chapterDirectory')), canonical, transport) as downloaded:
+        if fictionlive:
+            story.setMetadata('storyUrl', canonical)
+        with recover_chapters(adapter, check.chapter_directory(request.get('chapterDirectory')), checkpoint_url, transport) as downloaded:
             progress.downloaded = downloaded
             writers.getWriter('epub', configuration, adapter).writeStory(outstream=output, notification=progress.chapters)
         if transport.failure is not None:
