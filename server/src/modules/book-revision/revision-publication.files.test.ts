@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmod, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import * as reserve from '../../common/utils/storage-reserve';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { publicationPaths, publishStagedFile, requireInspectedFile, stagePublication } from './revision-publication.files';
@@ -15,6 +16,7 @@ beforeEach(async () => {
   await writeFile(input, 'next');
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   await rm(dir, { recursive: true, force: true });
 });
 
@@ -32,12 +34,10 @@ describe('durable revision files', () => {
     expect(await readFile(staged.backupPath, 'utf8')).toBe('previous');
   });
 
-  it('rejects oversized sources before allocating their output', async () => {
-    const handle = await open(input, 'w');
-    await handle.truncate(513 * 1024 * 1024);
-    await handle.close();
+  it('keeps the disk reserve before allocating the output', async () => {
+    vi.spyOn(reserve, 'requireStorageHeadroom').mockRejectedValueOnce(new Error('Insufficient disk space'));
     const old = await requireInspectedFile(target);
-    await expect(stagePublication(input, target, 'oversized', old.sha256)).rejects.toThrow('size limit');
+    await expect(stagePublication(input, target, 'oversized', old.sha256)).rejects.toThrow('Insufficient disk space');
     expect(await readdir(dir)).toEqual(expect.arrayContaining(['story.epub', 'incoming.epub']));
     await expect(stat(publicationPaths(target, 'oversized').directory)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await readFile(target, 'utf8')).toBe('previous');

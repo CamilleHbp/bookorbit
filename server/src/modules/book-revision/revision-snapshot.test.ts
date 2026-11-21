@@ -49,8 +49,8 @@ describe('verified revision snapshots', () => {
     expect(await readdir(snapshots)).toEqual([]);
   });
 
-  it('bounds archive size before allocating temporary storage', async () => {
-    await expect(snapshotRevisionFile(source, snapshots, digest, 512 * 1024 * 1024 + 1, async () => {})).rejects.toThrow('size limit');
+  it('rejects an invalid size before allocating temporary storage', async () => {
+    await expect(snapshotRevisionFile(source, snapshots, digest, -1, async () => {})).rejects.toThrow('Invalid revision size');
     expect(await readdir(directory)).toEqual(['source.epub']);
   });
 

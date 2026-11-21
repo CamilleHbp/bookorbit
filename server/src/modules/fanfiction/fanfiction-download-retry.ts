@@ -23,6 +23,8 @@ export function shouldRetryJob(kind: FanfictionJobKind, attempts: number, code: 
         'source_unavailable',
         'source_unrevealed',
         'download_timeout',
+        'download_memory_limit',
+        'download_storage_low',
         'runtime_unavailable',
         'worker_lease_expired',
         'chapter_storage_failed',

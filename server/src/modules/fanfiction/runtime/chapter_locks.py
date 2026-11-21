@@ -96,7 +96,8 @@ def chapters(archive, metadata_only=False):
         identity = url.replace('http://', 'https://', 1)
         key = (identity, occurrences[identity])
         occurrences[identity] += 1
-        found[key] = (path, data, metas.get(LOCK) == 'true')
+        locked = metas.get(LOCK) == 'true'
+        found[key] = (path, data if locked or not metadata_only else None, locked)
     return opf_path, opf, found
 
 
@@ -122,18 +123,13 @@ def preserve_chapter_locks(previous, output):
             assets = {}
             copied = {}
             replacements = {}
-            size = 0
 
             def resource(path):
-                nonlocal size
                 if path in copied:
                     return copied[path]
                 if path not in old.namelist():
                     raise PolicyError('A locked chapter resource is missing', code='chapter_lock_conflict')
                 data = old.read(path)
-                size += len(data)
-                if size > LIBRARY_EPUB_LIMIT:
-                    raise PolicyError('Locked chapter resources exceed the EPUB limit', code='chapter_lock_conflict')
                 extension = posixpath.splitext(path)[1].lower()
                 if not re.fullmatch(r'\.[a-z0-9]{1,10}', extension):
                     extension = '.bin'

@@ -1,5 +1,6 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { chmod, mkdir, open, rename, rm, rmdir, stat } from 'node:fs/promises';
+import { requireStorageHeadroom } from '../../common/utils/storage-reserve';
 import { dirname, join } from 'node:path';
 import { inspectStableFile, sameFileSignature, type InspectedFile } from './file-inspection';
 
@@ -73,12 +74,18 @@ export async function copyBoundedFile(source: string, destination: string): Prom
   const input = await open(source, 'r');
   try {
     const before = await input.stat({ bigint: true });
-    if (!before.isFile() || before.size > 512n * 1024n * 1024n) throw new ConflictException('Revision file exceeds the publication size limit');
+    if (!before.isFile() || before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new ConflictException('Invalid revision file');
+    await requireStorageHeadroom(dirname(destination), before.size);
     const output = await open(destination, 'wx', 0o600);
     try {
       const buffer = Buffer.allocUnsafe(128 * 1024);
       let position = 0;
+      let lastCheck = performance.now();
       while (position < Number(before.size)) {
+        if (performance.now() - lastCheck >= 1000) {
+          await requireStorageHeadroom(dirname(destination), before.size - BigInt(position));
+          lastCheck = performance.now();
+        }
         const { bytesRead } = await input.read(buffer, 0, Math.min(buffer.length, Number(before.size) - position), position);
         if (!bytesRead) throw new ConflictException('Revision source changed while staging');
         let written = 0;

@@ -15,6 +15,7 @@ const output = vi.hoisted(() => ({
   exitCode: 0 as number | null,
   signal: undefined as string | undefined,
 }));
+vi.mock('./download-resources', () => ({ downloadPressure: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('node:child_process', async () => {
   const { EventEmitter } = await import('node:events');
   const { PassThrough } = await import('node:stream');
@@ -63,6 +64,12 @@ describe('private FanFicFare runtime session output', () => {
     output.exitCode = 0;
     output.signal = undefined;
   });
+  it('defers a download before starting Python when server memory is low', async () => {
+    const { downloadPressure } = await import('./download-resources');
+    vi.mocked(downloadPressure).mockResolvedValueOnce('download_memory_limit');
+    await expect(service.execute({ operation: 'download' }, '/unused')).rejects.toMatchObject({ response: { errorCode: 'download_memory_limit' } });
+  });
+
   it('keeps an incremental update incremental when chapter changes require review', async () => {
     output.response = { ok: true, result: { reviewRequired: 'identity_mismatch' } };
     await expect(

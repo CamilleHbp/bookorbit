@@ -188,7 +188,6 @@ export class BookDockManagedService {
     const destinationPath = resolve(libraryRoot, input.relativePath);
     this.requireWithin(libraryRoot, destinationPath);
     const fresh = await this.files.require(input.sourcePath);
-    if (fresh.sizeBytes > 512 * 1024 * 1024) throw new BadRequestException('Managed EPUB exceeds the size limit');
     await this.manifests.inspect(input.sourcePath);
     await this.files.verifyUnchanged(input.sourcePath, fresh);
     const unitDirectory = join(this.storage.bookDockPath, `managed-${input.operationId}`);

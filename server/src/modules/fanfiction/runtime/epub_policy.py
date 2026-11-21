@@ -1,4 +1,4 @@
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
 
 from safe_transport import PolicyError
@@ -13,6 +13,7 @@ LIBRARY_EPUB_LIMIT = 512 * 1024 * 1024
 
 
 def validate_epub(path, expanded_limit=NEW_EPUB_LIMIT):
+    expanded_limit = max(expanded_limit, 64 * Path(path).stat().st_size)
     with ZipFile(path) as archive:
         entries = archive.infolist()
         if not entries or len(entries) > 10_000:
