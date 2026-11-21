@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from flaresolverr_transport import FlareSolverrTransport
-from safe_transport import SafeTransport, PolicyError, SourceResponseError, DownloadLimitError, ResponseLimitError, MAX_RESPONSE_BYTES
+from safe_transport import SafeTransport, PolicyError, BrowserVerification, SourceResponseError, DownloadLimitError, ResponseLimitError, MAX_RESPONSE_BYTES
 
 URL = 'https://www.scribblehub.com/series/747093/collide-gamer/'
 
@@ -107,6 +107,9 @@ class SolverTest(unittest.TestCase):
             with self.assertRaises(SourceResponseError) as startup:
                 self.transport.call_solver({'cmd': 'sessions.create'}, 5)
             self.assertEqual(startup.exception.code, 'source_browser_start_failed')
+            response.read.return_value = b'{"status":"error","message":"Error solving the challenge. Timeout after 60.0 seconds."}'
+            with self.assertRaises(BrowserVerification):
+                self.transport.call_solver({'cmd': 'request.get'}, 5)
             response.read.return_value = b'x' * (MAX_RESPONSE_BYTES + 1)
             with self.assertRaises(ResponseLimitError):
                 self.transport.call_solver({'cmd': 'request.get'}, 5)

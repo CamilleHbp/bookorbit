@@ -6,7 +6,7 @@ import uuid
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request
 
-from safe_transport import (SafeTransport, PolicyError, SourceResponseError, DownloadTimeoutError,
+from safe_transport import (SafeTransport, PolicyError, BrowserVerification, SourceResponseError, DownloadTimeoutError,
                             DownloadLimitError, ResponseLimitError, MAX_RESPONSE_BYTES,
                             _connecting, validate_url, public_addresses)
 
@@ -130,6 +130,8 @@ class FlareSolverrTransport(SafeTransport):
             message = str(result.get('message', '')).lower() if isinstance(result, dict) else ''
             if 'session not created' in message or 'error starting chrome' in message or 'chrome not reachable' in message:
                 raise SourceResponseError('Browser failed to start', code='source_browser_start_failed')
+            if payload.get('cmd') in ('request.get', 'request.post') and 'error solving the challenge' in message and 'timeout' in message:
+                raise BrowserVerification('The website verification page did not complete')
             raise SourceResponseError('Browser service could not complete the request', code='source_browser_unavailable')
         finally:
             connection.close()
