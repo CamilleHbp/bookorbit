@@ -689,7 +689,13 @@ describe('useBookDuplicates', () => {
 
   it('selects the visible range between the last clicked group and a Shift-clicked one', async () => {
     const loaded = [1, 2, 3, 4, 5].map((id) => ({ id, books: [] }) as unknown as BookDuplicateGroup)
-    vi.mocked(getBookDuplicateGroups).mockResolvedValue({ groups: loaded, total: 5, page: 1, pageSize: 20 })
+    vi.mocked(getBookDuplicateGroups).mockResolvedValue({
+      groups: loaded,
+      total: 5,
+      page: 1,
+      pageSize: 20,
+      kindTotals: { duplicate: 5, other_format: 0, other_edition: 0 },
+    })
     const { duplicates } = mountComposable()
     duplicates.scan.value = completedScan
     await duplicates.setPage(1)
