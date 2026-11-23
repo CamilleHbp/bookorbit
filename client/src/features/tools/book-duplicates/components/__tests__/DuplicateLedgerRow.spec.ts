@@ -113,6 +113,15 @@ describe('DuplicateLedgerRow', () => {
     expect(wrapper.emitted('expand')?.[0]).toEqual([7])
   })
 
+  it('keeps the checkbox focus target over its visible control', () => {
+    const wrapper = mountRow([candidate({ id: 1 }), candidate({ id: 2 })], 1)
+    const checkbox = wrapper.get('input[type="checkbox"]')
+
+    expect(checkbox.element.parentElement?.classList.contains('relative')).toBe(true)
+    expect(checkbox.classes()).toEqual(expect.arrayContaining(['absolute', 'inset-0', 'size-full', 'opacity-0']))
+    expect(checkbox.classes()).not.toContain('sr-only')
+  })
+
   it("shows the scan's reclaimable space whatever the action, and drops the deletion warning when the group merges", () => {
     const books = [candidate({ id: 1, metadataScore: 88 }), candidate({ id: 2, metadataScore: 70, readingProgress: 19 })]
     const wrapper = mountRow(books, 1, { action: 'merge' })
@@ -148,6 +157,31 @@ describe('DuplicateLedgerRow', () => {
     const note = wrapper.find('[data-testid="duplicate-merge-unavailable"]')
     expect(note.text()).toContain('the books are in different libraries')
     expect(note.text()).toContain('Link keeps them as separate books')
+  })
+
+  it('words grouping other editions as editions: the review button and the merge note', () => {
+    const books = [candidate({ id: 1 }), candidate({ id: 2, libraryId: 2 })]
+    const editions: BookDuplicateGroup = {
+      id: 7,
+      kind: 'other_edition',
+      reasons: ['same_work'],
+      maxTitleSimilarity: null,
+      reclaimableBytes: 0,
+      books,
+      pairs: [],
+    }
+    const wrapper = mountRow(books, 1, {
+      group: editions,
+      expanded: true,
+      action: 'link',
+      actions: ['link', 'merge'],
+      mergeUnavailableReason: 'DIFFERENT_LIBRARIES',
+    })
+
+    const buttons = wrapper.findAll('button').map((button) => button.text())
+    expect(buttons).toContain('Review grouping')
+    expect(buttons).not.toContain('Review link')
+    expect(wrapper.get('[data-testid="duplicate-merge-unavailable"]').text()).toContain('Group as editions keeps them as separate books')
   })
 
   it('names the library a merge across libraries puts the book in, and says nothing of it within one library', () => {

@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { sql } from 'drizzle-orm';
 import * as schema from '../../../db/schema';
 import { encodeSyncToken } from './kobo-sync-token';
-import { KoboSyncService, SYNC_PAGE_SIZE } from './kobo-sync.service';
+import { KoboSyncService, SYNC_PAGE_SIZE, SYNC_PAGE_TIME_BUDGET_MS, type KoboSyncPageCommit } from './kobo-sync.service';
 
 // Recursively counts bound query params (drizzle-orm's `Param` chunks) in a built SQL tree,
 // so tests can assert a clause isn't binding one parameter per matched book id.
@@ -77,12 +77,14 @@ function makeDb(state?: Partial<QueueState>) {
   const updateChains: ReturnType<typeof makeChain>[] = [];
   const transactionChains: ReturnType<typeof makeChain>[] = [];
   const transactionExecutes: ReturnType<typeof vi.fn>[] = [];
+  const transactions: unknown[] = [];
 
-  return {
+  const db = {
     __chains: chains,
     __updateChains: updateChains,
     __transactionChains: transactionChains,
     __transactionExecutes: transactionExecutes,
+    __transactions: transactions,
     query: {
       users: { findFirst: vi.fn().mockResolvedValue({ settings: {} }) },
       koboLibrarySnapshots: { findFirst: vi.fn() },
@@ -104,21 +106,25 @@ function makeDb(state?: Partial<QueueState>) {
     }),
     delete: vi.fn(() => makeChain(queue.delete.shift() ?? [])),
     execute: vi.fn(() => Promise.resolve({ rows: queue.execute.shift() ?? [] })),
-    transaction: vi.fn(
-      async (cb: (tx: { execute: (statement: unknown) => Promise<unknown>; insert: ReturnType<typeof vi.fn> }) => Promise<unknown>) => {
-        const execute = vi.fn().mockResolvedValue(undefined);
-        transactionExecutes.push(execute);
-        return cb({
-          execute,
-          insert: vi.fn(() => {
-            const chain = makeChain(queue.insert.shift() ?? []);
-            transactionChains.push(chain);
-            return chain;
-          }),
-        });
-      },
-    ),
+    transaction: vi.fn(async (cb: (tx: Record<string, unknown>) => Promise<unknown>) => {
+      const execute = vi.fn().mockResolvedValue(undefined);
+      transactionExecutes.push(execute);
+      const tx = {
+        execute,
+        insert: vi.fn(() => {
+          const chain = makeChain(queue.insert.shift() ?? []);
+          transactionChains.push(chain);
+          return chain;
+        }),
+        select: (...args: unknown[]) => db.select(...(args as [])),
+        update: (...args: unknown[]) => db.update(...(args as [])),
+        delete: (...args: unknown[]) => db.delete(...(args as [])),
+      };
+      transactions.push(tx);
+      return cb(tx);
+    }),
   };
+  return db;
 }
 
 function makeBook(id: number, format = 'epub') {
@@ -261,8 +267,28 @@ describe('KoboSyncService', () => {
     expect(createSpy).toHaveBeenNthCalledWith(2, 5, 202, eligible, new Set());
     expect((service as any).fetchEligibleSnapshotRows).toHaveBeenNthCalledWith(1, 5, false, expect.any(Map), true);
     expect((service as any).fetchEligibleSnapshotRows).toHaveBeenNthCalledWith(2, 5, true, expect.any(Map), true);
-    expect(pageSpy).toHaveBeenNthCalledWith(1, 5, 101, 11, 'device-a-token', 'https://reader.example.com', expect.any(Map), expect.any(Function));
-    expect(pageSpy).toHaveBeenNthCalledWith(2, 5, 202, 22, 'device-b-token', 'https://reader.example.com', expect.any(Map), expect.any(Function));
+    expect(pageSpy).toHaveBeenNthCalledWith(
+      1,
+      5,
+      101,
+      11,
+      'device-a-token',
+      'https://reader.example.com',
+      expect.any(Map),
+      expect.any(Function),
+      expect.any(Number),
+    );
+    expect(pageSpy).toHaveBeenNthCalledWith(
+      2,
+      5,
+      202,
+      22,
+      'device-b-token',
+      'https://reader.example.com',
+      expect.any(Map),
+      expect.any(Function),
+      expect.any(Number),
+    );
   });
 
   it('reconciles only the caller device snapshot when it already exists', async () => {
@@ -277,7 +303,16 @@ describe('KoboSyncService', () => {
     await service.getDelta(5, 101, 'device-a-token', 'https://reader.example.com');
 
     expect(reconcileSpy).toHaveBeenCalledWith(9, eligible);
-    expect(pageSpy).toHaveBeenCalledWith(5, 101, 9, 'device-a-token', 'https://reader.example.com', expect.any(Map), expect.any(Function));
+    expect(pageSpy).toHaveBeenCalledWith(
+      5,
+      101,
+      9,
+      'device-a-token',
+      'https://reader.example.com',
+      expect.any(Map),
+      expect.any(Function),
+      expect.any(Number),
+    );
     await expect(pageSpy.mock.calls[0]![6]()).resolves.toEqual(new Set([1]));
   });
 
@@ -293,7 +328,16 @@ describe('KoboSyncService', () => {
 
     expect(reconcileSpy).not.toHaveBeenCalled();
     expect(eligibleSpy).not.toHaveBeenCalled();
-    expect(pageSpy).toHaveBeenCalledWith(5, 101, 9, 'device-a-token', 'https://reader.example.com', expect.any(Map), expect.any(Function));
+    expect(pageSpy).toHaveBeenCalledWith(
+      5,
+      101,
+      9,
+      'device-a-token',
+      'https://reader.example.com',
+      expect.any(Map),
+      expect.any(Function),
+      expect.any(Number),
+    );
   });
 
   it('still resolves eligible ids for tag delivery when a pending page drains before it is served', async () => {
@@ -500,7 +544,7 @@ describe('KoboSyncService', () => {
     expect(bookIdentityService.markLegacyNumericRemovalComplete).not.toHaveBeenCalled();
 
     await (service as any).completeLegacyNumericRemovals(7, 23, [3]);
-    expect(bookIdentityService.markLegacyNumericRemovalComplete).toHaveBeenCalledWith(7, [3]);
+    expect(bookIdentityService.markLegacyNumericRemovalComplete).toHaveBeenCalledWith(7, [3], db);
   });
 
   it('retains identity-level legacy removal state while a pre-upgrade device has not initialized', async () => {
@@ -524,8 +568,10 @@ describe('KoboSyncService', () => {
       entitlements: [{ ChangedTag: {} }],
       hasMore: false,
       syncToken: encodeSyncToken(),
+      commit: null,
     });
   });
+
   it('getPageFromSnapshot returns page entitlements for removed/new/changed books', async () => {
     const db = makeDb({
       select: [
@@ -554,8 +600,15 @@ describe('KoboSyncService', () => {
     expect(result.entitlements[0]).toHaveProperty('ChangedEntitlement');
     expect(result.entitlements[1]).toHaveProperty('NewEntitlement');
     expect(result.entitlements[2]).toHaveProperty('ChangedProductMetadata');
-    expect(db.delete).toHaveBeenCalled();
-    expect(db.update).toHaveBeenCalled();
+    expect(result.commit).toEqual({
+      userId: 7,
+      deviceId: 101,
+      snapshotId: 22,
+      offeredBookIds: [2, 3],
+      removedBookIds: [1],
+      servedRemovalIds: [],
+      legacyRemovalCompletedBookIds: [],
+    });
   });
 
   it('getPageFromSnapshot includes changed reading state for changed books with stored Kobo state', async () => {
@@ -595,7 +648,11 @@ describe('KoboSyncService', () => {
         ReadingState: { EntitlementId: 'entitlement-3', CurrentBookmark: { ProgressPercent: 61 } },
       }),
     });
-    expect(bookIdentityService.markLegacyNumericRemovalComplete).toHaveBeenCalledWith(7, [3]);
+    expect(bookIdentityService.markLegacyNumericRemovalComplete).not.toHaveBeenCalled();
+
+    await service.commitPage(result.commit);
+
+    expect(bookIdentityService.markLegacyNumericRemovalComplete).toHaveBeenCalledWith(7, [3], db.__transactions[0]);
   });
 
   it('sends both numeric and UUID removals when an undelivered legacy book becomes ineligible', async () => {
@@ -612,7 +669,10 @@ describe('KoboSyncService', () => {
     );
 
     expect(removedIds).toEqual(['3', 'entitlement-3']);
-    expect(bookIdentityService.markLegacyNumericRemovalComplete).toHaveBeenCalledWith(7, [3]);
+
+    await service.commitPage(result.commit);
+
+    expect(bookIdentityService.markLegacyNumericRemovalComplete).toHaveBeenCalledWith(7, [3], db.__transactions[0]);
   });
 
   it('removes a book that left the synced set while an update for it was pending, instead of leaving the row pending', async () => {
@@ -629,9 +689,312 @@ describe('KoboSyncService', () => {
         ChangedEntitlement: expect.objectContaining({ BookEntitlement: expect.objectContaining({ Id: 'entitlement-4', IsRemoved: true }) }),
       }),
     ]);
+    expect(readingStateService.getRawState).not.toHaveBeenCalled();
+    expect(db.delete).not.toHaveBeenCalled();
+
+    await service.commitPage(result.commit);
+
     expect(db.delete).toHaveBeenCalledTimes(1);
     expect(db.update).not.toHaveBeenCalled();
-    expect(readingStateService.getRawState).not.toHaveBeenCalled();
+  });
+
+  describe('recording what a page delivered (#2250)', () => {
+    function makeCommit(overrides: Partial<KoboSyncPageCommit> = {}): KoboSyncPageCommit {
+      return {
+        userId: 7,
+        deviceId: 101,
+        snapshotId: 22,
+        offeredBookIds: [],
+        removedBookIds: [],
+        servedRemovalIds: [],
+        legacyRemovalCompletedBookIds: [],
+        ...overrides,
+      };
+    }
+
+    it('builds a page without recording any of it, so a page the device never receives stays pending', async () => {
+      const db = makeDb({
+        select: [
+          [
+            { bookId: 1, pendingDelete: true, isNew: false, needsLegacyNumericRemoval: false },
+            { bookId: 2, pendingDelete: false, isNew: true, needsLegacyNumericRemoval: true },
+          ],
+        ],
+      });
+      const service = makeService(db);
+      vi.spyOn(service as any, 'fetchEligibleBooksByIds').mockResolvedValue(new Map([[2, makeBook(2)]]));
+      tombstoneRepository.findPending.mockResolvedValue([{ entitlementId: 'gone-a', legacyBookId: null }]);
+
+      const result = await (service as any).getPageFromSnapshot(7, 101, 22, 'tok', 'https://base', new Map(), () => Promise.resolve(new Set([2])));
+
+      expect(result.commit).toEqual(
+        makeCommit({ offeredBookIds: [2], removedBookIds: [1], servedRemovalIds: ['gone-a'], legacyRemovalCompletedBookIds: [2] }),
+      );
+      expect(db.update).not.toHaveBeenCalled();
+      expect(db.delete).not.toHaveBeenCalled();
+      expect(db.transaction).not.toHaveBeenCalled();
+      expect(tombstoneRepository.markServed).not.toHaveBeenCalled();
+      expect(tombstoneRepository.prune).not.toHaveBeenCalled();
+      expect(bookIdentityService.markLegacyNumericRemovalComplete).not.toHaveBeenCalled();
+    });
+
+    it('records a whole page in one transaction once the device has it', async () => {
+      const db = makeDb();
+      const service = makeService(db);
+
+      await service.commitPage(
+        makeCommit({ offeredBookIds: [2, 3], removedBookIds: [1], servedRemovalIds: ['gone-a'], legacyRemovalCompletedBookIds: [3] }),
+      );
+
+      expect(db.transaction).toHaveBeenCalledTimes(1);
+      const tx = db.__transactions[0];
+      expect(tombstoneRepository.markServed).toHaveBeenCalledWith(7, 101, ['gone-a'], tx);
+      expect(tombstoneRepository.prune).toHaveBeenCalledWith(7, tx);
+      expect(db.delete).toHaveBeenCalledWith(schema.koboSnapshotBooks);
+      expect(db.__updateChains[0]!.set).toHaveBeenCalledWith({ synced: true, deliveryRetryAt: null, deliveryFailureCode: null });
+      expect(db.__updateChains[1]!.set).toHaveBeenCalledWith({ needsLegacyNumericRemoval: false });
+      expect(bookIdentityService.markLegacyNumericRemovalComplete).toHaveBeenCalledWith(7, [3], tx);
+    });
+
+    it('fails the whole commit when any part of it fails, leaving the page pending', async () => {
+      const db = makeDb();
+      const service = makeService(db);
+      tombstoneRepository.markServed.mockRejectedValue(new Error('disk full'));
+
+      await expect(service.commitPage(makeCommit({ offeredBookIds: [2], servedRemovalIds: ['gone-a'] }))).rejects.toThrow('disk full');
+
+      expect(db.transaction).toHaveBeenCalledTimes(1);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it('records nothing for a page that delivered nothing', async () => {
+      const db = makeDb();
+      const service = makeService(db);
+
+      await service.commitPage(null);
+
+      expect(db.transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('page time budget (#2250)', () => {
+    const deliveries = { offer: vi.fn() };
+    let now: number;
+
+    function makeServiceWithDeliveries(db: ReturnType<typeof makeDb>) {
+      db.query.koboLibrarySnapshots.findFirst.mockResolvedValue({ id: 22, userId: 7, deviceId: 101 });
+      return new KoboSyncService(
+        db as never,
+        bookAccessService as never,
+        readingStateService as never,
+        contentFilterRepository as never,
+        bookIdentityService as never,
+        queryBuilder as never,
+        smartScopeService as never,
+        metadataExtractionService as never,
+        tombstoneRepository as never,
+        deliveries as never,
+      );
+    }
+
+    function pendingRows(bookIds: number[]) {
+      return bookIds.map((bookId) => ({ bookId, pendingDelete: false, isNew: true, needsLegacyNumericRemoval: false }));
+    }
+
+    beforeEach(() => {
+      now = 1_000_000;
+      vi.spyOn(Date, 'now').mockImplementation(() => now);
+      // Each preparation stands in for a KEPUB conversion on a slow host.
+      deliveries.offer.mockImplementation((_userId: number, _deviceId: number, bookId: number) => {
+        now += 6_000;
+        return Promise.resolve({ id: `delivery-${bookId}`, metadata: { sizeBytes: 100, format: 'kepub' } });
+      });
+    });
+
+    afterEach(() => {
+      vi.mocked(Date.now).mockRestore();
+    });
+
+    it('gives each request the budget from the moment it starts', async () => {
+      const service = makeService(makeDb());
+      vi.spyOn(service as any, 'findDeviceSnapshot').mockResolvedValue({ id: 9, userId: 5, deviceId: 101 });
+      vi.spyOn(service as any, 'fetchEligibleSnapshotRows').mockResolvedValue([]);
+      vi.spyOn(service as any, 'reconcileSnapshot').mockResolvedValue(undefined);
+      const pageSpy = vi
+        .spyOn(service as any, 'getPageFromSnapshot')
+        .mockResolvedValue({ entitlements: [], hasMore: false, syncToken: 'PX.token', commit: null });
+
+      await service.getDelta(5, 101, 'device-a-token', 'https://reader.example.com');
+
+      expect(pageSpy.mock.calls[0]![7]).toBe(1_000_000 + SYNC_PAGE_TIME_BUDGET_MS);
+    });
+
+    it('closes the page once the budget is spent and leaves the rest pending for the next page', async () => {
+      const db = makeDb({ select: [pendingRows([2, 3, 4, 5])] });
+      const service = makeServiceWithDeliveries(db);
+      vi.spyOn(service as any, 'fetchEligibleBooksByIds').mockResolvedValue(new Map([2, 3, 4, 5].map((id) => [id, makeBook(id)])));
+
+      const result = await (service as any).getPageFromSnapshot(
+        7,
+        101,
+        22,
+        'tok',
+        'https://base',
+        new Map(),
+        () => Promise.resolve(new Set([2, 3, 4, 5])),
+        now + SYNC_PAGE_TIME_BUDGET_MS,
+      );
+
+      expect(deliveries.offer).toHaveBeenCalledTimes(3);
+      expect(result.hasMore).toBe(true);
+      expect(result.commit.offeredBookIds).toEqual([2, 3, 4]);
+      expect(result.entitlements).toHaveLength(3);
+    });
+
+    it('still serves one book when the page opens past its budget, so paging always moves on', async () => {
+      const db = makeDb({ select: [pendingRows([2, 3])] });
+      const service = makeServiceWithDeliveries(db);
+      vi.spyOn(service as any, 'fetchEligibleBooksByIds').mockResolvedValue(new Map([2, 3].map((id) => [id, makeBook(id)])));
+
+      const result = await (service as any).getPageFromSnapshot(
+        7,
+        101,
+        22,
+        'tok',
+        'https://base',
+        new Map(),
+        () => Promise.resolve(new Set([2, 3])),
+        now - 1,
+      );
+
+      expect(deliveries.offer).toHaveBeenCalledTimes(1);
+      expect(result.hasMore).toBe(true);
+      expect(result.commit.offeredBookIds).toEqual([2]);
+    });
+
+    it('keeps the page verdict when every row fits inside the budget', async () => {
+      const db = makeDb({ select: [pendingRows([2, 3])] });
+      const service = makeServiceWithDeliveries(db);
+      vi.spyOn(service as any, 'fetchEligibleBooksByIds').mockResolvedValue(new Map([2, 3].map((id) => [id, makeBook(id)])));
+
+      const result = await (service as any).getPageFromSnapshot(
+        7,
+        101,
+        22,
+        'tok',
+        'https://base',
+        new Map(),
+        () => Promise.resolve(new Set([2, 3])),
+        now + SYNC_PAGE_TIME_BUDGET_MS,
+      );
+
+      expect(result.hasMore).toBe(false);
+      expect(result.commit.offeredBookIds).toEqual([2, 3]);
+    });
+  });
+
+  describe('format announced for a prepared delivery (#1946)', () => {
+    const deliveries = { offer: vi.fn() };
+
+    function makeServiceWithDeliveries(db: ReturnType<typeof makeDb>) {
+      db.query.koboLibrarySnapshots.findFirst.mockResolvedValue({ id: 22, userId: 7, deviceId: 101 });
+      Object.assign(db.query, { koboDevices: { findFirst: vi.fn().mockResolvedValue({ id: 101 }) } });
+      return new KoboSyncService(
+        db as never,
+        bookAccessService as never,
+        readingStateService as never,
+        contentFilterRepository as never,
+        bookIdentityService as never,
+        queryBuilder as never,
+        smartScopeService as never,
+        metadataExtractionService as never,
+        tombstoneRepository as never,
+        deliveries as never,
+      );
+    }
+
+    function deliverAs(format: string) {
+      deliveries.offer.mockResolvedValue({ id: 'delivery-5', metadata: { sizeBytes: 4321, format } });
+    }
+
+    async function announcedOnPage(deliveryFormat: string, preparedFormat: string) {
+      deliverAs(preparedFormat);
+      const db = makeDb({ select: [[{ bookId: 5, pendingDelete: false, isNew: true, needsLegacyNumericRemoval: false }]] });
+      const service = makeServiceWithDeliveries(db);
+      vi.spyOn(service as any, 'fetchEligibleBooksByIds').mockResolvedValue(new Map([[5, { ...makeBook(5), deliveryFormat }]]));
+
+      const result = await (service as any).getPageFromSnapshot(
+        7,
+        101,
+        22,
+        'tok',
+        'https://base',
+        new Map(),
+        () => Promise.resolve(new Set([5])),
+        Date.now() + SYNC_PAGE_TIME_BUDGET_MS,
+      );
+      const [entry] = result.entitlements as Array<{ NewEntitlement: { BookMetadata: { DownloadUrls: Array<{ Format: string; Size: number }> } } }>;
+      return entry!.NewEntitlement.BookMetadata.DownloadUrls[0]!;
+    }
+
+    it.each([
+      ['EPUB3FL', 'kepub', 'EPUB3FL'],
+      ['EPUB3FL', 'epub', 'EPUB3FL'],
+      ['KEPUB', 'kepub', 'KEPUB'],
+      ['EPUB3', 'kepub', 'KEPUB'],
+      ['KEPUB', 'epub', 'EPUB3'],
+      ['EPUB3', 'epub', 'EPUB3'],
+      ['PDF', 'pdf', 'PDF'],
+    ])('announces a book planned as %s and prepared as %s as %s in a sync page', async (planned, prepared, announced) => {
+      const download = await announcedOnPage(planned, prepared);
+
+      expect(download.Format).toBe(announced);
+      expect(download.Size).toBe(4321);
+    });
+
+    it('keeps EPUB3FL in the metadata a device fetches for a comic converted to kepub', async () => {
+      deliverAs('kepub');
+      const db = makeDb({
+        select: [
+          [
+            {
+              bookId: 5,
+              title: 'Manga Vol. 1',
+              description: null,
+              publisher: null,
+              publishedYear: null,
+              language: 'English',
+              isbn10: null,
+              isbn13: null,
+              seriesName: null,
+              seriesIndex: null,
+              metadataUpdatedAt: new Date('2026-01-01T00:00:00.000Z'),
+              addedAt: new Date('2026-01-01T00:00:00.000Z'),
+              updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+              fileFormat: 'epub',
+              fileSizeBytes: 1234,
+              fileHash: 'file-hash',
+              isFixedLayout: true,
+            },
+          ],
+          [{ bookId: 5, name: 'Mangaka' }],
+          [],
+        ],
+      });
+      const service = makeServiceWithDeliveries(db);
+      vi.spyOn(service as any, 'buildEligibleBooksWhereClause').mockResolvedValue({ where: true });
+      vi.spyOn(service as any, 'hasDeviceSnapshot').mockResolvedValue(true);
+      vi.spyOn(service as any, 'getDeliverySettings').mockResolvedValue({
+        convertToKepub: true,
+        forceEnableHyphenation: false,
+        kepubConversionLimitMb: 100,
+      });
+
+      const [metadata] = (await service.getBookMetadata(7, 5, 'tok', 'https://base')) as Array<{ DownloadUrls: Array<{ Format: string }> }>;
+
+      expect(deliveries.offer).toHaveBeenCalledWith(7, 101, 5);
+      expect(metadata!.DownloadUrls[0]!.Format).toBe('EPUB3FL');
+    });
   });
 
   describe('deleted book removals', () => {
@@ -660,8 +1023,12 @@ describe('KoboSyncService', () => {
       expect(result.entitlements[3]).toHaveProperty('NewEntitlement');
       expect(result.hasMore).toBe(false);
       expect(db.__chains[0]!.limit).toHaveBeenCalledWith(SYNC_PAGE_SIZE - 2 + 1);
-      expect(tombstoneRepository.markServed).toHaveBeenCalledWith(7, 101, ['gone-a', 'gone-b']);
-      expect(tombstoneRepository.prune).toHaveBeenCalledWith(7);
+      expect(tombstoneRepository.markServed).not.toHaveBeenCalled();
+
+      await service.commitPage(result.commit);
+
+      expect(tombstoneRepository.markServed).toHaveBeenCalledWith(7, 101, ['gone-a', 'gone-b'], db.__transactions[0]);
+      expect(tombstoneRepository.prune).toHaveBeenCalledWith(7, db.__transactions[0]);
     });
 
     it('fills a page with removals and leaves the snapshot rows for the next page', async () => {
@@ -676,12 +1043,16 @@ describe('KoboSyncService', () => {
       expect(result.hasMore).toBe(true);
       expect(removedIds(result.entitlements)).toEqual(pending.slice(0, SYNC_PAGE_SIZE).map((removal) => removal.entitlementId));
       expect(db.__chains[0]!.limit).toHaveBeenCalledWith(1);
+      expect(buildTagItems).not.toHaveBeenCalled();
+
+      await service.commitPage(result.commit);
+
       expect(tombstoneRepository.markServed).toHaveBeenCalledWith(
         7,
         101,
         pending.slice(0, SYNC_PAGE_SIZE).map((removal) => removal.entitlementId),
+        db.__transactions[0],
       );
-      expect(buildTagItems).not.toHaveBeenCalled();
     });
 
     it('reports more when a full page of removals still leaves snapshot rows', async () => {
@@ -738,7 +1109,16 @@ describe('KoboSyncService', () => {
       expect(tombstoneRepository.hasPending).toHaveBeenCalledWith(5, 101);
       expect(reconcileSpy).not.toHaveBeenCalled();
       expect(eligibleSpy).not.toHaveBeenCalled();
-      expect(pageSpy).toHaveBeenCalledWith(5, 101, 9, 'device-a-token', 'https://reader.example.com', expect.any(Map), expect.any(Function));
+      expect(pageSpy).toHaveBeenCalledWith(
+        5,
+        101,
+        9,
+        'device-a-token',
+        'https://reader.example.com',
+        expect.any(Map),
+        expect.any(Function),
+        expect.any(Number),
+      );
       expect(result).toEqual({ entitlements: [{ ChangedEntitlement: {} }], hasMore: true, syncToken: 'PX.token' });
     });
 
@@ -998,15 +1378,15 @@ describe('KoboSyncService', () => {
       return [];
     }
 
-    it('issues only CREATE TEMP and 9 maintenance queries when eligibleBooks is empty', async () => {
+    it('issues only CREATE TEMP and 10 maintenance queries when eligibleBooks is empty', async () => {
       const { fn: txExecute } = makeTxExecute();
       const db = makeReconcileDb(txExecute);
       const service = makeService(db);
 
       await (service as any).reconcileSnapshot(42, []);
 
-      // CREATE TEMP + 9 maintenance queries (no batch insert when list is empty)
-      expect(txExecute).toHaveBeenCalledTimes(10);
+      // CREATE TEMP + 10 maintenance queries (no batch insert when list is empty)
+      expect(txExecute).toHaveBeenCalledTimes(11);
     });
 
     it('issues one batch INSERT when eligibleBooks fits in a single batch', async () => {
@@ -1019,8 +1399,8 @@ describe('KoboSyncService', () => {
         { bookId: 2, fileHash: null, deliveryHash: 'd2', metadataHash: 'm2' },
       ]);
 
-      // CREATE TEMP + 1 batch INSERT + 9 maintenance queries
-      expect(txExecute).toHaveBeenCalledTimes(11);
+      // CREATE TEMP + 1 batch INSERT + 10 maintenance queries
+      expect(txExecute).toHaveBeenCalledTimes(12);
 
       const batchInsert = captured[1];
       const sqlStrings = extractSqlStrings(batchInsert);
@@ -1073,8 +1453,8 @@ describe('KoboSyncService', () => {
       }));
       await (service as any).reconcileSnapshot(99, eligible);
 
-      // CREATE TEMP + 2 batch INSERTs + 9 maintenance queries
-      expect(txExecute).toHaveBeenCalledTimes(12);
+      // CREATE TEMP + 2 batch INSERTs + 10 maintenance queries
+      expect(txExecute).toHaveBeenCalledTimes(13);
     });
 
     it('includes snapshotId as a param in all maintenance queries', async () => {
@@ -1085,8 +1465,8 @@ describe('KoboSyncService', () => {
       const snapshotId = 77;
       await (service as any).reconcileSnapshot(snapshotId, [{ bookId: 1, fileHash: 'f', deliveryHash: 'd', metadataHash: 'm' }]);
 
-      // Statements at index 2-10 are the 9 maintenance queries
-      const maintenanceStmts = captured.slice(2, 11);
+      // Statements at index 2-11 are the 10 maintenance queries
+      const maintenanceStmts = captured.slice(2, 12);
       for (const stmt of maintenanceStmts) {
         const params = extractSqlParams(stmt);
         expect(params).toContain(snapshotId);
@@ -1645,7 +2025,20 @@ describe('KoboSyncService', () => {
       expect(db.__updateChains[0]!.set).toHaveBeenCalledWith({ isFixedLayout: true });
       // The same pass that learns the flag also stores the EPUB3FL hash, so the device is told
       // about the comic on this sync rather than the next one.
-      expect(rows[0].deliveryHash).toBe('6a8354534ee2c5c8');
+      expect(rows[0].deliveryHash).toBe('79954cfd931e7757');
+    });
+
+    // Comics announced as KEPUB by the delivery path (#1946) are only told again if their stored
+    // hash moves, so the fixed-layout hashes must differ from the ones every device already holds.
+    it('moves fixed-layout delivery hashes off the values announced before #1946', () => {
+      const service = makeService(makeDb());
+      const settings = { convertToKepub: true, forceEnableHyphenation: false, kepubConversionLimitMb: 100 };
+
+      expect((service as any).getDeliveryInfo('epub', 1024, settings, true).hash).toBe('79954cfd931e7757');
+      expect((service as any).getDeliveryInfo('epub', 1024, { ...settings, forceEnableHyphenation: true }, true).hash).toBe('84e3e48afcd932f2');
+      expect((service as any).getDeliveryInfo('kepub', 1024, settings, true).hash).toBe('79954cfd931e7757');
+      // The hashes stored for comics before the revision: plain and hyphenated.
+      expect(['6a8354534ee2c5c8', 'e3a526cde44930e7']).not.toContain((service as any).getDeliveryInfo('epub', 1024, settings, true).hash);
     });
 
     it('does no filesystem work on the mid-page pass that only needs eligible ids', async () => {

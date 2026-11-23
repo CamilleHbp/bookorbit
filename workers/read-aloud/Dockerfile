@@ -1,6 +1,6 @@
 # Debian trixie for ffmpeg 7: STAlign's audiobook probe passes `ffprobe -output_format`, which the
 # ffmpeg 5.1 in bookworm rejects, failing every job in its first stage.
-ARG NODE_IMAGE=node:26.12.1-trixie-slim
+ARG NODE_IMAGE=node:26.13.1-trixie-slim
 
 FROM ${NODE_IMAGE} AS builder
 WORKDIR /app
@@ -32,9 +32,9 @@ RUN pnpm --config.verify-deps-before-run=false --filter @bookorbit/types build &
 # Speech models reach the data volume (XDG_DATA_HOME) only through the ghost-story patch; without it
 # they go to the home folder, which is read-only under Compose, and every model download fails.
 RUN cd /deploy && \
-    patched="$(find node_modules/.pnpm -path '*/node_modules/@storyteller-platform/ghost-story/dist/utilities/FileSystem.js')" && \
+    patched="$(find node_modules/.pnpm -path '*/node_modules/@storyteller/ghost-story/dist/utilities/FileSystem.js')" && \
     if [ -z "$patched" ] || grep -L 'process.env\["XDG_DATA_HOME"\]' $patched | grep -q .; then \
-      echo "ghost-story in the image lacks patches/@storyteller-platform__ghost-story@0.3.4.patch" >&2; exit 1; \
+      echo "ghost-story in the image lacks patches/@storyteller__ghost-story@0.3.5.patch" >&2; exit 1; \
     fi
 
 FROM ${NODE_IMAGE} AS runtime

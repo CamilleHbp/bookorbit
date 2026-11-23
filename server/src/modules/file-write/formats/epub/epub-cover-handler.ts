@@ -2,6 +2,14 @@ import { posix } from 'path';
 
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 
+import {
+  EPUB_AUDIO_COVER_FILE_STEM,
+  EPUB_AUDIO_COVER_ITEM_ID,
+  EPUB_AUDIO_COVER_PREFIX,
+  EPUB_AUDIO_COVER_PREFIX_IRI,
+  EPUB_AUDIO_COVER_PROPERTY,
+} from '../../../../common/epub-audio-cover';
+import { coverDocumentImageHrefs, patchCoverDocument } from './epub-cover-document';
 import type { EpubCoverImage } from './epub-cover-image';
 
 const parser = new XMLParser({
@@ -15,13 +23,6 @@ const parser = new XMLParser({
   // The whole package is written back from this parse; see writerParser in epub-opf-builder.
   parseTagValue: false,
   htmlEntities: true,
-});
-
-const documentParser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  removeNSPrefix: false,
-  preserveOrder: true,
 });
 
 const builder = new XMLBuilder({
@@ -91,33 +92,6 @@ function resolveEntryPath(base: string, rawHref: string): string | null {
   }
 
   return resolved.length > 0 ? resolved.join('/') : null;
-}
-
-function findImageHrefs(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    const hrefs: string[] = [];
-    for (const child of value) {
-      hrefs.push(...findImageHrefs(child));
-    }
-    return hrefs;
-  }
-
-  if (!value || typeof value !== 'object') return [];
-  const record = value as Record<string, unknown>;
-  const hrefs: string[] = [];
-
-  for (const [key, child] of Object.entries(record)) {
-    if (key === ':@') continue;
-    const tag = key.toLowerCase().split(':').at(-1);
-    if (tag === 'img' || tag === 'image') {
-      const attrs = (record[':@'] as Record<string, unknown>) ?? {};
-      const href = attr(attrs, '@_src') || attr(attrs, '@_href') || attr(attrs, '@_xlink:href');
-      if (href) hrefs.push(href);
-    }
-    hrefs.push(...findImageHrefs(child));
-  }
-
-  return hrefs;
 }
 
 function parsePackage(opfXml: string): { parsed: OrderedNode[]; packageAttrs: Record<string, unknown>; packageContent: OrderedNode[] } | null {
@@ -203,6 +177,10 @@ function coverGuideItem(packageContent: OrderedNode[], items: ManifestItem[], op
   return null;
 }
 
+function isAudioCoverItem(item: ManifestItem): boolean {
+  return attr(item.attrs, '@_properties').split(/\s+/).includes(EPUB_AUDIO_COVER_PROPERTY);
+}
+
 function fallbackCoverItem(items: ManifestItem[]): ManifestItem | null {
   return (
     items.find((item) => {
@@ -212,10 +190,20 @@ function fallbackCoverItem(items: ManifestItem[]): ManifestItem | null {
     items.find((item) => {
       const mediaType = attr(item.attrs, '@_media-type').toLowerCase();
       const href = attr(item.attrs, '@_href').toLowerCase();
-      return isImage(mediaType) && href.includes('cover');
+      // The audiobook cover is not the book's cover, so replacing "the cover" must not land on it,
+      // and its usual name ("audio-cover") would otherwise match here.
+      return isImage(mediaType) && href.includes('cover') && !isAudioCoverItem(item);
     }) ??
     null
   );
+}
+
+/** Declares Storyteller's vocabulary prefix on the package, which its property needs to be valid EPUB 3. */
+function ensureAudioCoverPrefix(packageAttrs: Record<string, unknown>): void {
+  const current = attr(packageAttrs, '@_prefix').trim();
+  if (new RegExp(`(^|\\s)${EPUB_AUDIO_COVER_PREFIX}:`).test(current)) return;
+  const declaration = `${EPUB_AUDIO_COVER_PREFIX}: ${EPUB_AUDIO_COVER_PREFIX_IRI}`;
+  packageAttrs['@_prefix'] = current ? `${current} ${declaration}` : declaration;
 }
 
 export interface CoverSlot {
@@ -236,9 +224,27 @@ export interface CoverWriteResult {
     entryPath: string;
     xml: string;
   };
+  /** The entry a cover that moved to a new path leaves behind, when nothing else uses it. */
+  removedEntryPath?: string;
 }
 
 export type ReadTextEntry = (entryPath: string) => Promise<string>;
+
+function firstSpineItem(packageContent: OrderedNode[], items: ManifestItem[]): ManifestItem | null {
+  const spine = findSection(packageContent, ['spine']);
+  const first = spine?.content.find((node) => nodeLocalName(node) === 'itemref');
+  return first ? findManifestItemById(items, attr(nodeAttrs(first), '@_idref')) : null;
+}
+
+async function readCoverDocument(item: ManifestItem | null, readTextEntry?: ReadTextEntry) {
+  if (!readTextEntry || !item?.entryPath || !isCoverDocument(attr(item.attrs, '@_media-type').toLowerCase())) return;
+  try {
+    const xml = await readTextEntry(item.entryPath);
+    return { entryPath: item.entryPath, xml, imageHrefs: coverDocumentImageHrefs(xml) };
+  } catch {
+    return;
+  }
+}
 
 export async function locate(opfXml: string, opfDir: string, readTextEntry?: ReadTextEntry): Promise<CoverSlot | null> {
   const packageResult = parsePackage(opfXml);
@@ -246,39 +252,35 @@ export async function locate(opfXml: string, opfDir: string, readTextEntry?: Rea
 
   const items = manifestItems(packageResult.packageContent, opfDir);
   const version = attr(packageResult.packageAttrs, '@_version');
-  const orderedCandidates = version.startsWith('3')
-    ? [coverPropertyItem(items), coverMetaItem(packageResult.packageContent, items), coverGuideItem(packageResult.packageContent, items, opfDir)]
-    : [coverMetaItem(packageResult.packageContent, items), coverGuideItem(packageResult.packageContent, items, opfDir), coverPropertyItem(items)];
+  const metaItem = coverMetaItem(packageResult.packageContent, items);
+  const guideItem = coverGuideItem(packageResult.packageContent, items, opfDir);
+  const propertyItem = coverPropertyItem(items);
+  const orderedCandidates = version.startsWith('3') ? [propertyItem, metaItem, guideItem] : [metaItem, guideItem, propertyItem];
   orderedCandidates.push(fallbackCoverItem(items));
 
   for (const item of orderedCandidates) {
     if (!item?.entryPath) continue;
     const mediaType = attr(item.attrs, '@_media-type').toLowerCase();
     if (isImage(mediaType) && mediaType !== 'image/svg+xml') {
-      return {
+      const slot: CoverSlot = {
         entryPath: item.entryPath,
         mediaType,
         manifestItemId: attr(item.attrs, '@_id'),
       };
+      for (const candidate of new Set([guideItem, metaItem, firstSpineItem(packageResult.packageContent, items)])) {
+        const document = await readCoverDocument(candidate, readTextEntry);
+        const imageHref = document?.imageHrefs.find((href) => resolveEntryPath(entryDirectory(document.entryPath), href) === slot.entryPath);
+        if (!document || !imageHref) continue;
+        slot.document = { entryPath: document.entryPath, xml: document.xml, imageHref };
+        break;
+      }
+      return slot;
     }
 
-    if (!readTextEntry || !isCoverDocument(mediaType)) continue;
+    const document = await readCoverDocument(item, readTextEntry);
+    if (!document) continue;
 
-    let documentXml: string;
-    try {
-      documentXml = await readTextEntry(item.entryPath);
-    } catch {
-      continue;
-    }
-
-    let referencedHrefs: string[];
-    try {
-      referencedHrefs = findImageHrefs(documentParser.parse(documentXml));
-    } catch {
-      continue;
-    }
-
-    for (const referencedHref of referencedHrefs) {
+    for (const referencedHref of document.imageHrefs) {
       const referencedPath = resolveEntryPath(entryDirectory(item.entryPath), referencedHref);
       if (!referencedPath) continue;
       const referencedItem = findManifestItemByEntryPath(items, referencedPath);
@@ -290,7 +292,7 @@ export async function locate(opfXml: string, opfDir: string, readTextEntry?: Rea
           entryPath: referencedPath,
           mediaType: referencedMediaType,
           manifestItemId: attr(referencedItem.attrs, '@_id'),
-          document: { entryPath: item.entryPath, xml: documentXml, imageHref: referencedHref },
+          document: { entryPath: document.entryPath, xml: document.xml, imageHref: referencedHref },
         };
       }
     }
@@ -336,23 +338,6 @@ function encodeRelativeHref(fromDirectory: string, entryPath: string): string {
     .join('/');
 }
 
-function replaceImageReference(documentXml: string, oldHref: string, newHref: string): string | null {
-  const xmlTokenPattern = /<!--[\s\S]*?-->|<(?:[\w.-]+:)?(?:img|image)\b[^>]*>/gi;
-  const hrefPattern = /(\s(?:src|(?:[\w.-]+:)?href)\s*=\s*)(["'])([^"']*)(\2)/gi;
-  let replaced = false;
-
-  const updatedXml = documentXml.replace(xmlTokenPattern, (tag) => {
-    if (replaced || tag.startsWith('<!--')) return tag;
-    return tag.replace(hrefPattern, (match, prefix: string, quote: string, href: string) => {
-      if (replaced || href !== oldHref) return match;
-      replaced = true;
-      return `${prefix}${quote}${newHref}${quote}`;
-    });
-  });
-
-  return replaced ? updatedXml : null;
-}
-
 export function replace(
   opfXml: string,
   opfDir: string,
@@ -360,24 +345,24 @@ export function replace(
   image: EpubCoverImage,
   occupiedEntryPaths: readonly string[],
 ): CoverWriteResult | null {
-  if (slot.mediaType === image.mediaType) {
-    return { updatedOpfXml: opfXml, newEntryPath: slot.entryPath };
+  const formatChanged = slot.mediaType !== image.mediaType;
+  const newEntryPath = formatChanged ? chooseReplacementEntryPath(slot.entryPath, image.extension, occupiedEntryPaths) : slot.entryPath;
+  let documentPatch: CoverWriteResult['documentPatch'];
+  if (slot.document) {
+    const newDocumentHref = newEntryPath === slot.entryPath ? undefined : encodeRelativeHref(entryDirectory(slot.document.entryPath), newEntryPath);
+    const updatedDocumentXml = patchCoverDocument(slot.document.xml, slot.document.imageHref, newDocumentHref, image.dimensions);
+    if (newDocumentHref && updatedDocumentXml === null) return null;
+    if (updatedDocumentXml !== null && updatedDocumentXml !== slot.document.xml) {
+      documentPatch = { entryPath: slot.document.entryPath, xml: updatedDocumentXml };
+    }
   }
-  if (!slot.manifestItemId) return null;
 
+  if (!formatChanged) return { updatedOpfXml: opfXml, newEntryPath, ...(documentPatch && { documentPatch }) };
+  if (!slot.manifestItemId) return null;
   const packageResult = parsePackage(opfXml);
   if (!packageResult) return null;
   const manifestNode = findManifestNodeById(packageResult.packageContent, slot.manifestItemId);
   if (!manifestNode) return null;
-
-  const newEntryPath = chooseReplacementEntryPath(slot.entryPath, image.extension, occupiedEntryPaths);
-  let documentPatch: CoverWriteResult['documentPatch'];
-  if (slot.document) {
-    const newDocumentHref = encodeRelativeHref(entryDirectory(slot.document.entryPath), newEntryPath);
-    const updatedDocumentXml = replaceImageReference(slot.document.xml, slot.document.imageHref, newDocumentHref);
-    if (!updatedDocumentXml) return null;
-    documentPatch = { entryPath: slot.document.entryPath, xml: updatedDocumentXml };
-  }
 
   const manifestAttrs = nodeAttrs(manifestNode);
   manifestAttrs['@_href'] = encodeRelativeHref(opfDir, newEntryPath);
@@ -424,6 +409,7 @@ function chooseCoverIdentity(
   opfDir: string,
   extension: string,
   occupiedEntryPaths: readonly string[],
+  names: { id: string; file: string } = { id: BOOKORBIT_COVER_ID, file: BOOKORBIT_COVER_FILE },
 ): { id: string; href: string; entryPath: string } {
   const usedIds = new Set(items.map((item) => attr(item.attrs, '@_id')).filter(Boolean));
   const usedPaths = new Set(
@@ -432,8 +418,8 @@ function chooseCoverIdentity(
 
   for (let suffix = 0; ; suffix += 1) {
     const suffixText = suffix === 0 ? '' : `-${suffix + 1}`;
-    const id = `${BOOKORBIT_COVER_ID}${suffixText}`;
-    const href = `images/${BOOKORBIT_COVER_FILE}${suffixText}.${extension}`;
+    const id = `${names.id}${suffixText}`;
+    const href = `images/${names.file}${suffixText}.${extension}`;
     const entryPath = resolveEntryPath(opfDir, href);
     if (entryPath && !usedIds.has(id) && !usedPaths.has(entryPath.toLowerCase())) return { id, href, entryPath };
   }
@@ -471,4 +457,71 @@ export function inject(opfXml: string, opfDir: string, image: EpubCoverImage, oc
     updatedOpfXml: String(builder.build(packageResult.parsed)),
     newEntryPath: identity.entryPath,
   };
+}
+
+/** The image a package declares as its square audiobook cover, which is separate from its book cover. */
+export function locateAudioCover(opfXml: string, opfDir: string): CoverSlot | null {
+  const packageResult = parsePackage(opfXml);
+  if (!packageResult) return null;
+
+  const items = manifestItems(packageResult.packageContent, opfDir);
+  const bookCoverPath = coverMetaItem(packageResult.packageContent, items)?.entryPath;
+  const item = items.find((candidate) => {
+    if (!isAudioCoverItem(candidate) || !candidate.entryPath) return false;
+    const mediaType = attr(candidate.attrs, '@_media-type').toLowerCase();
+    if (!isImage(mediaType) || mediaType === 'image/svg+xml') return false;
+    // A declaration on the book's own cover would make "replace the audiobook cover" overwrite it.
+    return !coverPropertyItem([candidate]) && candidate.entryPath !== bookCoverPath;
+  });
+  if (!item?.entryPath) return null;
+  return { entryPath: item.entryPath, mediaType: attr(item.attrs, '@_media-type').toLowerCase(), manifestItemId: attr(item.attrs, '@_id') };
+}
+
+/**
+ * The entry an audiobook cover leaves behind when a new image type moves it to another path. It is
+ * dropped so the file keeps one audiobook cover and later writes do not dodge a stale name, unless
+ * another manifest item points at the same entry.
+ */
+function abandonedEntryPath(opfXml: string, opfDir: string, slot: CoverSlot, newEntryPath: string): string | undefined {
+  if (newEntryPath === slot.entryPath) return undefined;
+  const packageResult = parsePackage(opfXml);
+  if (!packageResult) return undefined;
+  const sharers = manifestItems(packageResult.packageContent, opfDir).filter((item) => item.entryPath === slot.entryPath);
+  return sharers.length === 1 ? slot.entryPath : undefined;
+}
+
+/**
+ * Declares `image` as the package's audiobook cover. The image already declared is replaced where
+ * it lies; otherwise a manifest item carrying Storyteller's property is added. The book's own
+ * cover, its `cover-image` property and its `cover` meta are never touched.
+ */
+export function setAudioCover(opfXml: string, opfDir: string, image: EpubCoverImage, occupiedEntryPaths: readonly string[]): CoverWriteResult {
+  const slot = locateAudioCover(opfXml, opfDir);
+  if (slot) {
+    const replaced = replace(opfXml, opfDir, slot, image, occupiedEntryPaths);
+    if (replaced) return { ...replaced, removedEntryPath: abandonedEntryPath(opfXml, opfDir, slot, replaced.newEntryPath) };
+  }
+
+  const packageResult = parsePackage(opfXml);
+  if (!packageResult) throw new Error('Cannot find <package> element in OPF');
+
+  // Manifest properties exist from EPUB 3 on, and so does the media overlay that makes a read-along EPUB.
+  const version = attr(packageResult.packageAttrs, '@_version');
+  if (!version.startsWith('3')) throw new Error(`Unsupported EPUB version: "${version || '(missing)'}"`);
+
+  const manifest = findSection(packageResult.packageContent, ['manifest']);
+  if (!manifest) throw new Error('EPUB package must contain a manifest section');
+
+  const identity = chooseCoverIdentity(manifestItems(packageResult.packageContent, opfDir), opfDir, image.extension, occupiedEntryPaths, {
+    id: EPUB_AUDIO_COVER_ITEM_ID,
+    file: EPUB_AUDIO_COVER_FILE_STEM,
+  });
+
+  ensureAudioCoverPrefix(packageResult.packageAttrs);
+  manifest.content.push({
+    [childTag(manifest.tag, 'item')]: [],
+    ':@': { '@_id': identity.id, '@_href': identity.href, '@_media-type': image.mediaType, '@_properties': EPUB_AUDIO_COVER_PROPERTY },
+  });
+
+  return { updatedOpfXml: String(builder.build(packageResult.parsed)), newEntryPath: identity.entryPath };
 }

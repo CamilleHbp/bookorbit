@@ -1281,11 +1281,12 @@ describe('BookRepository', () => {
     expect(normalized).toContain('INNER JOIN "book_files" AS facet_file ON facet_file.book_id = "books"."id"');
     expect(normalized).toContain('CROSS JOIN LATERAL');
     expect(normalized).toContain("facet_file.format = 'epub' AND facet_file.media_overlay_available = true");
+    expect(normalized).toContain("facet_file.format = 'epub' AND facet_file.media_overlay_available = false");
     expect(normalized).toContain('"book_metadata"."title" is not null');
     expect(normalized).toContain('"books"."status" <>');
-    expect(normalized).toContain('facet_key.format IN ($3, $4)');
+    expect(normalized).toContain('facet_key.format IN ($4, $5)');
     expect(normalized).toContain('GROUP BY facet_key.format');
-    expect(query.params).toEqual(['epub:readalong', 'processing', 'epub', 'pdf']);
+    expect(query.params).toEqual(['epub:readalong', 'epub:plain', 'processing', 'epub', 'pdf']);
     expect(result).toEqual([
       { format: 'epub', count: 7 },
       { format: 'pdf', count: 3 },
@@ -1869,7 +1870,7 @@ describe('BookRepository', () => {
       expect(query).not.toContain('ROW_NUMBER()');
     });
 
-    it('pre-aggregates per-user last-read values before collapsing series', async () => {
+    it('reads each book last read from one grouped row set before collapsing series', async () => {
       const execute = vi.fn().mockResolvedValue({ rows: [] });
       const repo = new BookRepository({ execute } as never);
 
@@ -1884,10 +1885,14 @@ describe('BookRepository', () => {
       });
 
       const query = dialect.sqlToQuery(execute.mock.calls[0]![0]).sql;
-      expect(query).toContain('rail_last_read AS MATERIALIZED');
-      expect(query).toContain('max(rail_rp.last_read_at)');
-      expect(query).not.toContain('rail_rp.updated_at');
-      expect(query).toContain('GROUP BY rail_bf.book_id');
+      expect(query).toContain('max(rs.started_at)');
+      expect(query).toContain('max(rp.last_read_at)');
+      expect(query).not.toContain('rp.updated_at');
+      expect(query).toContain('SELECT ap.book_id, least(ap.captured_at, ap.updated_at) FROM audiobook_progress ap');
+      expect(query).toContain('GROUP BY reads.book_id');
+      expect(query).toContain('book_last_read.last_read_at AS rail_temporal_value');
+      expect(query).toContain('timezone($');
+      expect(query).not.toContain('ORDER BY rs.started_at DESC LIMIT 1');
       expect(query).toContain('base_rows AS MATERIALIZED');
       expect(query).toContain('representatives AS');
       expect(query).not.toContain('SELECT max(rp.updated_at)');

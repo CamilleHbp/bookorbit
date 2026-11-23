@@ -20,7 +20,11 @@ export class BookRevisionService {
     private readonly coordination: RevisionCoordinationService,
   ) {}
 
-  async observeFile(id: number, changes: Partial<typeof schema.bookFiles.$inferInsert>) {
+  async observeFile(
+    id: number,
+    changes: Partial<typeof schema.bookFiles.$inferInsert>,
+    observedVersion?: Pick<typeof schema.bookFiles.$inferSelect, 'bookId' | 'absolutePath' | 'libraryFolderId' | 'updatedAt' | 'fileHash'>,
+  ) {
     const event = 'book.revision_inspect';
     const startedAt = Date.now();
     this.logger.log(`[${event}] [start] bookFileId=${id} - file inspection started`);
@@ -31,6 +35,16 @@ export class BookRevisionService {
       admitted = true;
       const [expected] = await this.db.select().from(schema.bookFiles).where(eq(schema.bookFiles.id, id)).limit(1);
       if (!expected) throw new NotFoundException('Book file no longer exists');
+      if (
+        observedVersion &&
+        (expected.bookId !== observedVersion.bookId ||
+          expected.absolutePath !== observedVersion.absolutePath ||
+          expected.libraryFolderId !== observedVersion.libraryFolderId ||
+          expected.updatedAt.getTime() !== observedVersion.updatedAt.getTime() ||
+          expected.fileHash !== observedVersion.fileHash)
+      ) {
+        throw new ConflictException('Book file changed before inspection; retry the scan');
+      }
       const path = changes.absolutePath ?? expected.absolutePath;
       if ((await waitForStableFile(path)) !== 'stable')
         throw new ServiceUnavailableException('File is unavailable or still changing; retry inspection');

@@ -4,10 +4,12 @@ import { MetadataProviderKey, NotificationType, Permission, parseSeriesIndex } f
 import { NotificationService } from '../notification/notification.service';
 import { chapterProvenance, normalizeAudiobookChapters } from '../../common/utils/audiobook-chapters.utils';
 import { coverFetchInputs, resolveIsAudiobook, resolveSearchMediaKind, type CoverFetchState } from '../../common/utils/book-media.utils';
+import { IdlePoll } from '../../common/utils/idle-poll';
 import { AudiobookChaptersService } from '../audiobook-chapters/audiobook-chapters.service';
+import { JobChangesService } from '../jobs/job-changes.service';
 import { BookCoverStore } from '../book-cover-store/book-cover-store.service';
 import { sanitizeLogValue } from '../../common/utils/log-sanitize.utils';
-import { normalizePublishedDate, publishedYearFromDateKey } from '../../common/utils/published-date.utils';
+import { isPublishedYear, normalizePublishedDate, publishedYearFromDateKey } from '../../common/utils/published-date.utils';
 import { BookReadService } from '../book/book-read.service';
 import * as schema from '../../db/schema';
 import { MetadataScoreService } from '../metadata-score/metadata-score.service';
@@ -23,6 +25,7 @@ import { BookMetadataFetchEligibilityService } from './book-metadata-fetch-eligi
 import { BookMetadataFetchGateway } from './book-metadata-fetch.gateway';
 import { BookMetadataFetchQueueRepository } from './book-metadata-fetch-queue.repository';
 import { BookMetadataFetchSessionService } from './book-metadata-fetch-session.service';
+import { metadataFetchQueueStatus } from './metadata-fetch-job-status';
 
 const POLL_INTERVAL_MS = 4_000;
 const BATCH_SIZE = 1;
@@ -33,6 +36,8 @@ const CACHED_CHAIN_MAX_ITEMS = 50;
 const CACHED_CHAIN_MAX_MS = 30_000;
 const CACHED_ITEM_YIELD_MS = 100;
 const STATUS_EMIT_MIN_INTERVAL_MS = 500;
+/** The queue calls a row stuck after ten minutes, so looking for one every few polls finds it nearly as soon. */
+const STALE_RECOVERY_INTERVAL_MS = 5 * 60 * 1000;
 
 interface ProcessOutcome {
   /** Provider requests and cover downloads the book caused; 0 when everything came from the cache. */
@@ -48,11 +53,16 @@ type BookReadResult = NonNullable<Awaited<ReturnType<BookReadService['findById']
 @Injectable()
 export class BookMetadataFetchOrchestratorService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(BookMetadataFetchOrchestratorService.name);
+  private readonly idlePoll = new IdlePoll();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private paused = false;
+  private lastRecoveryAt = 0;
   private lastStatusEmitAt = 0;
   private pendingStatusEmit: ReturnType<typeof setTimeout> | null = null;
+  /** Set by a pause, resume, cancel or retry until the next emit tells the Jobs area. */
+  private jobsStateChanged = false;
+  private lastJobsSignature: string | null = null;
 
   constructor(
     private readonly queueRepo: BookMetadataFetchQueueRepository,
@@ -71,6 +81,7 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
     @Optional() private readonly gateway?: BookMetadataFetchGateway,
     @Optional() private readonly audiobookChapters?: AudiobookChaptersService,
     @Optional() private readonly providerIdStore?: ProviderIdStore,
+    @Optional() private readonly jobChanges?: JobChangesService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -99,6 +110,7 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
 
     const queued = await this.queueRepo.scheduleEligibleBookIdsInBatches(config, 'event_import', libraryId, bookIds, SCHEDULE_BATCH_SIZE);
     if (queued > 0) {
+      this.idlePoll.wake();
       this.session.addToTotal(queued);
       await this.emitStatus();
     }
@@ -122,6 +134,7 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
         SCHEDULE_BATCH_SIZE,
         ignoreCache,
       );
+      if (libraryQueued > 0) this.idlePoll.wake();
       await this.configService.recordLibraryRun(libraryId, libraryQueued);
       queued += libraryQueued;
     }
@@ -140,6 +153,7 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
   async triggerForLibrary(libraryId: number, ignoreCache = false): Promise<number> {
     const config = await this.configService.getEffectiveConfig(libraryId);
     const queued = await this.queueRepo.scheduleEligibleBooksInBatches(config, 'manual_trigger', libraryId, SCHEDULE_BATCH_SIZE, ignoreCache);
+    if (queued > 0) this.idlePoll.wake();
     await this.configService.recordLibraryRun(libraryId, queued);
     await this.unpauseIfNeeded();
     if (queued > 0) {
@@ -153,13 +167,14 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
   async pause(): Promise<void> {
     this.paused = true;
     await this.configService.setPaused(true);
-    await this.emitStatus();
+    await this.emitStatus(true);
   }
 
   async resume(): Promise<void> {
     this.paused = false;
     await this.configService.setPaused(false);
-    await this.emitStatus();
+    this.idlePoll.wake();
+    await this.emitStatus(true);
     void this.pollOnce();
   }
 
@@ -168,31 +183,41 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
     await this.configService.setPaused(true);
     await this.queueRepo.cancelPending();
     this.session.reset();
-    await this.emitStatus();
+    await this.emitStatus(true);
   }
 
   async requeueFailed(): Promise<number> {
     const requeued = await this.queueRepo.requeueFailed();
     if (requeued > 0) {
+      this.idlePoll.wake();
       this.session.addToTotal(requeued);
-      await this.emitStatus();
+      await this.emitStatus(true);
     }
     return requeued;
   }
 
   private async pollOnce(): Promise<void> {
     if (this.running) return;
+    const deferIfIdle = this.idlePoll.begin();
+    if (!deferIfIdle) return;
     this.running = true;
     const startedAt = Date.now();
     try {
-      await this.queueRepo.recoverStuckProcessing();
+      await this.recoverStuckProcessing();
       await this.checkAndResetSession();
 
       const chainStartedAt = Date.now();
       for (let processed = 0; ; processed++) {
-        if (this.paused) return;
+        // Resuming wakes the poll, so a paused queue backs off like an empty one.
+        if (this.paused) {
+          deferIfIdle();
+          return;
+        }
         const dueRows = await this.queueRepo.fetchDue(BATCH_SIZE);
-        if (dueRows.length === 0) return;
+        if (dueRows.length === 0) {
+          deferIfIdle();
+          return;
+        }
         const row = dueRows[0];
         const outcome = await this.processOne(row.bookId, row.title, row.reason, row.ignoreCache);
         if (outcome.outboundRequests > 0 || outcome.deferred) {
@@ -299,6 +324,7 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
         authors: authorRows.map((a) => a.name),
         publisher: meta?.publisher,
         publishedYear: meta?.publishedYear,
+        originalPublishedYear: meta?.originalPublishedYear,
         language: meta?.language,
         pageCount: meta?.pageCount,
         isbn10: meta?.isbn10,
@@ -409,6 +435,10 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
       scalarFields.publishedYear = publishedYear;
     } else if (publishedYear !== undefined && publishedDate === null) {
       scalarFields.publishedYear = publishedYear;
+    }
+    const originalPublishedYear = this.asNullableNumber(filteredResolved.originalPublishedYear);
+    if (originalPublishedYear === null || (originalPublishedYear !== undefined && isPublishedYear(originalPublishedYear))) {
+      scalarFields.originalPublishedYear = originalPublishedYear;
     }
     const language = this.asNullableString(filteredResolved.language);
     if (language !== undefined) scalarFields.language = language;
@@ -548,6 +578,7 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
       description: meta?.description ?? null,
       publisher: meta?.publisher ?? null,
       publishedYear: meta?.publishedYear ?? null,
+      originalPublishedYear: meta?.originalPublishedYear ?? null,
       language: meta?.language ?? null,
       pageCount: meta?.pageCount ?? null,
       isbn10: meta?.isbn10 ?? null,
@@ -612,9 +643,19 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
     if (!this.paused) return;
     this.paused = false;
     await this.configService.setPaused(false);
+    this.idlePoll.wake();
+  }
+
+  private async recoverStuckProcessing(): Promise<void> {
+    if (Date.now() - this.lastRecoveryAt < STALE_RECOVERY_INTERVAL_MS) return;
+    this.lastRecoveryAt = Date.now();
+    await this.queueRepo.recoverStuckProcessing();
   }
 
   private async checkAndResetSession(): Promise<void> {
+    const current = this.session.getSnapshot();
+    // An empty session has nothing to finish or clear, so an idle poll skips the count.
+    if (current.sessionTotal <= 0 && current.currentItemName === null) return;
     const summary = await this.queueRepo.getStatusSummary();
     if (summary.queued === 0 && summary.processing === 0) {
       const snapshot = this.session.getSnapshot();
@@ -634,9 +675,14 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
     }
   }
 
-  /** Coalesced: cached books can complete several times a second, which would flood the socket. */
-  private async emitStatus(): Promise<void> {
-    if (!this.gateway) return;
+  /**
+   * Coalesced: cached books can complete several times a second, which would flood the socket.
+   * `jobsState` marks a control action, which the Jobs area hears as a state change even when the
+   * rows it shows keep their status.
+   */
+  private async emitStatus(jobsState = false): Promise<void> {
+    if (!this.gateway && !this.jobChanges) return;
+    if (jobsState) this.jobsStateChanged = true;
     const wait = STATUS_EMIT_MIN_INTERVAL_MS - (Date.now() - this.lastStatusEmitAt);
     if (wait > 0) {
       this.pendingStatusEmit ??= setTimeout(() => {
@@ -649,10 +695,21 @@ export class BookMetadataFetchOrchestratorService implements OnApplicationBootst
   }
 
   private async emitStatusNow(): Promise<void> {
-    if (!this.gateway) return;
+    if (!this.gateway && !this.jobChanges) return;
     this.lastStatusEmitAt = Date.now();
     const summary = await this.queueRepo.getStatusSummary();
-    this.gateway.emitStatus({ ...summary, paused: this.paused, ...this.session.getSnapshot() });
+    this.gateway?.emitStatus({ ...summary, paused: this.paused, ...this.session.getSnapshot() });
+    this.notifyJobs(summary);
+  }
+
+  /** A row appearing, leaving or changing status is a state change; anything else only moved the numbers. */
+  private notifyJobs(summary: { queued: number; processing: number; failed: number }): void {
+    if (!this.jobChanges) return;
+    const signature = `${metadataFetchQueueStatus(summary, this.paused) ?? 'none'}:${summary.failed > 0 ? 'failed' : 'none'}`;
+    const state = this.jobsStateChanged || signature !== this.lastJobsSignature;
+    this.jobsStateChanged = false;
+    this.lastJobsSignature = signature;
+    this.jobChanges.notify({ type: 'metadata-fetch', ownerId: null, state });
   }
 
   private asNullableString(value: unknown): string | null | undefined {

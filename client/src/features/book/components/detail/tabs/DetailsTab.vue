@@ -38,7 +38,7 @@ import { readingDateToDateKey } from '@/features/book/lib/reading-date'
 import { getProviderColor, providerShortLabel } from '@/lib/provider-colors'
 import { useCoverVersions } from '@/features/book/composables/useCoverVersions'
 import { useBookCoverAspectRatio } from '@/features/book/composables/useBookCoverAspectRatio'
-import { FORMAT_TO_GROUP, getPrimaryBookFile, Permission, READER_OPENABLE_FORMATS, isComicFormat } from '@bookorbit/types'
+import { FORMAT_TO_GROUP, getPrimaryBookFile, Permission, READER_OPENABLE_FORMATS, isComicFormat, showsFirstPublished } from '@bookorbit/types'
 import type {
   BookDetail,
   BookKoboState,
@@ -67,7 +67,9 @@ import { useMetadataLocks } from '@/features/book/composables/useMetadataLocks'
 import { usePersonalNote, PERSONAL_NOTE_MAX_LENGTH } from '@/features/book/composables/usePersonalNote'
 import { useResetReadingState } from '@/features/book/composables/useResetReadingState'
 import DeleteBookDialog from '@/features/book/components/DeleteBookDialog.vue'
-import BookLinkedChips from '@/features/book/components/link/BookLinkedChips.vue'
+import EditionStrip from '@/features/book/components/link/EditionStrip.vue'
+import { bookEditions, deleteEditionsChoice } from '@/features/book/lib/book-editions'
+import BookTaxonomyPill from '@/features/book/components/detail/details/BookTaxonomyPill.vue'
 import { useBookLinkActions } from '@/features/book/composables/useBookLinkActions'
 import type { LinkSeedBook } from '@/features/book/lib/book-link'
 import MoveToLibrarySheet from '@/features/book/components/MoveToLibrarySheet.vue'
@@ -90,6 +92,7 @@ import StorygraphBookSyncGridItem from '@/features/storygraph/components/Storygr
 import BookEditionsCard, { type EditionProgress } from '@/features/book/components/detail/details/BookEditionsCard.vue'
 import BookReadingActivityCard from '@/features/book/components/detail/details/BookReadingActivityCard.vue'
 import ReadAloudSyncMeter from '@/features/book/components/detail/details/ReadAloudSyncMeter.vue'
+import StoryGuideCard from '@/features/story-guide/components/StoryGuideCard.vue'
 import BookMissingFormatRequest from '@/features/book-requests/components/BookMissingFormatRequest.vue'
 import { useBookReadingLog } from '@/features/book/composables/useBookReadingLog'
 import { useProviderLinkSettings } from '@/features/book/composables/useProviderLinkSettings'
@@ -132,7 +135,7 @@ const MergeBooksSheet = defineAsyncComponent(() => import('@/features/book/compo
 const LinkBooksSheet = defineAsyncComponent(() => import('@/features/book/components/link/LinkBooksSheet.vue'))
 
 const props = defineProps<{ book: BookDetail }>()
-const emit = defineEmits<{ saved: [BookDetail]; moved: []; merged: [BookMergedEvent]; 'links-changed': [] }>()
+const emit = defineEmits<{ saved: [BookDetail]; moved: []; merged: [BookMergedEvent]; 'links-changed': []; refetch: [] }>()
 const { t } = useI18n()
 const router = useRouter()
 const { user } = useAuth()
@@ -148,6 +151,8 @@ const linkRequested = ref(false)
 const linkActions = useBookLinkActions()
 const linkedBooks = computed(() => props.book.linkedBooks ?? [])
 const isLinked = computed(() => linkedBooks.value.length > 0)
+const editions = computed(() => bookEditions(props.book))
+const showFirstPublished = computed(() => showsFirstPublished(props.book.originalPublishedYear, props.book.publishedYear))
 /** Books a merge blocker handed over to Link; otherwise Link starts from this book with the picker. */
 const linkSeedIds = ref<number[] | null>(null)
 const linkSeedBooks = ref<LinkSeedBook[]>([])
@@ -176,13 +181,13 @@ const {
 
 onMounted(() => {
   void fetchWeights()
-  void reloadReadingLog()
   void loadProviderLinkSettings()
 })
 
 const {
   pendingId: deleteBookId,
   deleting: deletingBook,
+  editions: deleteEditions,
   promptDelete,
   cancelDelete,
   confirmDelete,
@@ -205,7 +210,14 @@ const safeDescription = useSafeHtml(() => props.book.description)
 const filledCustomMetadata = computed(() => (props.book.customMetadata ?? []).filter((field) => field.value !== null && field.value !== ''))
 const displayedGenres = computed(() => props.book.genres.slice(0, visibleGenreCount.value))
 const hiddenGenres = computed(() => props.book.genres.slice(visibleGenreCount.value))
+const genreIds = computed(() => new Map((props.book.genreRefs ?? []).map((ref) => [ref.name, ref.id])))
+const tagIds = computed(() => new Map((props.book.tagRefs ?? []).map((ref) => [ref.name, ref.id])))
+const hiddenGenresOpen = ref(false)
 const GENRE_GAP_PX = 6
+
+function closeHiddenGenres() {
+  hiddenGenresOpen.value = false
+}
 
 function resetGenreFoldState() {
   visibleGenreCount.value = props.book.genres.length
@@ -316,9 +328,13 @@ const canManageReadingState = computed(() => hasPermission('library_edit_metadat
 const canMergeBook = computed(
   () => !isDemoRestrictedAccount.value && hasLibraryPermission(Permission.LibraryMergeBooks, props.book?.libraryId, 'editor'),
 )
-// Linking shares Merge's permission and editor rule; the server checks every other book's library too.
-const canLinkBook = canMergeBook
-const canUnlinkBook = computed(() => canLinkBook.value && isLinked.value)
+// Editions are a metadata edit with the editor rule; the server checks every other book's library too.
+const canEditOwnEdition = computed(() => !isDemoRestrictedAccount.value && canEditMetadata.value)
+/** Adding to a group or changing its main edition touches every edition, so each must be editable here. */
+const canEditEveryEdition = computed(() => linkedBooks.value.every((book) => hasLibraryPermission('library_edit_metadata', book.libraryId, 'editor')))
+const canLinkBook = computed(() => canEditOwnEdition.value && canEditEveryEdition.value)
+// Removing a book only detaches the one this user can edit, so the other editions' libraries do not matter.
+const canUnlinkBook = computed(() => canEditOwnEdition.value && isLinked.value)
 /** Offered on a linked book that is not its group's main book, including a group left without one (G11). */
 const canMakeMainBook = computed(
   () =>
@@ -328,6 +344,17 @@ const canMakeMainBook = computed(
     // Servers with `linkIsLead` say so directly; older ones only show the main book when it is visible.
     (props.book.linkIsLead !== undefined ? !props.book.linkIsLead : linkedBooks.value.some((book) => book.isLead)),
 )
+/** The Editions tab's row menus: making any edition main needs the same rights as from its own page. */
+const canChangeMainEdition = computed(() => canLinkBook.value && isLinked.value && props.book.linkGroupId != null)
+/** Taking an edition out of the group detaches only that edition, so only its own library has to be editable. */
+const removableEditionIds = computed(() =>
+  isDemoRestrictedAccount.value
+    ? []
+    : editions.value
+        .filter((entry) => hasLibraryPermission('library_edit_metadata', entry.summary.libraryId, 'editor'))
+        .map((entry) => entry.summary.bookId),
+)
+const discoverRow = ref<InstanceType<typeof DiscoverRow> | null>(null)
 const resetReadingStateBookId = computed(() => props.book.id)
 const {
   open: resetReadingStateDialogOpen,
@@ -350,7 +377,7 @@ const { coverRevealed, canRevealCover, toggleCoverReveal } = useCoverReveal(
   computed(() => props.book.sensitiveCover),
 )
 const { coverUrl } = useCoverVersions()
-const coverSrc = computed(() => coverUrl(props.book.id, 'cover', props.book.coverVersion, undefined, coverRevealed.value))
+const coverSrc = computed(() => coverUrl(props.book.id, 'display', props.book.coverVersion, undefined, coverRevealed.value))
 
 watch(coverSrc, () => {
   coverLoaded.value = false
@@ -411,6 +438,38 @@ watch([coverColumnEl, coverActionsEl], ([column, actions]) => {
   if (column) coverLayoutObserver?.observe(column)
   if (actions) coverLayoutObserver?.observe(actions)
   measureCoverLayout()
+})
+
+/**
+ * From 46rem of pane width, Story Guide sits under the cover's actions instead of in the rail. The
+ * width is measured rather than left to a container query because the card must mount in one
+ * place only: it loads the guide's status when it mounts and polls while a build runs.
+ */
+const WIDE_DETAIL_LAYOUT_REM = 46
+const detailsLayoutEl = ref<HTMLElement | null>(null)
+const detailsLayoutWidth = ref<number | null>(null)
+let detailsLayoutObserver: ResizeObserver | null = null
+
+function measureDetailsLayout() {
+  detailsLayoutWidth.value = detailsLayoutEl.value?.getBoundingClientRect().width ?? 0
+}
+
+const storyGuideBesideCover = computed<boolean | null>(() => {
+  const width = detailsLayoutWidth.value
+  if (width === null) return null
+  const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  return width >= WIDE_DETAIL_LAYOUT_REM * rootFontSize
+})
+
+onMounted(() => {
+  measureDetailsLayout()
+  detailsLayoutObserver = new ResizeObserver(measureDetailsLayout)
+  if (detailsLayoutEl.value) detailsLayoutObserver.observe(detailsLayoutEl.value)
+})
+
+onBeforeUnmount(() => {
+  detailsLayoutObserver?.disconnect()
+  detailsLayoutObserver = null
 })
 
 const coverAspectRatio = useBookCoverAspectRatio(() => props.book)
@@ -624,7 +683,7 @@ async function savePersonalNote() {
 }
 
 const bookIdRef = computed(() => props.book.id)
-const { sessions: readingSessions, stats: readingStats, loading: readingLogLoading, reload: reloadReadingLog } = useBookReadingLog(bookIdRef)
+const { sessions: readingSessions, stats: readingStats, loading: readingLogLoading } = useBookReadingLog(bookIdRef)
 
 const { setStatus, updateStatus } = useBookStatus()
 
@@ -819,12 +878,18 @@ watch(
   { immediate: true },
 )
 
+/** The Editions row shows this book's progress as the server works it out, so a book with editions takes the server's view again. */
+function refreshEditionProgress() {
+  if (editions.value.length > 1) emit('refetch')
+}
+
 async function handleSetReadStatus(status: ReadStatus) {
   const prev = localReadStatus.value
   localReadStatus.value = status
   try {
     const updatedReadStatus = await setStatus(props.book.id, status)
     applyReadStatusUpdate(updatedReadStatus)
+    refreshEditionProgress()
   } catch {
     localReadStatus.value = prev
   }
@@ -960,10 +1025,6 @@ const editionProgress = computed<EditionProgress[]>(() => {
     byKey.set(audioEntry.key, { key: audioEntry.key, percentage: audioPercentage, finished: audioPercentage >= 100, resetFileId: -props.book.id })
   }
   return [...byKey.values()]
-})
-
-watch(bookIdRef, () => {
-  void reloadReadingLog()
 })
 
 function handleEditionReset(key: string) {
@@ -1127,7 +1188,7 @@ function handleBooksLinked() {
 async function handleUnlinkFromMenu() {
   closeMoreMenus()
   if (await linkActions.unlink(props.book.id)) {
-    toast.success(t('book.link.toast.unlinked'))
+    toast.success(t('book.editions.toast.removed'))
     emit('links-changed')
   } else if (linkActions.error.value) {
     toast.error(linkActions.error.value)
@@ -1139,7 +1200,38 @@ async function handleMakeMainFromMenu() {
   const groupId = props.book.linkGroupId
   if (groupId == null) return
   if (await linkActions.makeLead(groupId, props.book.id)) {
-    toast.success(t('book.link.toast.madeMain'))
+    toast.success(t('book.editions.toast.madeMain'))
+    emit('links-changed')
+  } else if (linkActions.error.value) {
+    toast.error(linkActions.error.value)
+  }
+}
+
+function handleShowAllEditions() {
+  void discoverRow.value?.showEditions()
+}
+
+function editionLabelFor(bookId: number): string {
+  return editions.value.find((entry) => entry.summary.bookId === bookId)?.label ?? ''
+}
+
+async function handleMakeMainEdition(bookId: number) {
+  const groupId = props.book.linkGroupId
+  if (groupId == null) return
+  if (await linkActions.makeLead(groupId, bookId)) {
+    toast.success(
+      bookId === props.book.id ? t('book.editions.toast.madeMain') : t('book.editions.toast.madeMainOther', { label: editionLabelFor(bookId) }),
+    )
+    emit('links-changed')
+  } else if (linkActions.error.value) {
+    toast.error(linkActions.error.value)
+  }
+}
+
+async function handleRemoveEdition(bookId: number) {
+  const label = editionLabelFor(bookId)
+  if (await linkActions.unlink(bookId)) {
+    toast.success(bookId === props.book.id ? t('book.editions.toast.removed') : t('book.editions.toast.removedOther', { label }))
     emit('links-changed')
   } else if (linkActions.error.value) {
     toast.error(linkActions.error.value)
@@ -1149,7 +1241,11 @@ async function handleMakeMainFromMenu() {
 function handleDeleteFromMenu() {
   moreMenuOpen.value = false
   mobileMoreMenuOpen.value = false
-  promptDelete(props.book.id)
+  promptDelete(props.book.id, deleteEditionsChoice(props.book, canDeleteInLibrary))
+}
+
+function canDeleteInLibrary(libraryId: number): boolean {
+  return hasLibraryPermission(Permission.LibraryDeleteBooks, libraryId)
 }
 
 function handleSendFromMenu() {
@@ -1170,6 +1266,7 @@ async function handleResetReadingState() {
 
   await loadSupplemental()
   emit('saved', { ...props.book, readStatus: result.readStatus })
+  refreshEditionProgress()
 }
 
 function handleCoverLoad(ratio: number | null) {
@@ -1385,6 +1482,7 @@ watch(
   <!-- Below 46rem of pane width the page is a single column. Above it, the shelf follows the
        natural height of the three-column content instead of being pinned to the viewport bottom. -->
   <div
+    ref="detailsLayoutEl"
     data-test="details-layout"
     class="flex flex-col gap-5 @min-[46rem]/book-detail:grid @min-[46rem]/book-detail:content-start @min-[46rem]/book-detail:grid-cols-[clamp(12rem,23cqi,17rem)_minmax(16rem,1fr)_clamp(15rem,26cqi,19.25rem)] @min-[46rem]/book-detail:gap-x-6 @min-[46rem]/book-detail:gap-y-5"
   >
@@ -1392,7 +1490,7 @@ watch(
     <div
       ref="coverColumnEl"
       data-test="cover-column"
-      class="flex min-w-0 flex-col gap-4 @min-[46rem]/book-detail:col-start-1 @min-[46rem]/book-detail:row-start-1 @min-[46rem]/book-detail:min-h-0"
+      class="flex min-w-0 flex-col gap-4 @min-[46rem]/book-detail:col-start-1 @min-[46rem]/book-detail:row-start-1 @min-[46rem]/book-detail:min-h-0 @min-[46rem]/book-detail:self-start"
     >
       <div class="flex items-start gap-4 sm:gap-5 @min-[46rem]/book-detail:block @min-[46rem]/book-detail:min-h-0">
         <div
@@ -1477,7 +1575,6 @@ watch(
         <div class="min-w-0 flex-1 @min-[46rem]/book-detail:hidden">
           <h1 class="text-lg font-bold leading-snug break-words sm:text-xl">{{ book.title ?? t('book.detail.details.untitled') }}</h1>
           <p v-if="book.subtitle" class="mt-1 text-sm leading-snug text-muted-foreground break-words">{{ book.subtitle }}</p>
-          <BookLinkedChips v-if="isLinked" :books="linkedBooks" class="mt-2" />
           <p v-if="authorLinks.length" class="mt-2 text-[13px] break-words">
             <span class="text-muted-foreground">{{ t('book.detail.details.by') }}</span>
             <span class="ml-1 font-semibold">
@@ -1485,8 +1582,7 @@ watch(
                 <RouterLink
                   :to="{ name: 'author-detail', params: { id: author.id } }"
                   class="transition-colors hover:text-primary hover:underline underline-offset-2"
-                  >{{ author.name }}</RouterLink
-                ><span v-if="index < authorLinks.length - 1">, </span>
+                  >{{ author.name }}</RouterLink><span v-if="index < authorLinks.length - 1">, </span>
               </template>
             </span>
           </p>
@@ -1534,6 +1630,14 @@ watch(
           </div>
         </div>
       </div>
+
+      <EditionStrip
+        v-if="editions.length > 1"
+        :editions="editions"
+        layout="scroll"
+        class="mt-3 @min-[46rem]/book-detail:hidden"
+        @show-all="handleShowAllEditions"
+      />
 
       <div ref="coverActionsEl" data-test="cover-actions">
         <div class="space-y-2">
@@ -1625,15 +1729,15 @@ watch(
               <Send class="size-3.5" />
             </button>
             <Popover
-              v-if="canManageReadingState || canEditMetadata || canMergeBook || canLinkBook || hasPermission('library_delete_books')"
-              :open="moreMenuOpen"
-              @update:open="(v) => (moreMenuOpen = v)"
+              v-if="canManageReadingState || canEditMetadata || canMergeBook || canLinkBook || canUnlinkBook || hasPermission('library_delete_books')"
+              v-model:open="moreMenuOpen"
             >
               <PopoverTrigger as-child>
                 <button
                   class="flex flex-1 items-center justify-center h-9 rounded-md border border-border bg-background text-foreground hover:bg-muted transition-colors"
+                  :aria-label="t('book.detail.details.moreActions')"
                 >
-                  <MoreVertical class="size-3.5" />
+                  <MoreVertical class="size-3.5" aria-hidden="true" />
                 </button>
               </PopoverTrigger>
               <PopoverContent class="w-max min-w-44 max-w-[min(18rem,calc(100vw-2rem))] p-1" align="end">
@@ -1669,7 +1773,7 @@ watch(
                   @click="handleLinkFromMenu"
                 >
                   <Link2 class="size-3.5 shrink-0" aria-hidden="true" />
-                  {{ t('book.link.detailAction') }}
+                  {{ t('book.editions.addAction') }}
                 </button>
                 <button
                   v-if="canMakeMainBook"
@@ -1679,7 +1783,7 @@ watch(
                   @click="handleMakeMainFromMenu"
                 >
                   <Crown class="size-3.5 shrink-0" aria-hidden="true" />
-                  {{ t('book.link.makeMain') }}
+                  {{ t('book.editions.makeMain') }}
                 </button>
                 <button
                   v-if="canUnlinkBook"
@@ -1689,7 +1793,7 @@ watch(
                   @click="handleUnlinkFromMenu"
                 >
                   <Unlink class="size-3.5 shrink-0" aria-hidden="true" />
-                  {{ t('book.link.unlink') }}
+                  {{ t('book.editions.remove') }}
                 </button>
                 <button
                   v-if="hasPermission('library_delete_books')"
@@ -1715,11 +1819,13 @@ watch(
           <TooltipContent>{{ koboAnomaly.tooltip }}</TooltipContent>
         </Tooltip>
       </div>
+
+      <StoryGuideCard v-if="storyGuideBesideCover === true" :book-id="book.id" />
     </div>
 
     <!-- Main column -->
     <div
-      class="flex min-w-0 flex-col gap-2.5 @min-[46rem]/book-detail:col-start-2 @min-[46rem]/book-detail:row-start-1 @min-[46rem]/book-detail:min-h-0 @min-[46rem]/book-detail:overflow-y-auto"
+      class="flex min-w-0 flex-col gap-2.5 @min-[46rem]/book-detail:col-start-2 @min-[46rem]/book-detail:row-start-1 @min-[46rem]/book-detail:min-h-0 @min-[46rem]/book-detail:self-start @min-[46rem]/book-detail:overflow-y-auto"
     >
       <div class="hidden @min-[46rem]/book-detail:block">
         <!-- Identity block -->
@@ -1736,7 +1842,7 @@ watch(
           </Popover>
         </div>
         <p v-if="book.subtitle" class="text-base text-muted-foreground mt-1 leading-snug">{{ book.subtitle }}</p>
-        <BookLinkedChips v-if="isLinked" :books="linkedBooks" class="mt-2" />
+        <EditionStrip v-if="editions.length > 1" :editions="editions" class="mt-2" @show-all="handleShowAllEditions" />
 
         <div class="flex items-baseline flex-wrap gap-x-2 gap-y-1 mt-3">
           <p v-if="authorLinks.length" class="text-sm">
@@ -1746,8 +1852,7 @@ watch(
                 <RouterLink
                   :to="{ name: 'author-detail', params: { id: author.id } }"
                   class="hover:text-primary hover:underline underline-offset-2 transition-colors"
-                  >{{ author.name }}</RouterLink
-                ><span v-if="index < authorLinks.length - 1">, </span>
+                  >{{ author.name }}</RouterLink><span v-if="index < authorLinks.length - 1">, </span>
               </template>
             </span>
           </p>
@@ -1972,16 +2077,16 @@ watch(
       <!-- Genres + Tags -->
       <div v-if="book.genres.length || book.tags.length" class="space-y-1">
         <div v-if="book.genres.length" class="relative">
-          <div data-test="genre-row" class="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
-            <span
+          <div data-test="genre-row" class="-m-1 flex min-w-0 items-center gap-1.5 overflow-hidden p-1 whitespace-nowrap">
+            <BookTaxonomyPill
               v-for="(genre, index) in displayedGenres"
               :key="`${genre}-${index}`"
               data-test="visible-genre"
-              class="chip-genre shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium"
-            >
-              {{ genre }}
-            </span>
-            <Popover v-if="genreHiddenCount > 0">
+              kind="genre"
+              :name="genre"
+              :id="genreIds.get(genre)"
+            />
+            <Popover v-if="genreHiddenCount > 0" v-model:open="hiddenGenresOpen">
               <PopoverTrigger as-child>
                 <button
                   type="button"
@@ -1994,13 +2099,14 @@ watch(
               </PopoverTrigger>
               <PopoverContent align="start" class="w-80 max-w-[calc(100vw-2rem)] p-3">
                 <div data-test="hidden-genres" class="flex flex-wrap gap-1.5">
-                  <span
+                  <BookTaxonomyPill
                     v-for="(genre, index) in hiddenGenres"
                     :key="`hidden-${genre}-${index}`"
-                    class="chip-genre rounded-md px-2 py-0.5 text-[11px] font-medium"
-                  >
-                    {{ genre }}
-                  </span>
+                    kind="genre"
+                    :name="genre"
+                    :id="genreIds.get(genre)"
+                    @navigate="closeHiddenGenres"
+                  />
                 </div>
               </PopoverContent>
             </Popover>
@@ -2010,14 +2116,13 @@ watch(
             aria-hidden="true"
             class="pointer-events-none invisible absolute left-0 top-0 -z-10 flex w-full items-center gap-1.5 overflow-hidden whitespace-nowrap"
           >
-            <span
+            <BookTaxonomyPill
               v-for="(genre, index) in book.genres"
               :key="`measure-${genre}-${index}`"
               data-genre-pill="true"
-              class="chip-genre shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium"
-            >
-              {{ genre }}
-            </span>
+              kind="genre"
+              :name="genre"
+            />
             <button
               type="button"
               tabindex="-1"
@@ -2030,7 +2135,7 @@ watch(
         </div>
 
         <div v-if="book.tags.length" class="flex flex-wrap gap-1.5">
-          <span v-for="tag in book.tags" :key="tag" class="chip-tag rounded-md border px-2 py-0.5 text-[11px] font-medium"> #{{ tag }} </span>
+          <BookTaxonomyPill v-for="tag in book.tags" :key="tag" kind="tag" :name="tag" :id="tagIds.get(tag)" />
         </div>
       </div>
 
@@ -2147,7 +2252,7 @@ watch(
             v-if="book.description"
             :id="`book-${book.id}-synopsis`"
             data-test="synopsis-copy"
-            class="mt-2 text-sm leading-relaxed text-foreground"
+            class="description-content mt-2 text-sm leading-relaxed text-foreground"
             :class="{ 'synopsis-copy--clamped': !descriptionExpanded }"
             v-html="safeDescription"
           />
@@ -2171,20 +2276,15 @@ watch(
         </div>
       </section>
 
-      <BookReadingActivityCard
-        class="@min-[46rem]/book-detail:flex-1"
-        :stats="readingStats"
-        :sessions="readingSessions"
-        :loading="readingLogLoading"
-      />
+      <BookReadingActivityCard :stats="readingStats" :sessions="readingSessions" :loading="readingLogLoading" />
     </div>
 
     <!-- Detail rail -->
     <div
-      class="flex min-w-0 flex-col gap-3 @min-[46rem]/book-detail:col-start-3 @min-[46rem]/book-detail:row-start-1 @min-[46rem]/book-detail:min-h-0 @min-[46rem]/book-detail:overflow-y-auto"
+      class="flex min-w-0 flex-col gap-3 @min-[46rem]/book-detail:col-start-3 @min-[46rem]/book-detail:row-start-1 @min-[46rem]/book-detail:min-h-0 @min-[46rem]/book-detail:self-start @min-[46rem]/book-detail:overflow-y-auto"
     >
       <section
-        class="flex min-h-0 flex-col rounded-xl border border-border bg-card px-4 pt-3 pb-2 @min-[46rem]/book-detail:flex-1"
+        class="flex min-h-0 flex-col rounded-xl border border-border bg-card px-4 pt-3 pb-2"
         :aria-label="t('book.detail.details.detailsHeading')"
       >
         <h3 class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -2209,6 +2309,14 @@ watch(
             <dd class="truncate text-[13px] font-medium">
               {{ book.publishedDate ? formatDisplayDate(book.publishedDate) : book.publishedYear || '-' }}
             </dd>
+          </div>
+          <div
+            v-if="showFirstPublished"
+            class="flex items-baseline justify-between gap-3 border-b border-border py-[6px] last:border-b-0"
+            data-testid="details-first-published"
+          >
+            <dt class="shrink-0 text-[11px] font-medium text-muted-foreground">{{ t('book.detail.details.firstPublished') }}</dt>
+            <dd class="truncate text-[13px] font-medium">{{ book.originalPublishedYear }}</dd>
           </div>
           <div class="flex items-baseline justify-between gap-3 border-b border-border py-[6px] last:border-b-0">
             <dt class="shrink-0 text-[11px] font-medium text-muted-foreground">{{ t('book.detail.details.language') }}</dt>
@@ -2404,6 +2512,8 @@ watch(
         </template>
       </BookEditionsCard>
 
+      <StoryGuideCard v-if="storyGuideBesideCover === false" :book-id="book.id" />
+
       <div v-if="filledCustomMetadata.length > 0" class="mt-6 pt-5 border-t border-border">
         <p class="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">{{ t('book.detail.details.customMetadata') }}</p>
         <dl class="grid gap-3 sm:grid-cols-2">
@@ -2428,7 +2538,23 @@ watch(
 
     <!-- Discovery shelf -->
     <div data-test="discovery-shelf" class="min-w-0 @min-[46rem]/book-detail:col-span-3 @min-[46rem]/book-detail:row-start-2">
-      <DiscoverRow class="h-full" :book-id="book.id" :series-name="book.seriesName" :author-count="book.authors.length" size="lg" flush />
+      <DiscoverRow
+        ref="discoverRow"
+        class="h-full"
+        :book-id="book.id"
+        :series-name="book.seriesName"
+        :author-count="book.authors.length"
+        size="lg"
+        flush
+        :editions="editions"
+        :can-add-edition="canLinkBook"
+        :can-make-main-edition="canChangeMainEdition"
+        :removable-edition-ids="removableEditionIds"
+        :editions-pending="linkActions.pending.value"
+        @add-edition="handleLinkFromMenu"
+        @make-main-edition="handleMakeMainEdition"
+        @remove-edition="handleRemoveEdition"
+      />
     </div>
   </div>
 
@@ -2451,7 +2577,14 @@ watch(
     :book-files="book.files"
   />
 
-  <DeleteBookDialog :open="deleteBookId !== null" :deleting="deletingBook" :linked="isLinked" @confirm="confirmDelete" @cancel="cancelDelete" />
+  <DeleteBookDialog
+    :open="deleteBookId !== null"
+    :deleting="deletingBook"
+    :linked="isLinked"
+    :editions="deleteEditions"
+    @confirm="confirmDelete"
+    @cancel="cancelDelete"
+  />
 
   <MoveToLibrarySheet
     :open="moveToLibraryOpen"

@@ -85,6 +85,7 @@ async function createContext(role: AccessLevel | null = 'viewer') {
     findProgress: vi.fn().mockResolvedValue(null),
     upsertProgress: vi.fn(),
     findFileById: vi.fn().mockResolvedValue({ id: 10, bookId: 1, libraryId: 7 }),
+    moveBookFilePath: vi.fn(),
     findProgressByBook: vi.fn().mockResolvedValue(0),
   };
   const metadata = { replaceAuthors: vi.fn(), replaceTags: vi.fn(), replaceGenres: vi.fn(), downloadAndSaveCover: vi.fn() };
@@ -171,8 +172,15 @@ const bulkWrites: { name: string; run: (ctx: Context, ids: number[]) => Promise<
     name: 'edit metadata',
     run: ({ service }, ids) => service.bulkEditMetadata(ids, Object.assign(new BulkEditFieldsDto(), { publisher: { value: 'Changed' } }), user),
   },
-  { name: 'refresh metadata', run: ({ service }, ids) => service.bulkRefreshMetadata(ids, user) },
+  // The bulk run routes (refresh, re-extract, embed) resolve the selection this way before creating a run.
+  { name: 'bulk run selection', run: ({ service }, ids) => service.resolveSelectionToIds({ bookIds: ids }, user, 'editor') },
   { name: 'regenerate covers', run: ({ service }, ids) => service.bulkReExtractCover(ids, user) },
+];
+
+const bulkRunItems: { name: string; run: (ctx: Context, id: number) => Promise<unknown> }[] = [
+  { name: 'refresh metadata', run: ({ service }, id) => service.refreshMetadataBulkItem(id, user) },
+  { name: 'regenerate covers', run: ({ service }, id) => service.reExtractCoverBulkItem(id, user) },
+  { name: 'embed audiobook cover', run: ({ service }, id) => service.embedAudioCoverBulkItem(id, user) },
 ];
 
 function expectNoWrites(ctx: Context) {
@@ -181,6 +189,7 @@ function expectNoWrites(ctx: Context) {
     ctx.bookRepo.updateMetadataFields,
     ctx.bookRepo.updateAddedAt,
     ctx.bookRepo.bulkUpdateMetadataFields,
+    ctx.bookRepo.moveBookFilePath,
     ctx.metadata.replaceAuthors,
     ctx.metadata.replaceTags,
     ctx.metadata.replaceGenres,
@@ -242,6 +251,12 @@ describe('library roles for book metadata writes', () => {
   it.each(bulkWrites)('rejects a mixed editor/viewer batch before $name writes anything', async ({ run }) => {
     const ctx = await context();
     await expect(run(ctx, [2, 1])).rejects.toThrow(ForbiddenException);
+    expectNoWrites(ctx);
+  });
+
+  it.each(bulkRunItems)('passes over a viewer-only book in a bulk $name run without writing', async ({ run }) => {
+    const ctx = await context();
+    await expect(run(ctx, 1)).resolves.toEqual(expect.objectContaining({ status: 'skipped', code: 'no-access' }));
     expectNoWrites(ctx);
   });
 

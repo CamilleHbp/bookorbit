@@ -11,6 +11,7 @@ import { KoreaderCatalogService } from './koreader-catalog.service';
 import { KoreaderChapterExtractorService } from './koreader-chapter-extractor.service';
 import { KoreaderChapterService } from './koreader-chapter.service';
 import { KoreaderController } from './koreader.controller';
+import { KoreaderCopiedStatsRepairService } from './koreader-copied-stats-repair.service';
 import { KoreaderHashLinkService } from './koreader-hash-link.service';
 import { KoreaderDeliveryService } from './koreader-delivery.service';
 import { KoreaderModule } from './koreader.module';
@@ -69,6 +70,7 @@ describe('KoreaderModule', () => {
       KoreaderBookmarkRepository,
       KoreaderStatsService,
       KoreaderSyncEstimateCleanupService,
+      KoreaderCopiedStatsRepairService,
     ]);
     expect(Reflect.getMetadata('exports', KoreaderModule)).toEqual([KoreaderService, KoreaderRepository]);
   });

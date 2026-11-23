@@ -28,6 +28,11 @@ type Db = NodePgDatabase<typeof schema>;
 // round trips rather than the work inside each one: at five books a page, re-announcing a few
 // hundred books cost users tens of minutes of waiting on a mostly idle server.
 export const SYNC_PAGE_SIZE = 50;
+// A Kobo abandons a sync request after about 30 seconds. Preparing a book can mean a KEPUB
+// conversion, so a page of new books on a slow host takes longer than that; once this much of the
+// request has gone the page closes early and the device asks for the rest. The margin covers the
+// conversion already under way when the budget runs out, and the store page that follows the last one.
+export const SYNC_PAGE_TIME_BUDGET_MS = 15_000;
 const SNAPSHOT_RECONCILE_BATCH_SIZE = 5000;
 const SNAPSHOT_CREATE_BATCH_SIZE = 5000;
 const METADATA_SERIALIZER_VERSION = 2;
@@ -37,6 +42,11 @@ const METADATA_SERIALIZER_VERSION = 2;
 // later sync reads the stored answer instead of touching the filesystem.
 const FIXED_LAYOUT_BACKFILL_LIMIT = 500;
 const FIXED_LAYOUT_BACKFILL_CONCURRENCY = 8;
+
+// Part of every fixed-layout delivery hash. A device only hears about a book it already holds
+// again when that hash moves, so changing this re-announces fixed-layout books. 'r2': from v3.4.0
+// the delivery path announced comics converted to kepub as KEPUB instead of EPUB3FL (#1946).
+const FIXED_LAYOUT_DELIVERY_REVISION = 'r2';
 
 type EligibleSnapshotRow = {
   bookId: number;
@@ -95,6 +105,28 @@ type SmartScopeMatchCache = Map<number, Promise<Map<number, SmartScopeMatch>>>;
 
 type EligibleIdsResolver = () => Promise<Set<number>>;
 
+/**
+ * What a page settles once the device has it. Building a page records none of it, because the
+ * device may never receive the page: a book marked synced for a response that never arrived is
+ * never offered again (#2250).
+ */
+export interface KoboSyncPageCommit {
+  userId: number;
+  deviceId: number;
+  snapshotId: number;
+  offeredBookIds: number[];
+  removedBookIds: number[];
+  servedRemovalIds: string[];
+  legacyRemovalCompletedBookIds: number[];
+}
+
+export interface KoboSyncPage {
+  entitlements: unknown[];
+  hasMore: boolean;
+  syncToken: string;
+  commit: KoboSyncPageCommit | null;
+}
+
 export interface KoboBookEntry {
   bookId: number;
   koboEntitlementId: string;
@@ -147,12 +179,12 @@ export class KoboSyncService {
     @Optional() private readonly deliveries?: KoboDeliveryService,
   ) {}
 
-  async getDelta(
-    userId: number,
-    deviceId: number,
-    deviceToken: string,
-    baseUrl: string,
-  ): Promise<{ entitlements: unknown[]; hasMore: boolean; syncToken: string }> {
+  /**
+   * Builds the device's next page without recording that it was sent. The caller passes the
+   * page's commit to `commitPage` once it knows the device is still there to receive it.
+   */
+  async getDelta(userId: number, deviceId: number, deviceToken: string, baseUrl: string): Promise<KoboSyncPage> {
+    const deadline = Date.now() + SYNC_PAGE_TIME_BUDGET_MS;
     let snapshot = await this.findDeviceSnapshot(userId, deviceId);
     const smartScopeMatchCache: SmartScopeMatchCache = new Map();
 
@@ -165,8 +197,15 @@ export class KoboSyncService {
         this.tombstones.hasPending(userId, deviceId),
       ]);
       if (rowsPending || removalsPending) {
-        const page = await this.getPageFromSnapshot(userId, deviceId, snapshot.id, deviceToken, baseUrl, smartScopeMatchCache, () =>
-          this.fetchEligibleBookIds(userId, true, smartScopeMatchCache),
+        const page = await this.getPageFromSnapshot(
+          userId,
+          deviceId,
+          snapshot.id,
+          deviceToken,
+          baseUrl,
+          smartScopeMatchCache,
+          () => this.fetchEligibleBookIds(userId, true, smartScopeMatchCache),
+          deadline,
         );
         // Removals of deleted books skip the reconcile as well, but a device owed nothing else would
         // then end this sync without what changed since its last one, so it is sent back for a page
@@ -193,7 +232,46 @@ export class KoboSyncService {
     await this.tombstones.prune(userId);
 
     const eligibleIds = new Set(eligibleSnapshotRows.map((row) => row.bookId));
-    return this.getPageFromSnapshot(userId, deviceId, snapshot.id, deviceToken, baseUrl, smartScopeMatchCache, () => Promise.resolve(eligibleIds));
+    return this.getPageFromSnapshot(
+      userId,
+      deviceId,
+      snapshot.id,
+      deviceToken,
+      baseUrl,
+      smartScopeMatchCache,
+      () => Promise.resolve(eligibleIds),
+      deadline,
+    );
+  }
+
+  /**
+   * Records what a page delivered: its books stop being pending, its removals are done and its
+   * served tombstones are dropped. Call it only for a page the device is still waiting for.
+   */
+  async commitPage(commit: KoboSyncPageCommit | null): Promise<void> {
+    if (!commit) return;
+    const { userId, deviceId, snapshotId } = commit;
+
+    // All or nothing: a commit that fails part way leaves the page wholly pending, rather than
+    // recording some of a page the device is then told failed.
+    await this.db.transaction(async (tx) => {
+      if (commit.servedRemovalIds.length > 0) {
+        await this.tombstones.markServed(userId, deviceId, commit.servedRemovalIds, tx);
+        await this.tombstones.prune(userId, tx);
+      }
+      if (commit.removedBookIds.length > 0) {
+        await tx
+          .delete(schema.koboSnapshotBooks)
+          .where(and(eq(schema.koboSnapshotBooks.snapshotId, snapshotId), inArray(schema.koboSnapshotBooks.bookId, commit.removedBookIds)));
+      }
+      if (commit.offeredBookIds.length > 0) {
+        await tx
+          .update(schema.koboSnapshotBooks)
+          .set({ synced: true, deliveryRetryAt: null, deliveryFailureCode: null })
+          .where(and(eq(schema.koboSnapshotBooks.snapshotId, snapshotId), inArray(schema.koboSnapshotBooks.bookId, commit.offeredBookIds)));
+      }
+      await this.completeLegacyNumericRemovals(userId, snapshotId, commit.legacyRemovalCompletedBookIds, tx);
+    });
   }
 
   async getBookMetadata(userId: number, bookId: number, deviceToken: string, baseUrl: string): Promise<unknown[]> {
@@ -207,14 +285,7 @@ export class KoboSyncService {
       if (device) {
         const delivery = await this.deliveries.offer(userId, device.id, bookId);
         book.fileSizeBytes = delivery.metadata.sizeBytes;
-        book.deliveryFormat =
-          delivery.metadata.format === 'kepub'
-            ? 'KEPUB'
-            : delivery.metadata.format === 'pdf'
-              ? 'PDF'
-              : book.deliveryFormat === 'EPUB3FL'
-                ? 'EPUB3FL'
-                : 'EPUB3';
+        book.deliveryFormat = this.announcedFormat(book.deliveryFormat, delivery.metadata.format);
         book.deliveryId = delivery.id;
       }
     }
@@ -574,6 +645,32 @@ export class KoboSyncService {
           AND sb.file_hash IS NOT DISTINCT FROM e.file_hash
       `);
 
+      // The fixed-layout revision moved every comic's hash to re-announce the ones the delivery path
+      // told the device were KEPUB. Those all have a kepub delivery record on this device; a comic
+      // without one was announced as EPUB3FL before that path existed, so it takes the new hash
+      // silently instead of being downloaded again.
+      await tx.execute(sql`
+        UPDATE ${schema.koboSnapshotBooks} AS sb
+        SET delivery_hash = e.delivery_hash
+        FROM kobo_eligible_books_tmp e, ${schema.koboLibrarySnapshots} s
+        WHERE sb.snapshot_id = ${snapshotId}
+          AND sb.book_id = e.book_id
+          AND s.id = sb.snapshot_id
+          AND sb.pending_delete = false
+          AND sb.removed_by_device = false
+          AND (
+            (sb.delivery_hash = ${this.buildDeliveryHash('EPUB3FL', false)} AND e.delivery_hash = ${this.buildDeliveryHash('EPUB3FL', false, FIXED_LAYOUT_DELIVERY_REVISION)})
+            OR (sb.delivery_hash = ${this.buildDeliveryHash('EPUB3FL', true)} AND e.delivery_hash = ${this.buildDeliveryHash('EPUB3FL', true, FIXED_LAYOUT_DELIVERY_REVISION)})
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM ${schema.koboDeviceDeliveries} d
+            WHERE d.user_id = s.user_id
+              AND d.device_id = s.device_id
+              AND d.book_id = sb.book_id
+              AND d.metadata->>'format' = 'kepub'
+          )
+      `);
+
       await tx.execute(sql`
         UPDATE ${schema.koboSnapshotBooks} AS sb
         SET synced = false,
@@ -624,9 +721,9 @@ export class KoboSyncService {
   }
 
   /**
-   * Serves the next page of a snapshot. Eligibility is resolved lazily because only the final page
+   * Builds the next page of a snapshot. Eligibility is resolved lazily because only the final page
    * needs the full set, and reaching for it on every page is what makes a long delta O(library) per
-   * request.
+   * request. Nothing the page delivers is recorded here; that waits for `commitPage`.
    */
   private async getPageFromSnapshot(
     userId: number,
@@ -636,7 +733,8 @@ export class KoboSyncService {
     baseUrl: string,
     smartScopeMatchCache: SmartScopeMatchCache,
     resolveEligibleIds: EligibleIdsResolver,
-  ): Promise<{ entitlements: unknown[]; hasMore: boolean; syncToken: string }> {
+    deadline: number,
+  ): Promise<KoboSyncPage> {
     const syncToken = encodeSyncToken();
 
     const pendingRemovals = await this.tombstones.findPending(userId, deviceId, SYNC_PAGE_SIZE + 1);
@@ -665,19 +763,20 @@ export class KoboSyncService {
 
     if (removals.length === 0 && page.length === 0) {
       const tagItems = await this.buildTagItems(userId, await resolveEligibleIds(), smartScopeMatchCache);
-      return { entitlements: tagItems, hasMore: false, syncToken };
+      return { entitlements: tagItems, hasMore: false, syncToken, commit: null };
     }
 
     const entitlements: unknown[] = removals.flatMap((removal) => this.buildTombstoneRemovals(removal));
-    if (removals.length > 0) {
-      await this.tombstones.markServed(
-        userId,
-        deviceId,
-        removals.map((removal) => removal.entitlementId),
-      );
-      await this.tombstones.prune(userId);
-    }
-    if (page.length === 0) return { entitlements, hasMore, syncToken };
+    const commit: KoboSyncPageCommit = {
+      userId,
+      deviceId,
+      snapshotId,
+      offeredBookIds: [],
+      removedBookIds: [],
+      servedRemovalIds: removals.map((removal) => removal.entitlementId),
+      legacyRemovalCompletedBookIds: [],
+    };
+    if (page.length === 0) return { entitlements, hasMore, syncToken, commit };
 
     const snapshot = await this.db.query.koboLibrarySnapshots.findFirst({ where: eq(schema.koboLibrarySnapshots.id, snapshotId) });
 
@@ -685,8 +784,6 @@ export class KoboSyncService {
       userId,
       page.map((row) => row.bookId),
     );
-    const legacyRemovalCompletedBookIds: number[] = [];
-    const offeredIds: number[] = [];
     const booksById = await this.fetchEligibleBooksByIds(
       userId,
       page.filter((row) => !row.pendingDelete).map((row) => row.bookId),
@@ -694,7 +791,13 @@ export class KoboSyncService {
       smartScopeMatchCache,
     );
 
-    for (const row of page) {
+    let closedEarlyAt: number | null = null;
+    for (const [index, row] of page.entries()) {
+      // The first row is always handled, so a page that opens past the budget still makes progress.
+      if (index > 0 && Date.now() >= deadline) {
+        closedEarlyAt = index;
+        break;
+      }
       const book = row.pendingDelete ? null : (booksById.get(row.bookId) ?? null);
       // A row waiting for an update can leave the synced set before the update is sent. Only the
       // reconcile turns such a row into a removal, and it does not run while any row is pending, so
@@ -704,15 +807,13 @@ export class KoboSyncService {
         if (identity) {
           if (row.needsLegacyNumericRemoval) {
             entitlements.push(this.buildRemovedEntitlement(row.bookId));
-            legacyRemovalCompletedBookIds.push(row.bookId);
+            commit.legacyRemovalCompletedBookIds.push(row.bookId);
           }
           entitlements.push(this.buildRemovedEntitlement(identity.entitlementId));
         } else {
           entitlements.push(this.buildRemovedEntitlement(row.bookId));
         }
-        await this.db
-          .delete(schema.koboSnapshotBooks)
-          .where(and(eq(schema.koboSnapshotBooks.snapshotId, snapshotId), eq(schema.koboSnapshotBooks.bookId, row.bookId)));
+        commit.removedBookIds.push(row.bookId);
         continue;
       }
 
@@ -720,14 +821,7 @@ export class KoboSyncService {
         if (this.deliveries && snapshot) {
           const delivery = await this.deliveries.offer(userId, snapshot.deviceId, row.bookId);
           book.fileSizeBytes = delivery.metadata.sizeBytes;
-          book.deliveryFormat =
-            delivery.metadata.format === 'kepub'
-              ? 'KEPUB'
-              : delivery.metadata.format === 'pdf'
-                ? 'PDF'
-                : book.deliveryFormat === 'EPUB3FL'
-                  ? 'EPUB3FL'
-                  : 'EPUB3';
+          book.deliveryFormat = this.announcedFormat(book.deliveryFormat, delivery.metadata.format);
           book.deliveryId = delivery.id;
         }
       } catch (error) {
@@ -746,7 +840,7 @@ export class KoboSyncService {
       if (row.isNew || row.needsLegacyNumericRemoval) {
         if (row.needsLegacyNumericRemoval) {
           entitlements.push(this.buildRemovedEntitlement(row.bookId));
-          legacyRemovalCompletedBookIds.push(row.bookId);
+          commit.legacyRemovalCompletedBookIds.push(row.bookId);
         }
         entitlements.push({
           NewEntitlement: {
@@ -770,24 +864,28 @@ export class KoboSyncService {
           });
         }
       }
-      offeredIds.push(row.bookId);
+      commit.offeredBookIds.push(row.bookId);
     }
 
-    if (offeredIds.length)
-      await this.db
-        .update(schema.koboSnapshotBooks)
-        .set({ synced: true, deliveryRetryAt: null, deliveryFailureCode: null })
-        .where(and(eq(schema.koboSnapshotBooks.snapshotId, snapshotId), inArray(schema.koboSnapshotBooks.bookId, offeredIds)));
-    await this.completeLegacyNumericRemovals(userId, snapshotId, legacyRemovalCompletedBookIds);
+    if (closedEarlyAt !== null) {
+      this.logger.log(
+        `[kobo.sync_page] [end] userId=${userId} deviceId=${deviceId} rowsHandled=${closedEarlyAt} rowsLeft=${page.length - closedEarlyAt} budgetMs=${SYNC_PAGE_TIME_BUDGET_MS} - page closed early to answer before the device gives up; the rest follow on the next page`,
+      );
+    }
 
-    return { entitlements, hasMore, syncToken };
+    return { entitlements, hasMore: hasMore || closedEarlyAt !== null, syncToken, commit };
   }
 
-  private async completeLegacyNumericRemovals(userId: number, snapshotId: number, bookIds: number[]): Promise<void> {
+  private async completeLegacyNumericRemovals(
+    userId: number,
+    snapshotId: number,
+    bookIds: number[],
+    executor: Pick<Db, 'select' | 'update'> = this.db,
+  ): Promise<void> {
     const uniqueBookIds = [...new Set(bookIds)];
     if (uniqueBookIds.length === 0) return;
 
-    await this.db
+    await executor
       .update(schema.koboSnapshotBooks)
       .set({ needsLegacyNumericRemoval: false })
       .where(
@@ -798,7 +896,7 @@ export class KoboSyncService {
         ),
       );
 
-    const stillPendingRows = await this.db
+    const stillPendingRows = await executor
       .select({ bookId: schema.koboSnapshotBooks.bookId })
       .from(schema.koboSnapshotBooks)
       .innerJoin(schema.koboLibrarySnapshots, eq(schema.koboLibrarySnapshots.id, schema.koboSnapshotBooks.snapshotId))
@@ -815,7 +913,7 @@ export class KoboSyncService {
     if (completedBookIds.length === 0) return;
     if (await this.hasUninitializedLegacyDevices(userId)) return;
 
-    await this.bookIdentityService.markLegacyNumericRemovalComplete(userId, completedBookIds);
+    await this.bookIdentityService.markLegacyNumericRemovalComplete(userId, completedBookIds, executor);
   }
 
   private async buildTagItems(userId: number, eligibleIds: Set<number>, smartScopeMatchCache: SmartScopeMatchCache): Promise<unknown[]> {
@@ -1075,9 +1173,9 @@ export class KoboSyncService {
    * `hyphenate` describes the bytes actually delivered, not the announced format, so a hyphenated
    * kepub and a plain one never collide even when both are announced as EPUB3FL.
    */
-  private buildDeliveryHash(format: KoboDeliveryFormat, hyphenate: boolean): string {
+  private buildDeliveryHash(format: KoboDeliveryFormat, hyphenate: boolean, revision?: string): string {
     return createHash('sha256')
-      .update([format, hyphenate ? 'hyphenate' : 'plain'].join('|'))
+      .update([format, hyphenate ? 'hyphenate' : 'plain', ...(revision ? [revision] : [])].join('|'))
       .digest('hex')
       .slice(0, 16);
   }
@@ -1102,7 +1200,7 @@ export class KoboSyncService {
     // alone. A kepub renders full screen just the same once the format says fixed layout, and
     // keeping the conversion preserves the KoboSpan positions two-way progress sync depends on.
     if (isFixedLayout && (normalizedFormat === 'epub' || normalizedFormat === 'kepub')) {
-      return { format: 'EPUB3FL', hash: this.buildDeliveryHash('EPUB3FL', hyphenated) };
+      return { format: 'EPUB3FL', hash: this.buildDeliveryHash('EPUB3FL', hyphenated, FIXED_LAYOUT_DELIVERY_REVISION) };
     }
 
     if (normalizedFormat === 'kepub') {
@@ -1114,6 +1212,16 @@ export class KoboSyncService {
     }
 
     return { format: 'EPUB3', hash: this.buildDeliveryHash('EPUB3', false) };
+  }
+
+  /**
+   * The format the device is told for a prepared delivery. A fixed-layout book keeps EPUB3FL even
+   * when its bytes are a kepub, as `getDeliveryInfo` plans it.
+   */
+  private announcedFormat(planned: KoboDeliveryFormat, deliveredFormat: string): KoboDeliveryFormat {
+    if (deliveredFormat === 'pdf') return 'PDF';
+    if (planned === 'EPUB3FL') return 'EPUB3FL';
+    return deliveredFormat === 'kepub' ? 'KEPUB' : 'EPUB3';
   }
 
   /**

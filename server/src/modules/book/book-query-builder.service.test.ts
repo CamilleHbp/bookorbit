@@ -36,11 +36,13 @@ vi.mock('../../common/utils/accent-insensitive-search.utils', async (importOrigi
 
 import { BadRequestException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 import {
   CUSTOM_FIELD_TYPE_OPERATORS,
   EMPTY_CONTENT_FILTER_RULES,
   FIELD_OPERATORS,
+  PLAIN_EPUB_FILTER_FORMAT,
   READ_ALONG_FORMAT_PRIORITY,
   SORT_FIELDS,
   customRuleField,
@@ -50,14 +52,16 @@ import {
 } from '@bookorbit/types';
 
 import { accentInsensitiveIlike } from '../../common/utils/accent-insensitive-search.utils';
-import { bookCustomMetadataValues, bookMetadata, books, collections } from '../../db/schema';
+import { aiArtifacts, authors, bookCustomMetadataValues, bookFileTexts, bookMetadata, books, collections } from '../../db/schema';
 import { BookQueryBuilder } from './book-query-builder.service';
 import { BookSortBuilder } from './book-sort-builder.service';
 
 function makeBuilder() {
   const sqWhere = vi.fn((whereClause?: unknown) => ({ type: 'subquery', whereClause }));
-  const sqInnerJoin = vi.fn().mockReturnValue({ where: sqWhere });
-  const sqFrom = vi.fn().mockReturnValue({ innerJoin: sqInnerJoin, where: sqWhere });
+  const query = { innerJoin: vi.fn(), where: sqWhere };
+  query.innerJoin.mockReturnValue(query);
+  const sqInnerJoin = query.innerJoin;
+  const sqFrom = vi.fn().mockReturnValue(query);
   const db = {
     select: vi.fn().mockReturnValue({ from: sqFrom }),
   };
@@ -143,6 +147,7 @@ const USER_CTX = { accessibleLibraryIds: [1] as number[], userId: 10 };
 function buildValueFor(operator: RuleOperator, field: RuleField): { value?: unknown; valueTo?: unknown } {
   const numericFields: RuleField[] = [
     'publishedYear',
+    'originalPublishedYear',
     'seriesIndex',
     'pageCount',
     'fileSize',
@@ -193,7 +198,7 @@ function buildValueFor(operator: RuleOperator, field: RuleField): { value?: unkn
     case 'includesAny':
     case 'includesAll':
     case 'excludesAll':
-      return { value: ['test'] };
+      return { value: field === 'authorGender' ? ['female'] : ['test'] };
     default: {
       const _exhaustive: never = operator;
       return _exhaustive;
@@ -228,6 +233,63 @@ describe('BookQueryBuilder', () => {
     const where = builder.buildWhere(undefined, { accessibleLibraryIds: [] }) as any;
 
     expect(where).toMatchObject({ type: 'sql', text: '1 = 0' });
+  });
+
+  it('matches an allowed gender on any linked author', () => {
+    const { builder } = makeBuilder();
+
+    const where = builder.buildWhere(
+      wrapRule({ type: 'rule', field: 'authorGender', operator: 'includesAny', value: ['female'] }) as never,
+      BASE_CTX,
+    ) as Record<string, unknown>;
+
+    const ruleSql = getRuleSql(where);
+    expect(collectColumnNames(ruleSql)).toContain(authors.gender.name);
+  });
+
+  it('treats author gender as empty when no linked author has a value', () => {
+    const { builder } = makeBuilder();
+
+    const where = builder.buildWhere(wrapRule({ type: 'rule', field: 'authorGender', operator: 'isEmpty' }) as never, BASE_CTX) as Record<
+      string,
+      unknown
+    >;
+
+    expect(getRuleSql(where)).toMatchObject({ type: 'not' });
+    expect(collectColumnNames(getRuleSql(where))).toContain(authors.gender.name);
+  });
+
+  it('matches books with a built Story Guide artifact', () => {
+    const { builder, sqInnerJoin } = makeBuilder();
+
+    const where = builder.buildWhere(wrapRule({ type: 'rule', field: 'storyGuide', operator: 'isPresent' }) as never, BASE_CTX) as Record<
+      string,
+      unknown
+    >;
+
+    expect(getRuleSql(where)).toMatchObject({ type: 'sql' });
+    expect(sqInnerJoin).toHaveBeenCalledWith(bookFileTexts, expect.objectContaining({ type: 'eq' }));
+    expect(sqInnerJoin).toHaveBeenCalledWith(
+      aiArtifacts,
+      expect.objectContaining({
+        type: 'and',
+        clauses: expect.arrayContaining([
+          expect.objectContaining({ type: 'eq', left: aiArtifacts.feature, right: 'story-guides' }),
+          expect.objectContaining({ type: 'eq', left: aiArtifacts.subjectKey, right: bookFileTexts.textKey }),
+        ]),
+      }),
+    );
+  });
+
+  it('negates built Story Guide existence for the missing operator', () => {
+    const { builder } = makeBuilder();
+
+    const where = builder.buildWhere(wrapRule({ type: 'rule', field: 'storyGuide', operator: 'isMissing' }) as never, BASE_CTX) as Record<
+      string,
+      unknown
+    >;
+
+    expect(getRuleSql(where)).toMatchObject({ type: 'not', value: { type: 'sql' } });
   });
 
   it('combines library scope, implicit library, and filter rules into one AND clause', () => {
@@ -1014,6 +1076,17 @@ describe('numericRuleToSql (via pageCount and publishedYear)', () => {
     expect(getRuleSql(where)).toMatchObject({ type: 'ne' });
   });
 
+  it.each([
+    ['gte', 'gte'],
+    ['isEmpty', 'isNull'],
+  ] as const)('originalPublishedYear %s reads its own column, not the published year', (operator, type) => {
+    const { builder } = makeBuilder();
+    const where = builder.buildWhere(wrapRule({ type: 'rule', field: 'originalPublishedYear', operator, value: 1950 }) as never, BASE_CTX) as any;
+    const clause = getRuleSql(where);
+    expect(clause).toMatchObject({ type });
+    expect(collectColumnNames(clause)).toEqual(['original_published_year']);
+  });
+
   it('filters file size through the selected primary file', () => {
     const { builder } = makeBuilder();
     const where = builder.buildWhere(wrapRule({ type: 'rule', field: 'fileSize', operator: 'gte', value: 10_485_760 }) as never, BASE_CTX) as any;
@@ -1343,6 +1416,74 @@ describe('formatRuleToSql', () => {
     const { builder } = makeBuilder();
     const where = builder.buildWhere(
       wrapRule({ type: 'rule', field: 'format', operator: 'excludesAll', value: [READ_ALONG_FORMAT_PRIORITY] }) as never,
+      USER_CTX,
+    ) as any;
+
+    expect(getRuleSql(where)).toMatchObject({ type: 'not', value: { type: 'sql' } });
+  });
+
+  it('matches the plain EPUB key only on EPUBs without media overlays', () => {
+    const { builder } = makeBuilder();
+    const where = builder.buildWhere(
+      wrapRule({ type: 'rule', field: 'format', operator: 'includesAny', value: [PLAIN_EPUB_FILTER_FORMAT] }) as never,
+      USER_CTX,
+    ) as any;
+    const predicate = (getRuleSql(where) as any).values[0].whereClause.clauses[1];
+
+    expect(predicate).toMatchObject({
+      type: 'or',
+      clauses: [
+        {
+          type: 'and',
+          clauses: [
+            { type: 'eq', right: 'epub' },
+            { type: 'eq', right: false },
+          ],
+        },
+      ],
+    });
+    expect(predicate.clauses).toHaveLength(1);
+  });
+
+  it('keeps both EPUB edition keys apart from the physical formats', () => {
+    const { builder } = makeBuilder();
+    const where = builder.buildWhere(
+      wrapRule({
+        type: 'rule',
+        field: 'format',
+        operator: 'includesAny',
+        value: ['m4b', PLAIN_EPUB_FILTER_FORMAT, READ_ALONG_FORMAT_PRIORITY],
+      }) as never,
+      USER_CTX,
+    ) as any;
+    const predicate = (getRuleSql(where) as any).values[0].whereClause.clauses[1];
+
+    expect(predicate).toMatchObject({
+      type: 'or',
+      clauses: [
+        { type: 'inArray', right: ['m4b'] },
+        {
+          type: 'and',
+          clauses: [
+            { type: 'eq', right: 'epub' },
+            { type: 'eq', right: true },
+          ],
+        },
+        {
+          type: 'and',
+          clauses: [
+            { type: 'eq', right: 'epub' },
+            { type: 'eq', right: false },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('excludes books holding any plain EPUB', () => {
+    const { builder } = makeBuilder();
+    const where = builder.buildWhere(
+      wrapRule({ type: 'rule', field: 'format', operator: 'excludesAll', value: [PLAIN_EPUB_FILTER_FORMAT] }) as never,
       USER_CTX,
     ) as any;
 
@@ -2015,51 +2156,60 @@ describe('BookQueryBuilder.hasSeriesSelectionFilter', () => {
 });
 
 describe('BookQueryBuilder.buildCollapseOrderBy', () => {
+  const dialect = new PgDialect();
+  const collapseOrderBy = (...args: Parameters<typeof BookQueryBuilder.buildCollapseOrderBy>) =>
+    dialect.sqlToQuery(BookQueryBuilder.buildCollapseOrderBy(...args)).sql;
+
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import('drizzle-orm')>('drizzle-orm');
+    vi.mocked(sql).mockImplementation(actual.sql);
+    vi.mocked(sql.raw).mockImplementation(actual.sql.raw);
+    vi.mocked(sql.join).mockImplementation(actual.sql.join);
+  });
+
+  afterEach(() => {
+    vi.mocked(sql).mockReset();
+    vi.mocked(sql.raw).mockReset();
+    vi.mocked(sql.join).mockReset();
+  });
+
   it('returns default sort when sort array is empty', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([], 1)).toBe('sort_title ASC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([], 1)).toBe('sort_title ASC NULLS LAST, r.id ASC');
   });
 
   it('returns default sort when all directions are invalid', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'title', dir: 'invalid' as never }], 1);
+    const result = collapseOrderBy([{ field: 'title', dir: 'invalid' as never }], 1);
     expect(result).toBe('sort_title ASC NULLS LAST, r.id ASC');
   });
 
   it('generates sort_title for title field', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'title', dir: 'asc' }], 1)).toBe('sort_title ASC NULLS LAST, r.id ASC');
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'title', dir: 'desc' }], 1)).toBe('sort_title DESC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'title', dir: 'asc' }], 1)).toBe('sort_title ASC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'title', dir: 'desc' }], 1)).toBe('sort_title DESC NULLS LAST, r.id ASC');
   });
 
   it('orders series stacks before standalone books, then by title, in both directions', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'series', dir: 'asc' }], 1)).toBe(
-      'sort_series ASC NULLS LAST, sort_title ASC NULLS LAST, r.id ASC',
-    );
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'series', dir: 'desc' }], 1)).toBe(
-      'sort_series DESC NULLS LAST, sort_title DESC NULLS LAST, r.id ASC',
-    );
+    expect(collapseOrderBy([{ field: 'series', dir: 'asc' }], 1)).toBe('sort_series ASC NULLS LAST, sort_title ASC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'series', dir: 'desc' }], 1)).toBe('sort_series DESC NULLS LAST, sort_title DESC NULLS LAST, r.id ASC');
   });
 
   it('generates sort_added_at for addedAt field', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'addedAt', dir: 'desc' }], 1)).toBe('sort_added_at DESC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'addedAt', dir: 'desc' }], 1)).toBe('sort_added_at DESC NULLS LAST, r.id ASC');
   });
 
   it('generates sort_collection_position for collectionOrder field', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'collectionOrder', dir: 'asc' }], 1)).toBe(
-      'sort_collection_position ASC NULLS LAST, r.id ASC',
-    );
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'collectionOrder', dir: 'desc' }], 1)).toBe(
-      'sort_collection_position DESC NULLS LAST, r.id ASC',
-    );
+    expect(collapseOrderBy([{ field: 'collectionOrder', dir: 'asc' }], 1)).toBe('sort_collection_position ASC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'collectionOrder', dir: 'desc' }], 1)).toBe('sort_collection_position DESC NULLS LAST, r.id ASC');
   });
 
   it('generates seriesIndex with sort_title fallback when series is not in sort', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'seriesIndex', dir: 'asc' }], 1);
+    const result = collapseOrderBy([{ field: 'seriesIndex', dir: 'asc' }], 1);
     expect(result).toContain("split_part(series_index::text, '.', 1)::numeric");
     expect(result).toContain('series_index COLLATE "C" ASC NULLS LAST');
     expect(result).toContain('sort_title ASC NULLS LAST, r.id ASC');
   });
 
   it('does not add sort_title fallback when series field is already in sort', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy(
+    const result = collapseOrderBy(
       [
         { field: 'seriesIndex', dir: 'asc' },
         { field: 'series', dir: 'asc' },
@@ -2071,78 +2221,77 @@ describe('BookQueryBuilder.buildCollapseOrderBy', () => {
   });
 
   it('generates user-scoped subquery for readProgress', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'readProgress', dir: 'desc' }], 42);
+    const result = collapseOrderBy([{ field: 'readProgress', dir: 'desc' }], 42);
     expect(result).toContain('rp.user_id = 42');
     expect(result).toContain('bf.book_id = r.id');
     expect(result).toContain('DESC NULLS LAST');
   });
 
-  it('generates user-scoped subquery for lastReadAt', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'lastReadAt', dir: 'asc' }], 7);
-    expect(result).toContain('rp.user_id = 7');
-    expect(result).toContain('bf.book_id = r.id');
-    expect(result).toContain('ASC NULLS LAST');
-    // Must aggregate last_read_at; rp.updated_at is frozen by the KOReader sync path.
-    expect(result).toContain('SELECT max(rp.last_read_at)');
-    expect(result).not.toContain('max(rp.updated_at)');
+  it('orders lastReadAt on the joined last-read row set, not a per-row subquery', () => {
+    const result = collapseOrderBy([{ field: 'lastReadAt', dir: 'asc' }], 7);
+    expect(result).toBe('book_last_read.last_read_at ASC NULLS LAST, r.id ASC');
   });
 
   it('generates user-scoped subquery for finishedAt', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'finishedAt', dir: 'desc' }], 5);
+    const result = collapseOrderBy([{ field: 'finishedAt', dir: 'desc' }], 5);
     expect(result).toContain('ubs.user_id = 5');
     expect(result).toContain('ubs.book_id = r.id');
     expect(result).toContain('DESC NULLS LAST');
   });
 
   it('generates user-scoped subquery for startedAt', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'startedAt', dir: 'asc' }], 5);
+    const result = collapseOrderBy([{ field: 'startedAt', dir: 'asc' }], 5);
     expect(result).toContain('ubs.user_id = 5');
     expect(result).toContain('ubs.book_id = r.id');
     expect(result).toContain('ASC NULLS LAST');
   });
 
   it('generates author sort using the representative author sort key', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'author', dir: 'asc' }], 1);
+    const result = collapseOrderBy([{ field: 'author', dir: 'asc' }], 1);
     expect(result).toBe('author_sort_name ASC NULLS LAST, r.id ASC');
   });
 
   it('generates publishedYear sort', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'publishedYear', dir: 'asc' }], 1)).toBe('published_year ASC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'publishedYear', dir: 'asc' }], 1)).toBe('published_year ASC NULLS LAST, r.id ASC');
+  });
+
+  it('generates originalPublishedYear sort', () => {
+    expect(collapseOrderBy([{ field: 'originalPublishedYear', dir: 'desc' }], 1)).toBe('original_published_year DESC NULLS LAST, r.id ASC');
   });
 
   it('generates publishedDate sort with year fallback', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'publishedDate', dir: 'desc' }], 1)).toBe(
+    expect(collapseOrderBy([{ field: 'publishedDate', dir: 'desc' }], 1)).toBe(
       'coalesce(published_date, make_date(published_year, 1, 1)) DESC NULLS LAST, r.id ASC',
     );
   });
 
   it('generates rating sort', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'rating', dir: 'desc' }], 1)).toBe('rating DESC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'rating', dir: 'desc' }], 1)).toBe('rating DESC NULLS LAST, r.id ASC');
   });
 
   it('generates publisher sort', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'publisher', dir: 'asc' }], 1)).toBe('publisher ASC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'publisher', dir: 'asc' }], 1)).toBe('publisher ASC NULLS LAST, r.id ASC');
   });
 
   it('generates pageCount sort', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'pageCount', dir: 'desc' }], 1)).toBe('page_count DESC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'pageCount', dir: 'desc' }], 1)).toBe('page_count DESC NULLS LAST, r.id ASC');
   });
 
   it('generates updatedAt sort', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'updatedAt', dir: 'asc' }], 1)).toBe('updated_at ASC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'updatedAt', dir: 'asc' }], 1)).toBe('updated_at ASC NULLS LAST, r.id ASC');
   });
 
   it('generates metadataScore sort against the representative row', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'metadataScore', dir: 'asc' }], 1)).toBe('metadata_score ASC NULLS LAST, r.id ASC');
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'metadataScore', dir: 'desc' }], 1)).toBe('metadata_score DESC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'metadataScore', dir: 'asc' }], 1)).toBe('metadata_score ASC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'metadataScore', dir: 'desc' }], 1)).toBe('metadata_score DESC NULLS LAST, r.id ASC');
   });
 
   it.each(SORT_FIELDS.filter((field) => field !== 'relevance'))('honours the %s browse sort instead of falling back to title', (field) => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field, dir: 'desc' }], 1)).not.toBe('sort_title ASC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field, dir: 'desc' }], 1)).not.toBe('sort_title ASC NULLS LAST, r.id ASC');
   });
 
   it('generates fileSize sort using the primary file', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'fileSize', dir: 'desc' }], 1)).toBe(
+    expect(collapseOrderBy([{ field: 'fileSize', dir: 'desc' }], 1)).toBe(
       '(SELECT bf.size_bytes FROM book_files bf WHERE bf.id = r.primary_file_id) DESC NULLS LAST, r.id ASC',
     );
   });
@@ -2153,7 +2302,7 @@ describe('BookQueryBuilder.buildCollapseOrderBy', () => {
 
     try {
       const scopedSeed = Math.floor(Date.now() / 86_400_000) + 7;
-      const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'random', dir: 'asc' }], 7);
+      const result = collapseOrderBy([{ field: 'random', dir: 'asc' }], 7);
 
       expect(result).toContain(`md5(r.id::text || ':' || ${scopedSeed}::text) ASC`);
       expect(result.endsWith('r.id ASC')).toBe(true);
@@ -2163,13 +2312,13 @@ describe('BookQueryBuilder.buildCollapseOrderBy', () => {
   });
 
   it('uses the supplied shuffle seed for the collapsed random sort', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'random', dir: 'asc' }], 7, undefined, { randomSeed: 4242 });
+    const result = collapseOrderBy([{ field: 'random', dir: 'asc' }], 7, undefined, { randomSeed: 4242 });
 
     expect(result).toContain(`md5(r.id::text || ':' || 4242::text) ASC`);
   });
 
   it('joins multiple sort parts with comma', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy(
+    const result = collapseOrderBy(
       [
         { field: 'addedAt', dir: 'desc' },
         { field: 'title', dir: 'asc' },
@@ -2180,29 +2329,29 @@ describe('BookQueryBuilder.buildCollapseOrderBy', () => {
   });
 
   it('skips unrecognised sort fields silently', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'unknownField' as never, dir: 'asc' }], 1);
+    const result = collapseOrderBy([{ field: 'unknownField' as never, dir: 'asc' }], 1);
     expect(result).toBe('sort_title ASC NULLS LAST, r.id ASC');
   });
 
   it('generates a custom metadata sort against the representative row', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'custom:12', dir: 'desc' }], 1, new Map([[12, 'number']]));
+    const result = collapseOrderBy([{ field: 'custom:12', dir: 'desc' }], 1, new Map([[12, 'number']]));
     expect(result).toBe(
       '(SELECT v.value_number FROM book_custom_metadata_values v WHERE v.book_id = r.id AND v.field_id = 12) DESC NULLS LAST, r.id ASC',
     );
   });
 
   it('skips custom metadata sorts whose field no longer resolves', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'custom:12', dir: 'desc' }], 1, new Map());
+    const result = collapseOrderBy([{ field: 'custom:12', dir: 'desc' }], 1, new Map());
     expect(result).toBe('sort_title ASC NULLS LAST, r.id ASC');
   });
 
   it('does not inline a malformed custom field reference', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'custom:1; DROP TABLE books' as never, dir: 'asc' }], 1, new Map([[1, 'text']]));
+    const result = collapseOrderBy([{ field: 'custom:1; DROP TABLE books' as never, dir: 'asc' }], 1, new Map([[1, 'text']]));
     expect(result).toBe('sort_title ASC NULLS LAST, r.id ASC');
   });
 
   it('generates readStatus sort using subquery', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'readStatus', dir: 'asc' }], 1);
+    const result = collapseOrderBy([{ field: 'readStatus', dir: 'asc' }], 1);
     expect(result).toContain('user_book_status');
     expect(result).toContain('COALESCE');
     expect(result).toContain("'unread'");
@@ -2210,18 +2359,18 @@ describe('BookQueryBuilder.buildCollapseOrderBy', () => {
   });
 
   it('generates language sort over the representative field', () => {
-    expect(BookQueryBuilder.buildCollapseOrderBy([{ field: 'language', dir: 'desc' }], 1)).toBe('r.language DESC NULLS LAST, r.id ASC');
+    expect(collapseOrderBy([{ field: 'language', dir: 'desc' }], 1)).toBe('r.language DESC NULLS LAST, r.id ASC');
   });
 
   it('generates format sort using subquery', () => {
-    const result = BookQueryBuilder.buildCollapseOrderBy([{ field: 'format', dir: 'desc' }], 1);
+    const result = collapseOrderBy([{ field: 'format', dir: 'desc' }], 1);
     expect(result).toContain('book_files');
     expect(result).toContain('DESC NULLS LAST');
   });
 
   it('throws for non-integer userId', () => {
-    expect(() => BookQueryBuilder.buildCollapseOrderBy([{ field: 'readProgress', dir: 'asc' }], 1.5)).toThrow('Invalid userId');
-    expect(() => BookQueryBuilder.buildCollapseOrderBy([{ field: 'readProgress', dir: 'asc' }], NaN)).toThrow('Invalid userId');
-    expect(() => BookQueryBuilder.buildCollapseOrderBy([{ field: 'readProgress', dir: 'asc' }], Infinity)).toThrow('Invalid userId');
+    expect(() => collapseOrderBy([{ field: 'readProgress', dir: 'asc' }], 1.5)).toThrow('Invalid userId');
+    expect(() => collapseOrderBy([{ field: 'readProgress', dir: 'asc' }], NaN)).toThrow('Invalid userId');
+    expect(() => collapseOrderBy([{ field: 'readProgress', dir: 'asc' }], Infinity)).toThrow('Invalid userId');
   });
 });

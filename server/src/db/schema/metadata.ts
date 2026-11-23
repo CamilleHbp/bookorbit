@@ -20,6 +20,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { normalizeMetadataTextKeySql } from '../../common/utils/metadata-text-normalize.utils';
+
 const embedding256 = customType<{ data: number[]; driverData: string }>({
   dataType: () => 'vector(256)',
   toDriver: (v) => `[${v.join(',')}]`,
@@ -32,7 +34,7 @@ const embedding256 = customType<{ data: number[]; driverData: string }>({
   },
 });
 
-import type { AudiobookChapter, AudiobookChapterSource, ChapterLookupQueueStatus, ChapterLookupReviewSummary } from '@bookorbit/types';
+import type { AudiobookChapter, AudiobookChapterSource, AuthorGender, ChapterLookupQueueStatus, ChapterLookupReviewSummary } from '@bookorbit/types';
 
 import { users } from './auth';
 import { books } from './books';
@@ -52,6 +54,10 @@ export const bookMetadata = pgTable(
     publisher: varchar('publisher', { length: 500 }),
     publishedDate: date('published_date', { mode: 'string' }),
     publishedYear: integer('published_year'),
+    /** The work's first publication year, distinct from this edition's published date and year. */
+    originalPublishedYear: integer('original_published_year'),
+    /** What sets this edition apart from the others of the same work: "Full Cast", "25th Anniversary". */
+    editionName: varchar('edition_name', { length: 500 }),
     language: varchar('language', { length: 100 }),
     pageCount: integer('page_count'),
     seriesId: integer('series_id').references(() => bookSeries.id, { onDelete: 'set null' }),
@@ -139,6 +145,7 @@ export const bookMetadata = pgTable(
     index('bm_language_unaccent_trgm_idx').using('gin', sql`public.bookorbit_unaccent(${t.language}) gin_trgm_ops`),
     index('bm_published_date_idx').on(t.publishedDate),
     index('bm_published_year_idx').on(t.publishedYear),
+    index('bm_original_published_year_idx').on(t.originalPublishedYear),
     index('bm_page_count_idx').on(t.pageCount),
     index('bm_published_date_sort_idx').on(sql`coalesce(${t.publishedDate}, make_date(${t.publishedYear}, 1, 1))`),
     index('bm_series_name_index_idx').on(
@@ -154,6 +161,19 @@ export const bookMetadata = pgTable(
     index('bm_open_library_id_idx')
       .on(t.openLibraryId)
       .where(sql`${t.openLibraryId} is not null`),
+    // Edition ids, matched exactly when a docked file is checked against the books a library holds.
+    index('bm_amazon_id_idx')
+      .on(t.amazonId)
+      .where(sql`${t.amazonId} is not null`),
+    index('bm_audible_id_idx')
+      .on(t.audibleId)
+      .where(sql`${t.audibleId} is not null`),
+    index('bm_google_books_id_idx')
+      .on(t.googleBooksId)
+      .where(sql`${t.googleBooksId} is not null`),
+    index('bm_goodreads_id_idx')
+      .on(t.goodreadsId)
+      .where(sql`${t.goodreadsId} is not null`),
     index('bm_embedding_hnsw_cosine_idx').using('hnsw', sql`${t.embedding} vector_cosine_ops`),
     check('book_metadata_rating_range_chk', sql`${t.rating} is null or (${t.rating} >= 1 and ${t.rating} <= 10)`),
     check(
@@ -161,6 +181,10 @@ export const bookMetadata = pgTable(
       sql`${t.publishedDate} is null or (extract(year from ${t.publishedDate}) >= 1000 and extract(year from ${t.publishedDate}) <= 2200)`,
     ),
     check('book_metadata_published_year_range_chk', sql`${t.publishedYear} is null or (${t.publishedYear} >= 1000 and ${t.publishedYear} <= 2200)`),
+    check(
+      'book_metadata_original_published_year_range_chk',
+      sql`${t.originalPublishedYear} is null or (${t.originalPublishedYear} >= 1000 and ${t.originalPublishedYear} <= 2200)`,
+    ),
     check('book_metadata_page_count_nonnegative_chk', sql`${t.pageCount} is null or ${t.pageCount} >= 0`),
     check('book_metadata_series_index_format_chk', sql`${t.seriesIndex} is null or ${t.seriesIndex} ~ '^[0-9]+([.][0-9]+)?$'`),
     check('book_metadata_duration_seconds_nonnegative_chk', sql`${t.durationSeconds} is null or ${t.durationSeconds} >= 0`),
@@ -224,6 +248,7 @@ export const authors = pgTable(
     name: varchar('name', { length: 500 }).notNull(),
     sortName: varchar('sort_name', { length: 500 }),
     description: text('description'),
+    gender: varchar('gender', { length: 32 }).$type<AuthorGender>(),
     hasPhoto: boolean('has_photo').notNull().default(false),
     birthDate: date('birth_date', { mode: 'string' }),
     birthYear: integer('birth_year'),
@@ -242,6 +267,8 @@ export const authors = pgTable(
     unique('authors_name_unique').on(t.name),
     index('authors_name_trgm_idx').using('gin', t.name.op('gin_trgm_ops')),
     index('authors_name_unaccent_trgm_idx').using('gin', sql`public.bookorbit_unaccent(${t.name}) gin_trgm_ops`),
+    index('authors_name_normalized_key_idx').on(normalizeMetadataTextKeySql(t.name)),
+    check('authors_gender_chk', sql`${t.gender} is null or ${t.gender} in ('female', 'male', 'non_binary')`),
   ],
 );
 

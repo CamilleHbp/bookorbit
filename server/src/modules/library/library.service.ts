@@ -48,6 +48,7 @@ import {
   DEFAULT_LIBRARY_ORGANIZATION_MODE,
   LIBRARY_METADATA_PRECEDENCE_DEFAULT,
 } from './library.constants';
+import { LibraryLifecycleService } from './library-lifecycle.service';
 import { LibraryRepository } from './library.repository';
 import { LibraryScanSchedulerService } from './library-scan-scheduler.service';
 
@@ -83,6 +84,7 @@ export class LibraryService {
     private readonly libraryGate: LibraryOperationGate,
     private readonly libraryScope: LibraryScopeService,
     private readonly tagMatching: TagMatchingService,
+    private readonly lifecycle: LibraryLifecycleService,
   ) {
     this.appDataPath = this.config.get<string>('storage.appDataPath')!;
   }
@@ -320,7 +322,12 @@ export class LibraryService {
       const nextPaths = new Set(folderPaths);
 
       const toRemove = existingFolders.filter((f) => !nextPaths.has(f.path));
+      const afterFoldersRemoved = await this.lifecycle.prepareFoldersRemove(
+        id,
+        toRemove.map((f) => f.id),
+      );
       await Promise.all(toRemove.map((f) => this.libraryRepo.deleteFolder(f.id)));
+      await afterFoldersRemoved();
 
       const toAdd = folderPaths.filter((path) => !existingPaths.has(path));
       if (toAdd.length > 0) {
@@ -374,7 +381,9 @@ export class LibraryService {
     try {
       await this.fileWatcherService.stopWatcher(id);
       const bookRows = await this.libraryRepo.findBookIdsByLibrary(id);
+      const afterDelete = await this.lifecycle.prepareLibraryDelete({ id, name: existing.name });
       await this.libraryRepo.delete(id);
+      await afterDelete();
       this.scannerService.forgetLibraryRoots();
       this.readingAttemptEvents.notifyChanged(null);
       this.scanScheduler.removeSchedule(id);
@@ -469,11 +478,9 @@ export class LibraryService {
     }
     const lastScans = await this.scannerService.getLatestScans(libraryIds);
 
-    return libraryIds.map((libraryId) => ({
+    return Array.from(stats, ([libraryId, libraryStats]) => ({
       libraryId,
-      totalBooks: stats.get(libraryId)?.totalBooks ?? 0,
-      totalSizeBytes: stats.get(libraryId)?.totalSizeBytes ?? 0,
-      formatCounts: stats.get(libraryId)?.formatCounts ?? {},
+      ...libraryStats,
       lastScan: lastScans.get(libraryId) ?? null,
     }));
   }
@@ -610,6 +617,7 @@ export class LibraryService {
         },
       });
     }
+    await this.lifecycle.assertFolderPathsAllowed(paths.filter((path) => !current.has(path)));
   }
 
   private async cleanupCoverDirectories(bookIds: number[]): Promise<void> {

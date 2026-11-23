@@ -37,11 +37,11 @@ function handleDiscard() {
 async function handleSave() {
   if (!form.value?.reportValidity() || !commitPending()) return
   await nextTick()
-  choices.value.keepAll = false
+  choices.value = { ...choices.value, keepAll: false }
   emit('save')
 }
 function handleKeepAll() {
-  choices.value.keepAll = true
+  choices.value = { ...choices.value, keepAll: true }
   emit('save')
 }
 function commitPending() {

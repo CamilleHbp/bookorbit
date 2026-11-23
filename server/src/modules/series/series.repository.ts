@@ -8,6 +8,8 @@ import { accentInsensitiveIlike, buildSearchPattern } from '../../common/utils/a
 import { MAX_SERIES_TOTAL_BOOKS } from '../../common/utils/series-total-books.utils';
 import { compareSeriesIndexSql, seriesIndexOrderBy } from '../../common/utils/series-index-sql.utils';
 import { DB } from '../../db';
+import { workKeySql } from '../../db/book-work-key';
+import { LINK_FOLDED_BY_PREFERENCE_SQL, LINK_FOLDED_COUNT_SQL, linkMembersCte } from '../../db/link-collapse-sql';
 import * as schema from '../../db/schema';
 import { authors, bookAuthors, bookFiles, bookMetadata, books, bookSeries, bookSeriesMemberships, libraries, userBookStatus } from '../../db/schema';
 import type { SeriesListSort, SortDirection } from './dto/list-series.dto';
@@ -19,6 +21,8 @@ type SeriesSummaryRow = {
   id: number;
   name: string;
   bookCount: number;
+  /** Books counted once per work: linked editions count as one. */
+  workCount: number;
   readCount: number;
   readingCount: number;
   expectedBookCount: number | null;
@@ -32,6 +36,7 @@ type SeriesSummaryRow = {
 
 export type SeriesVolumeMember = {
   seriesIndex: string | null;
+  coveredVolumes?: number[];
   status: string | null;
 };
 
@@ -68,6 +73,7 @@ type SeriesDetailRow = {
   id: number;
   name: string;
   bookCount: number;
+  workCount: number;
   readCount: number;
   expectedBookCount: number | null;
   authors: string[];
@@ -200,10 +206,11 @@ export class SeriesRepository {
     }
 
     const seriesIds = seriesRows.map((row) => row.id);
-    const [authorData, coverData, memberData] = await Promise.all([
+    const [authorData, coverData, memberData, workCounts] = await Promise.all([
       this.fetchAuthorsForSeries(seriesIds, params.libraryIds, params.contentFilters),
       this.fetchCoverBookIds(seriesIds, params.libraryIds, params.contentFilters),
       this.fetchSeriesMembers(seriesIds, params.libraryIds, params.userId, params.contentFilters),
+      this.fetchWorkCounts(seriesIds, params.libraryIds, params.contentFilters),
     ]);
 
     const items: SeriesSummaryRow[] = seriesRows.map((row) => {
@@ -212,6 +219,7 @@ export class SeriesRepository {
         id: row.id,
         name: row.name,
         bookCount: row.bookCount,
+        workCount: workCounts.get(row.id) ?? row.bookCount,
         readCount: row.readCount,
         readingCount: row.readingCount,
         expectedBookCount: row.expectedBookCount ?? null,
@@ -271,6 +279,7 @@ export class SeriesRepository {
         name: bookSeries.name,
         expectedBookCount: bookSeries.expectedBookCount,
         bookCount: sql<number>`count(distinct ${books.id})::int`,
+        workCount: sql<number>`count(distinct ${workKeySql(books.id)})::int`,
         readCount: sql<number>`count(distinct CASE WHEN ${userBookStatus.status} = 'read' THEN ${books.id} END)::int`,
       })
       .from(books)
@@ -290,6 +299,7 @@ export class SeriesRepository {
       this.db
         .select({
           seriesIndex: bookSeriesMemberships.seriesIndex,
+          coveredVolumes: bookSeriesMemberships.coveredVolumes,
           status: userBookStatus.status,
         })
         .from(books)
@@ -304,12 +314,19 @@ export class SeriesRepository {
       id: row.id,
       name: row.name,
       bookCount: row.bookCount,
+      workCount: row.workCount,
       readCount: row.readCount,
       expectedBookCount: row.expectedBookCount ?? null,
       authors: authorsMap.get(params.seriesId) ?? [],
       indices,
       members: memberRows,
     };
+  }
+
+  /** Books the viewer can see: these libraries, under their content filters. */
+  buildVisibleBooksWhere(libraryIds: number[], contentFilters?: ContentFilterRules): SQL {
+    const filterClauses = contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    return and(this.buildLibraryFilter(libraryIds), ...filterClauses)!;
   }
 
   async findBookIds(params: {
@@ -320,12 +337,16 @@ export class SeriesRepository {
     order: SortDirection;
     libraryIds: number[];
     contentFilters?: ContentFilterRules;
-  }): Promise<{ bookIds: number[]; total: number }> {
+    /** Fold linked editions into the one this user read last, else the main one. */
+    collapseLinked?: { userId: number };
+  }): Promise<{ bookIds: number[]; total: number; bookTotal: number }> {
     const libraryFilter = this.buildLibraryFilter(params.libraryIds);
     const filterClauses = params.contentFilters ? buildContentFilterClauses(params.contentFilters, this.db) : [];
-    const where = and(eq(bookSeriesMemberships.seriesId, params.seriesId), libraryFilter, ...filterClauses)!;
-
     const orderBy = this.buildBookSortExpression(params.sort, params.order);
+    if (params.collapseLinked) {
+      return this.findBookIdsLinkCollapsed({ ...params, userId: params.collapseLinked.userId, filterClauses, orderBy });
+    }
+    const where = and(eq(bookSeriesMemberships.seriesId, params.seriesId), libraryFilter, ...filterClauses)!;
 
     const [dataRows, [{ total }]] = await Promise.all([
       this.db
@@ -345,7 +366,71 @@ export class SeriesRepository {
         .where(where),
     ]);
 
-    return { bookIds: dataRows.map((r) => r.id), total: Number(total) };
+    return { bookIds: dataRows.map((r) => r.id), total: Number(total), bookTotal: Number(total) };
+  }
+
+  /**
+   * {@link findBookIds} with linked editions folded. Membership moves into an `IN` subquery so the
+   * same predicate can feed `linkMembersCte`, which reads only books and their metadata; only
+   * editions in this series compete, and the card keeps its representative's series position.
+   */
+  private async findBookIdsLinkCollapsed(params: {
+    seriesId: number;
+    page: number;
+    size: number;
+    libraryIds: number[];
+    userId: number;
+    filterClauses: SQL[];
+    orderBy: SQL[];
+  }): Promise<{ bookIds: number[]; total: number; bookTotal: number }> {
+    const inSeries = sql`${books.id} IN (SELECT bsm.book_id FROM book_series_memberships bsm WHERE bsm.series_id = ${params.seriesId})`;
+    const visibleWhere = and(inSeries, this.buildLibraryFilter(params.libraryIds), ...params.filterClauses)!;
+    const members = linkMembersCte(visibleWhere, params.userId);
+    const [page, counts] = await Promise.all([
+      this.db.execute<{ id: number }>(sql`
+        WITH ${members}
+        page AS (
+          SELECT ${books.id} AS id
+          FROM ${books}
+          INNER JOIN ${bookSeriesMemberships} ON ${bookSeriesMemberships.bookId} = ${books.id} AND ${bookSeriesMemberships.seriesId} = ${params.seriesId}
+          LEFT JOIN ${bookMetadata} ON ${bookMetadata.bookId} = ${books.id}
+          WHERE ${visibleWhere} AND ${LINK_FOLDED_BY_PREFERENCE_SQL}
+          ORDER BY ${sql.join(params.orderBy, sql`, `)}
+          LIMIT ${params.size} OFFSET ${params.page * params.size}
+        )
+        SELECT id FROM page
+      `),
+      this.db.execute<{ book_total: string; folded_count: string }>(sql`
+        WITH ${members}
+        counted AS (
+          SELECT count(*) AS book_total
+          FROM ${books}
+          LEFT JOIN ${bookMetadata} ON ${bookMetadata.bookId} = ${books.id}
+          WHERE ${visibleWhere}
+        )
+        SELECT counted.book_total, ${LINK_FOLDED_COUNT_SQL} AS folded_count FROM counted
+      `),
+    ]);
+    const bookTotal = Number(counts.rows[0]?.book_total ?? 0);
+    const total = bookTotal - Number(counts.rows[0]?.folded_count ?? 0);
+    return { bookIds: page.rows.map((row) => Number(row.id)), total, bookTotal };
+  }
+
+  /** Works behind each series' books: linked editions count once. One grouped query for the page. */
+  private async fetchWorkCounts(seriesIds: number[], libraryIds: number[], contentFilters?: ContentFilterRules): Promise<Map<number, number>> {
+    if (seriesIds.length === 0) return new Map();
+    const filterClauses = contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    const rows = await this.db
+      .select({
+        seriesId: bookSeriesMemberships.seriesId,
+        workCount: sql<number>`count(distinct ${workKeySql(books.id)})::int`,
+      })
+      .from(books)
+      .innerJoin(bookSeriesMemberships, eq(bookSeriesMemberships.bookId, books.id))
+      .innerJoin(bookMetadata, eq(bookMetadata.bookId, books.id))
+      .where(and(inArray(bookSeriesMemberships.seriesId, seriesIds), this.buildLibraryFilter(libraryIds), ...filterClauses))
+      .groupBy(bookSeriesMemberships.seriesId);
+    return new Map(rows.map((row) => [row.seriesId, Number(row.workCount)]));
   }
 
   /**
@@ -500,45 +585,30 @@ export class SeriesRepository {
     }
   }
 
-  /**
-   * "This series is missing a volume", decided in SQL so the filter and its facet count can run
-   * over the whole library instead of a page. It mirrors `computeSeriesGaps` branch for branch:
-   * a provider total is only trusted when every book is numbered with a plain integer and none
-   * of them runs past the total, and without a trusted total only interior holes are knowable.
-   *
-   * Indices of ten digits or more are treated as unusable rather than cast, which is where this
-   * is fractionally stricter than the TypeScript: that function drops them for exceeding the
-   * safe-integer range, and either way the series reports no gaps.
-   */
+  /** Uses the same range and owned slots as the volume ladder, across the filtered library. */
   private buildHasGapsExpression(bookCountExpr: SQL<number>): SQL<boolean> {
-    const idx = bookSeriesMemberships.seriesIndex;
-    const intIdx = sql`CASE WHEN ${idx} ~ '^[0-9]{1,9}$' THEN ${idx}::int END`;
-
-    const numberedCount = sql`count(distinct CASE WHEN ${idx} IS NOT NULL THEN ${books.id} END)`;
-    const integerCount = sql`count(distinct CASE WHEN ${idx} ~ '^[0-9]{1,9}$' THEN ${books.id} END)`;
-    const oversizedCount = sql`count(distinct CASE WHEN ${idx} ~ '^[0-9]{10,}$' THEN ${books.id} END)`;
-    const minIdx = sql`min(${intIdx})`;
-    const maxIdx = sql`max(${intIdx})`;
-    const distinctIdx = sql`count(distinct ${intIdx})`;
-    const expected = sql`${bookSeries.expectedBookCount}`;
-
-    const trusted = sql`(
-      ${expected} IS NOT NULL
-      AND ${expected} BETWEEN 1 AND ${MAX_SERIES_TOTAL_BOOKS}
-      AND ${numberedCount} = ${bookCountExpr}
-      AND ${integerCount} = ${numberedCount}
-      AND ${maxIdx} <= ${expected}
+    const index = bookSeriesMemberships.seriesIndex;
+    const coverage = bookSeriesMemberships.coveredVolumes;
+    const whole = sql`CASE WHEN ${index} ~ '^[0-9]+([.]0+)?$' THEN split_part(${index}, '.', 1)::numeric END`;
+    const positioned = sql`count(distinct CASE WHEN ${whole} IS NOT NULL OR cardinality(${coverage}) > 0 THEN ${books.id} END)`;
+    const invalid = sql`bool_or(${whole} < 1 OR ${whole} > ${MAX_SERIES_TOTAL_BOOKS})`;
+    const owned = sql`range_agg(
+      CASE WHEN cardinality(${coverage}) = 0 THEN
+        CASE WHEN ${whole} BETWEEN 1 AND ${MAX_SERIES_TOTAL_BOOKS} THEN int4multirange(int4range(${whole}::int, ${whole}::int, '[]')) END
+      ELSE (
+        SELECT range_agg(int4range(volume, volume, '[]'))
+        FROM unnest(${coverage} || (CASE WHEN ${whole} BETWEEN 1 AND ${MAX_SERIES_TOTAL_BOOKS} THEN ARRAY[${whole}::int] ELSE '{}'::int[] END)) AS volumes(volume)
+      ) END
     )`;
+    const expected = bookSeries.expectedBookCount;
+    const trusted = sql`(${expected} BETWEEN 1 AND ${MAX_SERIES_TOTAL_BOOKS}
+      AND ${positioned} = ${bookCountExpr} AND upper(${owned}) - 1 <= ${expected})`;
 
-    return sql<boolean>`(
-      ${integerCount} > 0
-      AND ${oversizedCount} = 0
-      AND ${minIdx} >= 1
-      AND ${maxIdx} <= ${MAX_SERIES_TOTAL_BOOKS}
-      AND CASE
-        WHEN ${trusted} THEN ${distinctIdx} < ${expected}
-        ELSE ${integerCount} >= 2 AND ${distinctIdx} < (${maxIdx} - ${minIdx} + 1)
-      END
+    return sql<boolean>`COALESCE(
+      NOT COALESCE(${invalid}, false) AND NOT (
+        ${owned} @> CASE WHEN ${trusted} THEN int4range(1, ${expected}, '[]')
+          ELSE int4range(lower(${owned}), upper(${owned})) END
+      ), false
     )`;
   }
 
@@ -566,6 +636,7 @@ export class SeriesRepository {
         seriesId: bookSeriesMemberships.seriesId,
         bookId: books.id,
         seriesIndex: bookSeriesMemberships.seriesIndex,
+        coveredVolumes: bookSeriesMemberships.coveredVolumes,
         title: bookMetadata.title,
         status: userBookStatus.status,
         libraryName: libraries.name,
@@ -597,7 +668,7 @@ export class SeriesRepository {
         entry.truncated = true;
         continue;
       }
-      entry.rows.push({ bookId: row.bookId, seriesIndex: row.seriesIndex, title: row.title, status: row.status });
+      entry.rows.push({ bookId: row.bookId, seriesIndex: row.seriesIndex, coveredVolumes: row.coveredVolumes, title: row.title, status: row.status });
       if (row.libraryName && !entry.libraryNames.includes(row.libraryName)) entry.libraryNames.push(row.libraryName);
     }
     for (const entry of result.values()) entry.libraryNames.sort((a, b) => a.localeCompare(b));

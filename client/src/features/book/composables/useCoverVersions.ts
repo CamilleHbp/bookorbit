@@ -61,14 +61,15 @@ export function useCoverVersions() {
     return versions.value.get(bookId)
   }
 
+  /** `display` is the cover at the size a page shows it large; `cover` is the full image, for zooming in. */
   function coverUrl(
     bookId: number,
-    type: 'thumbnail' | 'cover' = 'thumbnail',
+    type: 'thumbnail' | 'display' | 'cover' = 'thumbnail',
     sourceVersion?: CoverVersionInput,
     medium?: CoverMedium,
     revealed = false,
   ): string {
-    const base = `/api/v1/books/${bookId}/${type}`
+    const base = `/api/v1/books/${bookId}/${type === 'thumbnail' ? 'thumbnail' : 'cover'}`
     const localVersion = versions.value.get(bookId)
     const serverVersion = normalizeVersion(sourceVersion)
     const token = versionToken(localVersion, serverVersion)
@@ -76,6 +77,7 @@ export function useCoverVersions() {
     if (token) params.set('t', token)
     if (medium) params.set('medium', medium)
     if (hideSensitiveCovers.value && !revealed) params.set('hideSensitive', 'true')
+    if (type === 'display') params.set('size', 'display')
     const query = params.toString()
     return query ? `${base}?${query}` : base
   }

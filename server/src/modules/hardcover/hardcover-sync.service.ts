@@ -339,7 +339,11 @@ export class HardcoverSyncService {
     const book = await this.repo.findBookSyncData(userId, bookId);
     if (!book) return this.bookNotFoundState(bookId);
 
-    const syncOverride = resolveHardcoverBookSyncOverrideForToggle(settings.bookSyncMode, payload.syncEnabled);
+    const syncOverride = resolveHardcoverBookSyncOverrideForToggle(
+      settings.bookSyncMode,
+      payload.syncEnabled,
+      this.isLibraryExcluded(settings, book),
+    );
     const state = await this.repo.setBookSyncOverride(userId, bookId, syncOverride);
 
     if (payload.syncEnabled) {
@@ -589,17 +593,6 @@ export class HardcoverSyncService {
         });
 
         if ((progressPages != null || progressSeconds != null) && hardcoverReadId != null) {
-          await this.updateAdditionalOpenReads(userId, token, {
-            reads,
-            primaryReadId: hardcoverReadId,
-            reservedReadIds: reserved,
-            startedAt: startDate,
-            finishedAt: endDate,
-            progressPages,
-            progressSeconds,
-            editionId: match.hardcoverEditionId ?? undefined,
-          });
-
           this.logger.log(
             `[hardcover.sync_progress] [end] userId=${userId} bookId=${book.bookId} hardcoverBookId=${match.hardcoverBookId} hardcoverReadId=${hardcoverReadId} durationMs=${Date.now() - startedAt} progress=${book.progress} progressPages=${progressPages ?? null} progressSeconds=${progressSeconds ?? null} - progress sent to Hardcover`,
           );
@@ -870,39 +863,6 @@ export class HardcoverSyncService {
     }
   }
 
-  private async updateAdditionalOpenReads(
-    userId: number,
-    token: string,
-    input: {
-      reads: FindUserBookReadsResult['user_book_reads'];
-      primaryReadId: number;
-      reservedReadIds: ReadonlySet<number>;
-      startedAt?: string | null;
-      finishedAt?: string | null;
-      progressPages?: number;
-      progressSeconds?: number;
-      editionId?: number;
-    },
-  ): Promise<void> {
-    const siblingReadIds = input.reads
-      .filter((read) => read.id !== input.primaryReadId && !read.finished_at && !input.reservedReadIds.has(read.id))
-      .map((read) => read.id);
-
-    if (siblingReadIds.length === 0) return;
-
-    await Promise.all(
-      siblingReadIds.map((readId) =>
-        this.updateUserBookRead(userId, token, readId, {
-          ...(input.startedAt ? { started_at: input.startedAt } : {}),
-          ...(input.finishedAt ? { finished_at: input.finishedAt } : {}),
-          ...(input.progressPages != null ? { progress_pages: input.progressPages } : {}),
-          ...(input.progressSeconds != null ? { progress_seconds: input.progressSeconds } : {}),
-          ...(input.editionId != null ? { edition_id: input.editionId } : {}),
-        }).catch(() => undefined),
-      ),
-    );
-  }
-
   private hasChanges(book: BookSyncData, state: Awaited<ReturnType<HardcoverRepository['findBookState']>>): boolean {
     if (!state?.lastSyncedAt) return true;
     if (book.attemptsUpdatedAt && book.attemptsUpdatedAt > state.lastSyncedAt) return true;
@@ -945,6 +905,7 @@ export class HardcoverSyncService {
       settings,
       status: book.status,
       syncOverride,
+      libraryExcluded: this.isLibraryExcluded(settings, book),
     });
 
     return {
@@ -964,7 +925,12 @@ export class HardcoverSyncService {
     const syncOverride = normalizeHardcoverBookSyncOverride(state);
     if (syncOverride === 'excluded') return false;
     if (syncOverride === 'included') return true;
+    if (this.isLibraryExcluded(settings, book)) return false;
     return settings.bookSyncMode === 'all_eligible';
+  }
+
+  private isLibraryExcluded(settings: Awaited<ReturnType<HardcoverSettingsService['getSettings']>>, book: BookSyncData): boolean {
+    return settings.excludedLibraryIds.includes(book.libraryId);
   }
 
   private toBookSyncState(
@@ -978,6 +944,7 @@ export class HardcoverSyncService {
       settings,
       status: book.status,
       syncOverride,
+      libraryExcluded: this.isLibraryExcluded(settings, book),
     });
 
     return {

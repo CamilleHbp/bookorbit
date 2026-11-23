@@ -1,4 +1,17 @@
-import { IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { SERIES_INDEX_MAX_LENGTH, SERIES_INDEX_PATTERN, type MetadataProviderKey, type SeriesIndex } from '@bookorbit/types';
 import { IsExternalProviderMap } from '../../../common/decorators/is-external-provider-map.decorator';
@@ -38,6 +51,13 @@ export class ComicMetadataDto {
 export class BookSeriesMembershipDto {
   @IsString() @MaxLength(500) seriesName!: string;
   @IsOptional() @IsString() @MaxLength(SERIES_INDEX_MAX_LENGTH) @Matches(SERIES_INDEX_PATTERN) seriesIndex?: SeriesIndex | null;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_SERIES_TOTAL_BOOKS)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(MAX_SERIES_TOTAL_BOOKS, { each: true })
+  coveredVolumes?: number[];
   // Series-level rather than book-level: writing it changes the total for every book in the
   // series and for every user. Bounds mirror the book_series range constraint.
   @IsOptional() @IsInt() @Min(1) @Max(MAX_SERIES_TOTAL_BOOKS) expectedBookCount?: number | null;
@@ -61,6 +81,8 @@ export class UpdateBookMetadataDto {
   @IsOptional() @IsString() @MaxLength(500) publisher?: string | null;
   @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) publishedDate?: string | null;
   @IsOptional() @IsInt() @Min(1000) @Max(2200) publishedYear?: number | null;
+  @IsOptional() @IsString() @MaxLength(500) editionName?: string | null;
+  @IsOptional() @IsInt() @Min(1000) @Max(2200) originalPublishedYear?: number | null;
   @IsOptional() @IsString() @MaxLength(100) language?: string | null;
   // A provider page count of 0 (e.g. Google Books returns 0 when unknown) means "unknown"; normalize it to null instead of rejecting it (issue #329).
   @IsOptional() @Transform(({ value }) => (value === 0 ? null : value)) @IsInt() @Min(1) pageCount?: number | null;

@@ -6,10 +6,10 @@ export type SeriesVolumeStatus = "read" | "reading" | "unread" | "missing";
 /**
  * One position on a series' volume ladder. A `missing` slot is a number the series should
  * have and the library does not; every other slot has a book behind it. Slots with no usable
- * index sit at the end with `index: null`.
+ * index sit at the end with `index: null`. Dotted positions use strings to preserve their digits.
  */
 export type SeriesVolumeSlot = {
-  index: number | null;
+  index: number | SeriesIndex | null;
   bookId: number | null;
   title: string | null;
   status: SeriesVolumeStatus;
@@ -28,6 +28,8 @@ export type SeriesSummary = {
   id: number;
   name: string;
   bookCount: number;
+  /** Books counted once per work: linked editions count as one. Absent from servers without `book-editions`. */
+  workCount?: number;
   readCount: number;
   authors: string[];
   coverBookIds: number[];
@@ -80,6 +82,8 @@ export type SeriesDetail = {
   id: number;
   name: string;
   bookCount: number;
+  /** Books counted once per work: linked editions count as one. Absent from servers without `book-editions`. */
+  workCount?: number;
   readCount: number;
   /** Logical volumes owned, collapsing book records that share a whole-numbered series position. */
   ownedVolumeCount?: number;
