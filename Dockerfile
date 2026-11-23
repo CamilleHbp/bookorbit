@@ -37,7 +37,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 
 COPY packages/ ./packages/
 COPY server/ ./server/
-RUN pnpm --config.verify-deps-before-run=false --filter server run build
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm --config.verify-deps-before-run=false --filter server run build
 
 # pnpm deploy prunes to prod deps; dist/ is gitignored so copy it in after.
 RUN pnpm --config.allow-unused-patches=true --filter server deploy --prod --legacy /deploy
