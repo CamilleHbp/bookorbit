@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { changedStoryMetadata, planStoryMetadata, storyTagChanges } from './fanfiction-metadata-review';
+import { changedStoryMetadata, planStoryMetadata, storyTagChanges, withoutExcludedTags } from './fanfiction-metadata-review';
 const current = { title: 'Story', description: 'Description', authors: ['Writer'], tags: ['Custom tag'] };
 describe('story metadata review', () => {
+  it('omits excluded suggestions while retaining real changes and the original website preview', () => {
+    const preview = { ...current, tags: ['Excluded'] };
+    const incoming = withoutExcludedTags(preview, ['Excluded']);
+    expect(planStoryMetadata(current, incoming, [], []).fields).toEqual([]);
+    expect(storyTagChanges(current.tags, incoming.tags, [])).toEqual({ added: [], removed: [] });
+    const mixed = withoutExcludedTags({ ...preview, tags: ['Excluded', 'New'] }, ['Excluded']);
+    expect(planStoryMetadata(current, mixed, [], []).fields).toEqual(['tags']);
+    expect(storyTagChanges(current.tags, mixed.tags, []).added).toEqual(['New']);
+    expect(preview.tags).toEqual(['Excluded']);
+  });
   it('preserves custom-only tags without treating them as conflicts', () => {
     const incoming = { ...current, tags: ['Source'] };
     expect(planStoryMetadata({ ...current, tags: ['Source', 'Custom'] }, incoming, ['Source'], [], incoming).fields).toEqual([]);
