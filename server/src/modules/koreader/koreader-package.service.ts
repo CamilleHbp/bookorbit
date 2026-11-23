@@ -37,6 +37,7 @@ const SERVER_CAPABILITIES: readonly KoreaderPluginCapability[] = [
   'sidecarState',
   'annotationPendingBooks',
   'annotationAnchorsV1',
+  'catalogBooksQuery',
 ];
 
 @Injectable()

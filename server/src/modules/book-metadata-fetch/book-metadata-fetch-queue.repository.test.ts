@@ -21,6 +21,8 @@ vi.mock('drizzle-orm', () => {
   };
 });
 
+vi.mock('../jobs/job-keyset', () => ({ microseconds: vi.fn((expr: unknown) => ({ op: 'microseconds', expr })) }));
+
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { BookMetadataFetchConfig } from '@bookorbit/types';
 
@@ -158,6 +160,20 @@ describe('BookMetadataFetchQueueRepository', () => {
     expect(sqlCalls.some((call) => call.slice(1).includes(bookFiles.mediaOverlayAvailable))).toBe(true);
   });
 
+  it('schedules books without a first published year by a plain null check', async () => {
+    const { db, selectBuilder } = makeDb();
+    selectBuilder.where.mockResolvedValueOnce([{ bookId: 7 }]);
+    const repo = new BookMetadataFetchQueueRepository(db as never);
+    const config = baseConfig();
+    config.conditions.missingFields = { enabled: true, fields: ['originalPublishedYear'] };
+
+    await expect(repo.fetchEligibleBookIds(config)).resolves.toEqual([7]);
+
+    const clause = vi.mocked(sql).mock.calls.find((call) => call.slice(1).includes(bookMetadata.originalPublishedYear));
+    expect(clause?.slice(1)).toEqual([bookMetadata.originalPublishedYear]);
+    expect(clause?.[0].join('?')).toBe('? IS NULL');
+  });
+
   it('checks both ISBN columns when scheduling books without an ISBN', async () => {
     const { db, selectBuilder } = makeDb();
     selectBuilder.where.mockResolvedValueOnce([{ bookId: 7 }]);
@@ -250,6 +266,42 @@ describe('BookMetadataFetchQueueRepository', () => {
       failed: 1,
       latestFailureAt: '2026-01-01T00:00:03.000Z',
     });
+  });
+
+  it('countForJobs reads grouped counts and the latest failure, keeping the oldest waiting entry', async () => {
+    const { db, selectBuilder } = makeDb();
+    selectBuilder.groupBy.mockResolvedValue([
+      { status: 'queued', cnt: '5', since: 1_763_200_000_000_000 },
+      { status: 'processing', cnt: '1', since: 1_763_100_000_000_000 },
+      { status: 'failed', cnt: 2, since: 1_763_000_000_000_000 },
+    ]);
+    selectBuilder.where.mockResolvedValueOnce([{ latest: 1_763_300_000_000_000 }]);
+    const repo = new BookMetadataFetchQueueRepository(db as never);
+
+    await expect(repo.countForJobs()).resolves.toEqual({
+      queued: 5,
+      processing: 1,
+      failed: 2,
+      queueSince: 1_763_100_000_000_000,
+      failedAt: 1_763_300_000_000_000,
+    });
+    expect(selectBuilder.groupBy).toHaveBeenCalledWith(bookMetadataFetchQueue.status);
+    expect(selectBuilder.where).toHaveBeenCalledWith(eq(bookMetadataFetchQueue.status, 'failed'));
+    expect(db.select).toHaveBeenCalledWith({
+      status: bookMetadataFetchQueue.status,
+      cnt: { op: 'count' },
+      since: { op: 'microseconds', expr: expect.objectContaining({ text: 'min()' }) },
+    });
+    expect(db.select).toHaveBeenCalledWith({ latest: { op: 'microseconds', expr: expect.objectContaining({ text: 'max()' }) } });
+  });
+
+  it('countForJobs reports an empty queue with no times', async () => {
+    const { db, selectBuilder } = makeDb();
+    selectBuilder.groupBy.mockResolvedValue([]);
+    selectBuilder.where.mockResolvedValueOnce([{ latest: null }]);
+    const repo = new BookMetadataFetchQueueRepository(db as never);
+
+    await expect(repo.countForJobs()).resolves.toEqual({ queued: 0, processing: 0, failed: 0, queueSince: null, failedAt: null });
   });
 
   it('resetAllProcessingOnBoot and recoverStuckProcessing return recovered row counts', async () => {

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, inArray, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { BookDuplicateGroupSort, BookDuplicateKind, BookDuplicateMatchReason, BookDuplicateSortOrder } from '@bookorbit/types';
@@ -8,6 +8,9 @@ import { buildContentFilterClauses } from '../../common/utils/content-filter-sql
 import type { RequestUser } from '../../common/types/request-user';
 import { DB } from '../../db';
 import * as schema from '../../db/schema';
+import { afterPosition, keysetOrder, microseconds, type JobKey, type JobPosition, type KeysetColumns } from '../jobs/job-keyset';
+import type { EditionFactsRow } from './book-duplicate-editions';
+import { groupDuplicatePairs } from './book-duplicate-grouping';
 import { crossFormatTitleSql, mediaFamilySql } from './book-duplicate-normalize';
 import {
   bookDuplicateDismissals,
@@ -17,14 +20,78 @@ import {
   bookDuplicateScanKeys,
   bookDuplicateScans,
   bookFiles,
+  bookLinks,
   bookMetadata,
   books,
+  bookSeriesMemberships,
+  libraries,
+  users,
 } from '../../db/schema';
 
 export type Db = NodePgDatabase<typeof schema>;
+
+export interface DismissalRow {
+  kind: string;
+  bookIdA: number;
+  bookIdB: number;
+  titleA: string | null;
+  titleB: string | null;
+  editionNameA: string | null;
+  editionNameB: string | null;
+  publisherA: string | null;
+  publisherB: string | null;
+  publishedYearA: number | null;
+  publishedYearB: number | null;
+  libraryIdA: number | null;
+  libraryIdB: number | null;
+  libraryNameA: string | null;
+  libraryNameB: string | null;
+  createdAt: Date;
+}
 type ScanRow = typeof bookDuplicateScans.$inferSelect;
 
 const BOOK_DUPLICATE_SCAN_LOCK_NAMESPACE = 1_112_493_899;
+
+export interface DuplicateScanPageQuery {
+  view: 'queue' | 'needs-you' | 'failed' | 'history';
+  /** One account's scans; null for everyone's. Scans always have an owner. */
+  ownerId: number | null;
+  /** Failed scans that finished at or before this have aged into History. */
+  cutoffAt: Date;
+  after: JobPosition | null;
+  typeIndex: number;
+  limit: number;
+}
+
+const SCAN_PAGE_COLUMNS = {
+  id: bookDuplicateScans.id,
+  userId: bookDuplicateScans.userId,
+  libraryIds: bookDuplicateScans.libraryIds,
+  requestedLibraryId: bookDuplicateScans.requestedLibraryId,
+  status: bookDuplicateScans.status,
+  processedBooks: bookDuplicateScans.processedBooks,
+  totalBooks: bookDuplicateScans.totalBooks,
+  errorCode: bookDuplicateScans.errorCode,
+  createdAt: bookDuplicateScans.createdAt,
+  completedAt: bookDuplicateScans.completedAt,
+};
+
+export type DuplicateScanPageRow = Pick<ScanRow, keyof typeof SCAN_PAGE_COLUMNS> & {
+  requesterName: string | null;
+  /** 1-based place among queued scans, which one worker runs oldest first; 0 otherwise. */
+  rank: number;
+  key: JobKey;
+};
+
+export interface DuplicateScanCounts {
+  queue: number;
+  failed: number;
+  running: number;
+  queued: number;
+}
+
+/** When a scan ended, never null, so no row drops out of a keyset comparison. */
+const SCAN_FINISH = sql`coalesce(${bookDuplicateScans.completedAt}, ${bookDuplicateScans.createdAt})`;
 
 // Whole-library scan statements run in the background on the request pool, whose 30s statement
 // timeout a large library can outlast, so they get a wider but still finite budget of their own.
@@ -80,6 +147,36 @@ export function duplicateScopeWhere(db: Db, libraryIds: number[], user: RequestU
   const clauses: SQL[] = [inArray(books.libraryId, libraryIds), ne(books.status, 'processing')];
   if (!user.isSuperuser) clauses.push(...buildContentFilterClauses(user.contentFilters, db));
   return and(...clauses)!;
+}
+
+/**
+ * The groups of a scan still waiting on a decision: two or more visible members that are not yet
+ * editions of one work, and a pair the user has not dismissed. Grouping or dismissing takes a group
+ * off the list at once, wherever it was done, instead of at the next scan.
+ */
+export function openDuplicateGroupWhere(db: Db, scanId: number, libraryIds: number[], user: RequestUser): SQL {
+  const separateWorks = db
+    .select({ groupId: bookDuplicateGroupMembers.groupId })
+    .from(bookDuplicateGroupMembers)
+    .innerJoin(books, eq(books.id, bookDuplicateGroupMembers.bookId))
+    .leftJoin(bookLinks, eq(bookLinks.bookId, bookDuplicateGroupMembers.bookId))
+    .where(and(eq(bookDuplicateGroupMembers.scanId, scanId), duplicateScopeWhere(db, libraryIds, user)))
+    .groupBy(bookDuplicateGroupMembers.groupId)
+    .having(sql`count(DISTINCT COALESCE('link:' || ${bookLinks.groupId}, 'book:' || ${books.id})) >= 2`);
+  const undismissed = sql`EXISTS (
+    SELECT 1
+    FROM ${bookDuplicatePairs} pair
+    WHERE pair.group_id = ${bookDuplicateGroups.id}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM ${bookDuplicateDismissals} dismissal
+        WHERE dismissal.user_id = ${user.id}
+          AND dismissal.kind = pair.kind
+          AND dismissal.book_id_a = pair.book_id_a
+          AND dismissal.book_id_b = pair.book_id_b
+      )
+  )`;
+  return and(inArray(bookDuplicateGroups.id, separateWorks), undismissed)!;
 }
 
 @Injectable()
@@ -393,41 +490,77 @@ export class BookDuplicatesRepository {
     );
   }
 
+  /**
+   * Removes pairs whose books hold different positions in one series: they are different volumes,
+   * not copies, whatever their titles, ISBNs or work ids say. A matching file hash is the one exception.
+   */
+  async deleteSeriesConflictPairs(scanId: number): Promise<number> {
+    const result = await this.withScanBudget((db) =>
+      db.execute(sql`
+      DELETE FROM ${bookDuplicatePairs} pair
+      WHERE pair.scan_id = ${scanId}
+        AND NOT ('file_hash' = ANY(pair.reasons))
+        AND EXISTS (
+          SELECT 1
+          FROM ${bookSeriesMemberships} membership_a
+          JOIN ${bookSeriesMemberships} membership_b ON membership_b.series_id = membership_a.series_id
+          WHERE membership_a.book_id = pair.book_id_a
+            AND membership_b.book_id = pair.book_id_b
+            AND membership_a.series_index IS NOT NULL
+            AND membership_b.series_index IS NOT NULL
+            AND membership_a.series_index::numeric <> membership_b.series_index::numeric
+        )
+    `),
+    );
+    return result.rowCount ?? 0;
+  }
+
   async finalizeGroups(scanId: number): Promise<number> {
     return this.db.transaction(async (tx) => {
       await tx.execute(SET_SCAN_STATEMENT_TIMEOUT);
+      const pairs = await tx.execute<{ book_id_a: number; book_id_b: number; reasons: string[]; title_similarity: number | null }>(sql`
+        SELECT book_id_a, book_id_b, reasons, title_similarity
+        FROM ${bookDuplicatePairs}
+        WHERE scan_id = ${scanId} AND kind = 'duplicate'
+      `);
+      const positions = await tx.execute<{ book_id: number; series_id: number; series_index: string | null }>(sql`
+        SELECT membership.book_id, membership.series_id, membership.series_index
+        FROM ${bookSeriesMemberships} membership
+        WHERE membership.series_index IS NOT NULL
+          AND membership.book_id IN (
+            SELECT book_id_a FROM ${bookDuplicatePairs} WHERE scan_id = ${scanId} AND kind = 'duplicate'
+            UNION
+            SELECT book_id_b FROM ${bookDuplicatePairs} WHERE scan_id = ${scanId} AND kind = 'duplicate'
+          )
+      `);
+      const roots = groupDuplicatePairs(
+        pairs.rows.map((row) => ({
+          bookIdA: row.book_id_a,
+          bookIdB: row.book_id_b,
+          reasons: row.reasons,
+          titleSimilarity: row.title_similarity === null ? null : Number(row.title_similarity),
+        })),
+        positions.rows.map((row) => ({ bookId: row.book_id, seriesId: row.series_id, seriesIndex: row.series_index })),
+      );
+
       await tx.execute(sql`CREATE TEMP TABLE tmp_book_duplicate_components (book_id integer PRIMARY KEY, root_id integer NOT NULL) ON COMMIT DROP`);
       await tx.execute(sql`
         INSERT INTO tmp_book_duplicate_components (book_id, root_id)
-        SELECT book_id, book_id
-        FROM (
-          SELECT book_id_a AS book_id FROM ${bookDuplicatePairs} WHERE scan_id = ${scanId} AND kind = 'duplicate'
-          UNION
-          SELECT book_id_b AS book_id FROM ${bookDuplicatePairs} WHERE scan_id = ${scanId} AND kind = 'duplicate'
-        ) endpoints
+        SELECT * FROM unnest(${sql.param([...roots.keys()])}::int[], ${sql.param([...roots.values()])}::int[])
       `);
-
-      for (;;) {
-        const result = await tx.execute(sql`
-          WITH neighbor_roots AS (
-            SELECT component.book_id, min(neighbor.root_id) AS new_root
-            FROM tmp_book_duplicate_components component
-            JOIN ${bookDuplicatePairs} pair
-              ON pair.scan_id = ${scanId}
-              AND pair.kind = 'duplicate'
-              AND (pair.book_id_a = component.book_id OR pair.book_id_b = component.book_id)
-            JOIN tmp_book_duplicate_components neighbor
-              ON neighbor.book_id = CASE WHEN pair.book_id_a = component.book_id THEN pair.book_id_b ELSE pair.book_id_a END
-            GROUP BY component.book_id
+      // A pair the grouping refused to join, such as a series-less copy matching two volumes, would
+      // otherwise land in one endpoint's group without the other book.
+      await tx.execute(sql`
+        DELETE FROM ${bookDuplicatePairs} pair
+        WHERE pair.scan_id = ${scanId}
+          AND pair.kind = 'duplicate'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM tmp_book_duplicate_components component_a
+            JOIN tmp_book_duplicate_components component_b ON component_b.root_id = component_a.root_id
+            WHERE component_a.book_id = pair.book_id_a AND component_b.book_id = pair.book_id_b
           )
-          UPDATE tmp_book_duplicate_components component
-          SET root_id = neighbor_roots.new_root
-          FROM neighbor_roots
-          WHERE component.book_id = neighbor_roots.book_id
-            AND neighbor_roots.new_root < component.root_id
-        `);
-        if ((result.rowCount ?? 0) === 0) break;
-      }
+      `);
 
       await tx.execute(sql`
         WITH member_counts AS (
@@ -614,8 +747,163 @@ export class BookDuplicatesRepository {
     return result.rowCount ?? 0;
   }
 
+  /**
+   * Candidate editions found by work id alone: two books of one medium sharing a Hardcover or Open
+   * Library work id, read from the other-format keys, whose side prefix already names the medium. A
+   * pair the duplicate passes found is left to them; the edition pass decides both kinds.
+   */
+  async createSameMediumWorkPairs(scanId: number): Promise<number> {
+    const result = await this.withScanBudget((db) =>
+      db.execute(sql`
+      WITH matched AS (
+        SELECT DISTINCT
+          first_key.book_id AS book_id_a,
+          second_key.book_id AS book_id_b
+        FROM ${bookDuplicateScanKeys} first_key
+        JOIN ${bookDuplicateScanKeys} second_key
+          ON second_key.scan_id = first_key.scan_id
+          AND second_key.kind = first_key.kind
+          AND second_key.value = first_key.value
+          AND second_key.book_id > first_key.book_id
+        WHERE first_key.scan_id = ${scanId}
+          AND first_key.kind = 'of_work'
+      )
+      INSERT INTO ${bookDuplicatePairs} (scan_id, kind, book_id_a, book_id_b, reasons)
+      SELECT CAST(${scanId} AS integer), 'other_edition', matched.book_id_a, matched.book_id_b, ARRAY['same_work']::text[]
+      FROM matched
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM ${bookDuplicatePairs} existing
+        WHERE existing.scan_id = ${scanId}
+          AND existing.kind = 'duplicate'
+          AND existing.book_id_a = matched.book_id_a
+          AND existing.book_id_b = matched.book_id_b
+      )
+      ON CONFLICT (scan_id, kind, book_id_a, book_id_b) DO NOTHING
+    `),
+    );
+    return result.rowCount ?? 0;
+  }
+
+  /** Books already linked together are resolved, so their pairs leave every kind, identical files included. */
+  async deleteLinkedPairs(scanId: number): Promise<number> {
+    const result = await this.withScanBudget((db) =>
+      db.execute(sql`
+      DELETE FROM ${bookDuplicatePairs} pair
+      WHERE pair.scan_id = ${scanId}
+        AND EXISTS (
+          SELECT 1
+          FROM book_links link_a
+          JOIN book_links link_b ON link_b.group_id = link_a.group_id
+          WHERE link_a.book_id = pair.book_id_a AND link_b.book_id = pair.book_id_b
+        )
+    `),
+    );
+    return result.rowCount ?? 0;
+  }
+
+  /**
+   * One batch of the pairs the edition pass judges, in key order: duplicates not proven by identical
+   * files or a shared ISBN, and the work-id candidates. A pair is in at most one of the two kinds.
+   */
+  async findEditionCandidatePairs(
+    scanId: number,
+    after: { bookIdA: number; bookIdB: number } | null,
+    limit: number,
+  ): Promise<{ book_id_a: number; book_id_b: number; kind: 'duplicate' | 'other_edition'; reasons: string[] }[]> {
+    const afterClause = after ? sql`AND (pair.book_id_a, pair.book_id_b) > (${after.bookIdA}::integer, ${after.bookIdB}::integer)` : sql``;
+    const result = await this.db.execute<{ book_id_a: number; book_id_b: number; kind: 'duplicate' | 'other_edition'; reasons: string[] }>(sql`
+      SELECT pair.book_id_a, pair.book_id_b, pair.kind, pair.reasons
+      FROM ${bookDuplicatePairs} pair
+      WHERE pair.scan_id = ${scanId}
+        AND (
+          pair.kind = 'other_edition'
+          OR (pair.kind = 'duplicate' AND NOT ('file_hash' = ANY(pair.reasons)) AND NOT ('isbn' = ANY(pair.reasons)))
+        )
+        ${afterClause}
+      ORDER BY pair.book_id_a, pair.book_id_b
+      LIMIT ${limit}
+    `);
+    return result.rows;
+  }
+
+  /** The facts that tell one edition from another, for the books of one batch of pairs. */
+  async findEditionFacts(bookIds: number[]): Promise<EditionFactsRow[]> {
+    if (bookIds.length === 0) return [];
+    const result = await this.db.execute<EditionFactsRow>(sql`
+      SELECT
+        ${books.id} AS id,
+        ${bookMetadata.isbn10} AS isbn10,
+        ${bookMetadata.isbn13} AS isbn13,
+        ${bookMetadata.hardcoverId} AS hardcover_id,
+        ${bookMetadata.hardcoverEditionId} AS hardcover_edition_id,
+        ${bookMetadata.openLibraryId} AS open_library_id,
+        ${bookMetadata.publisher} AS publisher,
+        COALESCE(extract(year FROM ${bookMetadata.publishedDate})::integer, ${bookMetadata.publishedYear}) AS published_year,
+        ARRAY(
+          SELECT DISTINCT lower(f.format)
+          FROM book_files f
+          WHERE f.book_id = ${books.id} AND f.role = 'content' AND f.format IS NOT NULL
+        ) AS formats,
+        ARRAY(
+          SELECT n.name FROM book_narrators bn JOIN narrators n ON n.id = bn.narrator_id WHERE bn.book_id = ${books.id}
+        ) AS narrators
+      FROM ${books}
+      LEFT JOIN ${bookMetadata} ON ${bookMetadata.bookId} = ${books.id}
+      WHERE ${books.id} = ANY(${sql.param(bookIds)}::int[])
+    `);
+    return result.rows;
+  }
+
+  /** Moves duplicates that differ as editions to other editions, and drops work-id candidates that do not. */
+  async applyEditionOutcomes(
+    scanId: number,
+    reclassified: { bookIdA: number; bookIdB: number; sameWork: boolean }[],
+    dropped: { bookIdA: number; bookIdB: number }[],
+  ): Promise<void> {
+    if (reclassified.length > 0) {
+      await this.db.execute(sql`
+        UPDATE ${bookDuplicatePairs} pair
+        SET
+          kind = 'other_edition',
+          reasons = CASE WHEN outcome.same_work THEN ARRAY['same_work', 'title_author']::text[] ELSE ARRAY['title_author']::text[] END
+        FROM unnest(
+          ${sql.param(reclassified.map((pair) => pair.bookIdA))}::int[],
+          ${sql.param(reclassified.map((pair) => pair.bookIdB))}::int[],
+          ${sql.param(reclassified.map((pair) => pair.sameWork))}::boolean[]
+        ) AS outcome(book_id_a, book_id_b, same_work)
+        WHERE pair.scan_id = ${scanId}
+          AND pair.kind = 'duplicate'
+          AND pair.book_id_a = outcome.book_id_a
+          AND pair.book_id_b = outcome.book_id_b
+      `);
+    }
+    if (dropped.length > 0) {
+      await this.db.execute(sql`
+        DELETE FROM ${bookDuplicatePairs} pair
+        USING unnest(
+          ${sql.param(dropped.map((pair) => pair.bookIdA))}::int[],
+          ${sql.param(dropped.map((pair) => pair.bookIdB))}::int[]
+        ) AS outcome(book_id_a, book_id_b)
+        WHERE pair.scan_id = ${scanId}
+          AND pair.kind = 'other_edition'
+          AND pair.book_id_a = outcome.book_id_a
+          AND pair.book_id_b = outcome.book_id_b
+      `);
+    }
+  }
+
   /** Every other-format pair becomes a group of its own: pairs never chain, so one book can sit in several. */
   async finalizeOtherFormatGroups(scanId: number): Promise<number> {
+    return this.finalizePairGroups(scanId, 'other_format');
+  }
+
+  /** Other editions are pairs too: one recording can be an edition of several others without joining them. */
+  async finalizeOtherEditionGroups(scanId: number): Promise<number> {
+    return this.finalizePairGroups(scanId, 'other_edition');
+  }
+
+  private async finalizePairGroups(scanId: number, kind: 'other_format' | 'other_edition'): Promise<number> {
     const result = await this.withScanBudget((db) =>
       db.execute(sql`
       WITH numbered AS (
@@ -626,7 +914,7 @@ export class BookDuplicatesRepository {
           pair.reasons,
           pair.title_similarity
         FROM ${bookDuplicatePairs} pair
-        WHERE pair.scan_id = ${scanId} AND pair.kind = 'other_format'
+        WHERE pair.scan_id = ${scanId} AND pair.kind = ${kind}
       ), inserted_groups AS (
         INSERT INTO ${bookDuplicateGroups}
           (id, scan_id, root_book_id, kind, reasons, max_title_similarity, member_count, confidence, member_bytes_total, member_bytes_max)
@@ -634,7 +922,7 @@ export class BookDuplicatesRepository {
           numbered.group_id,
           CAST(${scanId} AS integer),
           numbered.book_id_a,
-          'other_format',
+          ${kind},
           numbered.reasons,
           numbered.title_similarity,
           2,
@@ -658,7 +946,7 @@ export class BookDuplicatesRepository {
       SET group_id = numbered.group_id
       FROM numbered
       WHERE pair.scan_id = ${scanId}
-        AND pair.kind = 'other_format'
+        AND pair.kind = ${kind}
         AND pair.book_id_a = numbered.book_id_a
         AND pair.book_id_b = numbered.book_id_b
     `),
@@ -689,21 +977,17 @@ export class BookDuplicatesRepository {
     order: BookDuplicateSortOrder,
     kind: BookDuplicateKind = 'duplicate',
   ) {
-    const accessibleGroupIds = this.db
-      .select({ groupId: bookDuplicateGroupMembers.groupId })
-      .from(bookDuplicateGroupMembers)
-      .innerJoin(books, eq(books.id, bookDuplicateGroupMembers.bookId))
-      .where(and(eq(bookDuplicateGroupMembers.scanId, scanId), this.scopeWhere(libraryIds, user)))
-      .groupBy(bookDuplicateGroupMembers.groupId)
-      .having(sql`count(*) >= 2`);
+    const open = openDuplicateGroupWhere(this.db, scanId, libraryIds, user);
     const reasonFilter = reason ? sql`${reason} = ANY(${bookDuplicateGroups.reasons})` : sql`true`;
-    const where = and(
-      eq(bookDuplicateGroups.scanId, scanId),
-      eq(bookDuplicateGroups.kind, kind),
-      inArray(bookDuplicateGroups.id, accessibleGroupIds),
-      reasonFilter,
-    )!;
+    const where = and(eq(bookDuplicateGroups.scanId, scanId), eq(bookDuplicateGroups.kind, kind), open, reasonFilter)!;
     const [countRow] = await this.db.select({ count: count() }).from(bookDuplicateGroups).where(where);
+    const kindRows = await this.db
+      .select({ kind: bookDuplicateGroups.kind, count: count() })
+      .from(bookDuplicateGroups)
+      .where(and(eq(bookDuplicateGroups.scanId, scanId), open))
+      .groupBy(bookDuplicateGroups.kind);
+    const kindTotals: Record<BookDuplicateKind, number> = { duplicate: 0, other_format: 0, other_edition: 0 };
+    for (const row of kindRows) kindTotals[row.kind as BookDuplicateKind] = row.count;
     const groups = await this.db
       .select({
         id: bookDuplicateGroups.id,
@@ -720,7 +1004,7 @@ export class BookDuplicatesRepository {
       .orderBy(...this.groupOrderBy(sortBy, order))
       .limit(pageSize)
       .offset((page - 1) * pageSize);
-    return { groups, total: countRow?.count ?? 0 };
+    return { groups, total: countRow?.count ?? 0, kindTotals };
   }
 
   private groupOrderBy(sortBy: BookDuplicateGroupSort, order: BookDuplicateSortOrder): SQL[] {
@@ -806,27 +1090,43 @@ export class BookDuplicatesRepository {
     return result.rowCount ?? 0;
   }
 
-  async listDismissals(
-    userId: number,
-    limit: number,
-  ): Promise<{ kind: string; bookIdA: number; bookIdB: number; titleA: string | null; titleB: string | null; createdAt: Date }[]> {
+  async listDismissals(userId: number, limit: number): Promise<DismissalRow[]> {
     const metadataA = alias(bookMetadata, 'metadata_a');
     const metadataB = alias(bookMetadata, 'metadata_b');
-    return this.db
+    const bookA = alias(books, 'book_a');
+    const bookB = alias(books, 'book_b');
+    const libraryA = alias(libraries, 'library_a');
+    const libraryB = alias(libraries, 'library_b');
+    const rows = await this.db
       .select({
         kind: bookDuplicateDismissals.kind,
         bookIdA: bookDuplicateDismissals.bookIdA,
         bookIdB: bookDuplicateDismissals.bookIdB,
         titleA: metadataA.title,
         titleB: metadataB.title,
+        editionNameA: metadataA.editionName,
+        editionNameB: metadataB.editionName,
+        publisherA: metadataA.publisher,
+        publisherB: metadataB.publisher,
+        publishedYearA: metadataA.publishedYear,
+        publishedYearB: metadataB.publishedYear,
+        libraryIdA: bookA.libraryId,
+        libraryIdB: bookB.libraryId,
+        libraryNameA: libraryA.name,
+        libraryNameB: libraryB.name,
         createdAt: bookDuplicateDismissals.createdAt,
       })
       .from(bookDuplicateDismissals)
       .leftJoin(metadataA, eq(metadataA.bookId, bookDuplicateDismissals.bookIdA))
       .leftJoin(metadataB, eq(metadataB.bookId, bookDuplicateDismissals.bookIdB))
+      .leftJoin(bookA, eq(bookA.id, bookDuplicateDismissals.bookIdA))
+      .leftJoin(bookB, eq(bookB.id, bookDuplicateDismissals.bookIdB))
+      .leftJoin(libraryA, eq(libraryA.id, bookA.libraryId))
+      .leftJoin(libraryB, eq(libraryB.id, bookB.libraryId))
       .where(eq(bookDuplicateDismissals.userId, userId))
       .orderBy(desc(bookDuplicateDismissals.createdAt))
       .limit(limit);
+    return rows;
   }
 
   async findPairs(groupIds: number[]) {
@@ -915,5 +1215,127 @@ export class BookDuplicatesRepository {
       ORDER BY member.group_id, ${bookMetadata.metadataScore} DESC NULLS LAST, ${books.id}
     `);
     return result.rows;
+  }
+
+  /** A page of scans for the Jobs area, in the view's keyset order. Nothing waits on a person, so Needs you is empty. */
+  async pageForJobs(query: DuplicateScanPageQuery): Promise<DuplicateScanPageRow[]> {
+    if (query.view === 'needs-you') return [];
+    return query.view === 'queue' ? await this.scanQueuePage(query) : await this.settledScanPage(query);
+  }
+
+  /** How many scans each Jobs-area view holds, failed ones measured from `cutoffAt`. */
+  async countForJobs(ownerId: number | null, cutoffAt: Date): Promise<DuplicateScanCounts> {
+    const [row] = await this.db
+      .select({
+        running: sql<number>`count(*) filter (where ${bookDuplicateScans.status} = 'running')`.mapWith(Number),
+        queued: sql<number>`count(*) filter (where ${bookDuplicateScans.status} = 'queued')`.mapWith(Number),
+        failed: sql<number>`count(*) filter (where ${this.failedScanShown(cutoffAt)})`.mapWith(Number),
+      })
+      .from(bookDuplicateScans)
+      .where(and(inArray(bookDuplicateScans.status, ['queued', 'running', 'failed']), this.scanOwned(ownerId)));
+    const running = row?.running ?? 0;
+    const queued = row?.queued ?? 0;
+    return { queue: running + queued, failed: row?.failed ?? 0, running, queued };
+  }
+
+  /** Who owns each scan that exists, for answering actions on ids a client sent. */
+  async findScanOwners(scanIds: readonly number[]): Promise<Map<number, number>> {
+    if (scanIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({ id: bookDuplicateScans.id, userId: bookDuplicateScans.userId })
+      .from(bookDuplicateScans)
+      .where(inArray(bookDuplicateScans.id, [...scanIds]));
+    return new Map(rows.map((row) => [row.id, row.userId]));
+  }
+
+  /** Library names by id, for naming what a scan covered. */
+  async findLibraryNames(libraryIds: readonly number[]): Promise<Map<number, string>> {
+    if (libraryIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({ id: libraries.id, name: libraries.name })
+      .from(libraries)
+      .where(inArray(libraries.id, [...libraryIds]));
+    return new Map(rows.map((row) => [row.id, row.name]));
+  }
+
+  /** The running scan, then queued ones in the order the worker takes them. */
+  private async scanQueuePage(query: DuplicateScanPageQuery): Promise<DuplicateScanPageRow[]> {
+    // Aliased: drizzle renders column references unqualified, which inside a subquery would bind to the wrong row.
+    const line = this.db
+      .$with('scan_line')
+      .as(
+        this.db
+          .select({ lineId: sql<number>`scan_order.id`.as('line_id'), place: sql<number>`scan_order.place`.as('place') })
+          .from(
+            sql`(select q.id, row_number() over (order by q.created_at, q.id) as place from book_duplicate_scans q where q.status = 'queued') scan_order`,
+          ),
+      );
+    const group = sql<number>`case when ${bookDuplicateScans.status} = 'running' then 0 else 1 end`;
+    const rank = sql<number>`case when ${bookDuplicateScans.status} = 'queued' then coalesce(${line.place}, 2147483647) else 0 end`;
+    const at = microseconds(sql`${bookDuplicateScans.createdAt}`);
+    const columns: KeysetColumns = {
+      prefix: [
+        { kind: 'number', expr: group },
+        { kind: 'number', expr: rank },
+      ],
+      suffix: [{ kind: 'number', expr: at }],
+      id: { kind: 'number', expr: sql`${bookDuplicateScans.id}` },
+    };
+    const rows = await this.db
+      .with(line)
+      .select({
+        ...SCAN_PAGE_COLUMNS,
+        group: sql<number>`${group}`.mapWith(Number),
+        rank: sql<number>`${rank}`.mapWith(Number),
+        at,
+        requesterName: users.name,
+      })
+      .from(bookDuplicateScans)
+      .leftJoin(line, eq(line.lineId, bookDuplicateScans.id))
+      .leftJoin(users, eq(users.id, bookDuplicateScans.userId))
+      .where(
+        and(
+          inArray(bookDuplicateScans.status, ['queued', 'running']),
+          this.scanOwned(query.ownerId),
+          query.after ? afterPosition(columns, 'queue', query.after, query.typeIndex) : undefined,
+        ),
+      )
+      .orderBy(...keysetOrder(columns, 'queue'))
+      .limit(query.limit);
+    return rows.map(({ group: band, rank: place, at: since, ...row }) => ({
+      ...row,
+      rank: place,
+      key: { prefix: [band, place], suffix: [since], id: row.id },
+    }));
+  }
+
+  /** Failed and History by when the scan ended, newest first. */
+  private async settledScanPage(query: DuplicateScanPageQuery): Promise<DuplicateScanPageRow[]> {
+    const columns: KeysetColumns = {
+      prefix: [{ kind: 'time', expr: SCAN_FINISH }],
+      suffix: [],
+      id: { kind: 'number', expr: sql`${bookDuplicateScans.id}` },
+    };
+    const shown =
+      query.view === 'failed'
+        ? this.failedScanShown(query.cutoffAt)
+        : or(eq(bookDuplicateScans.status, 'completed'), and(eq(bookDuplicateScans.status, 'failed'), lte(SCAN_FINISH, query.cutoffAt)));
+    const rows = await this.db
+      .select({ ...SCAN_PAGE_COLUMNS, finish: microseconds(SCAN_FINISH), requesterName: users.name })
+      .from(bookDuplicateScans)
+      .leftJoin(users, eq(users.id, bookDuplicateScans.userId))
+      .where(and(shown, this.scanOwned(query.ownerId), query.after ? afterPosition(columns, query.view, query.after, query.typeIndex) : undefined))
+      .orderBy(...keysetOrder(columns, query.view))
+      .limit(query.limit);
+    return rows.map(({ finish, ...row }) => ({ ...row, rank: 0, key: { prefix: [finish], suffix: [], id: row.id } }));
+  }
+
+  /** Failed and finished after the cutoff: what the Failed view still shows. */
+  private failedScanShown(cutoffAt: Date): SQL {
+    return and(eq(bookDuplicateScans.status, 'failed'), sql`${SCAN_FINISH} > ${cutoffAt}`)!;
+  }
+
+  private scanOwned(ownerId: number | null): SQL | undefined {
+    return ownerId === null ? undefined : eq(bookDuplicateScans.userId, ownerId);
   }
 }

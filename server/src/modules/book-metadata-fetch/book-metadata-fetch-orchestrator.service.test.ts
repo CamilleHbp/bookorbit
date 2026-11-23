@@ -15,7 +15,7 @@ function baseConfig(enabled = true, triggerOnImport = true) {
   };
 }
 
-function makeService(withGateway = true) {
+function makeService(withGateway = true, withJobChanges = false) {
   const queueRepo = {
     resetAllProcessingOnBoot: vi.fn().mockResolvedValue(0),
     recoverStuckProcessing: vi.fn().mockResolvedValue(0),
@@ -78,6 +78,9 @@ function makeService(withGateway = true) {
   const gateway = {
     emitStatus: vi.fn(),
   };
+  const jobChanges = {
+    notify: vi.fn(),
+  };
   const notificationService = {
     notify: vi.fn().mockResolvedValue(undefined),
   };
@@ -100,6 +103,9 @@ function makeService(withGateway = true) {
     notificationService as never,
     coverStore as never,
     withGateway ? (gateway as never) : undefined,
+    undefined,
+    undefined,
+    withJobChanges ? (jobChanges as never) : undefined,
   );
 
   return {
@@ -116,6 +122,7 @@ function makeService(withGateway = true) {
     session,
     throttleTracker,
     gateway,
+    jobChanges,
     notificationService,
     coverStore,
   };
@@ -382,6 +389,29 @@ describe('BookMetadataFetchOrchestratorService', () => {
     expect(metadataService.downloadAndSaveCover).toHaveBeenCalledWith([{ url: 'https://cover' }], 88, 'ebook');
   });
 
+  it('persists a fetched first published year beside the published year, and skips one outside the stored range', async () => {
+    const { service, bookMetadataLockService, bookReadService } = makeService();
+    bookMetadataLockService.filterResolvedMetadata.mockResolvedValueOnce({
+      resolved: { publishedYear: 2020, publishedDate: '2020-09-01', originalPublishedYear: 1954 },
+      providerIds: {},
+      skippedFields: [],
+    });
+    bookMetadataLockService.filterResolvedMetadata.mockResolvedValueOnce({
+      resolved: { originalPublishedYear: 54 },
+      providerIds: {},
+      skippedFields: [],
+    });
+
+    await (service as any).persistResolved(88, {}, {}, [], [], []);
+    await (service as any).persistResolved(89, {}, {}, [], [], []);
+
+    expect(bookReadService.updateMetadataFields).toHaveBeenCalledWith(
+      88,
+      expect.objectContaining({ publishedDate: '2020-09-01', publishedYear: 2020, originalPublishedYear: 1954 }),
+    );
+    expect(bookReadService.updateMetadataFields.mock.calls[1]![1]).not.toHaveProperty('originalPublishedYear');
+  });
+
   it('processOne marks failures with extracted http status', async () => {
     const { service, queueRepo, bookReadService, pipeline } = makeService();
     bookReadService.findById.mockResolvedValue({
@@ -424,6 +454,55 @@ describe('BookMetadataFetchOrchestratorService', () => {
     await expect((service as any).emitStatus()).resolves.toBeUndefined();
   });
 
+  it('tells the Jobs area about a status change as state and about moved numbers as progress', async () => {
+    const { service, queueRepo, jobChanges } = makeService(false, true);
+    queueRepo.getStatusSummary.mockResolvedValue({ queued: 4, processing: 1, failed: 0, latestFailureAt: null });
+
+    await (service as any).emitStatusNow();
+    await (service as any).emitStatusNow();
+    queueRepo.getStatusSummary.mockResolvedValue({ queued: 3, processing: 1, failed: 1, latestFailureAt: '2026-11-15T10:00:00.000Z' });
+    await (service as any).emitStatusNow();
+    queueRepo.getStatusSummary.mockResolvedValue({ queued: 2, processing: 1, failed: 2, latestFailureAt: '2026-11-15T10:00:01.000Z' });
+    await (service as any).emitStatusNow();
+    queueRepo.getStatusSummary.mockResolvedValue({ queued: 2, processing: 0, failed: 2, latestFailureAt: '2026-11-15T10:00:01.000Z' });
+    await (service as any).emitStatusNow();
+
+    expect(jobChanges.notify.mock.calls.map(([change]) => change)).toEqual([
+      { type: 'metadata-fetch', ownerId: null, state: true },
+      { type: 'metadata-fetch', ownerId: null, state: false },
+      { type: 'metadata-fetch', ownerId: null, state: true },
+      { type: 'metadata-fetch', ownerId: null, state: false },
+      { type: 'metadata-fetch', ownerId: null, state: true },
+    ]);
+  });
+
+  it('sends pause, resume, cancel and retry to the Jobs area as state changes through the coalesced emit', async () => {
+    vi.useFakeTimers();
+    try {
+      const { service, queueRepo, jobChanges } = makeService(false, true);
+      vi.spyOn(service as any, 'pollOnce').mockResolvedValue(undefined);
+      queueRepo.getStatusSummary.mockResolvedValue({ queued: 0, processing: 0, failed: 3, latestFailureAt: '2026-11-15T10:00:00.000Z' });
+      queueRepo.requeueFailed.mockResolvedValue(3);
+
+      await (service as any).emitStatusNow();
+      // A pause with nothing waiting changes no row, but is still a state change.
+      await service.pause();
+      expect(jobChanges.notify).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(jobChanges.notify).toHaveBeenLastCalledWith({ type: 'metadata-fetch', ownerId: null, state: true });
+
+      await vi.advanceTimersByTimeAsync(500);
+      await service.resume();
+      await service.requeueFailed();
+      await service.cancelPending();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(jobChanges.notify.mock.calls.map(([change]) => change.state)).toEqual([true, true, true, true]);
+      service.onModuleDestroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('onApplicationBootstrap resets processing rows and schedules polling', async () => {
     vi.useFakeTimers();
     try {
@@ -439,6 +518,49 @@ describe('BookMetadataFetchOrchestratorService', () => {
       vi.advanceTimersByTime(4_000);
       expect(pollSpy).toHaveBeenCalledTimes(2);
       service.onModuleDestroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('backs off an empty queue and resumes polling when an import queues books', async () => {
+    const { service, configService, queueRepo } = makeService();
+    configService.getEffectiveConfig.mockResolvedValue({ ...baseConfig(), enabled: true, triggerOnImport: true });
+    await (service as any).pollOnce();
+    await (service as any).pollOnce();
+    expect(queueRepo.fetchDue).toHaveBeenCalledTimes(1);
+
+    queueRepo.scheduleEligibleBookIdsInBatches.mockResolvedValue(1);
+    await expect(service.scheduleImportedBooksIfEligible(1, [7])).resolves.toBe(1);
+    await (service as any).pollOnce();
+    expect(queueRepo.fetchDue).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops polling while paused and wakes on resume', async () => {
+    const { service, configService, queueRepo } = makeService();
+    (service as any).paused = true;
+    await (service as any).pollOnce();
+    await (service as any).pollOnce();
+    expect(queueRepo.recoverStuckProcessing).toHaveBeenCalledOnce();
+
+    await service.resume();
+    expect(configService.setPaused).toHaveBeenCalledWith(false);
+    await vi.waitFor(() => expect(queueRepo.fetchDue).toHaveBeenCalledOnce());
+  });
+
+  it('looks for stuck rows at most every five minutes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { service, queueRepo } = makeService();
+      await (service as any).pollOnce();
+      service['idlePoll'].wake();
+      await (service as any).pollOnce();
+      expect(queueRepo.recoverStuckProcessing).toHaveBeenCalledOnce();
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      service['idlePoll'].wake();
+      await (service as any).pollOnce();
+      expect(queueRepo.recoverStuckProcessing).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
@@ -681,13 +803,26 @@ describe('BookMetadataFetchOrchestratorService', () => {
     await (service as any).unpauseIfNeeded();
     expect(configService.setPaused).toHaveBeenCalledWith(false);
 
+    session.addToTotal(1);
     queueRepo.getStatusSummary.mockResolvedValueOnce({ queued: 0, processing: 0, failed: 0, latestFailureAt: null });
     await (service as any).checkAndResetSession();
     expect(resetSpy).toHaveBeenCalledTimes(1);
 
+    session.addToTotal(1);
     queueRepo.getStatusSummary.mockResolvedValueOnce({ queued: 1, processing: 0, failed: 0, latestFailureAt: null });
     await (service as any).checkAndResetSession();
     expect(resetSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the status count while no session is open or item named', async () => {
+    const { service, queueRepo, session } = makeService();
+    await (service as any).checkAndResetSession();
+    expect(queueRepo.getStatusSummary).not.toHaveBeenCalled();
+
+    session.setCurrentItemName('Left over');
+    await (service as any).checkAndResetSession();
+    expect(queueRepo.getStatusSummary).toHaveBeenCalledOnce();
+    expect(session.getSnapshot().currentItemName).toBeNull();
   });
 
   it('does not schedule imported books when auto-fetch or its import trigger is disabled', async () => {

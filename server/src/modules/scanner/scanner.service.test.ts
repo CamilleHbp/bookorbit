@@ -180,6 +180,7 @@ function makeService(
   const selfWriteRegistry = new SelfWriteRegistry();
   const regexMetadata = { evaluate: vi.fn() };
   const libraryGate = new LibraryOperationGate();
+  const jobChanges = { notify: vi.fn() };
   const service = new ScannerService(
     repo as any,
     mockMetadata as any,
@@ -190,11 +191,12 @@ function makeService(
     coverStore as any,
     regexMetadata as any,
     libraryGate,
+    jobChanges as any,
     autoFetchOrchestrator as any,
     achievementEvents as any,
     coverReconciler as any,
   );
-  return { service, jobStore, notificationService, achievementEvents, selfWriteRegistry, regexMetadata, libraryGate };
+  return { service, jobStore, notificationService, achievementEvents, selfWriteRegistry, regexMetadata, libraryGate, jobChanges };
 }
 
 /**
@@ -291,6 +293,53 @@ describe('scan history', () => {
     const { service } = makeService(repo);
 
     await expect(service.getScanHistory(7)).resolves.toEqual([]);
+  });
+});
+
+describe('Jobs area changes', () => {
+  const stateChange = { type: 'library-scan', ownerId: null, state: true };
+  const progressChange = { type: 'library-scan', ownerId: null, state: false };
+
+  it('tells the Jobs area when a scan starts and when it completes', async () => {
+    const repo = makeRepo();
+    const done = awaitScan(repo);
+    const { service, jobChanges } = makeService(repo);
+    await service.startScan(1, 'manual');
+    await done;
+
+    await vi.waitFor(() => expect(jobChanges.notify).toHaveBeenCalledTimes(3));
+    expect(jobChanges.notify.mock.calls.map(([change]) => change)).toEqual([stateChange, stateChange, stateChange]);
+  });
+
+  it('reports a scan moving along as progress only, through the store throttle', async () => {
+    mockFindCandidates.mockResolvedValue({
+      candidates: [makeCandidate('/library/Author/Book', [makeFileStat()])],
+      skippedDirs: new Set(),
+      unchangedDirs: new Set(),
+      dirMtimes: new Map(),
+    });
+    const repo = makeRepo();
+    const done = awaitScan(repo);
+    const { service, jobChanges } = makeService(repo);
+    await service.startScan(1, 'manual');
+    await done;
+
+    await vi.waitFor(() => expect(jobChanges.notify).toHaveBeenLastCalledWith(stateChange));
+    expect(jobChanges.notify).toHaveBeenCalledWith(progressChange);
+  });
+
+  it('tells the Jobs area when a scan fails', async () => {
+    const repo = makeRepo({ findAllLibraryRoots: vi.fn().mockRejectedValue(new Error('roots unavailable')) });
+    const done = awaitScan(repo);
+    const { service, jobChanges } = makeService(repo);
+    await service.startScan(1, 'manual');
+    await done;
+
+    await vi.waitFor(() =>
+      expect(mockGateway.emitProgress).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', errorMessage: 'roots unavailable' })),
+    );
+    expect(jobChanges.notify).toHaveBeenLastCalledWith(stateChange);
+    expect(jobChanges.notify).not.toHaveBeenCalledWith(progressChange);
   });
 });
 
@@ -496,6 +545,105 @@ describe('missing book detection', () => {
     await done;
 
     expect(repo.markBooksAsMissing).toHaveBeenCalledWith([5]);
+  });
+});
+
+describe('folders the walk could not read', () => {
+  const bookPath = '/library/Author/Audiobook';
+  const book = { id: 5, libraryId: 1, libraryFolderId: 1, folderPath: bookPath, status: 'present' };
+  const discOneTrack = makeBookFile({
+    id: 10,
+    bookId: 5,
+    absolutePath: `${bookPath}/CD 1/01.mp3`,
+    relPath: 'Author/Audiobook/CD 1/01.mp3',
+    ino: 5010n,
+    format: 'mp3',
+  });
+  const discTwoTrack = makeBookFile({
+    id: 11,
+    bookId: 5,
+    absolutePath: `${bookPath}/CD 2/01.mp3`,
+    relPath: 'Author/Audiobook/CD 2/01.mp3',
+    ino: 5011n,
+    format: 'mp3',
+  });
+  const discTwoTrackGone = makeBookFile({
+    id: 12,
+    bookId: 5,
+    absolutePath: `${bookPath}/CD 2/02.mp3`,
+    relPath: 'Author/Audiobook/CD 2/02.mp3',
+    ino: 5012n,
+    format: 'mp3',
+  });
+  const discTwoTrackOnDisk = makeFileStat({
+    absolutePath: discTwoTrack.absolutePath,
+    relPath: discTwoTrack.relPath,
+    ino: discTwoTrack.ino,
+    format: 'mp3',
+    role: 'content',
+  });
+
+  it('keeps the files of a partly read book that sit under an unreadable folder', async () => {
+    const repo = makeRepo({
+      findBooksByLibraryFolder: vi.fn().mockResolvedValue([book]),
+      findBookFilesByLibraryFolder: vi.fn().mockResolvedValue([discOneTrack, discTwoTrack, discTwoTrackGone]),
+    });
+    mockFindCandidates.mockResolvedValue({
+      candidates: [makeCandidate(bookPath, [discTwoTrackOnDisk])],
+      skippedDirs: new Set([`${bookPath}/CD 1`]),
+      unchangedDirs: new Set(),
+      dirMtimes: new Map(),
+    });
+
+    const done = awaitScan(repo);
+    const { service } = makeService(repo);
+    await service.startScan(1, 'manual');
+    await done;
+
+    expect(repo.deleteBookFile).toHaveBeenCalledTimes(1);
+    expect(repo.deleteBookFile).toHaveBeenCalledWith(discTwoTrackGone.id);
+    expect(repo.markBooksAsMissing).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a book missing when every folder holding its files could not be read', async () => {
+    const repo = makeRepo({
+      findBooksByLibraryFolder: vi.fn().mockResolvedValue([book]),
+      findBookFilesByLibraryFolder: vi.fn().mockResolvedValue([discOneTrack, discTwoTrack]),
+      findBookFilesByBookIds: vi.fn().mockResolvedValue([discOneTrack, discTwoTrack]),
+    });
+    mockFindCandidates.mockResolvedValue({
+      candidates: [],
+      skippedDirs: new Set([`${bookPath}/CD 1`, `${bookPath}/CD 2`]),
+      unchangedDirs: new Set(),
+      dirMtimes: new Map(),
+    });
+    mockStat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+    const done = awaitScan(repo);
+    const { service } = makeService(repo);
+    await service.startScan(1, 'manual');
+    await done;
+
+    expect(repo.markBooksAsMissing).not.toHaveBeenCalled();
+  });
+
+  it('keeps those files when a targeted directory scan reads the book only in part', async () => {
+    mockBuildSingleCandidate.mockResolvedValue(null);
+    mockFindCandidates.mockResolvedValue({
+      candidates: [makeCandidate(bookPath, [discTwoTrackOnDisk])],
+      skippedDirs: new Set([`${bookPath}/CD 1`]),
+      unchangedDirs: new Set(),
+      dirMtimes: new Map(),
+    });
+    const repo = makeRepo({
+      findBooksByFolderPath: vi.fn().mockResolvedValue([book]),
+      findBookFilesByBookIds: vi.fn().mockResolvedValue([discOneTrack, discTwoTrack]),
+    });
+    const { service } = makeService(repo);
+
+    await (service as any).scanBookDirectory('/library/Author', 1);
+
+    expect(repo.deleteBookFile).not.toHaveBeenCalled();
   });
 });
 
@@ -1664,6 +1812,87 @@ describe('file identity resolution', () => {
       expect.objectContaining({ libraryId: 1, libraryFolderId: 1, folderPath: '/library/Author/NewBook' }),
     );
     expect(repo.createBookFile).toHaveBeenCalledWith(expect.objectContaining({ absolutePath: newFile.absolutePath, ino: newFile.ino }));
+  });
+
+  describe('a file renamed in place whose book kept its old key', () => {
+    const perFileSettings = {
+      allowedFormats: [],
+      formatPriority: DEFAULT_FORMAT_PRIORITY,
+      metadataPrecedence: ['embedded'],
+      excludePatterns: [],
+      organizationMode: 'book_per_file',
+    };
+
+    function staleKeyRepo(oldKey: string, newPath: string, settings?: typeof perFileSettings) {
+      const recorded = makeBookFile({ id: 21, bookId: 10, absolutePath: newPath, relPath: newPath.slice('/library/'.length), ino: 5001n });
+      return makeRepo({
+        ...(settings ? { findLibrarySettings: vi.fn().mockResolvedValue(settings) } : {}),
+        findBooksByLibraryFolder: vi.fn().mockResolvedValue([{ id: 10, libraryId: 1, libraryFolderId: 1, folderPath: oldKey, status: 'present' }]),
+        findBookFilesByLibraryFolder: vi.fn().mockResolvedValue([recorded]),
+      });
+    }
+
+    it('re-keys the book in a book-per-file library instead of importing the file again', async () => {
+      const newPath = '/library/Author/New Name.epub';
+      const repo = staleKeyRepo('/library/Author/Old Name.epub', newPath, perFileSettings);
+      mockFindLooseCandidates.mockResolvedValue({
+        candidates: [makeCandidate(newPath, [makeFileStat({ absolutePath: newPath, relPath: 'Author/New Name.epub', ino: 5001n })])],
+        skippedDirs: new Set(),
+        unchangedDirs: new Set(),
+        dirMtimes: new Map(),
+      });
+      mockStat.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+
+      const done = awaitScan(repo);
+      const { service } = makeService(repo);
+      await service.startScan(1, 'manual');
+      await done;
+
+      expect(repo.updateBookFolderPath).toHaveBeenCalledWith(10, newPath);
+      expect(repo.createBook).not.toHaveBeenCalled();
+      expect(repo.markBooksAsMissing).not.toHaveBeenCalled();
+    });
+
+    it('re-keys a loose book at the root of a book-per-folder library', async () => {
+      const newPath = '/library/New Name.epub';
+      const repo = staleKeyRepo('/library/Old Name.epub', newPath);
+      mockFindCandidates.mockResolvedValue({
+        candidates: [makeCandidate(newPath, [makeFileStat({ absolutePath: newPath, relPath: 'New Name.epub', ino: 5001n })])],
+        skippedDirs: new Set(),
+        unchangedDirs: new Set(),
+        dirMtimes: new Map(),
+      });
+      mockStat.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+
+      const done = awaitScan(repo);
+      const { service } = makeService(repo);
+      await service.startScan(1, 'manual');
+      await done;
+
+      expect(repo.updateBookFolderPath).toHaveBeenCalledWith(10, newPath);
+      expect(repo.createBook).not.toHaveBeenCalled();
+      expect(repo.markBooksAsMissing).not.toHaveBeenCalled();
+    });
+
+    it('leaves the book alone while its key still exists on disk', async () => {
+      const newPath = '/library/Author/New Name.epub';
+      const repo = staleKeyRepo('/library/Author/Old Name.epub', newPath, perFileSettings);
+      mockFindLooseCandidates.mockResolvedValue({
+        candidates: [makeCandidate(newPath, [makeFileStat({ absolutePath: newPath, relPath: 'Author/New Name.epub', ino: 5001n })])],
+        skippedDirs: new Set(),
+        unchangedDirs: new Set(),
+        dirMtimes: new Map(),
+      });
+      mockStat.mockResolvedValue({ isFile: () => true } as any);
+
+      const done = awaitScan(repo);
+      const { service } = makeService(repo);
+      await service.startScan(1, 'manual');
+      await done;
+
+      expect(repo.updateBookFolderPath).not.toHaveBeenCalled();
+      expect(repo.createBook).toHaveBeenCalledWith(expect.objectContaining({ folderPath: newPath }));
+    });
   });
 
   it('gracefully skips a file that disappears during fingerprinting (ENOENT) — scan still completes', async () => {
@@ -4297,6 +4526,28 @@ describe('bootstrap, wrappers, and cover refresh', () => {
 
     service.scanBookFolderAsync('/library/Author/Book/book.epub', 1);
     await vi.waitFor(() => expect(Logger.prototype.error).toHaveBeenCalledWith(expect.stringContaining('[scanner.targeted_book_scan] [fail]')));
+  });
+
+  it('coalesces repeated file repairs through an active library scan and permits a later repair', async () => {
+    const { service, libraryGate } = makeService(makeRepo());
+    const finish = Promise.withResolvers<void>();
+    const repair = vi
+      .spyOn(service as unknown as { refreshRegisteredFile: () => Promise<void> }, 'refreshRegisteredFile')
+      .mockReturnValue(finish.promise);
+    const release = libraryGate.tryAcquire(1, 'scan')!;
+    const request = () => service.rescanRegisteredFile(1, 2, 3, '/library/book.epub');
+    request();
+    request();
+    expect(repair).not.toHaveBeenCalled();
+    release();
+    await vi.waitFor(() => expect(repair).toHaveBeenCalledTimes(1));
+    request();
+    expect(repair).toHaveBeenCalledTimes(1);
+    finish.resolve();
+    await finish.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    request();
+    expect(repair).toHaveBeenCalledTimes(2);
   });
 
   it('limits concurrent targeted scans from watcher bursts', async () => {

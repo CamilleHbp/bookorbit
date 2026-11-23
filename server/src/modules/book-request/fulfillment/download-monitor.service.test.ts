@@ -1,6 +1,8 @@
 import { ACTIVE_BOOK_REQUEST_DOWNLOAD_STATUSES } from '@bookorbit/types';
 
+import { IDLE_POLL_INTERVAL_MS } from '../../../common/utils/idle-poll';
 import type { BookRequestDownloadRow } from '../../../db/schema';
+import { BOOK_REQUEST_DOWNLOAD_QUEUED, BookRequestEventsService } from '../book-request-events.service';
 import type { DownloadStatus } from '../download-clients/download-client-adapter';
 import { DownloadMonitorService } from './download-monitor.service';
 
@@ -96,6 +98,7 @@ function makeService(
   const fulfillment = { failDownload: vi.fn().mockResolvedValue(undefined) };
   const removal = { cleanupStagedClientDownload: vi.fn().mockResolvedValue(undefined) };
   const gateway = { emitProgress: vi.fn(), emitChanged: vi.fn() };
+  const events = new BookRequestEventsService();
 
   const service = new DownloadMonitorService(
     downloads as never,
@@ -107,9 +110,10 @@ function makeService(
     fulfillment as never,
     removal as never,
     gateway as never,
+    events,
   );
 
-  return { service, downloads, requests, clients, adapter, direct, imports, fulfillment, removal, gateway };
+  return { service, downloads, requests, clients, adapter, direct, imports, fulfillment, removal, gateway, events };
 }
 
 /**
@@ -132,6 +136,51 @@ function flush(): Promise<void> {
 }
 
 describe('DownloadMonitorService.tick', () => {
+  it('backs off idle reads, the resume sweep with them, and finds work another process wrote at its next idle poll', async () => {
+    vi.useFakeTimers();
+    try {
+      const { service, downloads, direct } = makeService({ active: [] });
+      await service.tick();
+      downloads.findActive.mockResolvedValue([row({ downloadClientId: null, source: 'direct_url' })]);
+      await vi.advanceTimersByTimeAsync(IDLE_POLL_INTERVAL_MS - 1_000);
+      await service.tick();
+      expect(downloads.findActive).toHaveBeenCalledTimes(1);
+      expect(downloads.findCompletedAwaitingImport).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await polled(service);
+      expect(direct.status).toHaveBeenCalledTimes(1);
+      expect(downloads.findCompletedAwaitingImport).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await polled(service);
+      expect(direct.status).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('hears a new download even when an in-flight read returns an older empty result', async () => {
+    const { service, downloads, events, adapter } = makeService({ active: [] });
+    service.onModuleInit();
+    try {
+      const emptyRead = Promise.withResolvers<BookRequestDownloadRow[]>();
+      downloads.findActive.mockReturnValueOnce(emptyRead.promise).mockResolvedValue([row()]);
+      const firstTick = service.tick();
+      await flush();
+      expect(downloads.findActive).toHaveBeenCalledTimes(1);
+      events.emit(BOOK_REQUEST_DOWNLOAD_QUEUED);
+      emptyRead.resolve([]);
+      await firstTick;
+
+      await polled(service);
+      expect(adapter.status).toHaveBeenCalledTimes(1);
+    } finally {
+      service.onModuleDestroy();
+    }
+    expect(events.listenerCount(BOOK_REQUEST_DOWNLOAD_QUEUED)).toBe(0);
+  });
+
   it('makes no HTTP call at all when nothing is in flight', async () => {
     const { service, clients, adapter } = makeService({ active: [] });
     await polled(service);
@@ -191,7 +240,7 @@ describe('DownloadMonitorService.tick', () => {
       ACTIVE_BOOK_REQUEST_DOWNLOAD_STATUSES,
       expect.objectContaining({ status: 'downloading', progressPercent: 50, downloadedBytes: 500, contentPath: '/downloads/dune.epub' }),
     );
-    expect(gateway.emitProgress).toHaveBeenCalledWith(expect.objectContaining({ requestId: 7, downloadId: 11, progressPercent: 50 }), [700]);
+    expect(gateway.emitProgress).toHaveBeenCalledWith(expect.objectContaining({ requestId: 7, downloadId: 11, progressPercent: 50 }), [700], false);
   });
 
   it('stamps lastProgressAt only when bytes actually moved, which is what the watchdog reads', async () => {
@@ -525,7 +574,16 @@ describe('DownloadMonitorService.tick', () => {
     await polled(service);
 
     expect(downloads.updateIf).toHaveBeenCalledWith(11, ACTIVE_BOOK_REQUEST_DOWNLOAD_STATUSES, expect.objectContaining({ status: 'queued' }));
-    expect(gateway.emitProgress).toHaveBeenCalledWith(expect.objectContaining({ status: 'queued' }), [700]);
+    expect(gateway.emitProgress).toHaveBeenCalledWith(expect.objectContaining({ status: 'queued' }), [700], false);
+  });
+
+  /** The Jobs area moves a row from queued to running on a status change, and only refreshes the bar on progress. */
+  it('marks the tick that moves a queued torrent to downloading as a status change', async () => {
+    const { service, gateway } = makeService({ active: [row({ status: 'queued', downloadedBytes: 0, progressPercent: 0 })] });
+
+    await polled(service);
+
+    expect(gateway.emitProgress).toHaveBeenCalledWith(expect.objectContaining({ status: 'downloading' }), [700], true);
   });
 
   /** A state this adapter has no mapping for is in-flight, not idle. */
@@ -580,7 +638,11 @@ describe('DownloadMonitorService.tick', () => {
       now.mockReturnValue(66_000);
       await polled(context.service);
 
-      expect(context.gateway.emitProgress).toHaveBeenCalledWith(expect.objectContaining({ downloadId: 12, progressPercent: 40 }), expect.any(Array));
+      expect(context.gateway.emitProgress).toHaveBeenCalledWith(
+        expect.objectContaining({ downloadId: 12, progressPercent: 40 }),
+        expect.any(Array),
+        false,
+      );
       finishImport();
       await importQueue(context.service).waitForIdle();
       now.mockRestore();
@@ -596,8 +658,11 @@ describe('DownloadMonitorService.tick', () => {
       await polled(context.service);
       await flush();
       now.mockReturnValue(120_000);
+      // Nothing is in flight, so the monitor backed off; waking stands in for its idle poll.
+      (context.service as unknown as { activePoll: { wake(): void } }).activePoll.wake();
       await polled(context.service);
       await flush();
+      expect(context.downloads.findCompletedAwaitingImport).toHaveBeenCalledTimes(2);
 
       expect(context.imports.importDownload).toHaveBeenCalledTimes(1);
       finishImport();

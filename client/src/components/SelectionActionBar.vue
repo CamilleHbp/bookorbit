@@ -11,9 +11,11 @@ import {
   FolderMinus,
   FolderPlus,
   ImageDown,
+  ImageUp,
   Lock,
   Loader2,
   Mail,
+  Minimize2,
   MoreHorizontal,
   Pencil,
   RefreshCw,
@@ -47,8 +49,10 @@ import {
   BULK_EDITABLE_FIELD_OPTIONS,
   type BulkEditableField,
   type BulkEditableValue,
-  type InFlightOp,
 } from '@/features/book/composables/useBookBulkActions'
+import type { BulkRunInFlight } from '@/features/jobs/composables/useBulkRunTracker'
+import { bulkRunLabel } from '@/features/jobs/lib/bulk-runs'
+import { formatNumber } from '@/i18n/formatters'
 import type { MergeSelectionState } from '@/features/book/lib/book-merge'
 import type { LinkSelectionState } from '@/features/book/lib/book-link'
 import { BOOK_LINK_MAX_MEMBERS, BOOK_MERGE_MAX_BOOKS } from '@bookorbit/types'
@@ -68,13 +72,14 @@ const BTN_TEXT_CANCEL = 'h-8 px-3 rounded-full text-sm font-medium text-muted-fo
 const BTN_TEXT_DESTRUCTIVE =
   'h-8 px-3 rounded-full text-sm font-medium text-destructive hover:bg-destructive hover:text-destructive-foreground transition-colors'
 const DIVIDER = 'w-px h-5 bg-border mx-1 shrink-0'
+const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 const props = withDefaults(
   defineProps<{
     count: number
     visible: boolean
     inCollection?: boolean
-    inFlight?: InFlightOp | null
+    inFlight?: BulkRunInFlight | null
     // Selection is query-scoped (all matching across pages), so individual ids aren't enumerable.
     queryScoped?: boolean
     metadataEditable?: boolean
@@ -84,8 +89,10 @@ const props = withDefaults(
     link?: LinkSelectionState | null
     /** The selection holds books linked with others, which a delete leaves alone (G6). */
     linkedSelected?: boolean
+    /** Other editions of the selected books this user may delete; the confirmation offers to delete them too. */
+    otherEditions?: number
   }>(),
-  { metadataEditable: true, merge: null, link: null, linkedSelected: false },
+  { metadataEditable: true, merge: null, link: null, linkedSelected: false, otherEditions: 0 },
 )
 
 const emit = defineEmits<{
@@ -98,6 +105,7 @@ const emit = defineEmits<{
   'export-metadata': []
   'refresh-metadata': [options: IgnoreCacheOptions]
   're-extract-cover': []
+  'embed-audio-cover': []
   'set-status': [patch: BulkReadingStatePatch]
   'set-rating': [rating: number | null]
   'set-field': [field: BulkEditableField, value: BulkEditableValue]
@@ -105,8 +113,12 @@ const emit = defineEmits<{
   'move-to-library': []
   merge: []
   link: []
-  delete: []
+  delete: [includeOtherEditions: boolean]
   exit: []
+  /** Ask the bulk run in progress to stop. */
+  'cancel-in-flight': []
+  /** Stop following the bulk run in progress; it goes on in the background. */
+  'hide-in-flight': []
 }>()
 
 const { t } = useI18n()
@@ -116,12 +128,15 @@ const { search: searchSeriesName } = useSeriesNameSearch()
 const { search: searchLanguage } = useLanguageSearch()
 const confirmingDelete = ref(false)
 const deleteInput = ref('')
+const includeOtherEditions = ref(false)
 const exportMenuOpen = ref(false)
 const ratingMenuOpen = ref(false)
 const fieldMenuOpen = ref(false)
 const refreshConfirmOpen = ref(false)
 const refreshIgnoreCache = ref(false)
 const refreshConfirmButton = ref<HTMLButtonElement | null>(null)
+const embedConfirmOpen = ref(false)
+const embedConfirmButton = ref<HTMLButtonElement | null>(null)
 const readingStateOpen = ref(false)
 const bulkField = ref<BulkEditableField>('publisher')
 const fieldValue = ref('')
@@ -151,13 +166,13 @@ const mergeDisabledText = computed(() => {
 const linkDisabledText = computed(() => {
   switch (props.link?.disabledReason) {
     case 'queryScoped':
-      return t('book.link.disabled.queryScoped')
+      return t('book.editions.disabled.queryScoped')
     case 'tooFew':
-      return t('book.link.disabled.tooFew')
+      return t('book.editions.disabled.tooFew')
     case 'tooMany':
-      return t('book.link.disabled.tooMany', { max: BOOK_LINK_MAX_MEMBERS })
+      return t('book.editions.disabled.tooMany', { max: BOOK_LINK_MAX_MEMBERS })
     case 'notEditable':
-      return t('book.link.disabled.notEditable')
+      return t('book.editions.disabled.notEditable')
     default:
       return null
   }
@@ -176,6 +191,30 @@ const typeaheadSearchFn = computed<((q: string) => Promise<string[]>) | null>(()
   return null
 })
 
+const inFlightLabel = computed(() => (props.inFlight ? bulkRunLabel(props.inFlight.kind) : ''))
+const inFlightStatus = computed(() => {
+  const run = props.inFlight
+  if (!run) return ''
+  if (run.cancelling) return t('jobsArea.bulk.cancelling')
+  if (run.waiting) return t('jobsArea.bulk.waiting')
+  return t('jobsArea.bulk.count', { processed: formatNumber(run.processed), total: formatNumber(run.total) })
+})
+/** Announced when the run changes state, not on every item, which would talk over everything else. */
+const inFlightAnnouncement = computed(() => {
+  const run = props.inFlight
+  if (!run) return ''
+  if (run.cancelling) return t('jobsArea.bulk.cancelling')
+  return run.waiting ? t('jobsArea.bulk.waiting') : inFlightLabel.value
+})
+
+function handleCancelInFlight() {
+  emit('cancel-in-flight')
+}
+
+function handleHideInFlight() {
+  emit('hide-in-flight')
+}
+
 const canConfirmDelete = computed(() => props.count <= 50 || deleteInput.value === 'DELETE')
 const canApplyFieldValue = computed(() => {
   if (!numericFieldSelected.value) return true
@@ -190,9 +229,10 @@ function onExport(scope: ExportScope) {
 
 function onConfirmDelete() {
   if (!canConfirmDelete.value) return
-  emit('delete')
+  emit('delete', props.otherEditions > 0 && includeOtherEditions.value)
   confirmingDelete.value = false
   deleteInput.value = ''
+  includeOtherEditions.value = false
 }
 
 function openReadingStateEditor() {
@@ -220,6 +260,7 @@ function clearRating() {
 function cancelDelete() {
   confirmingDelete.value = false
   deleteInput.value = ''
+  includeOtherEditions.value = false
 }
 
 function lockAll() {
@@ -256,6 +297,22 @@ function cancelRefreshMetadata() {
 function onReExtractCover() {
   if (props.count === 0) return
   emit('re-extract-cover')
+}
+
+async function onEmbedAudioCover() {
+  if (props.count === 0) return
+  embedConfirmOpen.value = true
+  await nextTick()
+  embedConfirmButton.value?.focus()
+}
+
+function confirmEmbedAudioCover() {
+  emit('embed-audio-cover')
+  embedConfirmOpen.value = false
+}
+
+function cancelEmbedAudioCover() {
+  embedConfirmOpen.value = false
 }
 
 function onMoveToLibrary() {
@@ -318,6 +375,7 @@ watch(
       exportMenuOpen.value = false
       ratingMenuOpen.value = false
       refreshConfirmOpen.value = false
+      embedConfirmOpen.value = false
       readingStateOpen.value = false
       deleteInput.value = ''
       resetFieldEditor()
@@ -343,17 +401,49 @@ watch(
         <TooltipProvider :delay-duration="0">
           <!-- In-flight SSE progress -->
           <template v-if="inFlight">
-            <Loader2 :size="15" class="animate-spin text-primary shrink-0" />
-            <span class="px-2 text-sm font-medium text-foreground whitespace-nowrap">
-              {{ inFlight.label }} {{ inFlight.processed }} / {{ inFlight.total }}
-            </span>
+            <Loader2 :size="15" class="animate-spin motion-reduce:animate-none text-primary shrink-0" aria-hidden="true" />
+            <span class="ps-2 text-sm font-medium text-foreground whitespace-nowrap" data-testid="bulk-run-label">{{ inFlightLabel }}</span>
+            <span
+              class="ps-1.5 pe-2 text-sm tabular-nums whitespace-nowrap"
+              :class="inFlight.waiting || inFlight.cancelling ? 'text-muted-foreground' : 'text-foreground'"
+              data-testid="bulk-run-status"
+              >{{ inFlightStatus }}</span
+            >
+            <span class="sr-only" role="status" aria-live="polite">{{ inFlightAnnouncement }}</span>
+            <template v-if="inFlight.runId">
+              <div :class="DIVIDER" />
+              <button
+                type="button"
+                data-testid="bulk-run-cancel"
+                :disabled="inFlight.cancelling"
+                :aria-label="t('jobsArea.bulk.cancel')"
+                :class="[BTN_TEXT_CANCEL, FOCUS_RING, 'shrink-0 whitespace-nowrap disabled:cursor-not-allowed disabled:hover:bg-transparent']"
+                @click="handleCancelInFlight"
+              >
+                {{ t('common.cancel') }}
+              </button>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <button
+                    type="button"
+                    data-testid="bulk-run-hide"
+                    :aria-label="t('jobsArea.bulk.hide')"
+                    :class="[BTN_ICON, BTN_MUTED, FOCUS_RING]"
+                    @click="handleHideInFlight"
+                  >
+                    <Minimize2 :size="ICON_SIZE" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">{{ t('jobsArea.bulk.hide') }}</TooltipContent>
+              </Tooltip>
+            </template>
           </template>
 
           <template v-else-if="hasCustomContent">
             <slot name="content" :count="count" />
           </template>
 
-          <template v-else-if="!confirmingDelete && !exportMenuOpen && !ratingMenuOpen && !fieldMenuOpen && !refreshConfirmOpen">
+          <template v-else-if="!confirmingDelete && !exportMenuOpen && !ratingMenuOpen && !fieldMenuOpen && !refreshConfirmOpen && !embedConfirmOpen">
             <span class="px-2.5 py-0.5 text-sm font-semibold tabular-nums whitespace-nowrap rounded-full bg-primary/10 text-primary">{{
               count
             }}</span>
@@ -383,6 +473,7 @@ watch(
                   data-testid="action-bulk-set-rating"
                   :disabled="count === 0"
                   :class="[BTN_ICON, count > 0 ? BTN_PRIMARY : BTN_DISABLED]"
+                  :aria-label="t('components.selectionActionBar.setRating')"
                   @click="ratingMenuOpen = true"
                 >
                   <Star :size="ICON_SIZE" />
@@ -399,6 +490,7 @@ watch(
                   data-testid="action-bulk-edit-metadata"
                   :disabled="count === 0"
                   :class="[BTN_ICON, count > 0 ? BTN_PRIMARY : BTN_DISABLED]"
+                  :aria-label="t('components.selectionActionBar.openMetadataEditor')"
                   @click="emit('edit')"
                 >
                   <Pencil :size="ICON_SIZE" />
@@ -413,6 +505,7 @@ watch(
                   data-testid="action-edit-individually"
                   :disabled="count === 0"
                   :class="[BTN_ICON, count > 0 ? BTN_PRIMARY : BTN_DISABLED]"
+                  :aria-label="t('components.selectionActionBar.editIndividually')"
                   @click="emit('edit-individually')"
                 >
                   <SquareArrowOutUpRight :size="ICON_SIZE" />
@@ -429,6 +522,7 @@ watch(
                   data-testid="action-add-to-collection"
                   :disabled="count === 0"
                   :class="[BTN_ICON, count > 0 ? BTN_PRIMARY : BTN_DISABLED]"
+                  :aria-label="t('components.selectionActionBar.addToCollection')"
                   @click="emit('add-to-collection')"
                 >
                   <FolderPlus :size="ICON_SIZE" />
@@ -442,6 +536,7 @@ watch(
                 <button
                   :disabled="count === 0"
                   :class="[BTN_ICON, count > 0 ? BTN_DESTRUCTIVE : BTN_DISABLED]"
+                  :aria-label="t('components.selectionActionBar.removeFromCollection')"
                   @click="emit('remove-from-collection')"
                 >
                   <FolderMinus :size="ICON_SIZE" />
@@ -458,6 +553,7 @@ watch(
                   data-testid="action-send-email"
                   :disabled="count === 0"
                   :class="[BTN_ICON, count > 0 ? BTN_PRIMARY : BTN_DISABLED]"
+                  :aria-label="t('components.selectionActionBar.sendViaEmail')"
                   @click="emit('send')"
                 >
                   <Mail :size="ICON_SIZE" />
@@ -472,6 +568,7 @@ watch(
                   data-testid="action-download-files"
                   :disabled="count === 0"
                   :class="[BTN_ICON, count > 0 ? BTN_PRIMARY : BTN_DISABLED]"
+                  :aria-label="t('components.selectionActionBar.downloadFilesZip')"
                   @click="exportMenuOpen = true"
                 >
                   <Download :size="ICON_SIZE" />
@@ -510,6 +607,10 @@ watch(
                         <DropdownMenuItem data-testid="action-bulk-re-extract-cover" @click="onReExtractCover">
                           <ImageDown :size="14" />
                           <span>{{ t('components.selectionActionBar.reExtractCover') }}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem data-testid="action-bulk-embed-audio-cover" @click="onEmbedAudioCover">
+                          <ImageUp :size="14" />
+                          <span>{{ t('components.selectionActionBar.embedAudioCover') }}</span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuSub>
@@ -570,7 +671,9 @@ watch(
                         >
                           <Link2 :size="14" :class="linkDisabledText !== null ? 'mt-0.5' : undefined" />
                           <span class="flex min-w-0 flex-col">
-                            <span :class="linkDisabledText !== null ? 'text-muted-foreground' : undefined">{{ t('book.link.action') }}</span>
+                            <span :class="linkDisabledText !== null ? 'text-muted-foreground' : undefined">{{
+                              t('book.editions.selectionAction')
+                            }}</span>
                             <span v-if="linkDisabledText" class="text-xs text-muted-foreground" data-testid="action-link-books-reason">{{
                               linkDisabledText
                             }}</span>
@@ -592,6 +695,7 @@ watch(
                   data-testid="action-delete"
                   :disabled="count === 0"
                   :class="[BTN_ICON, count > 0 ? BTN_DESTRUCTIVE : BTN_DISABLED]"
+                  :aria-label="t('components.selectionActionBar.deleteSelected')"
                   @click="confirmingDelete = true"
                 >
                   <Trash2 :size="ICON_SIZE" />
@@ -664,6 +768,27 @@ watch(
             </button>
           </template>
 
+          <!-- Embed audiobook covers confirmation: every read-along EPUB is rewritten -->
+          <template v-else-if="embedConfirmOpen">
+            <span class="px-3 text-sm font-semibold text-foreground whitespace-nowrap" data-testid="bulk-embed-confirm">
+              {{ t('components.selectionActionBar.embedAudioCoverConfirm', { count }) }}
+            </span>
+            <div :class="DIVIDER" />
+            <button
+              ref="embedConfirmButton"
+              type="button"
+              :class="BTN_TEXT_PRIMARY"
+              data-testid="bulk-embed-confirm-action"
+              @click="confirmEmbedAudioCover"
+            >
+              <ImageUp :size="14" />
+              {{ t('components.selectionActionBar.embedAudioCoverConfirmAction') }}
+            </button>
+            <button type="button" :class="BTN_TEXT_CANCEL" data-testid="bulk-embed-cancel" @click="cancelEmbedAudioCover">
+              {{ t('common.cancel') }}
+            </button>
+          </template>
+
           <!-- Field editor -->
           <template v-else-if="fieldMenuOpen">
             <span class="hidden sm:inline px-3 text-sm font-semibold text-foreground whitespace-nowrap">{{
@@ -704,8 +829,16 @@ watch(
           <template v-else>
             <span class="flex flex-col px-3 whitespace-nowrap">
               <span class="text-sm font-semibold text-destructive">{{ t('components.selectionActionBar.deleteConfirm', { count }) }}</span>
-              <span v-if="linkedSelected" class="text-xs text-muted-foreground" data-testid="delete-linked-note">{{
-                t('book.link.selectionNotAffected')
+              <label
+                v-if="otherEditions > 0"
+                class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-foreground"
+                data-testid="delete-include-editions"
+              >
+                <input v-model="includeOtherEditions" type="checkbox" class="size-3.5 accent-destructive" />
+                {{ t('book.editions.delete.includeOthers', { count: otherEditions }) }}
+              </label>
+              <span v-else-if="linkedSelected" class="text-xs text-muted-foreground" data-testid="delete-linked-note">{{
+                t('book.editions.othersNotAffected')
               }}</span>
             </span>
             <template v-if="count > 50">

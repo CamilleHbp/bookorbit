@@ -43,6 +43,18 @@ const ledger = ref<HTMLElement | null>(null)
 
 const canUseTool = computed(() => duplicates.canUseTool.value)
 const kinds = BOOK_DUPLICATE_KINDS
+/**
+ * The pair count beside a tab's name, less any grouped or dismissed since the scan. Duplicates
+ * states its totals in the summary band instead.
+ */
+const kindCounts = computed<Record<BookDuplicateKind, number | null>>(() => {
+  const open = duplicates.kindTotals.value
+  return {
+    duplicate: null,
+    other_format: open?.other_format ?? duplicates.scan.value?.totalOtherFormatPairs ?? null,
+    other_edition: open?.other_edition ?? duplicates.scan.value?.totalOtherEditionPairs ?? null,
+  }
+})
 /** The latest copy of each group under review, so a changed action or keeper shows at once. */
 const reviewedGroups = computed(() => reviewGroups.value.map((group) => groups.value.find((candidate) => candidate.id === group.id) ?? group))
 const groups = computed(() => duplicates.visibleGroups.value)
@@ -300,9 +312,10 @@ function handleKeydown(event: KeyboardEvent): void {
         >
           {{ t(`tools.bookDuplicates.kinds.${kind}`) }}
           <span
-            v-if="kind === 'other_format' && duplicates.scan.value?.totalOtherFormatPairs"
+            v-if="kindCounts[kind]"
             class="ms-1 rounded-full bg-muted px-1.5 text-[11px] font-bold tabular-nums text-muted-foreground"
-            >{{ formatNumber(duplicates.scan.value.totalOtherFormatPairs) }}</span
+            :data-testid="`duplicate-kind-count-${kind}`"
+            >{{ formatNumber(kindCounts[kind] ?? 0) }}</span
           >
         </button>
       </div>
@@ -360,8 +373,13 @@ function handleKeydown(event: KeyboardEvent): void {
         <div
           class="duplicates-head flex h-[34px] shrink-0 items-center gap-2.5 border-b border-border bg-surface-2 px-3 text-[10.5px] font-bold tracking-wide uppercase text-muted-foreground"
         >
-          <label class="grid size-8 cursor-pointer place-items-center">
-            <input type="checkbox" class="peer sr-only" :checked="duplicates.allVisibleSelected.value" @change="handleToggleAll" />
+          <label class="relative grid size-8 cursor-pointer place-items-center">
+            <input
+              type="checkbox"
+              class="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
+              :checked="duplicates.allVisibleSelected.value"
+              @change="handleToggleAll"
+            />
             <span class="sr-only">{{ t('tools.bookDuplicates.selectAll') }}</span>
             <span
               class="grid size-4 place-items-center rounded-xs border peer-focus-visible:ring-2 peer-focus-visible:ring-ring"

@@ -28,6 +28,27 @@ describe('buildVolumeLadder', () => {
     expect(ladder.gaps).toEqual([3]);
   });
 
+  it('counts zero-only decimals as whole volumes and keeps other decimals independent', () => {
+    const ladder = build([member(1, '6'), member(2, '7.00'), member(3, '8'), member(4, '7.01')]);
+
+    expect(ladder.volumes.map((volume) => volume.index)).toEqual([6, 7, '7.01', 8]);
+    expect(ladder.gaps).toEqual([]);
+    expect(computeSeriesGaps(['6', '7.0', '8'], 3, null)).toEqual([]);
+
+    const next = build([member(1, '7.0')]).next;
+    expect(next?.index).toBe('7');
+  });
+
+  it('fills all slots covered by an omnibus and keeps genuine gaps', () => {
+    const omnibus = { ...member(1, null, 'read'), coveredVolumes: [1, 2, 4] };
+    const ladder = build([omnibus, member(2, '2', 'read'), member(3, '5.0')], { expected: 6 });
+
+    expect(ladder.volumes.map((volume) => volume.bookId)).toEqual([1, 2, null, 1, 3, null]);
+    expect(ladder.gaps).toEqual([3, 6]);
+    expect(ladder.counts).toEqual({ ownedVolumeCount: 4, readVolumeCount: 3, readingVolumeCount: 0 });
+    expect(computeSeriesGaps([null, '2', '5.0'], 3, 6, [[1, 2, 4]])).toEqual([3, 6]);
+  });
+
   it('never names a rung the gap finder would not name', () => {
     const cases: { members: SeriesMemberRow[]; expected: number | null }[] = [
       { members: [member(1, '1'), member(2, '3')], expected: null },
@@ -68,11 +89,20 @@ describe('buildVolumeLadder', () => {
     expect(ladder.volumes[0]!.bookId).toBe(2);
   });
 
-  it('puts books with no usable number after the numbered rungs', () => {
+  it('puts books without a number after whole and dotted positions', () => {
     const ladder = build([member(1, '1', 'read'), member(2, null), member(3, '2.5', 'reading')]);
 
-    expect(ladder.volumes.map((v) => v.index)).toEqual([1, null, null]);
-    expect(marks(ladder)).toBe('read,unread,reading');
+    expect(ladder.volumes.map((v) => v.index)).toEqual([1, '2.5', null]);
+    expect(marks(ladder)).toBe('read,reading,unread');
+  });
+
+  it('shows a prologue before volume one and never infers missing dotted positions', () => {
+    const ladder = build([member(1, '1'), member(2, '0.5'), member(3, '3'), member(4, '1.10'), member(5, '1.5')]);
+
+    expect(ladder.volumes.map((v) => v.index)).toEqual(['0.5', 1, '1.5', '1.10', 2, 3]);
+    expect(ladder.gaps).toEqual([2]);
+    expect(ladder.next).toEqual({ bookId: 2, index: '0.5', title: 'Book 2' });
+    expect(build([member(1, '0.5')]).volumes[0]?.index).toBe('0.5');
   });
 
   it('draws no ladder at all when nothing carries a usable number', () => {

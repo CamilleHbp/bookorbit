@@ -49,6 +49,7 @@ import RichDescriptionEditor from './RichDescriptionEditor.vue'
 import SeriesMembershipEditor from './SeriesMembershipEditor.vue'
 import WriteAndRenameResultPanel from '../WriteAndRenameResultPanel.vue'
 import type { MetadataDiffApply, MetadataPatch } from '../../../composables/useMetadataDiff'
+import { parseCoveredVolumes } from '@/features/book/lib/series-coverage'
 import { type EditableSeriesMembership, normalizeSeriesMemberships, useMetadataEditor } from '../../../composables/useMetadataEditor'
 import { type MetadataRefreshPreview, type MetadataRefreshPreviewResult, useRefreshMetadata } from '../../../composables/useRefreshMetadata'
 import { type FileMetadata, useFileMetadata } from '../../../composables/useFileMetadata'
@@ -94,6 +95,7 @@ const DIRECT_PATCH_FIELDS = [
   'authors',
   'genres',
   'publisher',
+  'originalPublishedYear',
   'language',
   'pageCount',
   'seriesName',
@@ -172,8 +174,11 @@ const comicSectionOpen = ref(true)
 const FIELD_CONTROL_CLASS =
   'w-full h-10 sm:h-8 rounded-lg border border-input bg-background px-3 pr-11 text-sm outline-none focus:ring-1 focus:ring-ring transition-shadow disabled:opacity-50 disabled:cursor-not-allowed'
 const FIELD_CONTROL_MONO_CLASS = `${FIELD_CONTROL_CLASS} font-mono`
+// The lock button sits where a browser draws number spinners, and in a half-width box the
+// spinner would cover the digits of a year.
+const NUMBER_CONTROL_CLASS = '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
 
-const { form, saving, error, isDirty, includeAudioMetadata, syncFromBook, reset, save } = useMetadataEditor()
+const { form, saving, error, isDirty, includeAudioMetadata, includeNarrators, syncFromBook, reset, save } = useMetadataEditor()
 const {
   lockedFields,
   updating: updatingLocks,
@@ -236,7 +241,23 @@ async function loadAvailableMetadataProviders(bookId: number) {
   }
 }
 
-function setIntField(field: 'publishedYear' | 'pageCount' | 'durationSeconds', e: Event) {
+function handleOriginalPublishedYearInput(e: Event) {
+  setIntField('originalPublishedYear', e)
+}
+
+function handlePublishedYearInput(e: Event) {
+  setIntField('publishedYear', e)
+}
+
+function handlePageCountInput(e: Event) {
+  setIntField('pageCount', e)
+}
+
+function handleDurationSecondsInput(e: Event) {
+  setIntField('durationSeconds', e)
+}
+
+function setIntField(field: 'publishedYear' | 'originalPublishedYear' | 'pageCount' | 'durationSeconds', e: Event) {
   const val = (e.target as HTMLInputElement).value
   if (val === '') {
     form[field] = null
@@ -347,8 +368,11 @@ const comicWideFields = computed(
 
 const hasLockedFields = computed(() => lockedFields.value.length > 0)
 const hasPendingChanges = computed(() => isDirty.value || locksDirty.value || Boolean(coverPanel.value?.hasPending))
-const hasInvalidSeriesIndex = computed(() =>
-  form.seriesMemberships.some((membership) => membership.seriesIndex !== null && !isValidSeriesIndex(membership.seriesIndex)),
+const hasInvalidSeriesMembership = computed(() =>
+  form.seriesMemberships.some(
+    (membership) =>
+      (membership.seriesIndex !== null && !isValidSeriesIndex(membership.seriesIndex)) || parseCoveredVolumes(membership.coverageInput) === null,
+  ),
 )
 const isSeriesLocked = computed(() => isLocked('seriesName') || isLocked('seriesIndex'))
 const communityRatingLines = computed(() =>
@@ -496,16 +520,16 @@ function applySeriesMembershipPatch(formPatch: MetadataPatch, skippedFields: Boo
     return 0
   }
 
-  // Providers do not report series length in this patch, so carry the current value across
-  // rather than letting an applied suggestion silently clear a total someone entered.
-  const totalsByName = new Map(form.seriesMemberships.map((m) => [m.seriesName.trim().toLowerCase(), m.expectedBookCount ?? null]))
+  // Preserve series totals and omnibus coverage when a provider supplies new positions.
+  const currentByName = new Map(form.seriesMemberships.map((m) => [m.seriesName.trim().toLowerCase(), m]))
 
   setSeriesMemberships(
     normalizeSeriesMemberships(
       (formPatch.seriesMemberships ?? []).map((membership) => ({
         seriesName: membership.seriesName,
         seriesIndex: normalizeSeriesIndex(membership.seriesIndex),
-        expectedBookCount: totalsByName.get(membership.seriesName.trim().toLowerCase()) ?? null,
+        expectedBookCount: currentByName.get(membership.seriesName.trim().toLowerCase())?.expectedBookCount ?? null,
+        coverageInput: currentByName.get(membership.seriesName.trim().toLowerCase())?.coverageInput,
       })),
     ),
   )
@@ -709,7 +733,7 @@ const {
 const coverMutationPending = computed(() => Boolean(coverPanel.value?.busy))
 const formMutationPending = computed(() => autoFilling.value || loadingFromFile.value || coverMutationPending.value)
 const formDisabled = computed(() => saving.value || writingAndRenaming.value || formMutationPending.value)
-const submitDisabled = computed(() => formDisabled.value || !hasPendingChanges.value || hasInvalidSeriesIndex.value)
+const submitDisabled = computed(() => formDisabled.value || !hasPendingChanges.value || hasInvalidSeriesMembership.value)
 let dismissTimer: ReturnType<typeof setTimeout> | null = null
 
 function pluralizeField(count: number): string {
@@ -775,6 +799,7 @@ function buildPreviewPatch(preview: MetadataRefreshPreview): MetadataPatch {
     publisher: preview.publisher,
     publishedDate: preview.publishedDate,
     publishedYear: preview.publishedYear,
+    originalPublishedYear: preview.originalPublishedYear,
     language: preview.language,
     pageCount: preview.pageCount,
     communityRatings: preview.communityRatings,
@@ -1188,7 +1213,7 @@ function handleCoverChanged(medium: CoverMedium | null) {
               </MetadataFieldLabel>
 
               <MetadataFieldLabel
-                v-if="includeAudioMetadata"
+                v-if="includeNarrators"
                 :label="t('book.detail.editMetadata.narratorsLabel')"
                 field="narrators"
                 :locked="isLocked('narrators')"
@@ -1208,6 +1233,7 @@ function handleCoverChanged(medium: CoverMedium | null) {
                 @toggle="handleSeriesLockToggle"
               >
                 <SeriesMembershipEditor
+                  show-coverage
                   class="pr-9"
                   :model-value="form.seriesMemberships"
                   :search-fn="searchSeriesName"
@@ -1228,6 +1254,22 @@ function handleCoverChanged(medium: CoverMedium | null) {
                   :search-fn="searchPublisher"
                   :disabled="isLocked('publisher')"
                   :class="FIELD_CONTROL_CLASS"
+                />
+              </MetadataFieldLabel>
+
+              <MetadataFieldLabel
+                :label="t('book.detail.editMetadata.editionNameLabel')"
+                field="editionName"
+                :locked="isLocked('editionName')"
+                :is-updating="isUpdatingLock"
+                @toggle="handleLockToggle"
+              >
+                <input
+                  v-model="form.editionName"
+                  :placeholder="t('book.detail.editMetadata.editionNamePlaceholder')"
+                  :maxlength="500"
+                  :class="FIELD_CONTROL_CLASS"
+                  :disabled="isLocked('editionName')"
                 />
               </MetadataFieldLabel>
 
@@ -1275,7 +1317,7 @@ function handleCoverChanged(medium: CoverMedium | null) {
               </h3>
             </header>
             <div class="flex flex-1 flex-col gap-2.5 p-2.5">
-              <div class="grid grid-cols-2 gap-2.5">
+              <div class="@container grid grid-cols-2 gap-2.5">
                 <MetadataFieldLabel
                   class="col-span-2"
                   :label="t('book.detail.editMetadata.languageLabel')"
@@ -1311,6 +1353,7 @@ function handleCoverChanged(medium: CoverMedium | null) {
                 </MetadataFieldLabel>
 
                 <MetadataFieldLabel
+                  class="col-span-2 @min-[14rem]:col-span-1"
                   :label="t('book.detail.editMetadata.yearLabel')"
                   field="publishedYear"
                   :locked="isLocked('publishedYear')"
@@ -1322,13 +1365,14 @@ function handleCoverChanged(medium: CoverMedium | null) {
                     type="number"
                     min="1"
                     max="2100"
-                    :class="controlClass(form.publishedYear == null)"
+                    :class="[controlClass(form.publishedYear == null), NUMBER_CONTROL_CLASS]"
                     :disabled="isLocked('publishedYear')"
-                    @input="setIntField('publishedYear', $event)"
+                    @input="handlePublishedYearInput"
                   />
                 </MetadataFieldLabel>
 
                 <MetadataFieldLabel
+                  class="col-span-2 @min-[14rem]:col-span-1"
                   :label="t('book.detail.editMetadata.pageCountLabel')"
                   field="pageCount"
                   :locked="isLocked('pageCount')"
@@ -1339,9 +1383,28 @@ function handleCoverChanged(medium: CoverMedium | null) {
                     :value="form.pageCount ?? ''"
                     type="number"
                     min="1"
-                    :class="controlClass(form.pageCount == null)"
+                    :class="[controlClass(form.pageCount == null), NUMBER_CONTROL_CLASS]"
                     :disabled="isLocked('pageCount')"
-                    @input="setIntField('pageCount', $event)"
+                    @input="handlePageCountInput"
+                  />
+                </MetadataFieldLabel>
+
+                <MetadataFieldLabel
+                  class="col-span-2"
+                  :label="t('book.detail.editMetadata.firstPublishedLabel')"
+                  field="originalPublishedYear"
+                  :locked="isLocked('originalPublishedYear')"
+                  :is-updating="isUpdatingLock"
+                  @toggle="handleLockToggle"
+                >
+                  <input
+                    :value="form.originalPublishedYear ?? ''"
+                    type="number"
+                    min="1000"
+                    max="2200"
+                    :class="[controlClass(form.originalPublishedYear == null), NUMBER_CONTROL_CLASS]"
+                    :disabled="isLocked('originalPublishedYear')"
+                    @input="handleOriginalPublishedYearInput"
                   />
                 </MetadataFieldLabel>
 
@@ -1388,9 +1451,9 @@ function handleCoverChanged(medium: CoverMedium | null) {
                     :value="form.durationSeconds ?? ''"
                     type="number"
                     min="1"
-                    :class="controlClass(form.durationSeconds == null)"
+                    :class="[controlClass(form.durationSeconds == null), NUMBER_CONTROL_CLASS]"
                     :disabled="isLocked('durationSeconds')"
-                    @input="setIntField('durationSeconds', $event)"
+                    @input="handleDurationSecondsInput"
                   />
                 </MetadataFieldLabel>
 

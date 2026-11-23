@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ChevronLeft, ChevronRight } from '@lucide/vue'
 
@@ -50,7 +50,6 @@ const cardWidthClass = computed(() => {
   return { square, portrait }
 })
 
-const router = useRouter()
 const { t } = useI18n()
 const { coverUrl } = useCoverVersions()
 const scrollEl = ref<HTMLElement | null>(null)
@@ -61,8 +60,8 @@ function scroll(direction: 'left' | 'right') {
   scrollEl.value.scrollBy({ left: direction === 'left' ? -240 : 240, behavior: 'smooth' })
 }
 
-function navigateToBook(bookId: number) {
-  router.push({ name: 'book-detail', params: { bookId } })
+function bookLocation(bookId: number): RouteLocationRaw {
+  return { name: 'book-detail', params: { bookId } }
 }
 
 function formatSeriesIndex(index: string | null | undefined): string {
@@ -157,11 +156,10 @@ defineExpose({ scroll })
           :display-mode="isAudiobook(book) ? 'fill-crop' : undefined"
           :style="{ aspectRatio: cardAspectRatio(book) }"
         >
-          <button
-            type="button"
+          <RouterLink
+            :to="bookLocation(book.id)"
             class="absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus-visible:outline-2 focus-visible:outline-ring"
             :aria-label="book.title ?? t('book.untitled')"
-            @click="navigateToBook(book.id)"
           />
           <BookCoverArtwork
             :src="coverUrl(book.id, 'thumbnail', book.coverVersion ?? book.updatedAt)"

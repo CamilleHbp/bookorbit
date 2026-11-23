@@ -42,6 +42,7 @@ function joined(overrides: Partial<BookRequestRow> = {}) {
     requesterUsername: 'bob',
     requesterName: 'Bob',
     decidedByUsername: null,
+    decidedByName: null,
     targetLibraryName: 'Books',
   };
 }
@@ -140,7 +141,7 @@ function makeService(
 
 describe('RequestFulfillmentService.grab', () => {
   it('records the attempt before calling the client, so an add never outlives its row', async () => {
-    const { service, downloads, adapter } = makeService();
+    const { service, downloads, adapter, events } = makeService();
 
     await service.grab(7, { magnet: MAGNET }, user());
 
@@ -148,6 +149,8 @@ describe('RequestFulfillmentService.grab', () => {
       expect.objectContaining({ requestId: 7, source: 'magnet', clientKey: INFO_HASH, status: 'queued', releaseTitle: 'Dune' }),
     );
     expect(downloads.create.mock.invocationCallOrder[0]).toBeLessThan(adapter.add.mock.invocationCallOrder[0]);
+    expect(events.emit).toHaveBeenCalledWith('book-request.download.queued');
+    expect(events.emit.mock.invocationCallOrder[0]).toBeGreaterThan(downloads.create.mock.invocationCallOrder[0]);
   });
 
   it('marks who grabbed it, because only an unattended attempt may be retried unattended', async () => {
@@ -1210,6 +1213,23 @@ describe('RequestFulfillmentService.failDownload', () => {
       NotificationType.BookRequestFailed,
       expect.objectContaining({ meta: { requestId: 7, downloadId: 11 } }),
     );
+  });
+
+  /** The prose is still written, so a client that does not know the code keeps showing it. */
+  it('records a classified failure with its code and parameters beside the reason', async () => {
+    const { service, requests } = makeService();
+
+    await service.failDownload({ id: 11, requestId: 7 } as BookRequestDownloadRow, 'The downloaded content is not readable at /data/torrents/Dune', {
+      code: 'DOWNLOAD_UNREADABLE',
+      meta: { path: '/data/torrents/Dune' },
+    });
+
+    expect(requests.updateIf).toHaveBeenCalledWith(7, WORKER_WRITABLE_BOOK_REQUEST_STATUSES, {
+      status: 'failed',
+      statusReason: 'The downloaded content is not readable at /data/torrents/Dune',
+      failureCode: 'DOWNLOAD_UNREADABLE',
+      failureMeta: { path: '/data/torrents/Dune' },
+    });
   });
 
   it('drops a direct source URL when its attempt fails', async () => {

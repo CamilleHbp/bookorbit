@@ -2,11 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { SQL, and, asc, desc, eq, exists, inArray, isNull, max, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
-import type { ContentFilterRules } from '@bookorbit/types';
+import type { AuthorGender, ContentFilterRules } from '@bookorbit/types';
 import { buildContentFilterClauses } from '../../common/utils/content-filter-sql.utils';
 import { accentInsensitiveIlike, buildSearchPattern } from '../../common/utils/accent-insensitive-search.utils';
 import { DB } from '../../db';
 import { refreshPrimaryAuthorSortNamesForAuthors, refreshPrimaryAuthorSortNamesForBooks } from '../../db/book-author-sort-key';
+import { workKeySql } from '../../db/book-work-key';
 import * as schema from '../../db/schema';
 import { authors, bookAuthors, bookMetadata, books } from '../../db/schema';
 import { AuthorBookSort } from './dto/list-author-books.dto';
@@ -20,6 +21,8 @@ type AuthorSummaryRow = {
   sortName: string | null;
   description: string | null;
   bookCount: number;
+  /** Books counted once per work: linked editions count as one. Absent where nothing counted them. */
+  workCount?: number;
   lastAddedAt: Date | null;
 };
 
@@ -38,6 +41,7 @@ type AuthorBookIdRow = {
 };
 
 export type AuthorDetailRow = AuthorSummaryRow & {
+  gender: AuthorGender | null;
   birthDate: string | null;
   birthYear: number | null;
   deathDate: string | null;
@@ -156,8 +160,30 @@ export class AuthorsRepository {
           .where(where);
 
     const [items, [{ total }]] = await Promise.all([dataQuery, countQuery]);
+    const workCounts = await this.fetchWorkCounts(
+      items.map((item) => item.id),
+      where,
+    );
 
-    return { items, total: Number(total), page: params.page, size: params.size };
+    return {
+      items: items.map((item) => ({ ...item, workCount: workCounts.get(item.id) ?? item.bookCount })),
+      total: Number(total),
+      page: params.page,
+      size: params.size,
+    };
+  }
+
+  /** Works behind each author's books under the list's own filter: linked editions count once. */
+  private async fetchWorkCounts(authorIds: number[], where: SQL | undefined): Promise<Map<number, number>> {
+    if (authorIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({ authorId: authors.id, workCount: sql<number>`count(distinct ${workKeySql(books.id)})::int` })
+      .from(authors)
+      .innerJoin(bookAuthors, eq(bookAuthors.authorId, authors.id))
+      .innerJoin(books, eq(books.id, bookAuthors.bookId))
+      .where(and(inArray(authors.id, authorIds), where))
+      .groupBy(authors.id);
+    return new Map(rows.map((row) => [row.authorId, Number(row.workCount)]));
   }
 
   async countAuthors(params: { libraryIds: number[]; contentFilters?: ContentFilterRules }): Promise<number> {
@@ -183,6 +209,7 @@ export class AuthorsRepository {
         name: authors.name,
         sortName: authors.sortName,
         description: authors.description,
+        gender: authors.gender,
         birthDate: authors.birthDate,
         birthYear: authors.birthYear,
         deathDate: authors.deathDate,
@@ -194,6 +221,7 @@ export class AuthorsRepository {
         metadataProviderId: authors.metadataProviderId,
         metadataProviderPinned: authors.metadataProviderPinned,
         bookCount: sql<number>`count(distinct ${books.id})::int`,
+        workCount: sql<number>`count(distinct ${workKeySql(books.id)})::int`,
         lastAddedAt: max(books.addedAt),
       })
       .from(authors)
@@ -205,6 +233,7 @@ export class AuthorsRepository {
         authors.name,
         authors.sortName,
         authors.description,
+        authors.gender,
         authors.birthDate,
         authors.birthYear,
         authors.deathDate,
@@ -283,7 +312,7 @@ export class AuthorsRepository {
     const filterClauses = params.contentFilters ? buildContentFilterClauses(params.contentFilters, this.db) : [];
     const where = and(eq(bookAuthors.authorId, params.authorId), inArray(books.libraryId, params.libraryIds), ...filterClauses);
 
-    const sortExpr = params.sort === 'title' ? bookMetadata.title : params.sort === 'publishedYear' ? bookMetadata.publishedYear : books.addedAt;
+    const orderBy = this.buildBookOrderBy(params.sort, params.order);
 
     const [rows, [{ total }]] = await Promise.all([
       this.db
@@ -292,7 +321,7 @@ export class AuthorsRepository {
         .innerJoin(bookAuthors, eq(bookAuthors.bookId, books.id))
         .leftJoin(bookMetadata, eq(bookMetadata.bookId, books.id))
         .where(where)
-        .orderBy(this.orderByDirection(sortExpr, params.order), asc(books.id))
+        .orderBy(...orderBy)
         .limit(params.size)
         .offset(params.page * params.size),
       this.db
@@ -303,6 +332,19 @@ export class AuthorsRepository {
     ]);
 
     return { bookIds: rows.map((row: AuthorBookIdRow) => row.id), total: Number(total), page: params.page, size: params.size };
+  }
+
+  /** The order of an author's books, ending on the id so pages never overlap. */
+  buildBookOrderBy(sort: AuthorBookSort, order: SortDirection): SQL[] {
+    const sortExpr = sort === 'title' ? bookMetadata.title : sort === 'publishedYear' ? bookMetadata.publishedYear : books.addedAt;
+    return [this.orderByDirection(sortExpr, order), asc(books.id)];
+  }
+
+  /** Books the viewer can see: these libraries, under their content filters. */
+  buildVisibleBooksWhere(libraryIds: number[], contentFilters?: ContentFilterRules): SQL {
+    if (libraryIds.length === 0) return sql`false`;
+    const filterClauses = contentFilters ? buildContentFilterClauses(contentFilters, this.db) : [];
+    return and(inArray(books.libraryId, libraryIds), ...filterClauses)!;
   }
 
   /**
@@ -335,6 +377,7 @@ export class AuthorsRepository {
       name: string;
       sortName: string | null;
       description: string | null;
+      gender: AuthorGender | null;
       hasPhoto: boolean;
       birthDate: string | null;
       birthYear: number | null;
@@ -354,6 +397,7 @@ export class AuthorsRepository {
       name: authors.name,
       sortName: authors.sortName,
       description: authors.description,
+      gender: authors.gender,
       hasPhoto: authors.hasPhoto,
       lastEnrichedAt: authors.lastEnrichedAt,
     });

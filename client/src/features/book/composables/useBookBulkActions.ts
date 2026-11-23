@@ -1,7 +1,7 @@
-import { ref } from 'vue'
 import type { Ref } from 'vue'
 import {
   BOOK_METADATA_LOCK_FIELDS,
+  type AudioCoverEmbedProgressEvent,
   type BookSelectionPayload,
   type BookSelectionQuery,
   type BookCard,
@@ -14,6 +14,7 @@ import { i18n } from '@/i18n'
 import { formatNumber } from '@/i18n/formatters'
 import { api } from '@/lib/api'
 import { toast } from 'vue-sonner'
+import { useLibraryCountsRefresh } from '@/features/library/composables/useLibraryCountsRefresh'
 import { useCoverVersions } from './useCoverVersions'
 import { useRefreshingBooks } from './useRefreshingBooks'
 import { useBookDownload } from './useBookDownload'
@@ -21,6 +22,10 @@ import { useBookRefreshFeedback } from './useBookRefreshFeedback'
 import { detectChangedColumns, mergeBookCardWithDetail } from '@/features/book/lib/book-card-mapper'
 import { withIgnoreCache, type IgnoreCacheOptions } from '@/features/metadata-cache/lib/metadata-cache'
 import type { BulkReadingStatePatch } from './useBookStatus'
+import { useBulkRunTracker, type BulkRunFollowResult } from '@/features/jobs/composables/useBulkRunTracker'
+import { bulkRunRefusalText } from '@/features/jobs/lib/bulk-runs'
+
+const { t } = i18n.global
 
 export type ExportScope = 'primary' | 'all' | 'audio'
 
@@ -58,10 +63,24 @@ const BULK_FIELD_LOCK_FIELD: Record<BulkEditableField, BookMetadataLockField> = 
   narrators: 'narrators',
 }
 
-export type InFlightOp = { label: string; processed: number; total: number; failed?: number }
+/** What the metadata refresh stream sends: one event per book, then the summary. */
+type RefreshMetadataEvent = {
+  bookId?: number
+  success?: boolean
+  detail?: BookDetail
+  error?: string
+  done?: boolean
+  processed?: number
+  failed?: number
+}
+
+/** What the cover re-extract stream sends: one event per book it tried, then the summary. */
+type ReExtractCoverEvent = { bookId?: number; done?: boolean; processed?: number; updated?: number }
 
 export type QuerySelectionState = BookSelectionQuery & {
   total: number
+  /** Matching books counting every edition, when the listing folds them (`collapseLinked`). */
+  editionTotal?: number
 }
 
 function buildLocalReadStatus(patch: BulkReadingStatePatch, existing: UserBookStatus | null, nowIso: string): UserBookStatus {
@@ -88,15 +107,31 @@ export function useBookBulkActions(
   const { markRefreshing, clearRefreshing } = useRefreshingBooks()
   const refreshFeedback = useBookRefreshFeedback()
   const { exportBooks } = useBookDownload()
+  const refreshLibraryCounts = useLibraryCountsRefresh()
 
-  const inFlight = ref<InFlightOp | null>(null)
+  const tracker = useBulkRunTracker()
+  const inFlight = tracker.inFlight
 
   function getSelectionPayload(): BookSelectionPayload {
+    if (querySelection?.value) {
+      const { libraryId, filter, q, sort, collapseLinked } = querySelection.value
+      return { query: { libraryId, filter, q, sort, ...(collapseLinked ? { collapseLinked: true } : {}) } }
+    }
+    return { bookIds: [...selectedIds.value] }
+  }
+
+  /** Every edition behind the selection: query selections stop folding, explicit ones add each card's other editions. */
+  function getAllEditionsPayload(canDelete: (libraryId: number) => boolean): BookSelectionPayload {
     if (querySelection?.value) {
       const { libraryId, filter, q, sort } = querySelection.value
       return { query: { libraryId, filter, q, sort } }
     }
-    return { bookIds: [...selectedIds.value] }
+    const ids = new Set(selectedIds.value)
+    for (const book of books?.value ?? []) {
+      if (!selectedIds.value.has(book.id)) continue
+      for (const other of book.linked?.books ?? []) if (canDelete(other.libraryId)) ids.add(other.bookId)
+    }
+    return { bookIds: [...ids] }
   }
 
   function hasSelection(): boolean {
@@ -117,86 +152,68 @@ export function useBookBulkActions(
     const total = querySelection?.value ? querySelection.value.total : ids.length
     markRefreshing(ids)
     refreshFeedback.markRefreshingMany(ids)
-    inFlight.value = { label: 'Refreshing metadata', processed: 0, total, failed: 0 }
-    const res = await api('/api/v1/books/bulk-refresh-metadata', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(withIgnoreCache(getSelectionPayload(), { ignoreCache: options?.ignoreCache === true })),
-    })
-    if (!res.ok) {
-      clearRefreshing(ids)
-      refreshFeedback.markFailedMany(ids, 'Metadata refresh failed')
-      inFlight.value = null
-      toast.error('Failed to refresh metadata')
-      return
-    }
-    const reader = res.body!.getReader()
-    const decoder = new TextDecoder()
+    const run = tracker.begin('book-refresh-metadata', total)
     let processed = 0
     let failed = 0
+    let outcome: BulkRunFollowResult | null = null
     try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        for (const line of decoder.decode(value, { stream: true }).split('\n')) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const data = JSON.parse(line.slice(6)) as {
-              bookId?: number
-              success?: boolean
-              detail?: BookDetail
-              error?: string
-              done?: boolean
-              processed?: number
-              failed?: number
-            }
-            if (data.bookId !== undefined) {
-              const bookId = data.bookId
-              const succeeded = data.success !== false
-              let changedColumns: ReturnType<typeof detectChangedColumns> = []
-
-              if (succeeded && books && data.detail) {
-                const index = books.value.findIndex((book) => book.id === bookId)
-                const previous = index !== -1 ? books.value[index] : undefined
-                if (previous) {
-                  const merged = mergeBookCardWithDetail(previous, data.detail)
-                  changedColumns = detectChangedColumns(previous, merged)
-                  books.value = books.value.map((book, i) => (i === index ? merged : book))
-                }
-              }
-
-              if (succeeded) refreshFeedback.markSuccess(bookId, changedColumns)
-              else refreshFeedback.markFailed(bookId, data.error || 'Metadata refresh failed')
-
-              bumpVersion(bookId)
-              clearRefreshing([bookId])
-              const prev: InFlightOp = inFlight.value ?? { label: 'Refreshing metadata', processed: 0, total, failed: 0 }
-              inFlight.value = {
-                label: 'Refreshing metadata',
-                processed: prev.processed + 1,
-                total,
-                failed: (prev.failed ?? 0) + (succeeded ? 0 : 1),
-              }
-            }
-            if (data.done) {
-              processed = typeof data.processed === 'number' ? data.processed : processed
-              failed = typeof data.failed === 'number' ? data.failed : failed
-            }
-          } catch {
-            /* ignore malformed SSE line */
-          }
-        }
+      const res = await api('/api/v1/books/bulk-refresh-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(withIgnoreCache(getSelectionPayload(), { ignoreCache: options?.ignoreCache === true })),
+        signal: run.signal,
+      })
+      if (!res.ok || !res.body) {
+        refreshFeedback.markFailedMany(ids, 'Metadata refresh failed')
+        toast.error(bulkRunRefusalText(res, t('book.bulkRefresh.failed')))
+        return
       }
+      outcome = await run.follow<RefreshMetadataEvent>(res, (data) => {
+        if (data.bookId !== undefined) {
+          const bookId = data.bookId
+          const succeeded = data.success !== false
+          let changedColumns: ReturnType<typeof detectChangedColumns> = []
+
+          if (succeeded && books && data.detail) {
+            const index = books.value.findIndex((book) => book.id === bookId)
+            const previous = index !== -1 ? books.value[index] : undefined
+            if (previous) {
+              const merged = mergeBookCardWithDetail(previous, data.detail)
+              changedColumns = detectChangedColumns(previous, merged)
+              books.value = books.value.map((book, i) => (i === index ? merged : book))
+            }
+          }
+
+          if (succeeded) refreshFeedback.markSuccess(bookId, changedColumns)
+          else refreshFeedback.markFailed(bookId, data.error || 'Metadata refresh failed')
+
+          bumpVersion(bookId)
+          clearRefreshing([bookId])
+          run.advance(!succeeded)
+        }
+        if (!data.done) return false
+        processed = typeof data.processed === 'number' ? data.processed : processed
+        failed = typeof data.failed === 'number' ? data.failed : failed
+        return true
+      })
+    } catch {
+      if (!run.signal.aborted) toast.error(t('book.bulkRefresh.failed'))
     } finally {
+      // A run that goes on without this page is not a failure; only one that stopped short is.
+      const stoppedShort = outcome === null || outcome.end === 'done' || outcome.end === 'stopped'
       for (const id of ids) {
-        if (refreshFeedback.getFeedback(id)?.state === 'refreshing') {
+        if (refreshFeedback.getFeedback(id)?.state !== 'refreshing') continue
+        if (stoppedShort) {
           refreshFeedback.markFailed(id, 'Metadata refresh interrupted')
           bumpVersion(id)
+        } else {
+          refreshFeedback.clearFeedback(id)
         }
       }
       clearRefreshing(ids)
-      inFlight.value = null
+      run.end()
     }
+    if (!outcome || (outcome.end !== 'done' && outcome.end !== 'stopped')) return
     if (onBulkRefreshCompleted) {
       try {
         await onBulkRefreshCompleted()
@@ -204,11 +221,10 @@ export function useBookBulkActions(
         // Ignore refresh-list failure and still surface the bulk action outcome.
       }
     }
-    if (failed > 0) {
-      toast.warning(`Refreshed ${processed} book${processed === 1 ? '' : 's'}, ${failed} failed`)
-    } else {
-      toast.success(`Refreshed metadata for ${processed} book${processed === 1 ? '' : 's'}`)
-    }
+    if (outcome.end !== 'done') return
+    if (outcome.cancelled) reportCancelled(outcome)
+    else if (failed > 0) toast.warning(t('book.bulkRefresh.completedWithFailures', { processed, failed: formatNumber(failed) }))
+    else toast.success(t('book.bulkRefresh.completed', { processed }))
   }
 
   async function handleBulkReExtractCover() {
@@ -216,54 +232,94 @@ export function useBookBulkActions(
     const ids = querySelection?.value ? [] : [...selectedIds.value]
     const total = querySelection?.value ? querySelection.value.total : ids.length
     markRefreshing(ids)
-    inFlight.value = { label: i18n.global.t('book.coverRegeneration.bulkInProgress'), processed: 0, total }
-    const res = await api('/api/v1/books/bulk-re-extract-cover', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(getSelectionPayload()),
-    })
-    if (!res.ok) {
-      clearRefreshing(ids)
-      inFlight.value = null
-      toast.error(i18n.global.t('book.coverRegeneration.bulkFailed'))
-      return
-    }
-    const reader = res.body!.getReader()
-    const decoder = new TextDecoder()
+    const run = tracker.begin('book-re-extract-cover', total)
     let processed = 0
     let updated = 0
+    let outcome: BulkRunFollowResult | null = null
     const bumpedIds = new Set<number>()
     try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        for (const line of decoder.decode(value, { stream: true }).split('\n')) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const data = JSON.parse(line.slice(6))
-            if (data.bookId !== undefined) {
-              bumpedIds.add(data.bookId)
-              bumpVersion(data.bookId)
-              clearRefreshing([data.bookId])
-              inFlight.value = { label: i18n.global.t('book.coverRegeneration.bulkInProgress'), processed: inFlight.value!.processed + 1, total }
-            }
-            if (data.done) {
-              processed = data.processed
-              updated = data.updated
-            }
-          } catch {
-            /* ignore malformed SSE line */
-          }
-        }
+      const res = await api('/api/v1/books/bulk-re-extract-cover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getSelectionPayload()),
+        signal: run.signal,
+      })
+      if (!res.ok || !res.body) {
+        toast.error(bulkRunRefusalText(res, t('book.coverRegeneration.bulkFailed')))
+        return
       }
+      outcome = await run.follow<ReExtractCoverEvent>(res, (data) => {
+        if (data.bookId !== undefined) {
+          bumpedIds.add(data.bookId)
+          bumpVersion(data.bookId)
+          clearRefreshing([data.bookId])
+          run.advance()
+        }
+        if (!data.done) return false
+        processed = data.processed ?? processed
+        updated = data.updated ?? updated
+        return true
+      })
+    } catch {
+      if (!run.signal.aborted) toast.error(t('book.coverRegeneration.bulkFailed'))
     } finally {
       for (const id of ids) {
         if (!bumpedIds.has(id)) bumpVersion(id)
       }
       clearRefreshing(ids)
-      inFlight.value = null
+      run.end()
     }
-    toast.success(i18n.global.t('book.coverRegeneration.bulkCompleted', { updated: formatNumber(updated), processed }))
+    if (outcome?.end !== 'done') return
+    if (outcome.cancelled) reportCancelled(outcome)
+    else toast.success(t('book.coverRegeneration.bulkCompleted', { updated: formatNumber(updated), processed }))
+  }
+
+  async function handleBulkEmbedAudioCover() {
+    if (!hasSelection()) return
+    const run = tracker.begin('book-embed-audio-cover', querySelection?.value ? querySelection.value.total : selectedIds.value.size)
+    // Assigned from the stream callback, so a plain `= null` initializer would narrow it to `null`.
+    let summary = null as Extract<AudioCoverEmbedProgressEvent, { done: true }> | null
+    let outcome: BulkRunFollowResult
+    try {
+      const res = await api('/api/v1/books/bulk-embed-audio-cover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getSelectionPayload()),
+        signal: run.signal,
+      })
+      if (!res.ok || !res.body) {
+        toast.error(bulkRunRefusalText(res, t('book.audioCoverEmbed.bulkFailed')))
+        return
+      }
+      outcome = await run.follow<AudioCoverEmbedProgressEvent>(res, (event) => {
+        if ('done' in event) {
+          summary = event
+          return true
+        }
+        if ('started' in event) run.started(event.total)
+        else run.advance(event.status === 'failed')
+        return false
+      })
+    } catch {
+      if (!run.signal.aborted) toast.error(t('book.audioCoverEmbed.bulkFailed'))
+      return
+    } finally {
+      run.end()
+    }
+    if (outcome.end !== 'done' || !summary) return
+    if (outcome.cancelled) {
+      reportCancelled(outcome)
+      return
+    }
+    const { succeeded, failed, processed } = summary
+    const values = { embedded: formatNumber(succeeded), processed, failed: formatNumber(failed) }
+    if (failed > 0) toast.warning(t('book.audioCoverEmbed.bulkCompletedWithFailures', values))
+    else toast.success(t('book.audioCoverEmbed.bulkCompleted', values))
+  }
+
+  /** A run this page cancelled ends with how far it got, not the kind's usual summary. */
+  function reportCancelled(outcome: BulkRunFollowResult) {
+    toast.info(t('jobsArea.bulk.cancelled', { processed: formatNumber(outcome.processed), total: formatNumber(outcome.total) }))
   }
 
   async function handleDownloadFiles(scope: ExportScope) {
@@ -302,7 +358,7 @@ export function useBookBulkActions(
       body: JSON.stringify({ ...getSelectionPayload(), rating }),
     })
     if (!res.ok) {
-      toast.error('Failed to update rating')
+      toast.error(t('book.bulkActions.ratingFailed'))
       return
     }
     const editableIds = books
@@ -317,10 +373,20 @@ export function useBookBulkActions(
       rating,
     }))
     const count = querySelection?.value ? querySelection.value.total : editableIds.length
-    const baseLabel =
-      rating === null ? `Cleared rating for ${count} book${count === 1 ? '' : 's'}` : `Rated ${count} book${count === 1 ? '' : 's'} ${rating}/5`
-    const label = skippedCount > 0 ? `${baseLabel} (${skippedCount} locked skipped)` : baseLabel
-    toast.success(label)
+    if (rating === null) {
+      toast.success(
+        skippedCount > 0
+          ? t('book.bulkActions.ratingClearedSkipped', { count, skipped: skippedCount })
+          : t('book.bulkActions.ratingCleared', { count }),
+      )
+      return
+    }
+    const ratingLabel = formatNumber(rating)
+    toast.success(
+      skippedCount > 0
+        ? t('book.bulkActions.ratedSkipped', { count, rating: ratingLabel, skipped: skippedCount })
+        : t('book.bulkActions.rated', { count, rating: ratingLabel }),
+    )
   }
 
   async function handleBulkSetField(field: BulkEditableField, value: BulkEditableValue) {
@@ -339,7 +405,7 @@ export function useBookBulkActions(
       body: JSON.stringify({ ...getSelectionPayload(), field, value }),
     })
     if (!res.ok) {
-      toast.error(`Failed to update ${field}`)
+      toast.error(t('book.bulkActions.updateFailed'))
       return
     }
     const editableIds = books
@@ -374,11 +440,9 @@ export function useBookBulkActions(
       }
     })
     const count = querySelection?.value ? querySelection.value.total : editableIds.length
-    if (skippedCount > 0) {
-      toast.success(`Updated ${field} for ${count} book${count === 1 ? '' : 's'} (${skippedCount} locked skipped)`)
-      return
-    }
-    toast.success(`Updated ${field} for ${count} book${count === 1 ? '' : 's'}`)
+    toast.success(
+      skippedCount > 0 ? t('book.bulkActions.updatedSkipped', { count, skipped: skippedCount }) : t('book.bulkActions.updated', { count }),
+    )
   }
 
   async function handleBulkSetMetadataLock(locked: boolean) {
@@ -390,7 +454,7 @@ export function useBookBulkActions(
       body: JSON.stringify({ ...getSelectionPayload(), locked }),
     })
     if (!res.ok) {
-      toast.error(`Failed to ${locked ? 'lock' : 'unlock'} metadata`)
+      toast.error(t(locked ? 'book.bulkActions.lockFailed' : 'book.bulkActions.unlockFailed'))
       return
     }
     updateSelectedBooks(ids, (book) => ({
@@ -399,30 +463,39 @@ export function useBookBulkActions(
       lockedFields: locked ? [...BOOK_METADATA_LOCK_FIELDS] : [],
     }))
     const count = querySelection?.value ? querySelection.value.total : ids.length
-    toast.success(`${locked ? 'Locked' : 'Unlocked'} metadata for ${count} book${count === 1 ? '' : 's'}`)
+    toast.success(t(locked ? 'book.bulkActions.locked' : 'book.bulkActions.unlocked', { count }))
   }
 
-  async function handleDeleteSelected() {
+  async function handleDeleteSelected(includeOtherEditions = false, canDelete: (libraryId: number) => boolean = () => true) {
     if (!hasSelection()) return
-    const ids = querySelection?.value ? [] : [...selectedIds.value]
-    const count = querySelection?.value ? querySelection.value.total : ids.length
+    const payload = includeOtherEditions ? getAllEditionsPayload(canDelete) : getSelectionPayload()
+    const ids = payload.bookIds ?? []
+    const count = querySelection?.value
+      ? includeOtherEditions
+        ? (querySelection.value.editionTotal ?? querySelection.value.total)
+        : querySelection.value.total
+      : ids.length
     const res = await api('/api/v1/books', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(getSelectionPayload()),
+      body: JSON.stringify(payload),
     })
     if (!res.ok) {
-      toast.error('Failed to delete books')
+      toast.error(t('book.bulkActions.deleteFailed'))
       return
     }
     onDeleted(ids)
-    toast.success(`Deleted ${count} book${count === 1 ? '' : 's'}`)
+    refreshLibraryCounts()
+    toast.success(t('book.bulkActions.deleted', { count }))
   }
 
   return {
     inFlight,
+    cancelInFlight: tracker.cancel,
+    hideInFlight: tracker.detach,
     handleBulkRefreshMetadata,
     handleBulkReExtractCover,
+    handleBulkEmbedAudioCover,
     handleDownloadFiles,
     handleBulkSetStatus,
     handleBulkSetRating,

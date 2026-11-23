@@ -3,6 +3,7 @@ import { defineComponent, reactive, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BookDockFile, Library, MetadataCandidate } from '@bookorbit/types'
 import { i18n } from '@/i18n'
+import InputWithSuggestions from '@/components/ui/InputWithSuggestions.vue'
 import BookDockFileSheet from '../BookDockFileSheet.vue'
 
 type LibraryOption = Pick<Library, 'id' | 'name'> & {
@@ -230,6 +231,53 @@ describe('BookDockFileSheet', () => {
     }
   })
 
+  describe('series', () => {
+    const providerSeries = [
+      { seriesName: 'Expanse', seriesIndex: '3' },
+      { seriesName: 'Expanse Universe', seriesIndex: '5' },
+    ]
+
+    function mountWithProviderSeries() {
+      return mountSheet(makeFile({ selectedMetadata: { seriesName: 'Expanse', seriesIndex: '3', seriesMemberships: providerSeries } }))
+    }
+
+    it('offers library series as suggestions and autosaves the one picked', async () => {
+      vi.useFakeTimers()
+      try {
+        const wrapper = mountWithProviderSeries()
+        const input = wrapper.getComponent(InputWithSuggestions)
+        expect(input.props('modelValue')).toBe('Expanse')
+        expect(input.props('searchFn')).toBeTypeOf('function')
+
+        input.vm.$emit('update:modelValue', 'The Expanse')
+        await vi.advanceTimersByTimeAsync(1000)
+
+        expect(mocks.saveMetadata).toHaveBeenLastCalledWith(
+          1,
+          expect.objectContaining({ seriesName: 'The Expanse', seriesIndex: '3', seriesMemberships: providerSeries }),
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('drops the provider series list once the series is cleared, so finalize files no series', async () => {
+      vi.useFakeTimers()
+      try {
+        const wrapper = mountWithProviderSeries()
+
+        wrapper.getComponent(InputWithSuggestions).vm.$emit('update:modelValue', '')
+        await vi.advanceTimersByTimeAsync(1000)
+
+        const patch = mocks.saveMetadata.mock.lastCall?.[1] as Record<string, unknown>
+        expect(patch.seriesName).toBeUndefined()
+        expect(patch.seriesMemberships).toBeUndefined()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   it('shows an error and does not autosave a malformed series index', async () => {
     vi.useFakeTimers()
     try {
@@ -245,6 +293,27 @@ describe('BookDockFileSheet', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('waits for extraction and preserves embedded metadata when applying a cover', async () => {
+    const pending = makeFile({ fileName: 'Dune.epub', format: 'epub', status: 'pending', embeddedMetadata: null })
+    const wrapper = mountSheet(pending)
+    const searchButton = () => wrapper.findAll('button').find((button) => button.text().trim() === 'Search')
+
+    expect(wrapper.get('[role="status"]').text()).toBe('Editing is available after embedded metadata has been read.')
+    expect(searchButton()).toBeUndefined()
+    await wrapper.setProps({ file: { ...pending, status: 'extracting' } })
+    expect(searchButton()).toBeUndefined()
+
+    const embeddedMetadata = { title: 'Dune', authors: ['Frank Herbert'], publisher: 'Original Press', language: 'en' }
+    await wrapper.setProps({ file: { ...pending, status: 'fetching', embeddedMetadata } })
+    await searchButton()!.trigger('click')
+    const workspace = wrapper.getComponent(WorkspaceStub)
+    expect(workspace.props('searchDefaults')).toMatchObject({ title: 'Dune', author: 'Frank Herbert' })
+
+    await wrapper.setProps({ file: { ...pending, status: 'ready', embeddedMetadata } })
+    workspace.vm.$emit('apply', { formPatch: {}, coverUrl: 'https://covers.example/dune.jpg' })
+    expect(mocks.saveMetadata).toHaveBeenCalledWith(1, expect.objectContaining({ ...embeddedMetadata, coverUrl: 'https://covers.example/dune.jpg' }))
   })
 
   it('persists every metadata field emitted by the search diff', async () => {
@@ -265,6 +334,8 @@ describe('BookDockFileSheet', () => {
         narrators: ['Simon Vance'],
         durationSeconds: 1200,
         abridged: false,
+        seriesName: 'Dune',
+        seriesIndex: '1',
         seriesMemberships: [{ seriesName: 'Dune', seriesIndex: '1' }],
         communityRatings: [{ provider: 'hardcover', rating: 4.5, ratingCount: 1000 }],
         hardcoverId: 'hardcover-book',
@@ -284,6 +355,8 @@ describe('BookDockFileSheet', () => {
         narrators: ['Simon Vance'],
         durationSeconds: 1200,
         abridged: false,
+        seriesName: 'Dune',
+        seriesIndex: '1',
         seriesMemberships: [{ seriesName: 'Dune', seriesIndex: '1' }],
         communityRatings: [{ provider: 'hardcover', rating: 4.5, ratingCount: 1000 }],
         hardcoverId: 'hardcover-book',

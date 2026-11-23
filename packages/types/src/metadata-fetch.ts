@@ -165,6 +165,7 @@ export function isMetadataProviderKeySyntax(key: unknown): key is MetadataProvid
 export interface MetadataSeriesMembership {
   seriesName: string;
   seriesIndex?: SeriesIndex | null;
+  coveredVolumes?: number[];
 }
 
 export interface BookCommunityRating {
@@ -214,6 +215,8 @@ export interface MetadataCandidate {
   publisher?: string;
   publishedDate?: string;
   publishedYear?: number;
+  /** The work's first publication year, where the provider knows it apart from this record's own year. Absent from older servers. */
+  originalPublishedYear?: number;
   language?: string;
   pageCount?: number;
   isbn10?: string;
@@ -339,6 +342,8 @@ export interface MetadataSource {
   publisher: string | null;
   publishedDate: string | null;
   publishedYear: number | null;
+  /** Absent where the source has no such field, as on a Book Dock file. */
+  originalPublishedYear?: number | null;
   language: string | null;
   pageCount: number | null;
   seriesName: string | null;

@@ -486,14 +486,14 @@ export class MetadataService {
         );
         return false;
       }
-      const data = await this.extractionService.extract(absolutePath, format);
-      if (!data?.cover) {
+      const cover = await this.readCoverToRefresh(absolutePath, format, medium);
+      if (!cover) {
         this.logger.debug(
           `[${event}] [end] bookId=${bookId} format=${format} durationMs=${Date.now() - startedAt} refreshed=false coverFound=false - cover refresh skipped`,
         );
         return false;
       }
-      if (!(await this.persistCover(bookId, medium, data.cover, false, 'embedded'))) return false;
+      if (!(await this.persistCover(bookId, medium, cover, false, 'embedded'))) return false;
     } catch (error) {
       const errorClass = error instanceof Error ? error.name : 'Error';
       const errorMessage = sanitizeLogValue(error instanceof Error ? error.message : String(error));
@@ -508,6 +508,12 @@ export class MetadataService {
       `[${event}] [end] bookId=${bookId} format=${format} durationMs=${Date.now() - startedAt} refreshed=true - cover refresh completed`,
     );
     return true;
+  }
+
+  /** An EPUB's audio slot refreshes from the audiobook cover it declares; its book cover belongs to the ebook slot. */
+  private async readCoverToRefresh(absolutePath: string, format: string, medium: CoverMedium): Promise<Buffer | null> {
+    if (medium === 'audio' && format.toLowerCase() === 'epub') return this.extractionService.extractEmbeddedCover(absolutePath, format, 'audio');
+    return (await this.extractionService.extract(absolutePath, format))?.cover ?? null;
   }
 
   // ── Audio helpers ────────────────────────────────────────────────────────────
@@ -694,9 +700,9 @@ export class MetadataService {
 
   /**
    * Measures the audio files of a book that have no duration yet, then re-totals the book. The
-   * audiobook player derives progress only once every file has a duration, so a book left with a
-   * gap stays at 0%. A file that cannot be measured leaves the total alone: summing only the rest
-   * would shrink it.
+   * audiobook player measures progress only once every file has a duration; a book left with a gap
+   * only gets an estimate, which never finishes it. A file that cannot be measured leaves the total
+   * alone: summing only the rest would shrink it.
    */
   async measureMissingAudioDurations(bookId: number): Promise<{ measured: number; failed: number }> {
     const files = await this.db
