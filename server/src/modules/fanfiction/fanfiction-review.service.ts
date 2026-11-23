@@ -13,7 +13,7 @@ import { ManagedMetadataService } from '../metadata/managed-metadata.service';
 import { RevisionCatalogService } from '../book-revision/revision-catalog.service';
 import { FanfictionAccessService } from './fanfiction-access.service';
 import { FanfictionJobService } from './fanfiction-job.service';
-import { planStoryMetadata, storyTagChanges, storyTags } from './fanfiction-metadata-review';
+import { planStoryMetadata, storyTagChanges, storyTags, withoutExcludedTags } from './fanfiction-metadata-review';
 import { validateFanfictionPreview } from './fanfiction-preview';
 
 const jobs = schema.fanfictionJobs;
@@ -88,21 +88,23 @@ export class FanfictionReviewService {
         )
         .orderBy(desc(jobs.createdAt), desc(jobs.id))
         .limit(1);
+      const incoming = withoutExcludedTags(preview, snapshot.excludedTags);
+      const baseline = previous?.result?.preview;
       const plan = planStoryMetadata(
         snapshot.current,
-        preview,
+        incoming,
         snapshot.managedTags,
         snapshot.lockedFields,
-        previous?.result?.preview,
+        baseline && withoutExcludedTags(baseline, snapshot.excludedTags),
         source.tagPolicy,
       );
-      const tagChanges = storyTagChanges(snapshot.current.tags, preview.tags, snapshot.managedTags);
+      const tagChanges = storyTagChanges(snapshot.current.tags, incoming.tags, snapshot.managedTags);
       if (deferMetadata) {
         for (const field of previous?.result?.metadataReview?.fields ?? []) {
           if (
             !snapshot.lockedFields.includes(field) &&
             (field !== 'tags' || tagChanges.added.length > 0 || tagChanges.removed.length > 0) &&
-            JSON.stringify(snapshot.current[field]) !== JSON.stringify(preview[field]) &&
+            JSON.stringify(snapshot.current[field]) !== JSON.stringify(incoming[field]) &&
             !plan.fields.includes(field)
           )
             plan.fields.push(field);
@@ -132,7 +134,7 @@ export class FanfictionReviewService {
           ? {
               metadataReview: {
                 current: snapshot.current,
-                incoming: preview,
+                incoming,
                 fields: plan.fields,
                 lockedFields: snapshot.lockedFields,
                 fingerprint: snapshot.fingerprint,
@@ -157,17 +159,19 @@ export class FanfictionReviewService {
     const snapshot = await this.metadata.snapshot(tx, source.bookId!, source.libraryId, `fanfiction:${source.id}`);
     const review = job.result!.metadataReview!;
     const prepared = job.result!.preparedUpdate!;
+    const incoming = withoutExcludedTags(job.result!.preview ?? review.incoming, snapshot.excludedTags);
     const plan = planStoryMetadata(
       snapshot.current,
-      review.incoming,
+      incoming,
       snapshot.managedTags,
       snapshot.lockedFields,
-      prepared.baseline,
+      prepared.baseline && withoutExcludedTags(prepared.baseline, snapshot.excludedTags),
       source.tagPolicy,
     );
-    const tagChanges = storyTagChanges(snapshot.current.tags, review.incoming.tags, snapshot.managedTags);
+    const tagChanges = storyTagChanges(snapshot.current.tags, incoming.tags, snapshot.managedTags);
     const updated = {
       ...review,
+      incoming,
       current: snapshot.current,
       fields: plan.fields,
       lockedFields: snapshot.lockedFields,
