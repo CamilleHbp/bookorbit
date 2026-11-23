@@ -8,7 +8,7 @@ function query(params: object): string {
   ).toString()
 }
 export async function browseTags(params: BrowseTagsParams): Promise<BrowseEntitiesResponse> {
-  const response = await api(`/api/v1/tags?${query(params)}`)
+  const response = await api(`/api/v1/tags/browse?${query(params)}`)
   if (!response.ok) throw new Error('Could not load tags')
   return response.json()
 }

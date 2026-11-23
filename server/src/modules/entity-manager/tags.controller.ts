@@ -7,7 +7,7 @@ import { BrowseTagGroupsDto } from './dto/entity-manager.dto';
 @Controller('tags')
 export class TagsController {
   constructor(private readonly service: EntityManagerService) {}
-  @Get()
+  @Get('browse')
   browse(@Query() dto: BrowseTagsDto, @CurrentUser() user: RequestUser) {
     return this.service.browseTags(user, dto);
   }
