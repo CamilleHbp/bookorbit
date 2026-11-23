@@ -28,6 +28,24 @@ describe('buildVolumeLadder', () => {
     expect(ladder.gaps).toEqual([3]);
   });
 
+  it('counts zero-only decimals as whole volumes and keeps other decimals independent', () => {
+    const ladder = build([member(1, '6'), member(2, '7.00'), member(3, '8'), member(4, '7.01')]);
+
+    expect(ladder.volumes.map((volume) => volume.index)).toEqual([6, 7, 8, null]);
+    expect(ladder.gaps).toEqual([]);
+    expect(computeSeriesGaps(['6', '7.0', '8'], 3, null)).toEqual([]);
+  });
+
+  it('fills all slots covered by an omnibus and keeps genuine gaps', () => {
+    const omnibus = { ...member(1, null, 'read'), coveredVolumes: [1, 2, 4] };
+    const ladder = build([omnibus, member(2, '2', 'read'), member(3, '5.0')], { expected: 6 });
+
+    expect(ladder.volumes.map((volume) => volume.bookId)).toEqual([1, 2, null, 1, 3, null]);
+    expect(ladder.gaps).toEqual([3, 6]);
+    expect(ladder.counts).toEqual({ ownedVolumeCount: 4, readVolumeCount: 3, readingVolumeCount: 0 });
+    expect(computeSeriesGaps([null, '2', '5.0'], 3, 6, [[1, 2, 4]])).toEqual([3, 6]);
+  });
+
   it('never names a rung the gap finder would not name', () => {
     const cases: { members: SeriesMemberRow[]; expected: number | null }[] = [
       { members: [member(1, '1'), member(2, '3')], expected: null },

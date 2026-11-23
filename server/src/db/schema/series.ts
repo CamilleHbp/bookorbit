@@ -45,6 +45,10 @@ export const bookSeriesMemberships = pgTable(
       .notNull()
       .references(() => bookSeries.id, { onDelete: 'cascade' }),
     seriesIndex: varchar('series_index', { length: 20 }),
+    coveredVolumes: integer('covered_volumes')
+      .array()
+      .notNull()
+      .default(sql`'{}'::integer[]`),
     displayOrder: integer('display_order').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -62,6 +66,12 @@ export const bookSeriesMemberships = pgTable(
       t.bookId,
     ),
     index('book_series_memberships_book_display_idx').on(t.bookId, t.displayOrder),
+    check(
+      'book_series_memberships_covered_volumes_range_chk',
+      sql`cardinality(${t.coveredVolumes}) <= 10000
+        AND 0 < ALL(${t.coveredVolumes}) AND 10000 >= ALL(${t.coveredVolumes})
+        AND array_position(${t.coveredVolumes}, NULL) IS NULL`,
+    ),
     check('book_series_memberships_display_order_nonnegative_chk', sql`${t.displayOrder} >= 0`),
     check('book_series_memberships_series_index_format_chk', sql`${t.seriesIndex} is null or ${t.seriesIndex} ~ '^[0-9]+([.][0-9]+)?$'`),
   ],

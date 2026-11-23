@@ -36,6 +36,7 @@ type SeriesSummaryRow = {
 
 export type SeriesVolumeMember = {
   seriesIndex: string | null;
+  coveredVolumes?: number[];
   status: string | null;
 };
 
@@ -298,6 +299,7 @@ export class SeriesRepository {
       this.db
         .select({
           seriesIndex: bookSeriesMemberships.seriesIndex,
+          coveredVolumes: bookSeriesMemberships.coveredVolumes,
           status: userBookStatus.status,
         })
         .from(books)
@@ -583,45 +585,30 @@ export class SeriesRepository {
     }
   }
 
-  /**
-   * "This series is missing a volume", decided in SQL so the filter and its facet count can run
-   * over the whole library instead of a page. It mirrors `computeSeriesGaps` branch for branch:
-   * a provider total is only trusted when every book is numbered with a plain integer and none
-   * of them runs past the total, and without a trusted total only interior holes are knowable.
-   *
-   * Indices of ten digits or more are treated as unusable rather than cast, which is where this
-   * is fractionally stricter than the TypeScript: that function drops them for exceeding the
-   * safe-integer range, and either way the series reports no gaps.
-   */
+  /** Uses the same range and owned slots as the volume ladder, across the filtered library. */
   private buildHasGapsExpression(bookCountExpr: SQL<number>): SQL<boolean> {
-    const idx = bookSeriesMemberships.seriesIndex;
-    const intIdx = sql`CASE WHEN ${idx} ~ '^[0-9]{1,9}$' THEN ${idx}::int END`;
-
-    const numberedCount = sql`count(distinct CASE WHEN ${idx} IS NOT NULL THEN ${books.id} END)`;
-    const integerCount = sql`count(distinct CASE WHEN ${idx} ~ '^[0-9]{1,9}$' THEN ${books.id} END)`;
-    const oversizedCount = sql`count(distinct CASE WHEN ${idx} ~ '^[0-9]{10,}$' THEN ${books.id} END)`;
-    const minIdx = sql`min(${intIdx})`;
-    const maxIdx = sql`max(${intIdx})`;
-    const distinctIdx = sql`count(distinct ${intIdx})`;
-    const expected = sql`${bookSeries.expectedBookCount}`;
-
-    const trusted = sql`(
-      ${expected} IS NOT NULL
-      AND ${expected} BETWEEN 1 AND ${MAX_SERIES_TOTAL_BOOKS}
-      AND ${numberedCount} = ${bookCountExpr}
-      AND ${integerCount} = ${numberedCount}
-      AND ${maxIdx} <= ${expected}
+    const index = bookSeriesMemberships.seriesIndex;
+    const coverage = bookSeriesMemberships.coveredVolumes;
+    const whole = sql`CASE WHEN ${index} ~ '^[0-9]+([.]0+)?$' THEN split_part(${index}, '.', 1)::numeric END`;
+    const positioned = sql`count(distinct CASE WHEN ${whole} IS NOT NULL OR cardinality(${coverage}) > 0 THEN ${books.id} END)`;
+    const invalid = sql`bool_or(${whole} < 1 OR ${whole} > ${MAX_SERIES_TOTAL_BOOKS})`;
+    const owned = sql`range_agg(
+      CASE WHEN cardinality(${coverage}) = 0 THEN
+        CASE WHEN ${whole} BETWEEN 1 AND ${MAX_SERIES_TOTAL_BOOKS} THEN int4multirange(int4range(${whole}::int, ${whole}::int, '[]')) END
+      ELSE (
+        SELECT range_agg(int4range(volume, volume, '[]'))
+        FROM unnest(${coverage} || (CASE WHEN ${whole} BETWEEN 1 AND ${MAX_SERIES_TOTAL_BOOKS} THEN ARRAY[${whole}::int] ELSE '{}'::int[] END)) AS volumes(volume)
+      ) END
     )`;
+    const expected = bookSeries.expectedBookCount;
+    const trusted = sql`(${expected} BETWEEN 1 AND ${MAX_SERIES_TOTAL_BOOKS}
+      AND ${positioned} = ${bookCountExpr} AND upper(${owned}) - 1 <= ${expected})`;
 
-    return sql<boolean>`(
-      ${integerCount} > 0
-      AND ${oversizedCount} = 0
-      AND ${minIdx} >= 1
-      AND ${maxIdx} <= ${MAX_SERIES_TOTAL_BOOKS}
-      AND CASE
-        WHEN ${trusted} THEN ${distinctIdx} < ${expected}
-        ELSE ${integerCount} >= 2 AND ${distinctIdx} < (${maxIdx} - ${minIdx} + 1)
-      END
+    return sql<boolean>`COALESCE(
+      NOT COALESCE(${invalid}, false) AND NOT (
+        ${owned} @> CASE WHEN ${trusted} THEN int4range(1, ${expected}, '[]')
+          ELSE int4range(lower(${owned}), upper(${owned})) END
+      ), false
     )`;
   }
 
@@ -649,6 +636,7 @@ export class SeriesRepository {
         seriesId: bookSeriesMemberships.seriesId,
         bookId: books.id,
         seriesIndex: bookSeriesMemberships.seriesIndex,
+        coveredVolumes: bookSeriesMemberships.coveredVolumes,
         title: bookMetadata.title,
         status: userBookStatus.status,
         libraryName: libraries.name,
@@ -680,7 +668,7 @@ export class SeriesRepository {
         entry.truncated = true;
         continue;
       }
-      entry.rows.push({ bookId: row.bookId, seriesIndex: row.seriesIndex, title: row.title, status: row.status });
+      entry.rows.push({ bookId: row.bookId, seriesIndex: row.seriesIndex, coveredVolumes: row.coveredVolumes, title: row.title, status: row.status });
       if (row.libraryName && !entry.libraryNames.includes(row.libraryName)) entry.libraryNames.push(row.libraryName);
     }
     for (const entry of result.values()) entry.libraryNames.sort((a, b) => a.localeCompare(b));

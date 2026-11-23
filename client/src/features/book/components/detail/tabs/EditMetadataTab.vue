@@ -49,6 +49,7 @@ import RichDescriptionEditor from './RichDescriptionEditor.vue'
 import SeriesMembershipEditor from './SeriesMembershipEditor.vue'
 import WriteAndRenameResultPanel from '../WriteAndRenameResultPanel.vue'
 import type { MetadataDiffApply, MetadataPatch } from '../../../composables/useMetadataDiff'
+import { parseCoveredVolumes } from '@/features/book/lib/series-coverage'
 import { type EditableSeriesMembership, normalizeSeriesMemberships, useMetadataEditor } from '../../../composables/useMetadataEditor'
 import { type MetadataRefreshPreview, type MetadataRefreshPreviewResult, useRefreshMetadata } from '../../../composables/useRefreshMetadata'
 import { type FileMetadata, useFileMetadata } from '../../../composables/useFileMetadata'
@@ -366,8 +367,11 @@ const comicWideFields = computed(
 
 const hasLockedFields = computed(() => lockedFields.value.length > 0)
 const hasPendingChanges = computed(() => isDirty.value || locksDirty.value || Boolean(coverPanel.value?.hasPending))
-const hasInvalidSeriesIndex = computed(() =>
-  form.seriesMemberships.some((membership) => membership.seriesIndex !== null && !isValidSeriesIndex(membership.seriesIndex)),
+const hasInvalidSeriesMembership = computed(() =>
+  form.seriesMemberships.some(
+    (membership) =>
+      (membership.seriesIndex !== null && !isValidSeriesIndex(membership.seriesIndex)) || parseCoveredVolumes(membership.coverageInput) === null,
+  ),
 )
 const isSeriesLocked = computed(() => isLocked('seriesName') || isLocked('seriesIndex'))
 const communityRatingLines = computed(() =>
@@ -515,16 +519,16 @@ function applySeriesMembershipPatch(formPatch: MetadataPatch, skippedFields: Boo
     return 0
   }
 
-  // Providers do not report series length in this patch, so carry the current value across
-  // rather than letting an applied suggestion silently clear a total someone entered.
-  const totalsByName = new Map(form.seriesMemberships.map((m) => [m.seriesName.trim().toLowerCase(), m.expectedBookCount ?? null]))
+  // Preserve series totals and omnibus coverage when a provider supplies new positions.
+  const currentByName = new Map(form.seriesMemberships.map((m) => [m.seriesName.trim().toLowerCase(), m]))
 
   setSeriesMemberships(
     normalizeSeriesMemberships(
       (formPatch.seriesMemberships ?? []).map((membership) => ({
         seriesName: membership.seriesName,
         seriesIndex: normalizeSeriesIndex(membership.seriesIndex),
-        expectedBookCount: totalsByName.get(membership.seriesName.trim().toLowerCase()) ?? null,
+        expectedBookCount: currentByName.get(membership.seriesName.trim().toLowerCase())?.expectedBookCount ?? null,
+        coverageInput: currentByName.get(membership.seriesName.trim().toLowerCase())?.coverageInput,
       })),
     ),
   )
@@ -728,7 +732,7 @@ const {
 const coverMutationPending = computed(() => Boolean(coverPanel.value?.busy))
 const formMutationPending = computed(() => autoFilling.value || loadingFromFile.value || coverMutationPending.value)
 const formDisabled = computed(() => saving.value || writingAndRenaming.value || formMutationPending.value)
-const submitDisabled = computed(() => formDisabled.value || !hasPendingChanges.value || hasInvalidSeriesIndex.value)
+const submitDisabled = computed(() => formDisabled.value || !hasPendingChanges.value || hasInvalidSeriesMembership.value)
 let dismissTimer: ReturnType<typeof setTimeout> | null = null
 
 function pluralizeField(count: number): string {
@@ -1223,6 +1227,7 @@ function handleCoverChanged(medium: CoverMedium | null) {
                 @toggle="handleSeriesLockToggle"
               >
                 <SeriesMembershipEditor
+                  show-coverage
                   class="pr-9"
                   :model-value="form.seriesMemberships"
                   :search-fn="searchSeriesName"

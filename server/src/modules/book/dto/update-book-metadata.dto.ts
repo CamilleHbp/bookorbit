@@ -1,4 +1,17 @@
-import { IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { SERIES_INDEX_MAX_LENGTH, SERIES_INDEX_PATTERN, type MetadataProviderKey, type SeriesIndex } from '@bookorbit/types';
 import { IsExternalProviderMap } from '../../../common/decorators/is-external-provider-map.decorator';
@@ -38,6 +51,13 @@ export class ComicMetadataDto {
 export class BookSeriesMembershipDto {
   @IsString() @MaxLength(500) seriesName!: string;
   @IsOptional() @IsString() @MaxLength(SERIES_INDEX_MAX_LENGTH) @Matches(SERIES_INDEX_PATTERN) seriesIndex?: SeriesIndex | null;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_SERIES_TOTAL_BOOKS)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(MAX_SERIES_TOTAL_BOOKS, { each: true })
+  coveredVolumes?: number[];
   // Series-level rather than book-level: writing it changes the total for every book in the
   // series and for every user. Bounds mirror the book_series range constraint.
   @IsOptional() @IsInt() @Min(1) @Max(MAX_SERIES_TOTAL_BOOKS) expectedBookCount?: number | null;

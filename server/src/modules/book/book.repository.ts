@@ -1680,6 +1680,7 @@ export class BookRepository {
           seriesId: bookSeriesMemberships.seriesId,
           seriesName: bookSeries.name,
           seriesIndex: bookSeriesMemberships.seriesIndex,
+          coveredVolumes: bookSeriesMemberships.coveredVolumes,
           displayOrder: bookSeriesMemberships.displayOrder,
           expectedBookCount: bookSeries.expectedBookCount,
         })

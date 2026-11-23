@@ -9687,6 +9687,8 @@
         "noDescription": "No description available."
       },
       "seriesMembership": {
+        "coveredVolumesLabel": "Volumes covered",
+        "invalidCoveredVolumes": "Enter whole volumes or ranges from 1 to 10,000.",
         "addSeries": "Add series",
         "seriesPlaceholder": "Series",
         "moveUp": "Move up",

@@ -165,6 +165,7 @@ export function isMetadataProviderKeySyntax(key: unknown): key is MetadataProvid
 export interface MetadataSeriesMembership {
   seriesName: string;
   seriesIndex?: SeriesIndex | null;
+  coveredVolumes?: number[];
 }
 
 export interface BookCommunityRating {

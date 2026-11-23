@@ -2,7 +2,7 @@ import type { SeriesIndex, SeriesVolumeSlot, SeriesVolumeStatus } from '@bookorb
 import { SERIES_VOLUME_SLOT_LIMIT } from '@bookorbit/types';
 
 import type { SeriesMemberRow, SeriesVolumeMember } from '../series.repository';
-import { computeSeriesGaps, resolveLadderRange } from './series-gaps.utils';
+import { computeSeriesGaps, resolveLadderRange, wholeSeriesVolume } from './series-gaps.utils';
 
 export type SeriesVolumeCounts = {
   ownedVolumeCount: number;
@@ -27,12 +27,6 @@ function memberStatus(status: string | null): SeriesVolumeStatus {
   return 'unread';
 }
 
-function integerIndexOf(value: string | null): number | null {
-  if (value === null || !/^\d+$/.test(value)) return null;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : null;
-}
-
 function groupSeriesMembers<T extends SeriesVolumeMember>(params: {
   members: T[];
   bookCount: number;
@@ -44,21 +38,28 @@ function groupSeriesMembers<T extends SeriesVolumeMember>(params: {
   unnumbered: T[];
 } {
   const { members, bookCount, expectedBookCount } = params;
-  const indices = members.map((member) => member.seriesIndex).filter((index): index is string => index !== null);
-  const gaps = computeSeriesGaps(indices, bookCount, expectedBookCount);
-  const range = resolveLadderRange(indices, bookCount, expectedBookCount);
+  const indices = members.map((member) => member.seriesIndex);
+  const coverage = members.map((member) => member.coveredVolumes);
+  const gaps = computeSeriesGaps(indices, bookCount, expectedBookCount, coverage);
+  const range = resolveLadderRange(indices, bookCount, expectedBookCount, coverage);
   const byIndex = new Map<number, T>();
   const unnumbered: T[] = [];
 
   for (const member of members) {
-    const index = integerIndexOf(member.seriesIndex);
-    if (index === null || !range || index < range.from || index > range.to) {
+    const index = wholeSeriesVolume(member.seriesIndex);
+    const positions = new Set(member.coveredVolumes);
+    if (index !== null) positions.add(index);
+    if (!range || positions.size === 0) {
       unnumbered.push(member);
       continue;
     }
-    const held = byIndex.get(index);
-    if (!held || STATUS_RANK[memberStatus(member.status)] > STATUS_RANK[memberStatus(held.status)]) {
-      byIndex.set(index, member);
+    const rank = STATUS_RANK[memberStatus(member.status)];
+    for (const position of positions) {
+      const held = byIndex.get(position);
+      const heldRank = held ? STATUS_RANK[memberStatus(held.status)] : -1;
+      if (rank > heldRank || (rank === heldRank && position === index && wholeSeriesVolume(held?.seriesIndex ?? null) !== position)) {
+        byIndex.set(position, member);
+      }
     }
   }
 

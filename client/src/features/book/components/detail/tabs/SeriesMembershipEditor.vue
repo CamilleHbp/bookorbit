@@ -4,12 +4,14 @@ import { useI18n } from 'vue-i18n'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from '@lucide/vue'
 import { isValidSeriesIndex, SERIES_INDEX_MAX_LENGTH } from '@bookorbit/types'
 import InputWithSuggestions from '@/components/ui/InputWithSuggestions.vue'
+import { parseCoveredVolumes } from '../../../lib/series-coverage'
 import type { EditableSeriesMembership } from '../../../composables/useMetadataEditor'
 
 const props = defineProps<{
   modelValue: EditableSeriesMembership[]
   searchFn: (q: string) => Promise<string[]>
   disabled?: boolean
+  showCoverage?: boolean
 }>()
 
 const { t } = useI18n()
@@ -62,6 +64,14 @@ function updateSeriesName(index: number, value: string | null) {
 function updateSeriesIndex(index: number, event: Event) {
   const raw = (event.target as HTMLInputElement).value
   updateMembership(index, { seriesIndex: raw === '' ? null : raw })
+}
+
+function updateCoverage(index: number, event: Event) {
+  updateMembership(index, { coverageInput: (event.target as HTMLInputElement).value })
+}
+
+function isCoverageInvalid(value: string | undefined) {
+  return parseCoveredVolumes(value) === null
 }
 
 function isSeriesIndexInvalid(value: string | null) {
@@ -188,6 +198,22 @@ function moveMembership(index: number, offset: -1 | 1) {
           </button>
         </div>
       </div>
+      <label v-if="showCoverage" class="flex w-full flex-wrap items-center gap-2 ps-10 text-xs text-muted-foreground">
+        {{ t('book.detail.seriesMembership.coveredVolumesLabel') }}
+        <input
+          :value="membership.coverageInput ?? ''"
+          type="text"
+          class="h-8 min-w-24 max-w-40 flex-1 rounded-lg border border-input bg-background px-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+          :class="isCoverageInvalid(membership.coverageInput) ? 'border-destructive' : ''"
+          :disabled="disabled"
+          placeholder="1-5, 8"
+          :aria-invalid="isCoverageInvalid(membership.coverageInput)"
+          @input="updateCoverage(index, $event)"
+        />
+        <span v-if="isCoverageInvalid(membership.coverageInput)" class="text-destructive" role="alert">
+          {{ t('book.detail.seriesMembership.invalidCoveredVolumes') }}
+        </span>
+      </label>
       <p v-if="isSeriesIndexInvalid(membership.seriesIndex)" class="w-full ps-10 text-xs text-destructive" role="alert">
         {{ t('book.detail.seriesMembership.invalidSeriesIndex') }}
       </p>
