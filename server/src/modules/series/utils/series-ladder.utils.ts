@@ -1,5 +1,5 @@
 import type { SeriesIndex, SeriesVolumeSlot, SeriesVolumeStatus } from '@bookorbit/types';
-import { SERIES_VOLUME_SLOT_LIMIT } from '@bookorbit/types';
+import { compareSeriesIndices, parseSeriesIndex, SERIES_VOLUME_SLOT_LIMIT } from '@bookorbit/types';
 
 import type { SeriesMemberRow, SeriesVolumeMember } from '../series.repository';
 import { computeSeriesGaps, resolveLadderRange, wholeSeriesVolume } from './series-gaps.utils';
@@ -89,8 +89,8 @@ export function countSeriesVolumes(params: {
 }
 
 /**
- * The volume ladder a list row draws: one slot per number the series should have, plus the books
- * that carry no usable number, at the end.
+ * The volume ladder lists whole-volume slots and owned dotted positions in series order.
+ * Books without a valid position come last.
  *
  * Two books can sit on the same number - the same volume held in two libraries, or in two formats -
  * and the slot then shows the furthest the user got with either, because that is what "have I read
@@ -118,14 +118,11 @@ export function buildVolumeLadder(params: {
   const { gaps, range, byIndex, unnumbered } = grouped;
 
   const volumes: SeriesVolumeSlot[] = [];
-  let truncated = false;
+  const wholeSlotCount = range ? range.to - range.from + 1 : 0;
 
   if (range) {
-    for (let i = range.from; i <= range.to; i++) {
-      if (volumes.length >= SERIES_VOLUME_SLOT_LIMIT) {
-        truncated = true;
-        break;
-      }
+    const last = Math.min(range.to, range.from + SERIES_VOLUME_SLOT_LIMIT - 1);
+    for (let i = range.from; i <= last; i++) {
       const member = byIndex.get(i);
       volumes.push(
         member
@@ -136,26 +133,42 @@ export function buildVolumeLadder(params: {
   }
 
   for (const member of unnumbered) {
-    if (volumes.length >= SERIES_VOLUME_SLOT_LIMIT) {
-      truncated = true;
-      break;
-    }
-    volumes.push({ index: null, bookId: member.bookId, title: member.title, status: memberStatus(member.status) });
+    volumes.push({
+      index: wholeSeriesVolume(member.seriesIndex) === null ? parseSeriesIndex(member.seriesIndex) : null,
+      bookId: member.bookId,
+      title: member.title,
+      status: memberStatus(member.status),
+    });
   }
 
-  return { volumes, truncated, gaps, next: nextFromSlots(volumes, members), counts: tallyVolumes(grouped) };
+  if (unnumbered.length > 0) {
+    volumes.sort((a, b) => {
+      if (a.index === null) return b.index === null ? 0 : 1;
+      if (b.index === null) return -1;
+      return compareSeriesIndices(String(a.index), String(b.index));
+    });
+  }
+
+  const visible = volumes.slice(0, SERIES_VOLUME_SLOT_LIMIT);
+  return {
+    volumes: visible,
+    truncated: wholeSlotCount + unnumbered.length > SERIES_VOLUME_SLOT_LIMIT,
+    gaps,
+    next: nextFromSlots(visible, members),
+    counts: tallyVolumes(grouped),
+  };
 }
 
-/**
- * The volume to open next: the one already in progress, else the first unread in series order.
- * The raw membership index is reported rather than the slot's, so a half-numbered volume such as
- * 4.5 keeps its number even though the ladder itself only has whole-numbered rungs.
- */
+function displaySeriesIndex(index: SeriesIndex | null): SeriesIndex | null {
+  return index?.replace(/\.0+$/, '') ?? null;
+}
+
+// Prefer the book in progress, then the earliest unread position.
 function nextFromSlots(volumes: SeriesVolumeSlot[], members: SeriesMemberRow[]): SeriesLadder['next'] {
   const slot = volumes.find((s) => s.status === 'reading' && s.bookId !== null) ?? volumes.find((s) => s.status === 'unread' && s.bookId !== null);
   if (slot?.bookId != null) {
     const member = members.find((m) => m.bookId === slot.bookId);
-    return { bookId: slot.bookId, index: member?.seriesIndex ?? null, title: slot.title };
+    return { bookId: slot.bookId, index: displaySeriesIndex(member?.seriesIndex ?? null), title: slot.title };
   }
   // Nothing open inside the drawn ladder; a capped one may still have something past its end.
   return firstOpenMember(members);
@@ -163,5 +176,5 @@ function nextFromSlots(volumes: SeriesVolumeSlot[], members: SeriesMemberRow[]):
 
 function firstOpenMember(members: SeriesMemberRow[]): SeriesLadder['next'] {
   const open = members.find((m) => m.status === 'reading') ?? members.find((m) => m.status !== 'read');
-  return open ? { bookId: open.bookId, index: open.seriesIndex, title: open.title } : null;
+  return open ? { bookId: open.bookId, index: displaySeriesIndex(open.seriesIndex), title: open.title } : null;
 }

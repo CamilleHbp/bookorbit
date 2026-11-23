@@ -6,10 +6,10 @@ export type SeriesVolumeStatus = "read" | "reading" | "unread" | "missing";
 /**
  * One position on a series' volume ladder. A `missing` slot is a number the series should
  * have and the library does not; every other slot has a book behind it. Slots with no usable
- * index sit at the end with `index: null`.
+ * index sit at the end with `index: null`. Dotted positions use strings to preserve their digits.
  */
 export type SeriesVolumeSlot = {
-  index: number | null;
+  index: number | SeriesIndex | null;
   bookId: number | null;
   title: string | null;
   status: SeriesVolumeStatus;
