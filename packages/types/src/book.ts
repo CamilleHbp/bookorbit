@@ -197,6 +197,7 @@ export type BookSeriesMembership = {
   seriesId: number;
   seriesName: string;
   seriesIndex: SeriesIndex | null;
+  coveredVolumes?: number[];
   displayOrder: number;
   /** Series-level, shared by every book in the series and by every user. */
   expectedBookCount: number | null;

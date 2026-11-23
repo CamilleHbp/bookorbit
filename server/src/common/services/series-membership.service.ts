@@ -15,12 +15,14 @@ type SeriesMembershipReadExecutor = Pick<Db, 'select'> | DbTransaction;
 export type SeriesMembershipInput = {
   seriesName: string | null;
   seriesIndex?: string | null;
+  coveredVolumes?: number[];
 };
 
 export type SeriesMembershipRef = {
   seriesId: number;
   seriesName: string;
   seriesIndex: string | null;
+  coveredVolumes?: number[];
   displayOrder: number;
   expectedBookCount: number | null;
 };
@@ -38,6 +40,14 @@ export class SeriesMembershipService {
     executor: SeriesMembershipExecutor = this.db,
   ): Promise<SeriesMembershipRef[]> {
     const normalized = await this.normalizeMemberships(memberships ?? [], executor);
+    if (normalized.some((membership) => membership.coveredVolumes === undefined)) {
+      const current = await this.findByBookId(bookId, executor);
+      const coverageBySeries = new Map(current.map((membership) => [membership.seriesId, membership.coveredVolumes]));
+      for (const membership of normalized) {
+        const previous = coverageBySeries.get(membership.seriesId);
+        if (membership.coveredVolumes === undefined && previous) membership.coveredVolumes = previous;
+      }
+    }
 
     await executor.delete(bookSeriesMemberships).where(eq(bookSeriesMemberships.bookId, bookId));
 
@@ -47,6 +57,7 @@ export class SeriesMembershipService {
           bookId,
           seriesId: membership.seriesId,
           seriesIndex: membership.seriesIndex,
+          ...(membership.coveredVolumes ? { coveredVolumes: membership.coveredVolumes } : {}),
           displayOrder: membership.displayOrder,
         })),
       );
@@ -71,20 +82,14 @@ export class SeriesMembershipService {
     const rest = current.filter((membership) => membership.displayOrder !== 0);
     const displayName = this.seriesIdentity.normalizeDisplayName(metadata?.seriesName);
 
-    if (!displayName) {
-      return this.replaceForBook(
-        bookId,
-        rest.map((membership) => ({ seriesName: membership.seriesName, seriesIndex: membership.seriesIndex })),
-        executor,
-      );
-    }
+    const secondary = rest.map(({ seriesName, seriesIndex, coveredVolumes }) => ({ seriesName, seriesIndex, coveredVolumes: coveredVolumes ?? [] }));
+    if (!displayName) return this.replaceForBook(bookId, secondary, executor);
 
+    const normalizedName = this.seriesIdentity.normalizeName(displayName);
+    const previous = current.find((membership) => this.seriesIdentity.normalizeName(membership.seriesName) === normalizedName);
     return this.replaceForBook(
       bookId,
-      [
-        { seriesName: displayName, seriesIndex: metadata?.seriesIndex ?? null },
-        ...rest.map((membership) => ({ seriesName: membership.seriesName, seriesIndex: membership.seriesIndex })),
-      ],
+      [{ seriesName: displayName, seriesIndex: metadata?.seriesIndex ?? null, coveredVolumes: previous?.coveredVolumes ?? [] }, ...secondary],
       executor,
     );
   }
@@ -110,6 +115,7 @@ export class SeriesMembershipService {
         seriesId: bookSeriesMemberships.seriesId,
         seriesName: bookSeries.name,
         seriesIndex: bookSeriesMemberships.seriesIndex,
+        coveredVolumes: bookSeriesMemberships.coveredVolumes,
         displayOrder: bookSeriesMemberships.displayOrder,
         expectedBookCount: bookSeries.expectedBookCount,
       })
@@ -124,6 +130,7 @@ export class SeriesMembershipService {
         seriesId: row.seriesId,
         seriesName: row.seriesName,
         seriesIndex: row.seriesIndex,
+        ...(row.coveredVolumes?.length ? { coveredVolumes: row.coveredVolumes } : {}),
         displayOrder: row.displayOrder,
         expectedBookCount: row.expectedBookCount ?? null,
       });
@@ -186,6 +193,7 @@ export class SeriesMembershipService {
         seriesId,
         seriesName: displayName,
         seriesIndex: membership.seriesIndex ?? null,
+        ...(membership.coveredVolumes ? { coveredVolumes: [...new Set(membership.coveredVolumes)].sort((a, b) => a - b) } : {}),
         displayOrder: normalized.length,
         expectedBookCount: null,
       });

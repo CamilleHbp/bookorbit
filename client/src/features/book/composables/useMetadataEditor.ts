@@ -10,11 +10,13 @@ import {
   type CustomMetadataBookValue,
   type CustomMetadataBookValueInput,
 } from '@bookorbit/types'
+import { formatCoveredVolumes, parseCoveredVolumes } from '@/features/book/lib/series-coverage'
 import { hasAudioFile, hasReadAlongFile } from '@/features/book/lib/file-capabilities'
 
 export type EditableSeriesMembership = {
   seriesName: string
   seriesIndex: string | null
+  coverageInput?: string
   /** Series-level: saving it changes the total for every book in the series and every user. */
   expectedBookCount: number | null
 }
@@ -85,7 +87,12 @@ export function normalizeSeriesMemberships(values: readonly EditableSeriesMember
     const key = seriesName.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    out.push({ seriesName, seriesIndex: value.seriesIndex ?? null, expectedBookCount: value.expectedBookCount ?? null })
+    out.push({
+      seriesName,
+      seriesIndex: value.seriesIndex ?? null,
+      expectedBookCount: value.expectedBookCount ?? null,
+      ...(value.coverageInput !== undefined ? { coverageInput: value.coverageInput } : {}),
+    })
   }
   return out
 }
@@ -98,6 +105,7 @@ function seriesMembershipsFromBook(book: BookDetail): EditableSeriesMembership[]
         seriesName: membership.seriesName,
         seriesIndex: membership.seriesIndex,
         expectedBookCount: membership.expectedBookCount ?? null,
+        ...(membership.coveredVolumes?.length ? { coverageInput: formatCoveredVolumes(membership.coveredVolumes) } : {}),
       })),
     )
   }
@@ -300,7 +308,10 @@ export function useMetadataEditor() {
     const currentSeriesMemberships = normalizeSeriesMemberships(form.seriesMemberships)
     const previousSeriesMemberships = normalizeSeriesMemberships(previous.seriesMemberships)
     if (JSON.stringify(currentSeriesMemberships) !== JSON.stringify(previousSeriesMemberships)) {
-      payload.seriesMemberships = currentSeriesMemberships
+      payload.seriesMemberships = currentSeriesMemberships.map(({ coverageInput, ...membership }) => ({
+        ...membership,
+        ...(coverageInput !== undefined ? { coveredVolumes: parseCoveredVolumes(coverageInput) } : {}),
+      }))
     }
 
     const currentCommunityRatings = form.communityRatings.map(({ provider, rating, ratingCount }) => ({ provider, rating, ratingCount }))

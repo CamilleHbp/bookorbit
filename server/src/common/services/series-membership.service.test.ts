@@ -12,7 +12,17 @@ function makeSeriesIdentity(ids: Record<string, number>) {
   };
 }
 
-function makeMutationDb() {
+function makeMutationDb(
+  current: {
+    bookId: number;
+    seriesId: number;
+    seriesName: string;
+    seriesIndex: string | null;
+    coveredVolumes: number[];
+    displayOrder: number;
+  }[] = [],
+) {
+  const { select } = makeSelectChain(current);
   const deleteWhere = vi.fn().mockResolvedValue(undefined);
   const deleteFrom = vi.fn().mockReturnValue({ where: deleteWhere });
   const insertValues = vi.fn().mockResolvedValue(undefined);
@@ -22,7 +32,7 @@ function makeMutationDb() {
   const update = vi.fn().mockReturnValue({ set: updateSet });
 
   return {
-    db: { delete: deleteFrom, insert: insertInto, update } as never,
+    db: { select, delete: deleteFrom, insert: insertInto, update } as never,
     deleteFrom,
     deleteWhere,
     insertInto,
@@ -80,6 +90,22 @@ describe('SeriesMembershipService', () => {
     expect(updateSet).toHaveBeenNthCalledWith(2, { updatedAt: expect.any(Date) });
   });
 
+  it('preserves omitted coverage and lets an explicit empty list clear it', async () => {
+    const identity = makeSeriesIdentity({ dune: 101 });
+    const { db, insertValues } = makeMutationDb([
+      { bookId: 10, seriesId: 101, seriesName: 'Dune', seriesIndex: null, coveredVolumes: [1, 2, 3], displayOrder: 0 },
+    ]);
+    const service = new SeriesMembershipService(db, identity as never);
+
+    await service.replaceForBook(10, [{ seriesName: 'Dune', seriesIndex: '1' }]);
+    await service.replaceForBook(10, [{ seriesName: 'Dune', coveredVolumes: [3, 2, 3] }]);
+    await service.replaceForBook(10, [{ seriesName: 'Dune', coveredVolumes: [] }]);
+
+    expect(insertValues).toHaveBeenNthCalledWith(1, [expect.objectContaining({ coveredVolumes: [1, 2, 3] })]);
+    expect(insertValues).toHaveBeenNthCalledWith(2, [expect.objectContaining({ coveredVolumes: [2, 3] })]);
+    expect(insertValues).toHaveBeenNthCalledWith(3, [expect.objectContaining({ coveredVolumes: [] })]);
+  });
+
   it('does not insert membership rows when replacement normalizes to empty', async () => {
     const identity = makeSeriesIdentity({});
     const { db, insertInto, updateSet } = makeMutationDb();
@@ -111,6 +137,6 @@ describe('SeriesMembershipService', () => {
 
     await service.syncPrimaryFromMetadata(7, db as never);
 
-    expect(replaceForBook).toHaveBeenCalledWith(7, [{ seriesName: 'Rest', seriesIndex: 2 }], db);
+    expect(replaceForBook).toHaveBeenCalledWith(7, [{ seriesName: 'Rest', seriesIndex: 2, coveredVolumes: [] }], db);
   });
 });

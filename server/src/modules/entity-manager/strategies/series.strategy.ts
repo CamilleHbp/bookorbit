@@ -346,16 +346,26 @@ export class SeriesStrategy implements EntityStrategy {
     const bookIdList = sqlNumberList(bookIds);
 
     await db.execute(sql`
+      WITH candidates AS (
+        SELECT book_id, series_id, display_order, covered_volumes
+        FROM book_series_memberships
+        WHERE book_id IN (${bookIdList})
+          AND (series_id = ${targetId} OR series_id IN (${sourceIdList}))
+      ), chosen AS (
+        SELECT DISTINCT ON (book_id) book_id, series_id
+        FROM candidates
+        ORDER BY book_id, (series_id = ${targetId}) DESC, display_order
+      ), coverage AS (
+        SELECT candidate.book_id, array_agg(DISTINCT volume ORDER BY volume) AS volumes
+        FROM candidates candidate
+        CROSS JOIN LATERAL unnest(candidate.covered_volumes) AS positions(volume)
+        GROUP BY candidate.book_id
+      )
       UPDATE book_series_memberships bsm
-      SET series_id = ${targetId}, updated_at = now()
-      WHERE bsm.book_id IN (${bookIdList})
-        AND bsm.series_id IN (${sourceIdList})
-        AND NOT EXISTS (
-          SELECT 1
-          FROM book_series_memberships existing
-          WHERE existing.book_id = bsm.book_id
-            AND existing.series_id = ${targetId}
-        )
+      SET series_id = ${targetId}, covered_volumes = COALESCE(coverage.volumes, '{}'::integer[]), updated_at = now()
+      FROM chosen
+      LEFT JOIN coverage ON coverage.book_id = chosen.book_id
+      WHERE bsm.book_id = chosen.book_id AND bsm.series_id = chosen.series_id
     `);
 
     await db.execute(sql`

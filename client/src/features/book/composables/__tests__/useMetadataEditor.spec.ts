@@ -83,6 +83,27 @@ describe('useMetadataEditor', () => {
     apiMock.mockReset()
   })
 
+  it('loads omnibus coverage and saves edited ranges as distinct volumes', async () => {
+    const book = makeBook({
+      seriesMemberships: [
+        { seriesId: 9, seriesName: 'Test Series', seriesIndex: null, coveredVolumes: [1, 2, 3], displayOrder: 0, expectedBookCount: 6 },
+      ],
+    })
+    apiMock.mockResolvedValue({ ok: true, json: async () => book })
+
+    const { form, load, save } = useMetadataEditor()
+    load(book)
+    expect(form.seriesMemberships[0]?.coverageInput).toBe('1-3')
+
+    form.seriesMemberships[0]!.coverageInput = '2-4, 6, 4'
+    await save(book.id, [])
+
+    const [, req] = apiMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(String(req.body))).toMatchObject({
+      metadata: { seriesMemberships: [{ seriesName: 'Test Series', coveredVolumes: [2, 3, 4, 6] }] },
+    })
+  })
+
   it('omits audioMetadata when book has no audio files', async () => {
     const book = makeBook()
     apiMock.mockResolvedValue({ ok: true, json: async () => book })

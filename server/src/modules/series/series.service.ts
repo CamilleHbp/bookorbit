@@ -165,7 +165,12 @@ export class SeriesService {
       throw new NotFoundException('Series not found');
     }
 
-    const possibleGaps = computeSeriesGaps(detail.indices, detail.bookCount, detail.expectedBookCount);
+    const possibleGaps = computeSeriesGaps(
+      detail.members?.map((member) => member.seriesIndex) ?? detail.indices,
+      detail.bookCount,
+      detail.expectedBookCount,
+      detail.members?.map((member) => member.coveredVolumes),
+    );
     const volumeCounts = detail.members
       ? countSeriesVolumes({ members: detail.members, bookCount: detail.bookCount, expectedBookCount: detail.expectedBookCount })
       : { ownedVolumeCount: detail.bookCount, readVolumeCount: detail.readCount };

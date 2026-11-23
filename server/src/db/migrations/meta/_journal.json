@@ -1142,6 +1142,13 @@
       "when": 1795337203892,
       "tag": "0162_add_book_editions",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1795460088480,
+      "tag": "0163_series_volume_coverage",
+      "breakpoints": true
     }
   ]
 }
