@@ -11,6 +11,12 @@ export function storyTagChanges(current: string[], incoming: string[], managed: 
   };
 }
 
+export function withoutExcludedTags<T extends FanfictionMetadataValues>(metadata: T, excludedTags: string[]): T {
+  if (!excludedTags.length) return metadata;
+  const excluded = new Set(excludedTags);
+  return { ...metadata, tags: metadata.tags.filter((tag) => !excluded.has(tag)) };
+}
+
 export function planStoryMetadata(
   current: FanfictionMetadataValues,
   incoming: FanfictionMetadataValues,
