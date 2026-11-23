@@ -57,13 +57,13 @@ describe('tag book browser', () => {
     const { state, wrapper } = await setup('?tag=tone.Cozy')
     state.setGroup('%_', '')
     await flushPromises()
-    expect(request).toHaveBeenCalledWith('/api/v1/tags?tagSeparator=%25_&tagPrefix=&page=1&pageSize=30')
+    expect(request).toHaveBeenCalledWith('/api/v1/tags/browse?tagSeparator=%25_&tagPrefix=&page=1&pageSize=30')
     expect(state.selected.value).toEqual(['tone.Cozy'])
     wrapper.unmount()
   })
   it('reports catalog failures instead of showing an empty successful result', async () => {
     request.mockImplementation(
-      async (url) => new Response(JSON.stringify({ items: [], total: 0 }), { status: String(url).startsWith('/api/v1/tags?') ? 403 : 200 }),
+      async (url) => new Response(JSON.stringify({ items: [], total: 0 }), { status: String(url).startsWith('/api/v1/tags/browse?') ? 403 : 200 }),
     )
     const { state, wrapper } = await setup()
     expect(state.tagsError.value).toBe(true)

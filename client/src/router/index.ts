@@ -682,8 +682,8 @@ export const routes: RouteRecordRaw[] = [
         meta: { titleRow: true, title: (to) => fallbackById('titles.collection', numericParam(to, 'id')) },
       },
       {
-        path: '/tags',
-        name: 'tags',
+        path: '/tags/browse',
+        name: 'tag-browser',
         component: () => import('@/features/tags/views/TagsView.vue'),
         meta: { title: () => t('tagBrowser.title') },
       },

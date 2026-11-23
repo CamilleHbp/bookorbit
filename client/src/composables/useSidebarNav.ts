@@ -125,7 +125,7 @@ function routeNameStartsWith(route: RouteLocationNormalizedLoaded, prefix: strin
 }
 
 /** Tags share the Genres row: the index switches between the two. */
-const GENRE_ROUTE_NAMES = new Set(['genres', 'genre-detail', 'tags', 'tag-detail'])
+const GENRE_ROUTE_NAMES = new Set(['genres', 'genre-detail', 'tags', 'tag-detail', 'tag-browser'])
 
 /** Building story guides shows jobs only while the server builds them; every other Jobs permission always does. */
 function canSeeJobs(context: NavContext): boolean {

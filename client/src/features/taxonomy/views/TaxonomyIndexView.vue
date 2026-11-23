@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Search, Shapes, Tags } from '@lucide/vue'
 import type { TaxonomyIndexSort, TaxonomyKind } from '@bookorbit/types'
 
@@ -256,6 +256,13 @@ defineOptions({ name: 'TaxonomyIndexView' })
       </template>
 
       <template #bar>
+        <RouterLink
+          v-if="isTag"
+          :to="{ name: 'tag-browser' }"
+          class="inline-flex h-8 shrink-0 items-center rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          {{ t('tagBrowser.choose') }}
+        </RouterLink>
         <BrowseSearchField
           :model-value="q"
           :placeholder="isTag ? t('taxonomy.index.searchTags') : t('taxonomy.index.searchGenres')"
