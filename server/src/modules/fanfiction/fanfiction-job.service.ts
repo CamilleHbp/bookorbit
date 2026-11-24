@@ -15,7 +15,7 @@ import { DB } from '../../db';
 import * as schema from '../../db/schema';
 import type { DatabaseTransaction } from '../../db/transaction';
 import { FanfictionAccessService } from './fanfiction-access.service';
-import { isConnectionAccessError } from './fanfiction-website';
+import { canResumeAfterConnectionSave } from './fanfiction-website';
 import { actionableDownloadJob, downloadQueue, retryGroupMembers, type RetryScope } from './fanfiction-download-queue';
 import { FanfictionDownloadsDto, ListFanfictionJobsDto } from './dto/fanfiction-job.dto';
 import { PreviewFanfictionDto } from './dto/fanfiction.dto';
@@ -82,10 +82,7 @@ export class FanfictionJobService {
           errorMeta: { sourceId: current.id, bookId: current.bookId },
         } satisfies FanfictionMetadataReviewConflict & { message: string });
       const retryAccess =
-        !scheduled &&
-        kind === 'update' &&
-        current?.state === 'configuration_blocked' &&
-        (isConnectionAccessError(current.attentionCode) || current.attentionCode === 'configuration_blocked');
+        !scheduled && kind === 'update' && current?.state === 'configuration_blocked' && canResumeAfterConnectionSave(current.attentionCode);
       if (
         !current ||
         current.version !== source.version ||
@@ -565,7 +562,7 @@ export class FanfictionJobService {
           source?.state === 'configuration_blocked' &&
           source.maintainerUserId === user.id &&
           source.attentionCode === job.errorCode &&
-          (isConnectionAccessError(job.errorCode) || job.errorCode === 'configuration_blocked') &&
+          canResumeAfterConnectionSave(job.errorCode) &&
           job.kind === 'update' &&
           job.state === 'configuration_blocked' &&
           job.sourceVersion !== null &&
@@ -984,11 +981,7 @@ export class FanfictionJobService {
     websiteAttempt?: { site: string; connection: { id: string; generation: number } | null },
   ): Promise<boolean> {
     return this.db.transaction(async (tx) => {
-      if (
-        websiteAttempt !== undefined &&
-        state === 'configuration_blocked' &&
-        (isConnectionAccessError(errorCode) || errorCode === 'configuration_blocked')
-      ) {
+      if (websiteAttempt !== undefined && state === 'configuration_blocked' && canResumeAfterConnectionSave(errorCode)) {
         // Serialize the failed attempt with a settings save so an old login cannot re-block the story.
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`fanfiction-connection:${job.userId}:${websiteAttempt.site}`}, 0))`);
         const connections = schema.fanfictionConnections;

@@ -28,3 +28,9 @@ export const connectionAccessErrors = ['authentication_required', 'access_denied
 export function isConnectionAccessError(code: string | null | undefined): boolean {
   return connectionAccessErrors.some((value) => value === code);
 }
+
+export const connectionRepairCodes = [...connectionAccessErrors, 'configuration_blocked', 'source_browser_verification'] as const;
+
+export function canResumeAfterConnectionSave(code: string | null | undefined): boolean {
+  return connectionRepairCodes.some((value) => value === code);
+}

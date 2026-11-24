@@ -2,6 +2,7 @@ import type { FanfictionDownloadQueue, FanfictionDownloadRow } from '@bookorbit/
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import * as schema from '../../db/schema';
+import { connectionRepairCodes } from './fanfiction-website';
 import type { FanfictionDownloadsDto } from './dto/fanfiction-job.dto';
 
 export function actionableDownloadJob(alias: 'j' | 'newer') {
@@ -72,7 +73,7 @@ export function retryGroupMembers(
     where group_key is not null and ${'group' in scope ? sql`group_key=${scope.group}` : sql`site=${scope.site}`} and updated_at <= ${cutoff}::timestamptz
       and ${
         'site' in scope && scope.settingsChanged
-          ? sql`code in ('access_denied','authentication_required','configuration_blocked','storiesonline_membership_expired') and not exists (
+          ? sql`code in ${connectionRepairCodes.map((code) => sql`${code}`)} and not exists (
         select 1 from ${schema.fanfictionSources} s where s.id=keyed.source_id and s.library_id=${libraryId}
           and s.book_file_id is not null and (not s.updates_enabled or s.metadata_review_pending))`
           : sql`true`
