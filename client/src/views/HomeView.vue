@@ -69,6 +69,7 @@ import { useViewSort } from '@/features/book/composables/useViewSort'
 import { usePageTitle } from '@/composables/usePageTitle'
 import { COVER_ASPECT_RATIO_KEY, DEFAULT_COVER_ASPECT_RATIO } from '@/features/book/lib/cover-aspect-ratio'
 import { useDisplaySettings } from '@/composables/useDisplaySettings'
+import { useLibraryPermissions } from '@/features/library/composables/useLibraryPermissions'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useBookViewContext } from '@/features/book/composables/useBookViewContext'
 import { useBookTableShell } from '@/features/book/composables/useBookTableShell'
@@ -372,6 +373,8 @@ const showFormatFacets = computed(() => chipFormatFacets.value.length > 1 || sel
 const selectedFormatsLabel = computed(() => (selectedFormats.value.length > 0 ? selectedFormats.value.map(formatFilterValueLabel).join(', ') : null))
 const isNarrowed = computed(() => filterRuleCount.value > 0 || debouncedQuery.value.trim().length > 0)
 
+const { hasLibraryPermission } = useLibraryPermissions()
+const canOpenFanfiction = computed(() => hasLibraryPermission('manage_libraries', libraryId.value, 'owner'))
 const canManageLibraries = computed(() => hasPermission('manage_libraries'))
 const canUpload = computed(() => hasPermission('library_upload'))
 const canExport = computed(() => hasPermission('library_download') && !isDemoRestrictedAccount.value)
@@ -829,6 +832,11 @@ defineOptions({ name: 'HomeView' })
             {{ t('book.detail.addFile.upload') }}
           </button>
           <BrowsePageMenu v-if="hasPageMenu" :name="title">
+            <DropdownMenuItem v-if="canOpenFanfiction && currentLibrary" as-child>
+              <RouterLink :to="{ name: 'fanfiction', query: { libraryId } }"
+                ><BookOpen :size="14" aria-hidden="true" />{{ t('fanfiction.title') }}</RouterLink
+              >
+            </DropdownMenuItem>
             <DropdownMenuItem v-if="canManageLibraries && currentLibrary" class="md:hidden" @click="handleMenuScan">
               <RefreshCw :size="14" class="mr-2" />
               {{ t('settings.admin.libraries.scan') }}

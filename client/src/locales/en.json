@@ -18665,6 +18665,8 @@
     }
   },
   "fanfiction": {
+    "invalidUrl": "Enter a valid HTTPS story URL on line {line}.",
+    "urlLimit": "Line {line} exceeds the limit of 100 different story URLs.",
     "storyUpdates": "Story updates",
     "noManagedSource": "No story source linked.",
     "lastUpdated": "Last updated",

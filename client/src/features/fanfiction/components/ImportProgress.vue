@@ -8,16 +8,22 @@ import { useDownloadActivity } from '../composables/useDownloadActivity'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import { CircleAlert, CircleCheck, Clock, LoaderCircle } from '@lucide/vue'
-import type { FanfictionJob } from '@bookorbit/types'
+import type { FanfictionJob, FanfictionDownloadRow } from '@bookorbit/types'
 
-const props = defineProps<{ job: FanfictionJob; lastContactAt?: string | null }>()
+const props = defineProps<{ job: FanfictionJob; lastContactAt?: string | null; waitingFor?: FanfictionDownloadRow['waitingFor']; site?: string }>()
 const { t, locale } = useI18n()
 const {
   message: activityMessage,
   freshness,
   connected,
   chapter,
-} = useDownloadActivity(() => ({ progress: props.job.result?.progress, lastContactAt: props.lastContactAt }))
+} = useDownloadActivity(() => ({
+  progress: props.job.result?.progress,
+  lastContactAt: props.lastContactAt,
+  waitingFor: props.waitingFor,
+  nextAttemptAt: props.job.nextAttemptAt,
+  site: props.site,
+}))
 const progress = computed(() => props.job.result?.progress)
 const active = computed(() => ['queued', 'running'].includes(props.job.state))
 const succeeded = computed(() => ['succeeded', 'no_change'].includes(props.job.state))
@@ -30,7 +36,7 @@ const nextAttempt = computed(() =>
 )
 const status = computed(() => {
   if (props.job.cancellationRequested && active.value) return t('fanfiction.progress.cancelling')
-  if (props.job.state === 'queued' && props.job.attempts > 0) return t('fanfiction.progress.retrying')
+  if (props.job.state === 'queued' && !props.waitingFor && props.job.nextAttemptAt && props.job.attempts > 0) return t('fanfiction.progress.retrying')
   if (props.job.state === 'running' && (progress.value || ['import', 'preview'].includes(props.job.kind)))
     return t(`fanfiction.progress.${progress.value?.stage ?? 'metadata'}`)
   return t(`fanfiction.states.${props.job.state}`)
@@ -78,11 +84,11 @@ const lastStage = computed(() =>
       <span v-if="job.attempts > 1" class="text-muted-foreground ml-auto">{{ t('fanfiction.progress.attempt', { count: job.attempts }) }}</span>
     </div>
     <p v-if="active && job.state === 'running' && chapter" class="text-sm font-medium break-words">{{ chapter }}</p>
-    <p v-if="active && job.state === 'running' && activityMessage" class="text-sm text-muted-foreground">{{ activityMessage }}</p>
+    <p v-if="active && activityMessage" class="text-sm text-muted-foreground">{{ activityMessage }}</p>
     <p v-if="active && job.state === 'running' && freshness" class="text-xs text-muted-foreground">
       {{ freshness }}<span v-if="connected"> · {{ t('fanfiction.liveActivity.connected') }}</span>
     </p>
-    <p v-if="nextAttempt" class="text-muted-foreground text-sm">
+    <p v-if="nextAttempt && !waitingFor" class="text-muted-foreground text-sm">
       <time :datetime="job.nextAttemptAt">{{ t('fanfiction.progress.nextAttempt', { time: nextAttempt }) }}</time>
     </p>
     <template v-if="['import', 'update', 'refresh'].includes(job.kind) && (progress || (job.kind === 'import' && (active || succeeded)))">
@@ -99,8 +105,7 @@ const lastStage = computed(() =>
         class="block h-2 w-full overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary [&::-moz-progress-bar]:bg-primary"
       />
       <div v-if="chapterLabel && !succeeded" class="text-muted-foreground flex justify-between gap-2 text-xs">
-        <span>{{ chapterLabel }}</span
-        ><span v-if="percentage !== undefined">{{ percentage }}%</span>
+        <span>{{ chapterLabel }}</span><span v-if="percentage !== undefined">{{ percentage }}%</span>
       </div>
     </template>
     <p v-if="job.result?.importReview?.approved && (active || failed)" class="flex items-center gap-2 text-sm text-muted-foreground">

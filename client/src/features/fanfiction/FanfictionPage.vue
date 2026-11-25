@@ -75,6 +75,7 @@ const {
   filterActivity,
   moreActivity,
   urls,
+  urlProblem,
   search,
   state,
   schedule,
@@ -128,7 +129,6 @@ const requestedReviewBookId = computed(() => {
 })
 const connectionIssues = ref<InstanceType<typeof WebsiteConnections> | null>(null)
 const storyIssues = ref<InstanceType<typeof StoryAttentionList> | null>(null)
-const reviewQueue = ref<InstanceType<typeof StoryReviewQueue> | null>(null)
 const importInbox = ref<InstanceType<typeof StoryImportInbox> | null>(null)
 const downloads = ref<InstanceType<typeof DownloadQueue>>()
 const reviewView = ref<'imports' | 'metadata' | 'attention'>('imports')
@@ -148,23 +148,23 @@ function showImportReviews() {
 function showMetadataReviews() {
   void router.replace({ query: { ...router.currentRoute.value.query, review: 'metadata', sourceId: undefined, bookId: undefined } })
 }
-const inlineReviews = ref<InstanceType<typeof StoryImportReview>[]>([])
-const taskList = ref<InstanceType<typeof FanfictionTaskList>>()
-function handleLibraryChange(event: Event) {
+async function handleLibraryChange(event: Event) {
   const select = event.target as HTMLSelectElement
-  if (
-    downloads.value?.canLeave() === false ||
-    reviewQueue.value?.canLeave() === false ||
-    importInbox.value?.canLeave() === false ||
-    inlineReviews.value.some((editor) => !editor.canLeave()) ||
-    taskList.value?.canLeave() === false
-  ) {
-    select.value = String(libraryId.value)
-    return
-  }
-  libraryId.value = Number(select.value)
-  void changeLibrary()
+  const failure = await router.replace({
+    query: { ...router.currentRoute.value.query, libraryId: select.value, sourceId: undefined, bookId: undefined, jobId: undefined },
+  })
+  if (failure) select.value = String(libraryId.value)
 }
+watch(
+  () => router.currentRoute.value.query.libraryId,
+  (value) => {
+    const id = Number(value)
+    if (Number.isSafeInteger(id) && id > 0 && libraryId.value !== id) {
+      libraryId.value = id
+      void changeLibrary()
+    }
+  },
+)
 async function refresh() {
   if (tab.value === 'downloads') {
     downloads.value?.reload()
@@ -175,6 +175,20 @@ async function refresh() {
 const existingNeedsReview = computed(() => existingCandidate.value?.existingStory?.attentionCode === 'metadata_review_required')
 const importHeading = ref<HTMLElement | null>(null)
 const urlInput = ref<HTMLTextAreaElement | null>(null)
+const validateUrls = ref(false)
+const displayedUrlProblem = computed(() => (validateUrls.value ? urlProblem.value : null))
+function checkUrls() {
+  validateUrls.value = true
+}
+function submitUrls() {
+  checkUrls()
+  if (urlProblem.value) {
+    urlInput.value?.focus()
+    urlInput.value?.setSelectionRange(urlProblem.value.start, urlProblem.value.end)
+    return
+  }
+  void importStories()
+}
 const importBatchTitle = computed(() => {
   if (importBatchFinished.value) return t(importBatchNeedsAttention.value ? 'fanfiction.importBatch.attention' : 'fanfiction.importBatch.finished')
   return t('fanfiction.importBatch.title')
@@ -186,6 +200,7 @@ watch(importBatchStarted, async (started) => {
   }
 })
 async function handleAnotherBatch() {
+  validateUrls.value = false
   startAnotherImportBatch()
   await nextTick()
   urlInput.value?.focus()
@@ -196,11 +211,15 @@ const jobPagination = reactive(page.jobPagination)
 const activityPagination = reactive(page.activityPagination)
 const navigation = computed(() => [
   { id: 'downloads' as const, label: t('fanfiction.downloads.title'), icon: ArrowDownToLine },
+  { id: 'add' as const, label: t('fanfiction.addStories'), icon: Plus },
   { id: 'history' as const, label: t('fanfiction.downloads.history'), icon: History },
 ])
 watch(tab, async (value, previous) => {
   if (previous === 'downloads' && value !== 'downloads' && libraryId.value && !busy.value) await refreshStories()
 })
+function activeTab(id: string) {
+  return id === tab.value || (id === 'add' && tab.value === 'discovery')
+}
 const managementMenu = ref<HTMLDetailsElement>()
 watch(tab, () => {
   if (managementMenu.value) managementMenu.value.open = false
@@ -340,17 +359,17 @@ onMounted(() => {
   <main
     v-if="canManage"
     class="mx-auto w-full max-w-5xl px-4 sm:px-8"
-    :class="tab === 'review' ? 'space-y-4 py-4 sm:py-5' : 'space-y-5 py-6 sm:py-8'"
+    :class="tab === 'review' ? 'space-y-4 py-4 sm:py-5' : 'space-y-3 py-3 sm:space-y-5 sm:py-6'"
   >
     <header class="flex flex-wrap items-center justify-between gap-3">
       <div class="min-w-0">
         <RouterLink
           v-if="libraryId"
           :to="'/library/' + libraryId"
-          class="inline-flex items-center gap-2 py-1 text-sm font-medium text-primary hover:underline"
+          class="inline-flex items-center gap-2 py-1 text-sm font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-current"
           ><LibraryBig class="size-4" aria-hidden="true" />{{ libraryName || t('fanfiction.library') }}</RouterLink
         >
-        <h1 class="font-serif font-semibold tracking-tight" :class="tab === 'review' ? 'text-2xl sm:text-3xl' : 'text-4xl sm:text-5xl'">
+        <h1 class="font-serif font-semibold tracking-tight" :class="tab === 'review' ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'">
           {{ t(tab === 'review' && reviewView === 'attention' ? 'fanfiction.reviewQueue.title' : 'fanfiction.title') }}
         </h1>
       </div>
@@ -396,18 +415,15 @@ onMounted(() => {
             <RouterLink class="rounded px-3 py-2 hover:bg-muted" :to="{ name: 'tools-tag-matching' }">{{ t('tagMatching.title') }}</RouterLink>
           </div>
         </details>
-        <Button v-if="tab !== 'add'" :disabled="libraryId === null" @click="showAdd"
-          ><Plus aria-hidden="true" />{{ t('fanfiction.addStories') }}</Button
-        >
       </div>
     </header>
     <div v-if="(tab !== 'downloads' && tab !== 'review') || libraries.length > 1 || libraryCursor !== null" class="flex flex-wrap items-end gap-2">
-      <label v-if="libraries.length > 1 || libraryCursor !== null" class="w-full min-w-0 flex-none space-y-1 text-sm sm:w-auto sm:flex-1 sm:max-w-xs"
+      <label v-if="libraries.length > 1 || libraryCursor !== null" class="flex min-w-0 max-w-full items-center gap-2 text-sm"
         >{{ t('fanfiction.library') }}
         <select
           :value="libraryId"
           :disabled="busy"
-          class="border-input bg-background block h-11 w-full rounded-md border px-3 focus-visible:outline-2 focus-visible:outline-ring sm:h-9"
+          class="border-input bg-background block h-11 min-w-0 max-w-full rounded-md border px-3 focus-visible:outline-2 focus-visible:outline-ring sm:h-9"
           @change="handleLibraryChange"
         >
           <option v-for="library in libraries" :key="library.id" :value="library.id">{{ library.name }}</option>
@@ -455,27 +471,34 @@ onMounted(() => {
           v-for="item in navigation"
           :key="item.id"
           :to="destination(item.id)"
-          :aria-current="tab === item.id ? 'page' : undefined"
+          :aria-current="activeTab(item.id) ? 'page' : 'false'"
           class="inline-flex items-center gap-2 shrink-0 border-b-2 px-2 py-3 text-sm font-medium sm:px-3 focus-visible:outline-2 focus-visible:outline-ring"
-          :class="tab === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
+          :class="activeTab(item.id) ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'"
           ><component :is="item.icon" class="size-4" aria-hidden="true" />{{ item.label }}</RouterLink
         >
       </nav>
       <nav
         v-if="tab === 'add' || tab === 'discovery'"
-        class="flex gap-4 border-b border-border py-3 text-sm"
+        class="inline-flex flex-wrap gap-1 rounded-lg bg-muted p-1 text-sm"
         :aria-label="t('fanfiction.addStories')"
       >
-        <RouterLink :to="destination('add')" :aria-current="tab === 'add' ? 'page' : undefined" class="text-primary underline">{{
-          t('fanfiction.maintenance.fromWeb')
-        }}</RouterLink>
-        <RouterLink :to="destination('discovery')" :aria-current="tab === 'discovery' ? 'page' : undefined" class="text-primary underline">{{
-          t('fanfiction.maintenance.fromLibrary')
-        }}</RouterLink>
+        <RouterLink
+          :to="destination('add')"
+          :aria-current="tab === 'add' ? 'page' : 'false'"
+          class="inline-flex min-h-11 items-center rounded-md px-3 text-muted-foreground hover:text-foreground aria-[current=page]:bg-background aria-[current=page]:font-semibold aria-[current=page]:text-foreground"
+          >{{ t('fanfiction.maintenance.fromWeb') }}</RouterLink
+        >
+        <RouterLink
+          :to="destination('discovery')"
+          :aria-current="tab === 'discovery' ? 'page' : 'false'"
+          class="inline-flex min-h-11 items-center rounded-md px-3 text-muted-foreground hover:text-foreground aria-[current=page]:bg-background aria-[current=page]:font-semibold aria-[current=page]:text-foreground"
+          >{{ t('fanfiction.maintenance.fromLibrary') }}</RouterLink
+        >
       </nav>
       <section v-if="tab === 'downloads'" class="space-y-5">
         <DownloadQueue
           ref="downloads"
+          :job-id="typeof router.currentRoute.value.query.jobId === 'string' ? router.currentRoute.value.query.jobId : undefined"
           :key="libraryId"
           :library-id="libraryId"
           :check-job="bulk.job"
@@ -515,7 +538,6 @@ onMounted(() => {
         <StoryImportInbox v-if="reviewView === 'imports'" ref="importInbox" :key="libraryId" :library-id="libraryId" :disabled="!canManage" />
         <StoryReviewQueue
           v-else
-          ref="reviewQueue"
           :key="`${libraryId}-${reviewView}-${reviewSource() ?? router.currentRoute.value.query.bookId ?? ''}`"
           :library-id="libraryId"
           :attention="reviewView === 'attention'"
@@ -615,8 +637,7 @@ onMounted(() => {
           <progress class="block h-2 w-full accent-primary" :value="importBatchCompleted" :max="importBatchTotal" :aria-label="importBatchTitle" />
           <Button v-if="hasUnqueuedImports && !busy" variant="outline" @click="importStories">{{ t('fanfiction.importBatch.resume') }}</Button>
         </header>
-        <form v-else class="space-y-4" @submit.prevent="importStories">
-          <h2 class="text-lg font-medium">{{ t('fanfiction.addStories') }}</h2>
+        <form v-else class="space-y-4" @submit.prevent="submitUrls">
           <label class="block space-y-1 text-sm"
             >{{ t('fanfiction.storyUrls')
             }}<textarea
@@ -627,10 +648,16 @@ onMounted(() => {
               rows="5"
               maxlength="65536"
               class="border-input bg-background block w-full rounded-md border p-3"
-              :placeholder="t('fanfiction.urlsHelp')"
+              :aria-describedby="displayedUrlProblem ? 'story-url-error story-url-help' : 'story-url-help'"
+              :aria-invalid="Boolean(displayedUrlProblem)"
+              @paste="checkUrls"
             />
           </label>
 
+          <p v-if="displayedUrlProblem" id="story-url-error" role="alert" class="text-destructive text-sm">
+            {{ t(`fanfiction.${displayedUrlProblem.key}`, { line: displayedUrlProblem.line }) }}
+          </p>
+          <p id="story-url-help" class="text-sm text-muted-foreground">{{ t('fanfiction.urlsHelp') }}</p>
           <label class="flex min-h-11 items-center gap-3 text-sm"
             ><input v-model="keepUpdated" type="checkbox" class="size-4 accent-primary" :disabled="busy" />{{
               t('fanfiction.maintenance.keepUpdated')
@@ -697,7 +724,6 @@ onMounted(() => {
           </p>
           <p v-if="candidate.preview" class="break-all text-sm text-muted-foreground">{{ candidate.url }}</p>
           <StoryImportReview
-            ref="inlineReviews"
             v-if="candidate.job && needsImportReview(candidate.job)"
             :job="candidate.job"
             :disabled="!canManage"
@@ -705,6 +731,12 @@ onMounted(() => {
           />
           <ImportProgress v-else-if="candidate.job" :job="candidate.job" />
           <p v-else role="status" class="text-sm text-muted-foreground">{{ t('fanfiction.importBatch.pending') }}</p>
+          <RouterLink
+            v-if="candidate.job && ['queued', 'running'].includes(candidate.job.state)"
+            class="me-3 inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4"
+            :to="{ name: 'fanfiction', query: { tab: 'downloads', libraryId, jobId: candidate.job.id } }"
+            >{{ t('fanfiction.downloads.details') }}</RouterLink
+          >
           <Button
             v-if="candidate.job && ['queued', 'running'].includes(candidate.job.state)"
             variant="outline"
@@ -773,7 +805,6 @@ onMounted(() => {
             <WebsiteConnections ref="connectionIssues" :library-id="libraryId" repairs-only @saved="handleConnectionSaved" />
           </div>
           <FanfictionTaskList
-            ref="taskList"
             :jobs="jobs"
             :page="jobPagination.number"
             :previous="jobPagination.canPrevious"

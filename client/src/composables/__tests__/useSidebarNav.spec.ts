@@ -128,6 +128,15 @@ describe('sidebar nav registry', () => {
     expect(entry('jobs').to).toEqual({ name: 'jobs-activity' })
   })
 
+  it('opens Fanfiction in the current administrable library', () => {
+    const route = makeRoute('library', { id: '8' })
+    expect(resolveNavEntry(entry('fanfiction'), { ...makeContext(), fanfictionLibraryId: 8 }, route, 'Fanfiction').to).toEqual({
+      name: 'fanfiction',
+      query: { libraryId: 8 },
+    })
+    expect(resolveNavEntry(entry('fanfiction'), makeContext(), route, 'Fanfiction').to).toEqual({ name: 'fanfiction' })
+  })
+
   it('groups Statistics, History, Achievements and Annotations in the Reading zone', () => {
     const reading = SIDEBAR_NAV_REGISTRY.filter((candidate) => candidate.zone === 'reading').map((candidate) => candidate.id)
 
