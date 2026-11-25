@@ -145,6 +145,11 @@ class UpdateCheckTest(unittest.TestCase):
                     expired = UpdateCheck(request, adapter, preview)
                     self.assertFalse(expired.unchanged())
                     self.assertNotEqual(check.chapter_directory('chapters'), expired.chapter_directory('chapters'))
+                    job = {**request,'checkpointJobId':'active-job'}
+                    resumed = UpdateCheck(job,adapter,preview).chapter_directory('chapters')
+                    with patch('update_check.time.time', return_value=1000):
+                        self.assertEqual(UpdateCheck(job,adapter,preview).chapter_directory('chapters'),resumed)
+                    self.assertNotEqual(UpdateCheck({**job,'checkpointJobId':'another'},adapter,preview).chapter_directory('chapters'),resumed)
                 with patch('update_check.time.time', return_value=999):
                     self.assertFalse(UpdateCheck(request, adapter, preview).unchanged())
                 state = json.loads(Path(request['checkStatePath']).read_text())

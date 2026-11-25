@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  Matches,
   IsOptional,
   IsString,
   IsUUID,
@@ -36,6 +37,9 @@ export class CheckFanfictionSourceDto {
 
 export class ReviewFanfictionContentDto {
   @IsIn(['apply', 'discard']) action!: 'apply' | 'discard';
+  @IsOptional() @Matches(/^[0-9a-f]{64}$/) chapterKey?: string;
+  @IsOptional() @IsIn(['saved', 'website']) choice?: 'saved' | 'website';
+  @IsOptional() @IsBoolean() remaining?: boolean;
 }
 
 export class RollbackFanfictionSourceDto {

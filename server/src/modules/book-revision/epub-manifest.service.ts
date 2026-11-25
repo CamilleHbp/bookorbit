@@ -121,6 +121,7 @@ export class EpubManifestService {
     }
     const chapters: RevisionChapter[] = [];
     const contentChapters: string[] = [];
+    const illustrations = new Map<number, string[]>();
     const generatedMetadata: string[] = [];
     const fanficfare = isFanficfarePackage(pkg.metadata);
     const spine = list(pkg.spine?.itemref);
@@ -168,7 +169,21 @@ export class EpubManifestService {
       }
       const comparisonHash = semantic ? digest(visibleChapterText(semantic)) : undefined;
       semantic?.('body.fff_chapter > h3.fff_chapter_title:first-child').remove();
-      const bodyHash = semantic ? digest(normalizeAnchorText(semantic('body').text())) : undefined;
+      const bodyText = semantic ? normalizeAnchorText(semantic('body').text()) : undefined;
+      if (semantic) {
+        const refs = semantic('body img, body image')
+          .toArray()
+          .map((node) => {
+            const image = semantic(node);
+            const ref = image.attr('src') ?? image.attr('href') ?? image.attr('xlink:href') ?? '';
+            try {
+              return resolveHref(posix.dirname(href), ref);
+            } catch {
+              return digest(ref);
+            }
+          });
+        if (refs.length) illustrations.set(chapters.length, refs);
+      }
       const text = visibleChapterText($);
       const textHash = digest(text);
       if (!generated && !emptyFictionHome) contentChapters.push(textHash);
@@ -182,7 +197,7 @@ export class EpubManifestService {
         textHash,
         ...(comparisonHash && comparisonHash !== textHash ? { comparisonHash } : {}),
         ...(membershipNotice ? { membershipNotice: true } : {}),
-        ...(bodyHash ? { bodyHash } : {}),
+        ...(bodyText !== undefined ? { bodyHash: digest(bodyText), bodyLength: scalarLength(bodyText) } : {}),
         length: scalarLength(text),
       });
     }
@@ -192,18 +207,28 @@ export class EpubManifestService {
       { meta?: { '@_name'?: string; '@_content'?: string } | { '@_name'?: string; '@_content'?: string }[] } | undefined;
     const coverId = list(metadata?.meta).find((meta) => meta['@_name'] === 'cover')?.['@_content'];
     const resources: string[] = [];
+    const assetHashes = new Map<string, string>();
     for (const item of items.values()) {
       const media = item['@_media-type'] ?? '';
       if (media === 'application/xhtml+xml' || media === 'text/html' || media === 'application/x-dtbncx+xml') continue;
-      const bytes = await read(resolveHref(base, item['@_href']!));
-      const hash = digest(bytes);
+      const resource = resolveHref(base, item['@_href']!);
+      const hash = digest(await read(resource));
+      if (illustrations.size) assetHashes.set(resource, hash);
       if (item['@_id'] === coverId || (item['@_properties'] ?? '').split(/\s+/).includes('cover-image')) coverHash = hash;
       else resources.push(hash);
     }
+    for (const [index, refs] of illustrations)
+      chapters[index].illustrationHash = digest(JSON.stringify(refs.map((ref) => assetHashes.get(ref) ?? ref)));
     return {
       version: 1,
       chapters,
-      contentHash: digest(JSON.stringify({ chapters: contentChapters, resources: resources.sort() })),
+      contentHash: digest(
+        JSON.stringify({
+          chapters: contentChapters,
+          resources: resources.sort(),
+          ...(illustrations.size ? { illustrations: [...illustrations.keys()].map((i) => [i, chapters[i].illustrationHash]) } : {}),
+        }),
+      ),
       metadataHash: digest(JSON.stringify(canonical({ package: semanticPackageMetadata(pkg.metadata), generated: generatedMetadata }))),
       coverHash,
     };

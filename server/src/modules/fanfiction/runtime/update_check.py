@@ -34,10 +34,15 @@ class UpdateCheck:
         matched_fields = {'tags', 'genres', 'categories', 'pendingLabelCount', 'labelMappingVersion'}
         chapter_payload['preview'] = {key: value for key, value in preview.items() if key not in matched_fields}
         self.chapter_fingerprint = hashlib.sha256(json.dumps(chapter_payload, sort_keys=True, default=str).encode()).hexdigest()
-        self.import_directory = None
+        self.input_hash = file_hash('input.epub') if request['operation'] in ('update', 'refresh') else None
+        self.resume_directory = None
         if request['operation'] == 'download':
             config_hash = hashlib.sha256(payload['configuration'].encode()).hexdigest()
-            self.import_directory = 'import-' + config_hash
+            self.resume_directory = 'import-' + config_hash
+        elif self.input_hash and request.get('checkpointJobId'):
+            # Resume the same update across pauses, even after the verification week changes.
+            identity = [request['checkpointJobId'], request['operation'], self.input_hash, payload['configuration']]
+            self.resume_directory = 'job-' + hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         self.saved = {}
         if self.path:
             try:
@@ -47,7 +52,6 @@ class UpdateCheck:
                         self.saved = saved
             except (OSError, ValueError):
                 pass
-        self.input_hash = file_hash('input.epub') if request['operation'] in ('update', 'refresh') else None
 
     def unchanged(self):
         verified = self.saved.get('verifiedAt')
@@ -73,10 +77,8 @@ class UpdateCheck:
                 legacy.rename(current)
             except FileExistsError:
                 pass
-        if self.import_directory:
-            # Initial imports have no installed edition to verify. Each record is
-            # already keyed by story and chapter URL within this user's source.
-            target = Path(directory) / self.import_directory
+        if self.resume_directory:
+            target = Path(directory) / self.resume_directory
             if not target.exists() and current.is_dir():
                 try:
                     current.rename(target)

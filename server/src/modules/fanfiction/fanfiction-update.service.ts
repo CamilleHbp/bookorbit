@@ -1,4 +1,12 @@
-import { chapterDifferences, differentStory, storyChapterChanges, storyUpdateSafety } from './fanfiction-chapter-changes';
+import { dirname, basename } from 'node:path';
+import {
+  changedTextExcerpts,
+  chapterConflicts,
+  chapterDifferences,
+  differentStory,
+  storyChapterChanges,
+  storyUpdateSafety,
+} from './fanfiction-chapter-changes';
 import { FanfictionReviewService } from './fanfiction-review.service';
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createWriteStream } from 'node:fs';
@@ -116,6 +124,17 @@ export class FanfictionUpdateService {
     if (expected !== current.id)
       throw new ConflictException({ message: 'Installed EPUB changed before the update could resume', errorCode: 'saved_epub_changed' });
     if (job.kind !== 'update' && job.kind !== 'refresh') throw new BadRequestException('Invalid source update operation');
+    const scope = {
+      libraryId: job.libraryId,
+      userId: job.userId,
+      sourceId: source.id,
+      jobId: job.id,
+      restartId: job.kind === 'refresh' ? job.id : undefined,
+    };
+    const candidate =
+      job.result?.contentReview?.candidateSha256 && job.result.preview
+        ? { sha256: job.result.contentReview.candidateSha256, preview: job.result.preview }
+        : undefined;
     let savedPath = '';
     return this.runtime.update(
       job.kind,
@@ -125,7 +144,7 @@ export class FanfictionUpdateService {
         savedPath = path;
         const snapshot = await this.downloads.download(fileId, source.libraryId, expected, access);
         await pipeline(snapshot.stream, createWriteStream(path, { flags: 'wx', mode: 0o600 }), { signal });
-        if (source.updatePolicy === 'safe') previousManifest = await this.manifests.inspect(path);
+        previousManifest = await this.manifests.inspect(path);
       },
       async (path, preview, unchangedEdition) => {
         await access();
@@ -136,7 +155,7 @@ export class FanfictionUpdateService {
             message: 'The downloaded story does not match the saved source or chapter count',
             errorCode: !matches ? 'source_identity_mismatch' : 'source_chapter_reduction',
           });
-        const next = await this.manifests.inspect(path);
+        let next = await this.manifests.inspect(path);
         if (differentStory(source, preview, previousManifest, next))
           throw new BadRequestException({
             message: 'The website returned a different title, author and chapter text',
@@ -144,6 +163,34 @@ export class FanfictionUpdateService {
           });
         if (next.chapters.some((c) => c.membershipNotice))
           throw new BadRequestException({ message: 'StoriesOnline returned a membership preview', errorCode: 'access_denied' });
+        const conflicts = chapterConflicts(previousManifest, next, job.result?.contentReview?.chapters);
+        if (conflicts.some((chapter) => !chapter.decision)) {
+          const [savedText, websiteText] = await Promise.all([this.manifests.chapterTextReader(savedPath), this.manifests.chapterTextReader(path)]);
+          for (const conflict of conflicts.slice(0, 100)) {
+            const [before, after] = await Promise.all([savedText(conflict.savedHref), websiteText(conflict.websiteHref)]);
+            if (before !== after) Object.assign(conflict, changedTextExcerpts(before, after));
+          }
+          job.result = await this.reviews.prepare(job, preview, false, false, source.updatePolicy === 'safe');
+          job.result.changes = storyChapterChanges(previousManifest, next);
+          job.result.contentReview = {
+            approved: false,
+            previousState: source.state === 'paused' ? 'paused' : 'active',
+            chapters: conflicts,
+            candidateSha256: await this.runtime.saveReviewCandidate(scope, path),
+          };
+          await this.sources.recordChapterChanges(job);
+          return job.result;
+        }
+        const selected = conflicts.filter((chapter) => chapter.decision === 'saved');
+        if (selected.length) {
+          if (basename(path) !== 'output.epub') throw new ConflictException('Website edition is missing');
+          await this.runtime.execute(
+            { operation: 'retain_chapters', selectedPaths: Object.fromEntries(selected.map((c) => [c.savedHref, c.websiteHref])) },
+            dirname(path),
+            signal,
+          );
+          next = await this.manifests.inspect(path);
+        }
         const safety = storyUpdateSafety(previousManifest, next);
         const removedPlaceholder =
           previousManifest.chapters.some((c) => c.generated && c.sourceUrl && c.title === 'Home') &&
@@ -153,7 +200,7 @@ export class FanfictionUpdateService {
           !safety.reordered &&
           !safety.inserted &&
           !safety.removed &&
-          current.contentHash === next.contentHash &&
+          previousManifest.contentHash === next.contentHash &&
           current.metadataHash === next.metadataHash &&
           current.coverHash === next.coverHash
         ) {
@@ -182,8 +229,9 @@ export class FanfictionUpdateService {
       signal,
       saveCookies,
       source.updatePolicy === 'safe',
-      { libraryId: job.libraryId, userId: job.userId, sourceId: source.id, restartId: job.kind === 'refresh' ? job.id : undefined },
+      scope,
       reportProgress,
+      candidate,
     );
   }
 }

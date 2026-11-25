@@ -161,7 +161,8 @@ export interface FanfictionJob {
   nextAttemptAt?: string;
   cancellationRequested: boolean;
   result: {
-    contentReview?: { approved: boolean; previousState: "active" | "paused" };
+    queuePriorityAt?: number;
+    contentReview?: { approved: boolean; previousState: "active" | "paused"; candidateSha256?: string; chapters?: FanfictionChapterConflict[] };
     metadataDeferred?: boolean;
     changes?: FanfictionChapterChanges;
     progress?: FanfictionImportProgress;
@@ -541,6 +542,19 @@ export interface FanfictionLinkRequest {
   url: string;
 }
 
+export interface FanfictionChapterConflict {
+  key: string;
+  title: string;
+  sourceUrl: string;
+  savedHref: string;
+  websiteHref: string;
+  savedExcerpt?: string;
+  websiteExcerpt?: string;
+  savedLength: number;
+  websiteLength: number;
+  decision?: "saved" | "website";
+}
+
 export interface FanfictionChapterDifference {
   saved?: { position: number; title: string; excerpt?: string };
   website?: { position: number; title: string; excerpt?: string };
@@ -569,7 +583,7 @@ export type FanfictionDownloadSection = "running" | "queued" | "retrying" | "att
 export type FanfictionDownloadIssue = "website" | "login" | "chapter" | "metadata" | "import" | "story" | "stopped" | "unknown";
 
 export interface FanfictionDownloadRow {
-  waitingFor?: "scheduled_retry" | "website_busy" | "downloads_busy" | "ready" | "recovery" | "cancelling";
+  waitingFor?: "paused" | "scheduled_retry" | "website_busy" | "downloads_busy" | "ready" | "recovery" | "cancelling";
   lastContactAt?: string | null;
   verificationUrl?: string | null;
   id: string;

@@ -21,9 +21,11 @@ import { FanfictionDownloadsDto, ListFanfictionJobsDto } from './dto/fanfiction-
 import { PreviewFanfictionDto } from './dto/fanfiction.dto';
 import { recordFanfictionActivity } from './fanfiction-activity';
 
+import type { ReviewFanfictionContentDto } from './dto/fanfiction-source.dto';
 import { chapterDownloadKinds, retryDelaySeconds } from './fanfiction-download-retry';
 
 const jobs = schema.fanfictionJobs;
+const pauseRequested = sql`${jobs.cancellationRequested} and ${jobs.errorCode} = 'download_paused'`;
 
 @Injectable()
 export class FanfictionJobService {
@@ -485,6 +487,37 @@ export class FanfictionJobService {
     return { items: rows.map((row) => this.view(row)) };
   }
 
+  async controlQueue(libraryId: number, id: string, user: RequestUser, action: 'pause' | 'resume' | 'prioritize') {
+    await this.access.administer(user, libraryId);
+    return this.db.transaction(async (tx) => {
+      const [job] = await tx
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.id, id), eq(jobs.libraryId, libraryId), eq(jobs.userId, user.id)))
+        .for('update');
+      if (!job) throw new NotFoundException('Download not found');
+      if (!['import', 'update', 'refresh'].includes(job.kind) || job.cancellationRequested) throw new ConflictException('Download cannot be changed');
+      const paused = job.state === 'queued' && job.errorCode === 'download_paused';
+      const allowed = { resume: paused, prioritize: job.state === 'queued' && !paused, pause: ['queued', 'running'].includes(job.state) };
+      if (!allowed[action]) throw new ConflictException('Download state changed');
+      // Leave a running worker's site slot occupied until it acknowledges the pause.
+      const stopping = action === 'pause' && job.state === 'running';
+      const [updated] = await tx
+        .update(jobs)
+        .set({
+          state: stopping ? 'running' : 'queued',
+          cancellationRequested: stopping,
+          result: action === 'prioritize' ? { ...job.result, queuePriorityAt: Date.now() } : sql`${jobs.result} - 'queuePriorityAt'`,
+          errorCode: action === 'pause' ? 'download_paused' : action === 'resume' ? null : job.errorCode,
+          runAfter: action === 'resume' ? new Date() : job.runAfter,
+          updatedAt: new Date(),
+        })
+        .where(eq(jobs.id, id))
+        .returning();
+      return this.view(updated);
+    });
+  }
+
   async cancel(libraryId: number, id: string, user: RequestUser) {
     await this.access.administer(user, libraryId);
     const job = await this.find(libraryId, id);
@@ -492,7 +525,7 @@ export class FanfictionJobService {
       throw new ForbiddenException('This story check belongs to another user');
     await this.db
       .update(jobs)
-      .set({ cancellationRequested: true, updatedAt: new Date() })
+      .set({ cancellationRequested: true, errorCode: null, updatedAt: new Date() })
       .where(and(eq(jobs.libraryId, libraryId), eq(jobs.id, id), inArray(jobs.state, ['queued', 'running'])));
     await this.db
       .update(jobs)
@@ -681,7 +714,7 @@ export class FanfictionJobService {
     return transaction ? operation(transaction) : this.db.transaction(operation);
   }
 
-  async reviewContent(libraryId: number, id: string, action: 'apply' | 'discard', user: RequestUser) {
+  async reviewContent(libraryId: number, id: string, action: 'apply' | 'discard', user: RequestUser, choice?: ReviewFanfictionContentDto) {
     await this.access.administer(user, libraryId);
     const startedAt = Date.now();
     this.logger.log(
@@ -712,6 +745,19 @@ export class FanfictionJobService {
           ...job.result,
           contentReview: { ...job.result.contentReview, approved: action === 'apply' },
         };
+        const chapters = result.contentReview?.chapters;
+        if (action === 'apply' && chapters?.length) {
+          const first = chapters.findIndex((c) => !c.decision);
+          if (first < 0 || chapters[first].key !== choice?.chapterKey || !choice?.choice)
+            throw new ConflictException('Refresh this chapter comparison before choosing a version');
+          chapters[first].decision = choice.choice;
+          if (choice.remaining) for (const chapter of chapters.slice(first + 1)) chapter.decision ??= choice.choice;
+          if (chapters.some((c) => !c.decision)) {
+            result.contentReview!.approved = false;
+            const [partial] = await tx.update(jobs).set({ result, updatedAt: new Date() }).where(eq(jobs.id, id)).returning();
+            return this.view(partial);
+          }
+        } else if (choice?.chapterKey) throw new ConflictException('Chapter comparison has changed');
         if (action === 'discard') {
           delete result.contentReview;
           delete result.metadataReview;
@@ -829,8 +875,9 @@ export class FanfictionJobService {
         const failed = await tx
           .update(jobs)
           .set({
-            state: sql`case when ${jobs.cancellationRequested} then 'cancelled' else 'failed' end`,
-            errorCode: 'worker_lease_expired',
+            state: sql`case when ${pauseRequested} then 'queued' when ${jobs.cancellationRequested} then 'cancelled' else 'failed' end`,
+            cancellationRequested: sql`case when ${pauseRequested} then false else ${jobs.cancellationRequested} end`,
+            errorCode: sql`case when ${pauseRequested} then 'download_paused' else 'worker_lease_expired' end`,
             leaseOwner: null,
             leaseExpiresAt: null,
             updatedAt: sql`now()`,
@@ -877,6 +924,7 @@ export class FanfictionJobService {
             inArray(jobs.kind, ['preview', 'discovery', 'adopt', 'import', 'update', 'refresh', 'rollback', 'source_batch', 'replacement']),
             eq(jobs.cancellationRequested, false),
             or(inArray(jobs.kind, chapterDownloadKinds), lt(jobs.attempts, 3)),
+            sql`${jobs.errorCode} is distinct from 'download_paused'`,
             active.length
               ? notInArray(
                   jobs.site,
@@ -886,7 +934,7 @@ export class FanfictionJobService {
             or(and(eq(jobs.state, 'queued'), lte(jobs.runAfter, sql`now()`)), and(eq(jobs.state, 'running'), lte(jobs.leaseExpiresAt, sql`now()`))),
           ),
         )
-        .orderBy(asc(jobs.runAfter), asc(jobs.id))
+        .orderBy(sql`(${jobs.result}->>'queuePriorityAt')::bigint desc nulls last`, asc(jobs.runAfter), asc(jobs.id))
         .limit(100)
         .for('update', { skipLocked: true });
       const rulebooks = candidates.length
@@ -899,6 +947,7 @@ export class FanfictionJobService {
       const versions = new Map(rulebooks.map((row) => [row.libraryId, row.version]));
       // Stale tag plans need another download, so only current approvals get priority.
       const candidate =
+        candidates.find((row) => row.result?.queuePriorityAt) ??
         candidates.find((row) => row.kind === 'rollback') ??
         candidates.find(
           (row) =>
@@ -922,6 +971,7 @@ export class FanfictionJobService {
           state: 'running',
           errorCode: null,
           leaseOwner: randomUUID(),
+          ...(candidate.result?.queuePriorityAt ? { result: sql`nullif(${jobs.result}-'queuePriorityAt','{}'::jsonb)` } : {}),
           leaseExpiresAt: sql`now() + interval '60 seconds'`,
           attempts: candidate.attempts + 1,
           fence: candidate.fence + 1,
@@ -998,9 +1048,10 @@ export class FanfictionJobService {
       const rows = await tx
         .update(jobs)
         .set({
-          state: sql`case when ${jobs.cancellationRequested} then 'cancelled' else ${state} end`,
+          state: sql`case when ${pauseRequested} then 'queued' when ${jobs.cancellationRequested} then 'cancelled' else ${state} end`,
+          cancellationRequested: sql`case when ${pauseRequested} then false else ${jobs.cancellationRequested} end`,
           result: result ?? sql`${jobs.result}`,
-          errorCode,
+          errorCode: sql`case when ${pauseRequested} then 'download_paused' else ${errorCode} end`,
           leaseOwner: null,
           leaseExpiresAt: null,
           updatedAt: sql`now()`,
@@ -1130,7 +1181,9 @@ export class FanfictionJobService {
       state: row.state,
       url: row.url,
       attempts: row.attempts,
-      ...(row.state === 'queued' && row.attempts > 0 && row.errorCode ? { nextAttemptAt: row.runAfter.toISOString() } : {}),
+      ...(row.state === 'queued' && row.attempts > 0 && row.errorCode && row.errorCode !== 'download_paused'
+        ? { nextAttemptAt: row.runAfter.toISOString() }
+        : {}),
       cancellationRequested: row.cancellationRequested,
       result: row.result,
       errorCode: row.errorCode,

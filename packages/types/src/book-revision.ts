@@ -7,6 +7,8 @@ export interface RevisionChapter {
   membershipNotice?: boolean;
   comparisonHash?: string;
   bodyHash?: string;
+  bodyLength?: number;
+  illustrationHash?: string;
   length: number;
 }
 

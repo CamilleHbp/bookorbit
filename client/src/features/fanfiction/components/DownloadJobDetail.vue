@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { storyIssueRoute } from '../composables/storyReview'
+import DownloadQueueControls from './DownloadQueueControls.vue'
+import ChapterConflictReview from './ChapterConflictReview.vue'
 import ChapterDifferences from './ChapterDifferences.vue'
 import { computed, nextTick, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -110,6 +112,10 @@ onMounted(async () => {
   await load()
 })
 defineExpose({ canLeave })
+function chapterResolved(updated: import('@bookorbit/types').FanfictionJob) {
+  job.value = updated
+  if (updated.state !== 'review_required') close()
+}
 </script>
 <template>
   <section class="space-y-4">
@@ -124,6 +130,7 @@ defineExpose({ canLeave })
     <p v-if="busy && !job" role="status">{{ t('common.loading') }}</p>
     <template v-if="job">
       <StoryImportReview ref="editor" v-if="needsImportReview(job)" :job="job" @updated="updated" />
+      <ChapterConflictReview v-else-if="content && job.result?.contentReview?.chapters?.length" :job="job" @resolved="chapterResolved" />
       <div v-else-if="content" class="space-y-3 border-s-2 border-primary bg-muted/50 p-4">
         <h3 class="font-semibold">{{ t(`fanfiction.downloads.${decision.key}`, { count: decision.count }) }}</h3>
         <p v-if="row?.currentChapters != null && row.proposedChapters != null">
@@ -155,6 +162,15 @@ defineExpose({ canLeave })
           t('fanfiction.tasks.websiteLogins')
         }}</RouterLink>
         <a :href="job.url" target="_blank" rel="noopener noreferrer" class="text-primary underline">{{ t('fanfiction.downloads.openSource') }}</a>
+        <DownloadQueueControls
+          v-if="['import', 'update', 'refresh'].includes(job.kind) && ['running', 'queued'].includes(job.state) && !job.cancellationRequested"
+          :library-id="libraryId"
+          :job-id="job.id"
+          :queued="job.state === 'queued'"
+          :paused="job.errorCode === 'download_paused'"
+          :disabled="busy"
+          @changed="updated"
+        />
         <Button v-if="retryable" :disabled="busy" @click="retry">{{ t('fanfiction.importInbox.retry') }}</Button>
         <Button v-if="['running', 'queued'].includes(job.state)" variant="outline" :disabled="busy || job.cancellationRequested" @click="cancel">{{
           t('fanfiction.cancel')

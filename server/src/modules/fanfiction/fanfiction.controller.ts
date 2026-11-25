@@ -68,6 +68,28 @@ export class FanfictionController {
     return this.jobs.get(libraryId, id, user);
   }
 
+  @Post('jobs/:jobId/pause')
+  @HttpCode(200)
+  pauseDownload(@Param('libraryId', ParseIntPipe) libraryId: number, @Param('jobId', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+    return this.jobs.controlQueue(libraryId, id, user, 'pause');
+  }
+
+  @Post('jobs/:jobId/resume')
+  @HttpCode(200)
+  resumeDownload(@Param('libraryId', ParseIntPipe) libraryId: number, @Param('jobId', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+    return this.jobs.controlQueue(libraryId, id, user, 'resume');
+  }
+
+  @Post('jobs/:jobId/prioritize')
+  @HttpCode(200)
+  prioritizeDownload(
+    @Param('libraryId', ParseIntPipe) libraryId: number,
+    @Param('jobId', ParseUUIDPipe) id: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.jobs.controlQueue(libraryId, id, user, 'prioritize');
+  }
+
   @Post('jobs/:jobId/cancel')
   @HttpCode(202)
   cancelJob(@Param('libraryId', ParseIntPipe) libraryId: number, @Param('jobId', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
@@ -97,7 +119,7 @@ export class FanfictionController {
     @Body() dto: ReviewFanfictionContentDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.jobs.reviewContent(libraryId, id, dto.action, user);
+    return this.jobs.reviewContent(libraryId, id, dto.action, user, dto);
   }
 
   @Post('jobs/:jobId/retry')

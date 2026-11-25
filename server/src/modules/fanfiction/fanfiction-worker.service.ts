@@ -151,7 +151,12 @@ export class FanfictionWorkerService implements OnModuleDestroy {
               : null;
       const needsReview = !!storyReview || (result?.selection?.failed ?? 0) > 0;
       const chapterSource = job.sourceId ?? result?.sourceId;
-      if (chapterSource && result?.bookFileId && (!needsReview || result.preparedUpdate) && isChapterDownload(job.kind)) {
+      if (
+        chapterSource &&
+        result?.bookFileId &&
+        (!needsReview || (result.preparedUpdate && !result.contentReview?.chapters?.length)) &&
+        isChapterDownload(job.kind)
+      ) {
         const scope = {
           libraryId: job.libraryId,
           userId: job.userId,

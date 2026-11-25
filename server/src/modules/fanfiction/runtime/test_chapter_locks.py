@@ -37,6 +37,19 @@ def epub(path, docs, assets=None):
 
 
 class ChapterLocksTest(unittest.TestCase):
+    def test_keep_selected_chapter_and_resource_without_locking_it_or_replacing_other_chapters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old, new = [Path(directory)/n for n in ('old.epub', 'new.epub')]
+            epub(old, {'a.xhtml':chapter('<p>Installed text<img src="image.png"/></p>')}, {'image.png':b'image'})
+            epub(new, {'one.xhtml':chapter('Website text'), 'two.xhtml':chapter('New chapter',URL+'2')})
+            self.assertEqual(preserve_chapter_locks(old,new,selected_paths={'OPS/a.xhtml':'OPS/one.xhtml'}),1)
+            with ZipFile(new) as archive:
+                kept = archive.read('OPS/one.xhtml')
+                self.assertIn(b'Installed text',kept)
+                self.assertNotIn(LOCK.encode(),kept)
+                self.assertIn(b'New chapter',archive.read('OPS/two.xhtml'))
+                self.assertTrue(any(archive.read(n)==b'image' for n in archive.namelist() if n.endswith('.png')))
+
     def test_legacy_title_hearts_do_not_block_unlocked_chapter_replacement(self):
         from xml.parsers.expat import ExpatError
         with tempfile.TemporaryDirectory() as directory:

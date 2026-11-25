@@ -1,4 +1,11 @@
-import type { EpubRevisionManifest, FanfictionChapterChanges, FanfictionChapterDifference, RevisionChapter } from '@bookorbit/types';
+import { createHash } from 'node:crypto';
+import type {
+  FanfictionChapterConflict,
+  EpubRevisionManifest,
+  FanfictionChapterChanges,
+  FanfictionChapterDifference,
+  RevisionChapter,
+} from '@bookorbit/types';
 
 import { chapterSourceId } from '../../common/utils/chapter-source-id';
 
@@ -122,6 +129,53 @@ export function storyUpdateSafety(
   };
 }
 
+export function chapterConflicts(previous: EpubRevisionManifest, next: EpubRevisionManifest, reviewed: FanfictionChapterConflict[] = []) {
+  const id = chapterIds(previous, next);
+  const before = previous.chapters.filter((c) => !c.generated);
+  const after = next.chapters.filter((c) => !c.generated);
+  const unique = (chapters: RevisionChapter[]) => {
+    const result = new Map<string, RevisionChapter | null>();
+    for (const chapter of chapters) {
+      const key = id(chapter);
+      if (key) result.set(key, result.has(key) ? null : chapter);
+    }
+    return result;
+  };
+  const saved = unique(before);
+  const decisions = new Map(reviewed.map((c) => [c.key, c.decision]));
+  const conflicts: FanfictionChapterConflict[] = [];
+  for (const [identity, incoming] of unique(after)) {
+    const old = saved.get(identity);
+    if (!old || !incoming || !incoming.sourceUrl) continue;
+    const oldHash = old.bodyHash ?? comparisonHash(old),
+      newHash = incoming.bodyHash ?? comparisonHash(incoming);
+    const savedLength = old.bodyLength ?? old.length,
+      websiteLength = incoming.bodyLength ?? incoming.length;
+    if ((oldHash === newHash && old.illustrationHash === incoming.illustrationHash) || websiteLength > savedLength) continue;
+    const key = createHash('sha256')
+      .update(JSON.stringify([identity, oldHash, newHash, old.illustrationHash, incoming.illustrationHash]))
+      .digest('hex');
+    conflicts.push({
+      key,
+      title: incoming.title,
+      sourceUrl: incoming.sourceUrl,
+      savedHref: old.href,
+      websiteHref: incoming.href,
+      savedLength,
+      websiteLength,
+      decision: decisions.get(key),
+    });
+  }
+  return conflicts;
+}
+
+export function changedTextExcerpts(saved: string, website: string) {
+  let start = 0;
+  while (start < saved.length && start < website.length && saved[start] === website[start]) start++;
+  const excerpt = (s: string) => (start > 35 ? '…' : '') + s.slice(Math.max(0, start - 35), start + 90) + (s.length > start + 90 ? '…' : '');
+  return { savedExcerpt: excerpt(saved), websiteExcerpt: excerpt(website) };
+}
+
 export async function chapterDifferences(
   previous: EpubRevisionManifest,
   next: EpubRevisionManifest,
@@ -150,11 +204,9 @@ export async function chapterDifferences(
     const row: FanfictionChapterDifference = { saved: { position: index + 1, title: saved.title }, website };
     if (comparisonHash(saved) !== comparisonHash(c) && differences.length < 100) {
       const [a, b] = await Promise.all([savedText(saved.href), websiteText(c.href)]);
-      let start = 0;
-      while (start < a.length && start < b.length && a[start] === b[start]) start++;
-      const excerpt = (s: string) => (start > 35 ? '…' : '') + s.slice(Math.max(0, start - 35), start + 90) + (s.length > start + 90 ? '…' : '');
-      row.saved!.excerpt = excerpt(a);
-      row.website!.excerpt = excerpt(b);
+      const excerpts = changedTextExcerpts(a, b);
+      row.saved!.excerpt = excerpts.savedExcerpt;
+      row.website!.excerpt = excerpts.websiteExcerpt;
     }
     differences.push(row);
   }

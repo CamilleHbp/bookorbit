@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChapterConflictReview from './ChapterConflictReview.vue'
 import ChapterDifferences from './ChapterDifferences.vue'
 import { canRetryWebsiteAccess, chapterDecision } from '../composables/downloadIssue'
 import type { BookFileRevisionSummary } from '@bookorbit/types'
@@ -118,6 +119,10 @@ function dateLabel(value: string | null) {
 onMounted(() => {
   if (!loading.value) void refresh()
 })
+function chapterResolved(updated: import('@bookorbit/types').FanfictionJob) {
+  job.value = updated
+  if (updated.state !== 'review_required') void refresh()
+}
 </script>
 
 <template>
@@ -294,7 +299,12 @@ onMounted(() => {
         <Button v-if="!reviewMode && ['review_required', 'source_chapter_reduction'].includes(job.errorCode ?? '')" variant="outline" as-child>
           <RouterLink :to="{ name: 'settings-website-logins' }">{{ t('fanfiction.maintenance.defaultPolicy') }}</RouterLink>
         </Button>
-        <div v-if="job.result?.contentReview && !job.result.contentReview.approved" class="space-y-3 py-3">
+        <ChapterConflictReview
+          v-if="job.result?.contentReview?.chapters?.length && !job.result.contentReview.approved"
+          :job="job"
+          @resolved="chapterResolved"
+        />
+        <div v-else-if="job.result?.contentReview && !job.result.contentReview.approved" class="space-y-3 py-3">
           <p class="font-semibold">{{ t(`fanfiction.downloads.${decision.key}`, { count: decision.count }) }}</p>
           <ChapterDifferences :changes="job.result?.changes" />
           <p>{{ t('fanfiction.downloads.keepHint') }}</p>
