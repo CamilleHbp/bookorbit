@@ -162,7 +162,7 @@ def make_configuration(url, ini, transport):
         configuration.read_file(defaults)
     configuration.read_file(io.StringIO('[defaults]\ninclude_images: true\n[fiction.live]\ndedup_img_files: true\ninclude_appendices: true\nlegend_spoilers: true\nshow_nsfw_cover_images: true\n'))
     if hasattr(transport, 'enable_for') and validate_url(url)[1].removeprefix('www.') == 'scribblehub.com':
-        configuration.read_file(io.StringIO('[defaults]\nuse_flaresolverr_proxy: true\n'))
+        configuration.read_file(io.StringIO('[defaults]\nuse_flaresolverr_proxy: auto\n'))
     configuration.read_file(io.StringIO(validate_ini(ini)))
     if not configuration.has_section('overrides'):
         configuration.add_section('overrides')

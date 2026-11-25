@@ -1,0 +1,228 @@
+--- story.py
++++ story.py
+@@ -584,6 +584,8 @@
+ def url2uuid(url):
+     return str(uuid.uuid5(IMG_NS,ensure_str(url)))
+ 
++from functools import partial
++
+ class ImageStore:
+     def __init__(self,dedup=False):
+         self.prefix='ffdl'
+@@ -621,6 +623,8 @@
+                 # *not* needing all the images is already contains.
+                 'actuallyused':actuallyused,
+                 'data':data}
++        if data and hasattr(self, 'spool_info'):
++            info = self.spool_info(info)
+         if cover:
+             info['newsrc'] = "images/%s.%s"%(self.cover_name,ext)
+             self.cover = info
+@@ -1527,12 +1531,19 @@
+         ## index04 is to disambiguate, but index is kept for users'
+         ## pre-existing settings.
+         chapter['index']=chapter['index04']
++        spool = getattr(self, 'chapter_spool', None)
++        if spool is not None and chapter['html']:
++            data = chapter['html'].encode('utf-8')
++            spool.seek(0, 2)
++            chapter['html'] = (spool.tell(), len(data))
++            spool.write(data)
+         self.chapters.append(chapter)
+ 
+     def getChapters(self,fortoc=False):
+         "Chapters will be defaultdicts(str)"
+-        retval = []
+-
++        return list(self.iterChapters(fortoc))
++
++    def iterChapters(self,fortoc=False):
+         ## only add numbers if more than one chapter.  Ditto (new) marks.
+         addnums = len(self.chapters) > 1 and (
+             self.getConfig('add_chapter_numbers') == "true"
+@@ -1572,6 +1583,10 @@
+                 usetempl = templ
+             # logger.debug("chap(%s)"%chap)
+             chapter = defaultdict(str,chap)
++            if isinstance(chapter['html'], tuple):
++                offset, length = chapter['html']
++                self.chapter_spool.seek(offset)
++                chapter['html'] = self.chapter_spool.read(length).decode('utf-8')
+             ## Due to poor planning on my part,
+             ## chapter_title_*_pattern expect index==1 not
+             ## index=0001 like output settings.  index04 is now
+@@ -1594,10 +1609,9 @@
+ 
+             ## chapter['html'] is a string.
+             chapter['html'] = self.do_chapter_text_replacements(chapter['html'])
+-            retval.append(chapter)
++            yield chapter
+         if marked_new_chapters:
+             self.setMetadata('marked_new_chapters',marked_new_chapters)
+-        return retval
+ 
+     def do_chapter_text_replacements(self,data):
+         '''
+@@ -1657,6 +1671,8 @@
+             ## need to take ext from saved src, not origurl,
+             ## likely changed to jpg.
+             (src,data)=oldimgs[url]
++            if isinstance(data, partial):
++                data = data()
+             ext = src.split('.')[-1]
+             # logger.debug("load_oldimgs:(%s,%s,%s)"%(url,ext,imagetypes[ext]))
+             self.img_store.add_img(url,
+--- epubutils.py
++++ epubutils.py
+@@ -135,7 +135,7 @@
+ 
+ def get_update_data(inputio,
+                     getfilecount=True,
+-                    getsoups=True):
++                    getsoups=True, spool=None):
+     epub = ZipFile(inputio, 'r') # works equally well with inputio as a path or a blob
+ 
+     ## Find the .opf file.
+@@ -213,7 +213,7 @@
+                                     # logger.debug("html -->img:%s"%longdesc)
+                                     if longdesc not in images:
+                                         data = epub.read(newsrc)
+-                                        images[longdesc] = (newsrc, data)
++                                        images[longdesc] = (newsrc, spool.image(data) if spool else data)
+                                         # logger.debug("-->html Add oldimages:%s"%newsrc)
+                                 except Exception as e:
+                                     logger.warning("Image %s not found!\n(originally:%s)"%(newsrc,longdesc))
+@@ -244,7 +244,7 @@
+                                         # logger.debug("htmlcss -->img:%s"%href)
+                                         if style_url not in images:
+                                             data = epub.read(newsrc)
+-                                            images[style_url] = (newsrc, data)
++                                            images[style_url] = (newsrc, spool.image(data) if spool else data)
+                                             # logger.debug("-->htmlcss Add oldimages:%s"%newsrc)
+                                             # logger.debug("\nimg %s len(%s)\n"%(newsrc,len(data)))
+                                     except Exception as e:
+@@ -279,8 +279,9 @@
+                         if currenturl == "chapter url removed due to failure":
+                             # don't count/include continue_on_chapter_error chapters.
+                             continue
++                        saved_body = spool.body(bodysoup) if spool else bodysoup
+                         if currenturl and currenturl not in urlsoups: # keep first found if more than one.
+-                            urlsoups[currenturl] = bodysoup
++                            urlsoups[currenturl] = saved_body
+ 
+                         origchapter = soup.find('meta',{'name':'chapterorigtitle'})
+                         if origchapter:
+@@ -294,7 +295,7 @@
+                         # it supersedes all individual meta tags.
+                         datamaps[currenturl].update(get_fff_chapter_data(soup))
+ 
+-                        soups.append(bodysoup)
++                        soups.append(saved_body)
+ 
+                     filecount+=1
+             ## CSS files -- only process when also getting soups for
+@@ -324,7 +325,7 @@
+                             # logger.debug("css -->img:%s"%href)
+                             if style_url not in images:
+                                 data = epub.read(newsrc)
+-                                images[style_url] = (newsrc, data)
++                                images[style_url] = (newsrc, spool.image(data) if spool else data)
+                                 # logger.debug("css -->Add oldimages:%s"%newsrc)
+                                 # logger.debug("\nimg %s len(%s)\n"%(newsrc,len(data)))
+                         except Exception as e:
+@@ -352,7 +353,7 @@
+                         logger.warning("Listed image file(%s) not found in epub, skipping."%href)
+                         continue
+                     # logger.debug("-->img Add oldimages:%s"%href)
+-                    images[img_url] = (img_url, data)
++                    images[img_url] = (img_url, spool.image(data) if spool else data)
+     try:
+         calibrebookmark = epub.read("META-INF/calibre_bookmarks.txt")
+     except:
+--- adapters/base_adapter.py
++++ adapters/base_adapter.py
+@@ -233,6 +233,9 @@
+     def del_chapter(self,i):
+         del self.chapterInfos[i]
+         self.story.setMetadata('numChapters', self.num_chapters())
++
++    def _old_chapter(self, entry):
++        return entry() if isinstance(entry, partial) else entry
+ 
+     def _chapter_text(self, html_or_soup):
+         """Normalize chapter content for change detection.
+@@ -321,18 +324,18 @@
+         """
+         try:
+             fresh_data = self.getChapterTextNum(url, index)
+-            if self._chapter_text(fresh_data) != self._chapter_text(self.oldchaptersmap[url]):
++            if self._chapter_text(fresh_data) != self._chapter_text(self._old_chapter(self.oldchaptersmap[url])):
+                 # Content changed, use fresh version
+                 self.story.chapter_updated_count += 1
+                 logger.info("Chapter %d (%s) content changed, using updated version" % (index+1, url))
+                 return fresh_data
+             # Content unchanged, reuse old
+             return self.utf8FromSoup(None,
+-                                     self.oldchaptersmap[url])
++                                     self._old_chapter(self.oldchaptersmap[url]))
+         except Exception as e:
+             logger.warning("Edit check for %s failed, reusing old: %s" % (url, e))
+             return self.utf8FromSoup(None,
+-                                     self.oldchaptersmap[url])
++                                     self._old_chapter(self.oldchaptersmap[url]))
+ 
+     def _preserve_deleted_chapters(self):
+         """Carry forward chapters that were in the old epub but are no
+@@ -360,7 +363,7 @@
+                 preserve_list.append(old_url)
+ 
+         for old_url in preserve_list:
+-            old_soup = self.oldchaptersmap[old_url]
++            old_soup = self._old_chapter(self.oldchaptersmap[old_url])
+ 
+             # Preserve this chapter as a deleted chapter
+             # Restore the chapter's real title.  The old soup
+@@ -528,10 +531,10 @@
+                                 # logger.debug("index:%s title:%s url:%s"%(index,title,url))
+                                 # logger.debug(self.oldchaptersmap[url])
+                                 data = self.utf8FromSoup(None,
+-                                                         self.oldchaptersmap[url])
++                                                         self._old_chapter(self.oldchaptersmap[url]))
+                     elif self.oldchapters and index < len(self.oldchapters):
+                         data = self.utf8FromSoup(None,
+-                                                 self.oldchapters[index])
++                                                 self._old_chapter(self.oldchapters[index]))
+ 
+                     if self.getConfig('mark_new_chapters') == 'true':
+                         # if already marked new -- ie, origtitle and title don't match
+--- writers/base_writer.py
++++ writers/base_writer.py
+@@ -153,7 +153,7 @@
+ 
+             self._write(out,START.substitute(self.story.getAllMetadata()))
+ 
+-            for index, chap in enumerate(self.story.getChapters(fortoc=True)):
++            for index, chap in enumerate(self.story.iterChapters(fortoc=True)):
+                 if chap['html']:
+                     self._write(out,ENTRY.substitute(chap))
+ 
+--- writers/writer_epub.py
++++ writers/writer_epub.py
+@@ -648,7 +648,7 @@
+ 
+         ## collect chapter urls and file names for internalize_text_links option.
+         chapurlmap = {}
+-        for index, chap in enumerate(self.story.getChapters(fortoc=True)):
++        for index, chap in enumerate(self.story.iterChapters(fortoc=True)):
+             if chap['html']:
+                 i=index+1
+                 items.append(("file%s"%chap['index04'],
+@@ -724,7 +724,7 @@
+         else:
+             CHAPTER_END = self.EPUB_CHAPTER_END
+ 
+-        for index, chap in enumerate(self.story.getChapters()): # (url,title,html)
++        for index, chap in enumerate(self.story.iterChapters()): # (url,title,html)
+             # logger.debug("chapter:%s %s %s"%(len(chap['html']), chap['title'],chap['url']))
+             if chap['html']:
+                 chap_data = chap['html']

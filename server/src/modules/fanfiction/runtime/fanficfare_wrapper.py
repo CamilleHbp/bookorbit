@@ -3,6 +3,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+if __name__ == '__main__':
+    from worker_parent import bind_to_parent
+    bind_to_parent()
+
+from story_spool import StorySpool
 from chapter_store import ChapterDownloadYield, recover_chapters
 from chapter_locks import chapters as indexed_chapters, preserve_chapter_locks
 from chapter_floor import read_policy, apply_policy, preserve_policy, validate_output
@@ -20,6 +25,9 @@ import resource
 import socket
 import ssl
 import sqlite3
+from contextlib import nullcontext
+from functools import partial
+import tempfile
 import time
 import traceback
 import unicodedata
@@ -192,6 +200,8 @@ def empty_saved_home_url(adapter, saved):
     if adapter.getSiteDomain() == 'fiction.live' and saved:
         home = adapter.chapter_id_to_api.get('home')
         body = saved.get(home)
+        if isinstance(body, partial):
+            body = body()
         if body is not None and not body.get_text(strip=True) and all(
                 tag.name in ('html', 'body', 'div', 'br') for tag in body.find_all(True)):
             return home
@@ -230,6 +240,9 @@ def installed_chapter_map(adapter, saved):
             reusable[url] = adapter.make_soup('<body><p> </p></body>').body
             retained_locks.add((identity, 0))
             continue
+        reference = body
+        if adapter.getSiteDomain() in ('fiction.live', 'storiesonline.net') and isinstance(body, partial):
+            body = body()
         if adapter.getSiteDomain() == 'fiction.live' and not body.get_text(strip=True) and not body.find(['img', 'svg', 'video', 'audio']):
             continue
         if adapter.getSiteDomain() == 'storiesonline.net':
@@ -237,7 +250,7 @@ def installed_chapter_map(adapter, saved):
                 check_storiesonline_notice(url, body.encode())
             except StoriesOnlinePreview:
                 continue
-        reusable[url] = body
+        reusable[url] = reference
     return reusable, retained_locks
 
 
@@ -354,12 +367,13 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     transport = FlareSolverrTransport(request['flaresolverrUrl'], session_id=request.get('browserSession'), **budgets) if request.get('flaresolverrUrl') else SafeTransport(**budgets)
     transport.load_cookies(request.get('cookies', []))
     try:
-        return run_story(request, transport, operation, url, ini, save_cookies, report_progress)
+        with (tempfile.TemporaryFile(dir='.') if operation in ('download', 'update', 'refresh') else nullcontext()) as spool:
+            return run_story(request, transport, operation, url, ini, save_cookies, report_progress, StorySpool(spool) if spool else None)
     finally:
         transport.close()
 
 
-def run_story(request, transport, operation, url, ini, save_cookies, report_progress):
+def run_story(request, transport, operation, url, ini, save_cookies, report_progress, spool=None):
     from fanficfare import adapters, writers
     progress = ProgressReporter(report_progress)
     transport.report_activity = progress.activity
@@ -377,6 +391,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         if not isinstance(transport, FlareSolverrTransport):
             raise ConfigurationError('FlareSolverr is not configured on this server')
         transport.enable_for(url)
+        transport.prefer_direct = configuration.getConfig('use_flaresolverr_proxy') == 'auto'
         transport.deadline = time.monotonic() + min(7200, max(1, request.get('browserTimeoutSeconds', request.get('timeoutSeconds', 1800))))
     if operation in ('download', 'update', 'refresh'):
         if not configuration.has_section('overrides'):
@@ -413,6 +428,8 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         continuation_chapters = adapter.get_chapters()
         configuration.set('overrides', 'update_preserve_deleted_chapters', 'false')
         preview = matched_preview(story, story_preview(adapter, story, url))
+    if spool:
+        story.img_store.spool_info = spool.image_info
     chapter_count = preview['chapterCount']
     if operation == 'preview':
         return finish(preview)
@@ -429,7 +446,9 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     if operation in ('update', 'refresh'):
         from fanficfare.epubutils import get_update_data
         validate_epub('input.epub', LIBRARY_EPUB_LIMIT)
-        old = get_update_data('input.epub')
+        # Stock installations can still read EPUBs without the packaged streaming patch.
+        options = {'spool': spool} if hasattr(story, 'iterChapters') and spool else {}
+        old = get_update_data('input.epub', **options)
         previous_url, previous_count = old[:2]
         saved_url = (previous_url or '').replace('http://', 'https://', 1)
         if saved_url != canonical:
@@ -457,6 +476,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
         import gc
         gc.collect()
     with open('output.epub', 'xb') as output:
+        story.chapter_spool = spool.file if spool else None
         progress.total = chapter_count
         progress.emit({'stage': 'downloading', 'completedChapters': 0, 'totalChapters': chapter_count})
         if separate_story_url:

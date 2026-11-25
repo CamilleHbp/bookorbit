@@ -388,7 +388,14 @@ export class FanficfareRuntimeService {
       const response = await new Promise<Extract<RuntimeResponse, { ok: true }>>((resolve, reject) => {
         const child = spawn(this.config.python, ['-I', join(__dirname, 'runtime', 'fanficfare_wrapper.py')], {
           cwd: workspace,
-          env: { HOME: workspace, TMPDIR: workspace, LANG: 'C.UTF-8', PYTHONDONTWRITEBYTECODE: '1' },
+          env: {
+            HOME: workspace,
+            TMPDIR: workspace,
+            LANG: 'C.UTF-8',
+            PYTHONDONTWRITEBYTECODE: '1',
+            BOOKORBIT_PARENT_PID: String(process.pid),
+            ...(browserSession ? { BOOKORBIT_BROWSER_SESSION: browserSession } : {}),
+          },
           stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
         });
