@@ -34,6 +34,10 @@ class UpdateCheck:
         matched_fields = {'tags', 'genres', 'categories', 'pendingLabelCount', 'labelMappingVersion'}
         chapter_payload['preview'] = {key: value for key, value in preview.items() if key not in matched_fields}
         self.chapter_fingerprint = hashlib.sha256(json.dumps(chapter_payload, sort_keys=True, default=str).encode()).hexdigest()
+        self.import_directory = None
+        if request['operation'] == 'download':
+            config_hash = hashlib.sha256(payload['configuration'].encode()).hexdigest()
+            self.import_directory = 'import-' + config_hash
         self.saved = {}
         if self.path:
             try:
@@ -69,6 +73,16 @@ class UpdateCheck:
                 legacy.rename(current)
             except FileExistsError:
                 pass
+        if self.import_directory:
+            # Initial imports have no installed edition to verify. Each record is
+            # already keyed by story and chapter URL within this user's source.
+            target = Path(directory) / self.import_directory
+            if not target.exists() and current.is_dir():
+                try:
+                    current.rename(target)
+                except FileExistsError:
+                    pass
+            return str(target)
         return str(current)
 
     def save(self, output):

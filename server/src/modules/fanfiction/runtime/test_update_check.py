@@ -9,6 +9,29 @@ from update_check import UpdateCheck, VERIFY_INTERVAL
 
 
 class UpdateCheckTest(unittest.TestCase):
+    def test_import_resumes_after_new_chapters_metadata_changes_and_week_rollover(self):
+        adapter = Mock()
+        adapter.get_chapters.return_value = [{'url': 'one', 'title': 'One'}]
+        adapter.story.img_store.get_imgs.return_value = []
+        with tempfile.TemporaryDirectory() as directory:
+            request = {'operation': 'download', 'checkStatePath': str(Path(directory) / 'state.json')}
+            with patch('update_check.time.time', return_value=1000):
+                first = UpdateCheck(request, adapter, {'chapterCount': 1})
+                import hashlib
+                legacy_key = hashlib.sha256(f'{first.chapter_fingerprint}:None:0'.encode()).hexdigest()
+                legacy = Path(directory, legacy_key)
+                legacy.mkdir()
+                (legacy / 'saved').write_bytes(b'chapter one')
+                first_path = Path(first.chapter_directory(directory))
+            adapter.get_chapters.return_value.append({'url': 'two', 'title': 'Two'})
+            with patch('update_check.time.time', return_value=1000 + VERIFY_INTERVAL):
+                preview = {'chapterCount': 2, 'rawLabels': ['new label']}
+                resumed = Path(UpdateCheck(request, adapter, preview).chapter_directory(directory))
+                self.assertEqual(resumed, first_path)
+                self.assertEqual((resumed / 'saved').read_bytes(), b'chapter one')
+                changed = UpdateCheck({**request, 'configuration': 'different'}, adapter, preview)
+                self.assertNotEqual(Path(changed.chapter_directory(directory)), resumed)
+
     def test_tag_reviews_refresh_metadata_without_restarting_current_chapters(self):
         import hashlib
         original = os.getcwd()
