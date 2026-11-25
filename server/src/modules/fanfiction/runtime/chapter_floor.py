@@ -128,7 +128,8 @@ def apply_policy(adapter, policy, canonical_url, previous_path=None):
                r'^\s*(?:Chapter\s+)?(\d+)(?=\s|[-:.]|$)')
     extras = {chapter_id(url) for url in policy['extraChapterUrls']}
     selected = []
-    for chapter in adapter.get_chapters():
+    positions = {}
+    for old_index, chapter in enumerate(adapter.get_chapters()):
         title = chapter.get('site_title', chapter['title'])
         match = re.match(pattern, title, re.I)
         if site == 'scribblehub.com':
@@ -139,6 +140,7 @@ def apply_policy(adapter, policy, canonical_url, previous_path=None):
         else:
             include = bool(extras) and chapter_id(chapter['url']) in extras
         if include:
+            positions[old_index] = len(selected)
             selected.append(chapter)
     if not selected:
         if previous_path:
@@ -151,6 +153,10 @@ def apply_policy(adapter, policy, canonical_url, previous_path=None):
                        n.getAttribute('content') == 'true' for n in markers):
                     return False
         raise PolicyError('No chapters are available after this continuation cutoff', code='source_continuation_empty')
+    if site == 'royalroad.com':
+        # Royal Road resolves short and renamed chapter URLs by their position in the source TOC.
+        adapter.chapterURLIndex = {key: positions[index] for key, index in adapter.chapterURLIndex.items()
+                                   if index in positions}
     adapter.chapterInfos = selected
     adapter.story.setMetadata('numChapters', len(selected))
     return True

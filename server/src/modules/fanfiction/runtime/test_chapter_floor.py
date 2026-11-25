@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 from xml.dom import minidom
 from zipfile import ZipFile
 
-from chapter_floor import MARKER, apply_policy, read_policy, validate_policy, validate_output
+from chapter_floor import MARKER, apply_policy, chapter_id, read_policy, validate_policy, validate_output
 from publisher_edition import package, OPF, DC
 from safe_transport import PolicyError
 
@@ -117,13 +117,16 @@ class ChapterFloorTests(unittest.TestCase):
         for minimum, titles in [([88], ['Chapter 87 - Covered', 'Chapter 88 - First', 'Chapter 100 - Part II']),
                                 ([10, 20], ['10-19 Covered', '10-20 First', '11-1 Next arc'])]:
             adapter = Mock()
+            adapter.chapterURLIndex = {'1': 0, '2': 1, '3': 2, '4': 3}
             adapter.get_chapters.return_value = [chapter(t, i+1) for i, t in enumerate(titles)] + [chapter('Announcement', 4)]
             apply_policy(adapter, policy(minimum), URL)
             self.assertEqual([c['title'] for c in adapter.chapterInfos], titles[1:])
             adapter.story.setMetadata.assert_called_with('numChapters', 2)
+            self.assertEqual(adapter.chapterURLIndex, {'2': 0, '3': 1})
 
     def test_bonus_allowlist_cannot_override_numeric_cutoff(self):
         adapter = Mock()
+        adapter.chapterURLIndex = {'1': 0, '2': 1, '3': 2}
         adapter.get_chapters.return_value = [chapter('Chapter 1 - Covered', 1), chapter('Bonus', 2), chapter('Unrelated announcement', 3)]
         apply_policy(adapter, policy(extras=[chapter('', 1)['url'], chapter('', 2)['url']]), URL)
         self.assertEqual([c['title'] for c in adapter.chapterInfos], ['Bonus'])
@@ -150,7 +153,9 @@ class ChapterFloorTests(unittest.TestCase):
             adapter.story.addToList('authorUrl', 'https://www.royalroad.com/profile/1')
             adapter.story.setMetadata('datePublished', datetime(2024, 1, 1))
             adapter.story.setMetadata('dateUpdated', datetime(2026, 1, 1))
-            for c in available: adapter.add_chapter(c['title'], c['url'])
+            for c in available:
+                if adapter.add_chapter(c['title'], c['url']):
+                    adapter.chapterURLIndex[chapter_id(c['url'])[1]] = adapter.num_chapters() - 1
 
         def text(adapter, url):
             return adapter.utf8FromSoup(url, adapter.make_soup('<p>Source chapter '+url+'</p>'))
