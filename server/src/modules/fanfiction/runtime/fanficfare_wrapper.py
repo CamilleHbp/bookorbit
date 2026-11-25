@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from chapter_store import ChapterDownloadYield, recover_chapters
-from chapter_locks import preserve_chapter_locks
+from chapter_locks import chapters as indexed_chapters, preserve_chapter_locks
 from chapter_floor import read_policy, apply_policy, preserve_policy, validate_output
 from update_check import UpdateCheck
 import publisher_edition
@@ -24,11 +24,12 @@ import time
 import traceback
 import unicodedata
 from urllib.parse import unquote, urlsplit
-from zipfile import BadZipFile
-from xml.parsers.expat import ExpatError
+from zipfile import BadZipFile, ZipFile
+from xml.parsers.expat import ExpatError, ParserCreate
+from collections import Counter
 
 from website_catalog import website_catalog
-from controlled_config import make_configuration, merge_configuration, validate_ini
+from controlled_config import check_storiesonline_notice, make_configuration, merge_configuration, StoriesOnlinePreview, validate_ini
 from epub_policy import LIBRARY_EPUB_LIMIT, NEW_EPUB_LIMIT, validate_epub
 from image_processing import install_image_processing
 from safe_transport import ConfigurationError, PolicyError, ResponseLimitError, SafeTransport, install_network_guard, validate_url
@@ -197,6 +198,49 @@ def empty_saved_home_url(adapter, saved):
     return None
 
 
+def installed_chapter_map(adapter, saved):
+    # FanFicFare falls back to chapter position when its URL map is empty.
+    # Only uniquely identified, valid bodies are safe after a source reorder.
+    def normalize(url):
+        return adapter.normalize_chapterurl(url).replace('http://', 'https://', 1)
+
+    current = Counter(normalize(c['url']) for c in adapter.get_chapters())
+    with ZipFile('input.epub') as archive:
+        _, _, entries = indexed_chapters(archive, metadata_only=True)
+        counts = Counter(normalize(url) for url, _ in entries)
+        eligible = {}
+        for (url, _), (path, _, locked) in entries.items():
+            key = normalize(url)
+            if counts[key] != 1 or current[key] != 1:
+                continue
+            try:
+                ParserCreate().Parse(archive.read(path), True)
+            except ExpatError:
+                continue
+            eligible[key] = (url, locked)
+    reusable = {}
+    retained_locks = set()
+    for url, body in saved.items():
+        key = normalize(url)
+        if key not in eligible:
+            continue
+        identity, locked = eligible[key]
+        if locked:
+            # The final EPUB pass copies the protected body and its resources.
+            reusable[url] = adapter.make_soup('<body><p> </p></body>').body
+            retained_locks.add((identity, 0))
+            continue
+        if adapter.getSiteDomain() == 'fiction.live' and not body.get_text(strip=True) and not body.find(['img', 'svg', 'video', 'audio']):
+            continue
+        if adapter.getSiteDomain() == 'storiesonline.net':
+            try:
+                check_storiesonline_notice(url, body.encode())
+            except StoriesOnlinePreview:
+                continue
+        reusable[url] = body
+    return reusable, retained_locks
+
+
 def story_identity(adapter):
     # FanFicFare provides section URLs specifically for story URLs that can change.
     url = adapter.get_section_url(adapter.url).replace('http://', 'https://', 1)
@@ -331,8 +375,6 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
             raise ConfigurationError('FlareSolverr is not configured on this server')
         transport.enable_for(url)
         transport.deadline = time.monotonic() + min(7200, max(1, request.get('browserTimeoutSeconds', request.get('timeoutSeconds', 1800))))
-    # Unscoped updates retain FanFicFare's append-only behavior. Managed checks
-    # periodically verify saved text even when the website reports no changes.
     if operation in ('download', 'update', 'refresh'):
         if not configuration.has_section('overrides'):
             configuration.add_section('overrides')
@@ -380,6 +422,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     if operation == 'update' and check.unchanged():
         progress.emit({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
         return finish({'preview': preview, 'output': 'input.epub'})
+    retained_locks = set()
     if operation in ('update', 'refresh'):
         from fanficfare.epubutils import get_update_data
         validate_epub('input.epub', LIBRARY_EPUB_LIMIT)
@@ -396,17 +439,17 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
             previous_count -= 1
         if previous_count > chapter_count and request.get('reviewChanges') is not True:
             return finish({'reviewRequired': 'chapter_reduction', 'preview': preview})
-        if operation == 'update' and not request.get('checkStatePath'):
+        if operation == 'update':
             (adapter.oldchapters, adapter.oldimgs, adapter.oldcover, adapter.calibrebookmark,
              adapter.logfile, adapter.oldchaptersmap, adapter.oldchaptersdata) = old[2:9]
+            if request.get('checkStatePath'):
+                adapter.oldchapters = None
+                adapter.oldchaptersmap, retained_locks = installed_chapter_map(adapter, adapter.oldchaptersmap)
+                configuration.set('overrides', 'update_preserve_deleted_chapters', 'false')
             if saved_placeholder:
-                del adapter.oldchaptersmap[saved_placeholder]
-                # Once the empty page is gone, positional fallback could reuse it
-                # for a different chapter or conceal newly published intro content.
+                adapter.oldchaptersmap.pop(saved_placeholder, None)
                 if not adapter.oldchaptersmap:
                     adapter.oldchapters = None
-        # Managed checks rebuild chapters from checkpoints. Release the previous
-        # book's images and parsed HTML before assembling the next revision.
         del old
         import gc
         gc.collect()
@@ -425,7 +468,7 @@ def run_story(request, transport, operation, url, ini, save_cookies, report_prog
     progress.emit({'stage': 'validating', 'completedChapters': chapter_count, 'totalChapters': chapter_count})
     validate_epub('output.epub', LIBRARY_EPUB_LIMIT if operation in ('update', 'refresh') else NEW_EPUB_LIMIT)
     if operation in ('update', 'refresh'):
-        preserve_chapter_locks('input.epub', 'output.epub')
+        preserve_chapter_locks('input.epub', 'output.epub', retained_locks)
         preserve_policy('input.epub', 'output.epub', continuation)
         if continuation is not None:
             validate_output('output.epub', continuation_chapters)

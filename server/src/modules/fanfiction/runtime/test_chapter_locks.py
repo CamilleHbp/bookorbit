@@ -163,8 +163,13 @@ class ChapterLocksTest(unittest.TestCase):
                     with ZipFile('output.epub') as z:
                         data=z.read(target)
                         self.assertIn(b'Local edit.',data)
-                        self.assertIn(b'Before.',data)
-                        if operation == 'refresh':self.assertIn(b'After.',data)
+                        if operation == 'refresh':
+                            self.assertIn(b'Before.',data)
+                            self.assertIn(b'After.',data)
+                        else:
+                            self.assertNotIn(b'Before.',data)
+                            archive_baseline = next(name for name in z.namelist() if name.endswith('.json') and 'bookorbit-preserved' in name)
+                            self.assertEqual(z.read(archive_baseline), baseline)
                     Path('output.epub').replace('input.epub')
             finally:
                 os.chdir(cwd)

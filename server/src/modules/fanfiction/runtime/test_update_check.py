@@ -73,7 +73,7 @@ class UpdateCheckTest(unittest.TestCase):
             finally:
                 os.chdir(original)
 
-    def test_managed_updates_skip_unchanged_chapters_and_periodically_catch_silent_edits(self):
+    def test_managed_updates_reuse_installed_chapters_and_refresh_catches_silent_edits(self):
         from fanficfare.adapters.adapter_test1 import TestSiteAdapter
         from fanficfare_wrapper import run
         from zipfile import ZipFile
@@ -101,10 +101,7 @@ class UpdateCheckTest(unittest.TestCase):
                     state['verifiedAt'] -= VERIFY_INTERVAL
                     Path(request['checkStatePath']).write_text(json.dumps(state))
                     self.assertEqual(run(request)['output'], 'output.epub')
-                    self.assertGreater(fetched.call_count, 0)
-                    with ZipFile('output.epub') as archive:
-                        chapters = b''.join(archive.read(name) for name in archive.namelist() if name.endswith('.xhtml'))
-                        self.assertIn(b'Silently edited chapter', chapters)
+                    fetched.assert_not_called()
                     Path('output.epub').replace('input.epub')
                     fetched.reset_mock()
                     self.assertEqual(run(request)['output'], 'input.epub')
@@ -113,6 +110,9 @@ class UpdateCheckTest(unittest.TestCase):
                     request['chapterDirectory'] = str(Path(directory) / 'explicit-refresh')
                     self.assertEqual(run(request)['output'], 'output.epub')
                     self.assertGreater(fetched.call_count, 0)
+                    with ZipFile('output.epub') as archive:
+                        chapters = b''.join(archive.read(name) for name in archive.namelist() if name.endswith('.xhtml'))
+                        self.assertIn(b'Silently edited chapter', chapters)
             finally:
                 os.chdir(original)
 

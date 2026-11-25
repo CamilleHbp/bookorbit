@@ -101,7 +101,7 @@ def chapters(archive, metadata_only=False):
     return opf_path, opf, found
 
 
-def preserve_chapter_locks(previous, output):
+def preserve_chapter_locks(previous, output, retained_locks=frozenset()):
     validate_epub(previous, LIBRARY_EPUB_LIMIT)
     validate_epub(output, LIBRARY_EPUB_LIMIT)
     temporary = None
@@ -188,9 +188,11 @@ def preserve_chapter_locks(previous, output):
                 baseline_meta = next((n for n in elements(local, 'meta') if n.getAttribute('name') == BASELINE), None)
                 if baseline_meta is not None:
                     baseline_path = posixpath.normpath(posixpath.join(posixpath.dirname(source), unquote(baseline_meta.getAttribute('content'))))
-                    baseline = json.loads(old.read(baseline_path))
+                    baseline_bytes = old.read(baseline_path)
+                    baseline = json.loads(baseline_bytes)
                     if baseline.get('version') != 1 or not isinstance(baseline.get('resourceHashes'), dict):
                         raise PolicyError('Locked chapter baseline is invalid', code='chapter_lock_conflict')
+                if baseline_meta is not None and key not in retained_locks:
                     base = parse(baseline['html'].encode())
                     def base_hash(path):
                         resolved = posixpath.normpath(posixpath.join(posixpath.dirname(baseline['sourcePath']), path))
@@ -224,7 +226,8 @@ def preserve_chapter_locks(previous, output):
                 marker.setAttribute('content', 'true')
                 head.appendChild(marker)
                 if baseline_meta is not None:
-                    baseline_bytes = baseline_data(new, destination, fresh, parse)
+                    if key not in retained_locks:
+                        baseline_bytes = baseline_data(new, destination, fresh, parse)
                     baseline_name = posixpath.join(posixpath.dirname(opf_path), 'bookorbit-preserved', hashlib.sha256(baseline_bytes).hexdigest() + '.json')
                     assets[baseline_name] = (baseline_bytes, 'application/json')
                     marker = doc.createElement('meta')
