@@ -11,7 +11,7 @@ import StoryImportReview from './StoryImportReview.vue'
 import ImportProgress from './ImportProgress.vue'
 import { needsImportReview } from '../composables/useImportReview'
 import { chapterDecision } from '../composables/downloadIssue'
-const props = defineProps<{ libraryId: number; row: FanfictionDownloadRow; checkedAt?: Date }>()
+const props = defineProps<{ libraryId: number; jobId: string; row?: FanfictionDownloadRow; checkedAt?: Date }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const job = ref<FanfictionJob>()
@@ -19,9 +19,18 @@ const busy = ref(false),
   error = ref(false)
 const heading = ref<HTMLElement>()
 const editor = ref<InstanceType<typeof StoryImportReview>>()
-const url = `/api/v1/libraries/${props.libraryId}/fanfiction/jobs/${props.row.jobId}`
+const url = `/api/v1/libraries/${props.libraryId}/fanfiction/jobs/${encodeURIComponent(props.jobId)}`
 const lifetime = new AbortController()
 onScopeDispose(() => lifetime.abort())
+const title = computed(
+  () =>
+    props.row?.title ||
+    job.value?.sourceTitle ||
+    job.value?.result?.importReview?.values.title ||
+    job.value?.result?.preview?.title ||
+    job.value?.url ||
+    t('fanfiction.downloads.details'),
+)
 const decision = computed(() => chapterDecision(job.value?.result?.changes ?? props.row))
 const content = computed(() => job.value?.state === 'review_required' && job.value.result?.contentReview?.approved === false)
 const retryable = computed(() => {
@@ -40,7 +49,7 @@ const restartable = computed(
     ['failed', 'cancelled'].includes(job.value.state) &&
     ['metadata', 'downloading', 'packaging', 'validating'].includes(job.value.result.progress?.stage ?? 'metadata'),
 )
-const bookId = computed(() => job.value?.result?.bookId ?? props.row.bookId)
+const bookId = computed(() => job.value?.result?.bookId ?? props.row?.bookId)
 watch(
   () => props.checkedAt,
   () => {
@@ -64,14 +73,14 @@ function canLeave() {
   return editor.value?.canLeave() ?? true
 }
 function close() {
-  if (canLeave()) emit('close')
+  emit('close')
 }
 function updated() {
   emit('close')
 }
 async function act(action: 'apply' | 'discard' | 'retry' | 'cancel' | 'restart') {
   if (busy.value) return
-  if (action === 'restart' && !window.confirm(t('fanfiction.importInbox.confirmRestart', { title: props.row.title }))) return
+  if (action === 'restart' && !window.confirm(t('fanfiction.importInbox.confirmRestart', { title: title.value }))) return
   busy.value = true
   error.value = false
   const decision = action === 'apply' || action === 'discard'
@@ -106,8 +115,8 @@ defineExpose({ canLeave })
   <section class="space-y-4">
     <Button variant="ghost" @click="close"><ArrowLeft aria-hidden="true" />{{ t('fanfiction.importInbox.back') }}</Button>
     <div>
-      <p class="text-sm text-muted-foreground">{{ row.site }}</p>
-      <h2 ref="heading" tabindex="-1" class="font-serif text-3xl break-words">{{ row.title }}</h2>
+      <p v-if="row?.site" class="text-sm text-muted-foreground">{{ row.site }}</p>
+      <h2 ref="heading" tabindex="-1" class="font-serif text-3xl break-words">{{ title }}</h2>
     </div>
     <p v-if="error" role="alert" class="text-destructive">
       {{ t('fanfiction.downloads.actionError') }} <button class="underline" :disabled="busy" @click="load">{{ t('fanfiction.refresh') }}</button>
@@ -117,7 +126,7 @@ defineExpose({ canLeave })
       <StoryImportReview ref="editor" v-if="needsImportReview(job)" :job="job" @updated="updated" />
       <div v-else-if="content" class="space-y-3 border-s-2 border-primary bg-muted/50 p-4">
         <h3 class="font-semibold">{{ t(`fanfiction.downloads.${decision.key}`, { count: decision.count }) }}</h3>
-        <p v-if="row.currentChapters !== null && row.proposedChapters !== null">
+        <p v-if="row?.currentChapters != null && row.proposedChapters != null">
           {{ t('fanfiction.downloads.compare', { saved: row.currentChapters, website: row.proposedChapters }) }}
         </p>
         <ChapterDifferences :changes="job.result?.changes" />
@@ -132,15 +141,18 @@ defineExpose({ canLeave })
           >
         </div>
       </div>
-      <ImportProgress v-else :job="job" :last-contact-at="row.lastContactAt" />
+      <ImportProgress v-else :job="job" :last-contact-at="row?.lastContactAt" :waiting-for="row?.waitingFor" :site="row?.site" />
       <div class="flex flex-wrap items-center gap-3">
         <RouterLink
-          v-if="bookId"
-          :to="storyIssueRoute(libraryId, row.sourceId ?? job.result?.sourceId, bookId, job.errorCode ?? row.code)"
+          v-if="bookId && job.state === 'review_required'"
+          :to="storyIssueRoute(libraryId, row?.sourceId ?? job.result?.sourceId, bookId, job.errorCode ?? row?.code)"
           class="text-primary underline"
           >{{ t('fanfiction.reviewStory') }}</RouterLink
         >
-        <RouterLink v-if="row.issue === 'login'" :to="{ name: 'settings-website-logins' }" class="text-primary underline">{{
+        <RouterLink v-else-if="bookId" :to="{ name: 'book-detail', params: { bookId } }" class="text-primary underline">{{
+          t('fanfiction.openBook')
+        }}</RouterLink>
+        <RouterLink v-if="row?.issue === 'login'" :to="{ name: 'settings-website-logins' }" class="text-primary underline">{{
           t('fanfiction.tasks.websiteLogins')
         }}</RouterLink>
         <a :href="job.url" target="_blank" rel="noopener noreferrer" class="text-primary underline">{{ t('fanfiction.downloads.openSource') }}</a>

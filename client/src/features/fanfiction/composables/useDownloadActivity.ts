@@ -37,6 +37,7 @@ export function useDownloadActivity(
       })
     if (row.waitingFor && row.waitingFor !== 'scheduled_retry') return t(`fanfiction.liveActivity.wait.${row.waitingFor}`, { site: row.site })
     if (row.waitingFor === 'scheduled_retry') return t('fanfiction.liveActivity.wait.ready')
+    if (row.progress?.activity === 'chapter' && row.progress.currentChapter && row.progress.totalChapters) return ''
     if (row.progress?.activity === 'chapter' && !row.progress.currentChapter) return t('fanfiction.progress.downloading')
     if (row.progress?.activity === 'illustrations' && row.progress.illustration)
       return t('fanfiction.liveActivity.illustration', { count: row.progress.illustration })

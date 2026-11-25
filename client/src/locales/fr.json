@@ -13376,6 +13376,11 @@
     "searching": "Recherche de correspondances…"
   },
   "fanfiction": {
+    "errors": {
+      "source_unavailable": "Le site est temporairement indisponible. Réessayez plus tard."
+    },
+    "invalidUrl": "Saisissez une URL HTTPS valide pour l’histoire à la ligne {line}.",
+    "urlLimit": "La ligne {line} dépasse la limite de 100 URL d’histoires distinctes.",
     "liveActivity": {
       "title": "Activité des histoires",
       "live": "Actualisation automatique",
@@ -13423,10 +13428,111 @@
     },
     "refresh": "Actualiser",
     "downloads": {
-      "details": "Détails du téléchargement"
+      "details": "Détails du téléchargement",
+      "title": "Téléchargements",
+      "history": "Historique",
+      "manage": "Gérer",
+      "sources": "Gérer les sources",
+      "reviews": "Vérifier les métadonnées",
+      "taskLog": "Journal des tâches",
+      "running": "En cours",
+      "queued": "En attente",
+      "retrying": "Nouvelle tentative automatique",
+      "attention": "À vérifier",
+      "finished": "Récemment terminés",
+      "openSource": "Ouvrir l’histoire d’origine",
+      "loadError": "Impossible d’actualiser les téléchargements.",
+      "asOf": "Téléchargements affichés à {time}.",
+      "retryError": "Impossible de relancer les téléchargements. Réessayez.",
+      "actionError": "La demande a échoué. Actualisez pour vérifier l’état du téléchargement.",
+      "noRetry": "Aucune nouvelle tentative prévue.",
+      "stories": "{count, plural, one {# histoire} other {# histoires}}",
+      "issue": {
+        "website": "Accès au site",
+        "login": "Connexion au site",
+        "chapter": "Modification de chapitre",
+        "metadata": "Métadonnées à vérifier",
+        "import": "Importation à vérifier",
+        "story": "URL de l’histoire",
+        "stopped": "Téléchargement arrêté",
+        "unknown": "Autre problème"
+      }
     },
     "attentionReview": {
       "start": "Vérifier les histoires"
+    },
+    "title": "Fanfiction",
+    "library": "Bibliothèque",
+    "addStories": "Ajouter des histoires",
+    "storyUrls": "URL des histoires",
+    "urlsHelp": "Une URL HTTPS par ligne, jusqu’à 100 histoires.",
+    "importStories": "Importer les histoires",
+    "openBook": "Ouvrir le livre",
+    "cancel": "Annuler le téléchargement",
+    "schedule": "Fréquence de vérification",
+    "manualOnly": "Manuellement",
+    "hourly": "Toutes les heures",
+    "daily": "Tous les jours",
+    "weekly": "Toutes les semaines",
+    "customSchedule": "Personnalisée",
+    "intervalMinutes": "Intervalle en minutes",
+    "importOptions": "Options d’importation",
+    "folder": "Dossier",
+    "importCollection": "Collection",
+    "noCollection": "Aucune collection",
+    "moreFolders": "Plus de dossiers",
+    "moreLibraries": "Plus de bibliothèques",
+    "maintenance": {
+      "fromWeb": "Depuis une URL",
+      "fromLibrary": "Depuis la bibliothèque",
+      "keepUpdated": "Rechercher les mises à jour",
+      "keepCopy": "Garder l’exemplaire et suspendre les mises à jour"
+    },
+    "bulk": {
+      "reload": "Actualiser l’état",
+      "checkAll": "Vérifier les histoires",
+      "checkLibrary": "Vérifier toutes les histoires de {library}",
+      "checking": "Vérification en cours"
+    },
+    "importInbox": {
+      "back": "Tous les téléchargements",
+      "empty": "Aucun téléchargement en cours",
+      "retry": "Reprendre le téléchargement",
+      "restart": "Télécharger depuis le début",
+      "confirmRestart": "Télécharger à nouveau tous les chapitres de {title} ? Vos modifications seront conservées."
+    },
+    "importBatch": {
+      "title": "Importation en cours",
+      "finished": "Importation terminée",
+      "attention": "Importation terminée avec des erreurs",
+      "another": "Importer d’autres histoires",
+      "progress": "{completed} histoires traitées sur {total}",
+      "resume": "Réessayer les histoires restantes",
+      "pending": "En attente d’envoi"
+    },
+    "states": {
+      "queued": "En attente",
+      "running": "En cours",
+      "succeeded": "Terminé",
+      "no_change": "Aucun changement",
+      "review_required": "À vérifier",
+      "configuration_blocked": "Intervention nécessaire",
+      "failed": "Échec",
+      "cancelled": "Annulé"
+    },
+    "libraryStatus": {
+      "title": "État de la bibliothèque",
+      "lastCheck": "Dernière vérification",
+      "noCheck": "Aucune vérification enregistrée.",
+      "clear": "Aucun problème de téléchargement",
+      "attention": "À vérifier",
+      "active": "Mises à jour en cours",
+      "unavailable": "État indisponible",
+      "reviewIssues": "Examiner les problèmes",
+      "checkDetails": "Détails de la vérification"
+    },
+    "tasks": {
+      "websiteLogins": "Connexions aux sites"
     }
   }
 }

@@ -4,6 +4,7 @@ import { useRoute, type RouteLocationNormalizedLoaded, type RouteLocationRaw } f
 import { BarChart3, BookOpen, BookPlus, Highlighter, History, LayoutDashboard, Library, PackageOpen, Trophy, Users, Wrench } from '@lucide/vue'
 import { Permission, type BrowseCounts, type SidebarSectionId } from '@bookorbit/types'
 import { useAuth } from '@/features/auth/composables/useAuth'
+import { useLibraryPermissions } from '@/features/library/composables/useLibraryPermissions'
 import { usePermissions } from '@/features/auth/composables/usePermissions'
 import { useBookDockSummary } from '@/features/book-dock/composables/useBookDockSummary'
 import { useBrowseCounts } from '@/composables/useBrowseCounts'
@@ -14,6 +15,7 @@ export const SIDEBAR_ZONE_IDS = ['primary', 'browse', 'reading'] as const
 export type SidebarZoneId = (typeof SIDEBAR_ZONE_IDS)[number]
 
 interface NavContext {
+  fanfictionLibraryId?: number
   hasPermission: (name: string) => boolean
   showBookRequests?: boolean
   achievementsEnabled?: boolean
@@ -129,7 +131,8 @@ export const SIDEBAR_NAV_REGISTRY: readonly SidebarNavEntry[] = [
     labelKey: 'fanfiction.title',
     icon: BookOpen,
     zone: 'primary',
-    to: { name: 'fanfiction' },
+    to: ({ fanfictionLibraryId }) =>
+      fanfictionLibraryId ? { name: 'fanfiction', query: { libraryId: fanfictionLibraryId } } : { name: 'fanfiction' },
     isActive: (route) => route.name === 'fanfiction',
     permission: Permission.ManageLibraries,
   },
@@ -227,6 +230,7 @@ export function resolveNavEntry(entry: SidebarNavEntry, context: NavContext, rou
 export function useSidebarNav(getOutstandingRequestTotal: () => number = () => 0) {
   const { t } = useI18n()
   const route = useRoute()
+  const { hasLibraryPermission } = useLibraryPermissions()
   const { hasPermission } = usePermissions()
   const { user } = useAuth()
   const { summary: bookDockSummary } = useBookDockSummary()
@@ -239,7 +243,9 @@ export function useSidebarNav(getOutstandingRequestTotal: () => number = () => 0
       ? 'components.sidebar.requestBadge.allActive'
       : 'components.sidebar.requestBadge.mineActive'
 
+    const id = route.name === 'library' ? Number(route.params.id) : route.name === 'fanfiction' ? Number(route.query.libraryId) : NaN
     return {
+      fanfictionLibraryId: Number.isSafeInteger(id) && id > 0 && hasLibraryPermission(Permission.ManageLibraries, id, 'owner') ? id : undefined,
       hasPermission,
       showBookRequests: showBookRequests.value,
       achievementsEnabled: user.value?.settings?.achievementPreferences?.enabled !== false,

@@ -16,6 +16,7 @@ import type {
   FanfictionMetadataReviewConflict,
 } from '@bookorbit/types'
 import { api } from '@/lib/api'
+import { i18n } from '@/i18n'
 import { useFanfictionPagination } from './useFanfictionPagination'
 
 interface Candidate {
@@ -42,6 +43,29 @@ class MetadataReviewRequiredError extends Error {
   }
 }
 
+function parseStoryUrls(input: string) {
+  const urls = new Set<string>()
+  const lines = input.split('\n')
+  let start = 0
+  for (const [index, line] of lines.entries()) {
+    const value = line.trim()
+    if (value) {
+      let url: URL | undefined
+      try {
+        url = new URL(value)
+      } catch {
+        // Report the original line in the form.
+      }
+      const valid =
+        url?.protocol === 'https:' && !url.username && !url.password && !url.port && /^https:\/\/[^\s]+$/i.test(value) && value.length <= 4096
+      urls.add(value)
+      if (!valid || urls.size > 100)
+        return { urls: [], problem: { key: valid ? 'urlLimit' : 'invalidUrl', line: index + 1, start, end: start + line.length } }
+    }
+    start += line.length + 1
+  }
+  return { urls: [...urls], problem: null }
+}
 export function useFanfiction(
   onMetadataReview?: (bookId: number, sourceId?: string) => Promise<unknown>,
   reviewSource?: () => string | undefined,
@@ -96,6 +120,7 @@ export function useFanfiction(
   const hasNextExistingStory = computed(() => existingStoryPosition.value + 1 < existingStoryCount.value)
   const visibleCandidates = computed(() => candidates.value.filter((candidate) => !candidate.existingStory))
   const urls = ref('')
+  const parsedUrls = computed(() => parseStoryUrls(urls.value))
   const search = ref('')
   const state = ref('')
   const schedule = ref('1440')
@@ -387,29 +412,16 @@ export function useFanfiction(
     error.value = ''
   }
 
+  function validatedUrls() {
+    const { urls: lines, problem } = parsedUrls.value
+    if (problem) throw new Error(i18n.global.t(`fanfiction.${problem.key}`, { line: problem.line }))
+    if (!lines.length) throw new Error(i18n.global.t('fanfiction.urlsHelp'))
+    return lines
+  }
   async function importStories() {
     if (busy.value || folderId.value === null) return
     await perform(async (current, path) => {
-      const lines = [
-        ...new Set(
-          urls.value
-            .split(/\r?\n/)
-            .map((value) => value.trim())
-            .filter(Boolean),
-        ),
-      ]
-      if (!lines.length || lines.length > 100) throw new Error('Enter between 1 and 100 story URLs, one per line.')
-      if (
-        lines.some((value) => {
-          try {
-            const url = new URL(value)
-            return value.length > 4096 || url.protocol !== 'https:' || !!url.username || !!url.password || (!!url.port && url.port !== '443')
-          } catch {
-            return true
-          }
-        })
-      )
-        throw new Error('Each story needs a valid HTTPS URL.')
+      const lines = validatedUrls()
       if (!importBatchStarted.value) {
         const prior = new Map(candidates.value.map((row) => [row.url, row]))
         candidates.value = lines.map(
@@ -501,16 +513,7 @@ export function useFanfiction(
   }
   async function previewStories() {
     await perform(async (current, path) => {
-      const lines = [
-        ...new Set(
-          urls.value
-            .split(/\r?\n/)
-            .map((value) => value.trim())
-            .filter(Boolean),
-        ),
-      ]
-      if (!lines.length || lines.length > 100) throw new Error('Enter between 1 and 100 story URLs, one per line.')
-      if (lines.some((url) => url.length > 4096 || !/^https:\/\/[^\s]+$/.test(url))) throw new Error('Each story needs a valid HTTPS URL.')
+      const lines = validatedUrls()
       const prior = new Map(candidates.value.map((row) => [row.url, row]))
       candidates.value = lines.map(
         (url) =>
@@ -715,6 +718,7 @@ export function useFanfiction(
     applyFilters,
     candidates,
     urls,
+    urlProblem: computed(() => parsedUrls.value.problem),
     search,
     state,
     filters,

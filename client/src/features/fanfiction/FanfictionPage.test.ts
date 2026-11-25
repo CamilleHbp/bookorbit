@@ -359,11 +359,13 @@ describe('Fanfiction navigation and story hierarchy', () => {
   it('keeps invalid input editable', async () => {
     await open('/fanfiction?tab=add')
     expect(wrapper!.findAll('details button').every((button) => button.attributes('type') === 'button')).toBe(true)
-    await wrapper!.get('textarea').setValue('not a URL')
+    await wrapper!.get('textarea').setValue('https://example.org/1\n\nnot a URL')
     await wrapper!.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper!.get('textarea').element).toHaveProperty('value', 'not a URL')
-    expect(wrapper!.text()).toContain('Each story needs a valid HTTPS URL.')
+    expect(wrapper!.get('textarea').element).toHaveProperty('value', 'https://example.org/1\n\nnot a URL')
+    expect(wrapper!.get('#story-url-error').text()).toContain('Enter a valid HTTPS story URL on line 3.')
+    expect(wrapper!.get('textarea').attributes('aria-invalid')).toBe('true')
+    expect(document.activeElement).toBe(wrapper!.get('textarea').element)
     expect(wrapper!.text()).not.toContain('Import another batch')
   })
 
@@ -454,12 +456,42 @@ describe('Fanfiction navigation and story hierarchy', () => {
     expect(wrapper!.findAll('button').filter((button) => button.text() === 'Import another batch')).toHaveLength(2)
   })
 
+  it('keeps a changed library in the URL and uses it when opening Add stories', async () => {
+    const base = vi.mocked(api).getMockImplementation()!
+    vi.mocked(api).mockImplementation((url, options) =>
+      String(url).includes('/fanfiction/libraries?')
+        ? Promise.resolve(
+            Response.json({
+              items: [
+                { id: 5, name: 'Stories' },
+                { id: 8, name: 'Archive' },
+              ],
+              nextCursor: null,
+            }),
+          )
+        : base(url, options),
+    )
+    const router = await open('/fanfiction?libraryId=5')
+    await wrapper!.get('select').setValue('8')
+    await flushPromises()
+    expect(router.currentRoute.value.query.libraryId).toBe('8')
+    expect(wrapper!.get('header a').attributes('href')).toBe('/library/8')
+    const add = wrapper!
+      .get('nav[aria-label="Fanfiction"]')
+      .findAll('a')
+      .find((link) => link.text() === 'Add stories')!
+    await add.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ libraryId: '8', tab: 'add' })
+    expect(wrapper!.get('textarea').attributes('aria-describedby')).toBe('story-url-help')
+  })
+
   it('falls back to Downloads when an old profile tab URL is opened', async () => {
     await open('/fanfiction?tab=profiles')
     expect(wrapper!.find('source-profiles-stub').exists()).toBe(false)
     expect(wrapper!.text()).not.toContain('Recent story changes')
     expect(wrapper!.text()).not.toContain('No activity yet.')
-    expect(wrapper!.findAll('nav[aria-label="Fanfiction"] a').map((link) => link.text())).toEqual(['Downloads', 'History'])
+    expect(wrapper!.findAll('nav[aria-label="Fanfiction"] a').map((link) => link.text())).toEqual(['Downloads', 'Add stories', 'History'])
   })
 
   it('keeps running downloads, grouped website failures and chapter decisions distinct through a failed refresh', async () => {
@@ -518,7 +550,9 @@ describe('Fanfiction navigation and story hierarchy', () => {
   })
   it('starts with an actionable empty state instead of bulk configuration', async () => {
     await open()
-    expect(wrapper!.text()).toContain('No downloads running.')
+    expect(wrapper!.text()).toContain('No unfinished downloads')
+    expect(wrapper!.text()).not.toContain('Review stories')
+    expect(wrapper!.findAll('a').some((link) => link.text() === 'Add stories' && link.attributes('href')?.includes('tab=add'))).toBe(true)
     expect(wrapper!.text()).not.toContain('No stories match your filters.')
     expect(wrapper!.text()).not.toContain('Bulk story actions')
   })
