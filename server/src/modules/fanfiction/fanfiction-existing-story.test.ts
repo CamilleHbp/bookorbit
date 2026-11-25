@@ -159,7 +159,7 @@ describe('existing story import confirmation', () => {
       errorCode: 'access_denied',
     };
     const locked = vi.fn().mockResolvedValueOnce([job]).mockResolvedValueOnce([source]);
-    const select = { from: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), for: locked };
+    const select = { from: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), for: locked, limit: vi.fn().mockResolvedValue([]) };
     const tx = { select: () => select };
     const module = await Test.createTestingModule({
       providers: [

@@ -31,6 +31,7 @@ export function useDownloadActivity(
   onScopeDispose(() => clearInterval(timer))
   const message = computed(() => {
     const row = source()
+    if (row.waitingFor === 'paused') return t('bookMetadataFetch.label.paused')
     if (row.waitingFor === 'scheduled_retry' && row.nextAttemptAt && new Date(row.nextAttemptAt).getTime() > now.value)
       return t('fanfiction.liveActivity.retryAt', {
         time: new Date(row.nextAttemptAt).toLocaleTimeString(locale.value, { hour: 'numeric', minute: '2-digit' }),

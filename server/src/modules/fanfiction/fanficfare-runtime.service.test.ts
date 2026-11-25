@@ -86,6 +86,34 @@ describe('private FanFicFare runtime session output', () => {
       checkStatePath: expect.stringContaining('/3/4/11111111-1111-4111-8111-111111111111/check.json'),
     });
   });
+  it('reopens the exact reviewed candidate without fetching the story again', async () => {
+    const scope = { sourceId: randomUUID(), libraryId: 3, userId: 4 };
+    const path = join(tmpdir(), randomUUID() + '.epub');
+    try {
+      await writeFile(path, 'reviewed candidate');
+      const sha256 = await service.saveReviewCandidate(scope, path);
+      const execute = vi.spyOn(service, 'execute');
+      const preview = { title: 'Story' } as import('@bookorbit/types').FanfictionPreview;
+      const body = await service.update(
+        'update',
+        'https://example.org/story',
+        { configuration: '', cookies: [] },
+        async () => {},
+        async (p) => readFile(p, 'utf8'),
+        undefined,
+        undefined,
+        true,
+        scope,
+        undefined,
+        { sha256, preview },
+      );
+      expect(body).toBe('reviewed candidate');
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      await service.releaseChapters(scope);
+      await rm(path, { force: true });
+    }
+  });
   it('streams live progress beyond the final response budget without stopping a long download', async () => {
     output.stderr = ('BOOKORBIT_PROGRESS ' + JSON.stringify({ stage: 'metadata', activity: 'website' }) + '\n').repeat(20000);
     const progress = vi.fn().mockResolvedValue(undefined);

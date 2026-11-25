@@ -154,7 +154,7 @@ def recognize_urls(urls):
 def limits(operation):
     resource.setrlimit(resource.RLIMIT_CPU, (600, 600))
     resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
-    if operation not in ('download', 'update', 'refresh'):
+    if operation not in ('download', 'update', 'refresh', 'retain_chapters'):
         resource.setrlimit(resource.RLIMIT_FSIZE, (NEW_EPUB_LIMIT, NEW_EPUB_LIMIT))
         if sys.platform == 'linux':
             resource.setrlimit(resource.RLIMIT_AS, (1024 * 1024 * 1024, 1024 * 1024 * 1024))
@@ -329,6 +329,9 @@ def run(request, save_cookies=None, report_progress=lambda progress: None):
     operation = request.get('operation')
     if operation == 'health':
         return {'version': actual, 'protocolVersion': 1, 'ready': True}
+    if operation == 'retain_chapters':
+        paths = request['selectedPaths']
+        return {'retained': preserve_chapter_locks('input.epub', 'output.epub', selected_paths=paths)}
     if operation == 'sites':
         return {'version': actual, 'sites': website_catalog()}
     if operation == 'recognize':

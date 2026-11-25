@@ -11,17 +11,18 @@ import { downloadPressure } from './download-resources';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { lstat, mkdir, mkdtemp, opendir, readFile, rename, rm, utimes, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, mkdtemp, opendir, readFile, rename, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fanficfareConfig, storageConfig } from '../../config/config';
 import { validateFanfictionPreview } from './fanfiction-preview';
 import { validateRuntimeCookies, type FanfictionCookieSink } from './fanfiction-cookies';
 import { FanfictionRuntimeProgress, type FanfictionProgressSink } from './fanfiction-runtime-progress';
 
-export type ChapterScope = { libraryId: number; userId: number; sourceId: string; restartId?: string };
+export type ChapterScope = { libraryId: number; userId: number; sourceId: string; restartId?: string; jobId?: string };
 
 type RuntimeRequest = {
-  operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh';
+  operation: 'health' | 'sites' | 'recognize' | 'validate' | 'merge' | 'preview' | 'download' | 'update' | 'refresh' | 'retain_chapters';
+  selectedPaths?: Record<string, string>;
   urls?: string[];
   url?: string;
   configuration?: string;
@@ -32,6 +33,7 @@ type RuntimeRequest = {
   redact?: boolean;
   reviewChanges?: boolean;
   chapterDirectory?: string;
+  checkpointJobId?: string;
   checkStatePath?: string;
 };
 type RuntimeResponse =
@@ -207,6 +209,26 @@ export class FanficfareRuntimeService {
     });
   }
 
+  private async hashFile(path: string) {
+    const hash = createHash('sha256');
+    for await (const chunk of createReadStream(path)) hash.update(chunk);
+    return hash.digest('hex');
+  }
+
+  async saveReviewCandidate(scope: ChapterScope, path: string) {
+    const directory = this.chapterDirectory(scope)!;
+    const sha256 = await this.hashFile(path);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const temporary = join(directory, randomUUID() + '.tmp');
+    try {
+      await copyFile(path, temporary);
+      await rename(temporary, join(directory, 'review-' + sha256 + '.epub'));
+    } finally {
+      await rm(temporary, { force: true });
+    }
+    return sha256;
+  }
+
   async update<T>(
     operation: 'update' | 'refresh',
     url: string,
@@ -218,15 +240,30 @@ export class FanficfareRuntimeService {
     reviewChanges = false,
     scope?: ChapterScope,
     reportProgress?: FanfictionProgressSink,
+    candidate?: { sha256: string; preview: FanfictionPreview },
   ): Promise<T> {
     return this.workspace(async (directory) => {
       await prepare(join(directory, 'input.epub'));
+      if (scope && candidate && /^[a-f0-9]{64}$/.test(candidate.sha256)) {
+        const output = join(directory, 'output.epub');
+        const cached = join(this.chapterDirectory(scope)!, 'review-' + candidate.sha256 + '.epub');
+        let restored = false;
+        try {
+          await copyFile(cached, output);
+          restored = (await this.hashFile(output)) === candidate.sha256;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+        if (restored) return consume(output, candidate.preview);
+        await rm(output, { force: true });
+      }
       const result = (await this.execute(
         {
           operation,
           url,
           ...document,
           reviewChanges,
+          checkpointJobId: scope?.jobId,
           chapterDirectory: this.chapterDirectory(scope),
           checkStatePath: scope ? join(this.chapterDirectory(scope)!, '..', 'check.json') : undefined,
         },
@@ -272,12 +309,10 @@ export class FanficfareRuntimeService {
     const path = join(this.chapterDirectory(scope)!, '..', 'check.json');
     const temporary = `${path}.${randomUUID()}.tmp`;
     try {
-      const hash = async (name: string) => {
-        const digest = createHash('sha256');
-        for await (const chunk of createReadStream(join(directory, name))) digest.update(chunk);
-        return digest.digest('hex');
-      };
-      const [inputHash, outputHash] = await Promise.all([hash('input.epub'), hash('output.epub')]);
+      const [inputHash, outputHash] = await Promise.all([
+        this.hashFile(join(directory, 'input.epub')),
+        this.hashFile(join(directory, 'output.epub')),
+      ]);
       const state = JSON.parse(await readFile(path, 'utf8')) as { epubHash?: string };
       if (state.epubHash !== outputHash) return;
       // Semantic equality can leave the original ZIP installed. Bind the verified

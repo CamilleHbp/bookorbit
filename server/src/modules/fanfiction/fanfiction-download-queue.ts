@@ -25,7 +25,7 @@ function downloadEntries(libraryId: number, userId: number) {
         j.url as story_url, j.kind, j.state, j.error_code as code, j.updated_at, s.chapter_count as current_chapters,
         (j.result#>>'{preview,chapterCount}')::int as proposed_chapters,
         j.result->'progress' as progress, j.result->'changes' as changes,
-        case when j.state='queued' and j.error_code is not null and j.attempts>0 then j.run_after end as retry_at
+        case when j.state='queued' and j.error_code is not null and j.error_code <> 'download_paused' and j.attempts>0 then j.run_after end as retry_at
       from latest l join ${schema.fanfictionJobs} j on j.id=l.id left join ${schema.fanfictionSources} s on s.id=j.source_id and s.library_id=j.library_id
       where j.library_id=${libraryId} and j.user_id=${userId} and j.kind in ('import','update','refresh')
         and (j.state in ('queued','running','review_required','failed','configuration_blocked') or
@@ -47,7 +47,7 @@ function downloadEntries(libraryId: number, userId: number) {
           when code in ('content_review_required','source_chapter_reduction') then 'chapter'
           when code in ('source_not_found','unsupported_story_url') then 'story' when state='cancelled' then 'stopped'
           when code='metadata_review_required' then 'metadata' when code='import_review_required' then 'import'
-          when state not in ('running','queued') or code is not null then 'unknown' end as issue
+          when state not in ('running','queued') or (code is not null and code <> 'download_paused') then 'unknown' end as issue
       from entries
     ), keyed as (
       select *, case when section in ('retrying','attention') and issue in ('website','login','story','unknown')
@@ -159,11 +159,14 @@ export async function downloadQueue(db: NodePgDatabase<typeof schema>, libraryId
     if (!job) return item;
     return {
       ...item,
-      waitingFor: downloadWaitReason(
-        item.groupKey && item.nextAttemptAt ? { ...job, runAfter: new Date(item.nextAttemptAt) } : job,
-        active.map((row) => row.site),
-        now,
-      ),
+      waitingFor:
+        item.code === 'download_paused'
+          ? ('paused' as const)
+          : downloadWaitReason(
+              item.groupKey && item.nextAttemptAt ? { ...job, runAfter: new Date(item.nextAttemptAt) } : job,
+              active.map((row) => row.site),
+              now,
+            ),
       // Claim and renew extend the worker's contact signal by 60 seconds.
       lastContactAt: job.state === 'running' && job.leaseExpiresAt ? new Date(job.leaseExpiresAt.getTime() - 60_000).toISOString() : null,
     };

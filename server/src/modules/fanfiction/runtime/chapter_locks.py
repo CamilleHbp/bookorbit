@@ -101,7 +101,7 @@ def chapters(archive, metadata_only=False):
     return opf_path, opf, found
 
 
-def preserve_chapter_locks(previous, output, retained_locks=frozenset()):
+def preserve_chapter_locks(previous, output, retained_locks=frozenset(), selected_paths=None):
     validate_epub(previous, LIBRARY_EPUB_LIMIT)
     validate_epub(output, LIBRARY_EPUB_LIMIT)
     temporary = None
@@ -109,9 +109,21 @@ def preserve_chapter_locks(previous, output, retained_locks=frozenset()):
         with ZipFile(previous) as old, ZipFile(output) as new:
             _, old_opf, saved = chapters(old, metadata_only=True)
             locked = {key: value for key, value in saved.items() if value[2]}
+            if selected_paths is not None:
+                locked = {key: (path, old.read(path), is_locked) for key, (path, _, is_locked) in saved.items() if path in selected_paths}
+                if len(locked) != len(selected_paths):
+                    raise PolicyError('Saved chapter selection changed', code='saved_epub_changed')
             if not locked:
                 return 0
             opf_path, opf, updated = chapters(new)
+            if selected_paths is not None:
+                destinations = {record[0]: record for record in updated.values()}
+                for key, (path, _, _) in locked.items():
+                    dest = selected_paths[path]
+                    if dest not in destinations:
+                        raise PolicyError('Website chapter selection changed', code='saved_epub_changed')
+                    updated[key] = destinations[dest]
+                retained_locks = locked.keys()
             if locked.keys() - updated.keys():
                 raise ChapterLockConflict('A locally locked chapter is missing from the updated story')
             chapter_paths = {value[0]: updated[key][0] for key, value in saved.items() if key in updated}
@@ -175,7 +187,7 @@ def preserve_chapter_locks(previous, output, retained_locks=frozenset()):
                             child.removeChild(child.firstChild)
                         child.appendChild(child.ownerDocument.createTextNode(rewrite_css(text, source, destination)))
 
-            for key, (source, data, _) in locked.items():
+            for key, (source, data, is_locked) in locked.items():
                 destination, fresh, _ = updated[key]
                 local = parse(data)
                 doc = parse(fresh)
@@ -221,10 +233,11 @@ def preserve_chapter_locks(previous, output, retained_locks=frozenset()):
                         clone = doc.importNode(n, True)
                         rewrite(clone, source, destination)
                         head.appendChild(clone)
-                marker = doc.createElement('meta')
-                marker.setAttribute('name', LOCK)
-                marker.setAttribute('content', 'true')
-                head.appendChild(marker)
+                if is_locked:
+                    marker = doc.createElement('meta')
+                    marker.setAttribute('name', LOCK)
+                    marker.setAttribute('content', 'true')
+                    head.appendChild(marker)
                 if baseline_meta is not None:
                     if key not in retained_locks:
                         baseline_bytes = baseline_data(new, destination, fresh, parse)

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { EpubRevisionManifest, RevisionChapter } from '@bookorbit/types';
-import { storyChapterChanges, storyUpdateSafety } from './fanfiction-chapter-changes';
+import { chapterConflicts, storyChapterChanges, storyUpdateSafety } from './fanfiction-chapter-changes';
 const chapter = (href: string, sourceUrl?: string, textHash = 'same'): RevisionChapter => ({
   href,
   title: href,
@@ -125,4 +125,27 @@ it('requires review when zero removals and no reordering cannot establish chapte
   const previous = { version: 1 as const, contentHash: '', metadataHash: '', coverHash: null, chapters: [chapter('one')] };
   const next = { ...previous, chapters: [chapter('one', undefined, 'edited')] };
   expect(storyUpdateSafety(previous, next)).toMatchObject({ safety: 'review_required', removed: 0, reordered: false });
+});
+
+it('reviews only equal-length rewrites and reductions and binds choices to both chapter bodies', () => {
+  const edition = (hash: string, length: number): EpubRevisionManifest => ({
+    version: 1,
+    metadataHash: '',
+    contentHash: '',
+    coverHash: null,
+    chapters: [{ ...chapter('one', 'https://example.org/1', hash), bodyHash: hash, bodyLength: length }],
+  });
+  const saved = edition('original', 10);
+  expect(chapterConflicts(saved, edition('original', 10))).toEqual([]);
+  expect(chapterConflicts(saved, edition('expanded', 11))).toEqual([]);
+  const [equal] = chapterConflicts(saved, edition('rewrite', 10));
+  expect(equal.savedLength).toBe(10);
+  const illustrated = edition('original', 10);
+  illustrated.chapters[0].illustrationHash = 'new illustration';
+  expect(chapterConflicts(saved, illustrated)).toHaveLength(1);
+  const shorter = edition('reduced', 8);
+  const [conflict] = chapterConflicts(saved, shorter);
+  const reviewed = [{ ...conflict, decision: 'saved' as const }];
+  expect(chapterConflicts(saved, shorter, reviewed)[0].decision).toBe('saved');
+  expect(chapterConflicts(saved, edition('different', 8), reviewed)[0].decision).toBeUndefined();
 });

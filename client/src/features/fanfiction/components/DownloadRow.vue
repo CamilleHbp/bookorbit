@@ -7,6 +7,7 @@ import { ChevronRight, ArrowUpRight, Download } from '@lucide/vue'
 import type { FanfictionDownloadRow } from '@bookorbit/types'
 import { safeVerificationUrl } from '../composables/downloadVerification'
 import { chapterDecision, issueStyle } from '../composables/downloadIssue'
+import DownloadQueueControls from './DownloadQueueControls.vue'
 import RetryDownloadsButton from './RetryDownloadsButton.vue'
 import DownloadGroupMembers from './DownloadGroupMembers.vue'
 const props = defineProps<{ row: FanfictionDownloadRow; libraryId: number }>()
@@ -19,6 +20,7 @@ const reviewable = computed(() => canReviewDownload(props.row))
 const decision = computed(() => chapterDecision(props.row))
 const reason = computed(() => {
   const row = props.row
+  if (row.code === 'download_paused') return ''
   if (row.code === 'source_chapter_reduction' && !row.removed) return t('fanfiction.downloads.fewer')
   if (row.code === 'source_unrevealed') return t('fanfiction.errors.source_unrevealed')
   if (row.section === 'retrying' && row.code === 'source_rate_limited') return t('fanfiction.downloads.throttled')
@@ -90,6 +92,15 @@ function inspectMember(row: FanfictionDownloadRow) {
       }}</span>
       <span class="min-w-0 break-words">{{ row.site }}</span>
     </div>
+    <DownloadQueueControls
+      v-if="row.jobId && row.code !== 'download_paused' && row.waitingFor !== 'cancelling'"
+      class="text-foreground"
+      :library-id="libraryId"
+      :job-id="row.jobId"
+      :queued="false"
+      :paused="false"
+      @changed="retried"
+    />
   </article>
   <article v-else class="border-b border-border/70">
     <div class="flex items-start gap-3 py-3">
@@ -155,6 +166,14 @@ function inspectMember(row: FanfictionDownloadRow) {
         >
           {{ t('fanfiction.connections.verifyStory') }}<ArrowUpRight class="size-4" aria-hidden="true" />
         </a>
+        <DownloadQueueControls
+          v-if="!row.groupKey && row.jobId && ['queued', 'retrying'].includes(row.section) && row.waitingFor !== 'cancelling'"
+          :library-id="libraryId"
+          :job-id="row.jobId"
+          queued
+          :paused="row.code === 'download_paused'"
+          @changed="retried"
+        />
         <time v-if="row.nextAttemptAt && !row.waitingFor" :datetime="row.nextAttemptAt" class="text-sm tabular-nums">{{
           t('fanfiction.progress.nextAttempt', { time })
         }}</time>

@@ -35,6 +35,7 @@ const nextAttempt = computed(() =>
     : null,
 )
 const status = computed(() => {
+  if (props.job.errorCode === 'download_paused') return t('bookMetadataFetch.label.paused')
   if (props.job.cancellationRequested && active.value) return t('fanfiction.progress.cancelling')
   if (props.job.state === 'queued' && !props.waitingFor && props.job.nextAttemptAt && props.job.attempts > 0) return t('fanfiction.progress.retrying')
   if (props.job.state === 'running' && (progress.value || ['import', 'preview'].includes(props.job.kind)))
@@ -55,6 +56,7 @@ const percentage = computed(() => {
   return Math.min(100, Math.round((100 * (progress.value.completedChapters ?? 0)) / progress.value.totalChapters))
 })
 const errorText = computed(() => {
+  if (props.job.errorCode === 'download_paused') return ''
   const key = `fanfiction.errors.${props.job.errorCode}`
   return (!active.value || (props.job.state === 'queued' && props.job.attempts > 0)) && !reviewing.value && props.job.errorCode
     ? t(key, t('fanfiction.errors.runtime_failed'))

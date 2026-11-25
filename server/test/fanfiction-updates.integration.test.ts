@@ -455,6 +455,63 @@ describe.skipIf(!configPath)('managed story updates with durable revisions', () 
       .returning();
     expect((await jobs.retry(libraryId, unmatched.id, user)).state).toBe('queued');
   }, 60_000);
+  it('pauses a running update, fences its worker and promotes it ahead of other eligible work on resume', async () => {
+    const job = await claim();
+    const progress = { stage: 'downloading' as const, completedChapters: 20, totalChapters: 50 };
+    await db.update(schema.fanfictionJobs).set({ result: { progress } }).where(eq(schema.fanfictionJobs.id, job.id));
+    await jobs.controlQueue(libraryId, job.id, user, 'pause');
+    expect(await jobs.renew(job)).toBe(false);
+    await jobs.finish(job, 'failed', null, 'runtime_unavailable');
+    const [second] = await db
+      .insert(schema.fanfictionJobs)
+      .values({
+        libraryId,
+        userId: user.id,
+        tokenVersion: user.tokenVersion,
+        idempotencyKey: randomUUID(),
+        kind: 'update',
+        url: preview.canonicalUrl + '/other',
+        site: preview.site,
+      })
+      .returning();
+    const claimedSecond = (await jobs.claim())!;
+    expect(claimedSecond.id).toBe(second.id);
+    await jobs.controlQueue(libraryId, second.id, user, 'pause');
+    await jobs.finish(claimedSecond, 'failed', null, 'runtime_unavailable');
+    await jobs.controlQueue(libraryId, second.id, user, 'resume');
+    await jobs.controlQueue(libraryId, job.id, user, 'resume');
+    await jobs.controlQueue(libraryId, job.id, user, 'prioritize');
+    expect(await jobs.claim()).toMatchObject({ id: job.id, result: { progress } });
+  }, 60_000);
+
+  it('persists each chapter choice and can apply the final choice to the remaining conflicts', async () => {
+    const job = await claim();
+    const chapters = ['a', 'b', 'c'].map((k) => ({
+      key: k.repeat(64),
+      title: k,
+      sourceUrl: preview.canonicalUrl,
+      savedHref: k,
+      websiteHref: k,
+      savedLength: 3,
+      websiteLength: 2,
+    }));
+    await jobs.finish(job, 'review_required', { contentReview: { approved: false, previousState: 'active', chapters } }, 'content_review_required');
+    await expect(jobs.reviewContent(libraryId, job.id, 'apply', user)).rejects.toThrow();
+    const partial = await jobs.reviewContent(libraryId, job.id, 'apply', user, { action: 'apply', chapterKey: chapters[0].key, choice: 'saved' });
+    expect(partial.state).toBe('review_required');
+    await expect(
+      jobs.reviewContent(libraryId, job.id, 'apply', user, { action: 'apply', chapterKey: chapters[0].key, choice: 'website' }),
+    ).rejects.toThrow();
+    const done = await jobs.reviewContent(libraryId, job.id, 'apply', user, {
+      action: 'apply',
+      chapterKey: chapters[1].key,
+      choice: 'website',
+      remaining: true,
+    });
+    expect(done.state).toBe('queued');
+    expect(done.result?.contentReview?.chapters?.map((c) => c.decision)).toEqual(['saved', 'website', 'website']);
+  }, 60_000);
+
   it('continues a CPU slice with current persisted progress and review choices without failure backoff', async () => {
     const original = await readFile(target);
     const job = await claim();
