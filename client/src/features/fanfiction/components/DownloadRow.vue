@@ -53,10 +53,15 @@ function inspectMember(row: FanfictionDownloadRow) {
 </script>
 <template>
   <article v-if="row.section === 'running'" class="my-3 space-y-4 rounded-xl bg-primary px-5 py-5 text-primary-foreground sm:px-7">
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-      <Download class="size-4 shrink-0" aria-hidden="true" />{{
-        t(row.progress ? `fanfiction.progress.${row.progress.stage}` : 'fanfiction.states.running')
-      }}<span class="ms-auto max-w-full break-words">{{ row.site }}</span>
+    <div class="flex flex-wrap items-center justify-between gap-x-3 text-sm">
+      <span class="inline-flex items-center gap-2"
+        ><Download class="size-4 shrink-0" aria-hidden="true" />{{
+          t(row.progress ? `fanfiction.progress.${row.progress.stage}` : 'fanfiction.states.running')
+        }}</span
+      >
+      <button v-if="row.jobId" type="button" class="inline-flex min-h-11 items-center gap-1 underline underline-offset-4" @click="inspect">
+        {{ t('fanfiction.downloads.details') }}<ChevronRight class="size-4 shrink-0" aria-hidden="true" />
+      </button>
     </div>
     <div class="flex flex-wrap items-baseline justify-between gap-3">
       <h3 class="min-w-0 grow basis-48 font-serif text-2xl leading-tight break-words sm:text-3xl">{{ row.title }}</h3>
@@ -73,8 +78,7 @@ function inspectMember(row: FanfictionDownloadRow) {
       :aria-describedby="activityMessage ? `${id}-activity` : undefined"
     />
     <p v-if="freshness" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-      <span>{{ freshness }}</span
-      ><span v-if="connected">{{ t('fanfiction.liveActivity.connected') }}</span>
+      <span>{{ freshness }}</span><span v-if="connected">{{ t('fanfiction.liveActivity.connected') }}</span>
     </p>
     <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
       <span v-if="progress?.totalChapters">{{
@@ -82,8 +86,8 @@ function inspectMember(row: FanfictionDownloadRow) {
           completed: progress.completedChapters ?? 0,
           total: progress.totalChapters,
         })
-      }}</span
-      ><button v-if="row.jobId" class="min-h-9 underline underline-offset-4" @click="inspect">{{ t('fanfiction.downloads.details') }}</button>
+      }}</span>
+      <span class="min-w-0 break-words">{{ row.site }}</span>
     </div>
   </article>
   <article v-else class="border-b border-border/70">
