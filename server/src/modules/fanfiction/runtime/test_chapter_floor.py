@@ -96,12 +96,13 @@ class ChapterFloorTests(unittest.TestCase):
                                      entry('Side One Hundred And Seventy-Five - Aiko', 175)]
                     available.append(entry('Five Hundred And Twenty-Six', 526))
                     available.append(entry('Side One Hundred And Seventy-Seven - Aiko', 177))
+                    available[3], available[4] = available[4], available[3]
                     expected = available[3:]
                     for operation in ('update', 'refresh'):
                         request['operation'] = operation
                         fetched.reset_mock()
                         self.assertEqual(run(request)['preview']['chapterCount'], 4)
-                        self.assertEqual({call.args[1] for call in fetched.call_args_list}, {c['url'] for c in expected})
+                        self.assertEqual({call.args[1] for call in fetched.call_args_list}, {c['url'] for c in (expected[2:] if operation == 'update' else expected)})
                         self.assertEqual(read_policy('output.epub'), cutoff)
                         validate_output('output.epub', expected)
                         Path('output.epub').replace('input.epub')
@@ -170,7 +171,7 @@ class ChapterFloorTests(unittest.TestCase):
                     fetched.reset_mock()
                     result = run(request)
                     self.assertEqual(result['preview']['chapterCount'], 3)
-                    self.assertEqual({call.args[1] for call in fetched.call_args_list}, {c['url'] for c in available if c['title'].startswith(('Chapter 88', 'Chapter 89', 'Chapter 90'))})
+                    self.assertEqual({call.args[1] for call in fetched.call_args_list}, {c['url'] for c in available if c['title'].startswith('Chapter 90')})
                     self.assertTrue(all('/chapter/1/' not in call.args[1] and '/chapter/87/' not in call.args[1] and '/chapter/4/' not in call.args[1] for call in fetched.call_args_list))
                     def assert_output():
                         self.assertEqual(read_policy('output.epub'), policy())

@@ -1,4 +1,4 @@
-"""Bound fast checks to the exact saved EPUB and periodically verify source text."""
+"""Bind fast metadata checks and download checkpoints to the installed edition."""
 import hashlib
 import json
 import os
