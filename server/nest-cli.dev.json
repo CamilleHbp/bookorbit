@@ -21,7 +21,12 @@
       "modules/fanfiction/runtime/scribblehub_login.py",
       "modules/fanfiction/runtime/epub_policy.py",
       "modules/fanfiction/runtime/image_processing.py",
-      "modules/fanfiction/runtime/tag_matching.py"
+      "modules/fanfiction/runtime/tag_matching.py",
+      "modules/fanfiction/runtime/chapter_store.py",
+      "modules/fanfiction/runtime/chapter_checkpoint.py",
+      "modules/fanfiction/runtime/update_check.py",
+      "modules/fanfiction/runtime/publisher_edition.py",
+      "modules/fanfiction/runtime/fanfiction_net_login.py"
     ],
     "plugins": []
   }
