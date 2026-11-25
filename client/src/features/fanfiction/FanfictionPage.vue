@@ -691,7 +691,7 @@ onMounted(() => {
               }}</Button>
             </div>
           </details>
-          <Button type="submit" :disabled="busy || !urls.trim() || folderId === null">{{ t('fanfiction.importStories') }}</Button>
+          <Button type="submit" class="min-h-11" :disabled="busy || !urls.trim() || folderId === null">{{ t('fanfiction.importStories') }}</Button>
         </form>
         <p v-if="preferences.error" role="alert" class="text-sm text-destructive">{{ preferences.error }}</p>
         <section v-if="existingCandidate" class="border-border rounded-lg border p-4 space-y-3">
