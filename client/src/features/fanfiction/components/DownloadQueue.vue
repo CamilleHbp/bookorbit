@@ -96,7 +96,13 @@ defineExpose({ reload: refresh, canLeave: () => detail.value?.canLeave() ?? true
       <div class="h-5 w-36 rounded bg-muted motion-safe:animate-pulse" />
       <div class="h-4 w-64 max-w-full rounded bg-muted motion-safe:animate-pulse" />
     </div>
-    <DownloadActivity v-if="snapshot" :snapshot="snapshot" :checked-at="lastSeen" :error="error" :busy="busy" @refresh="refresh" @jump="jump" />
+    <DownloadActivity v-if="snapshot" :snapshot="snapshot" :checked-at="lastSeen" :error="error" :busy="busy" @refresh="refresh" @jump="jump">
+      <Button v-if="snapshot.totals.attention" variant="outline" class="min-h-11" as-child>
+        <RouterLink :to="{ name: 'fanfiction', query: { tab: 'review', review: 'attention', libraryId } }">{{
+          t('fanfiction.attentionReview.start')
+        }}</RouterLink>
+      </Button>
+    </DownloadActivity>
     <template v-if="snapshot">
       <div v-if="!visible.length" class="flex flex-wrap items-center gap-3 rounded-lg bg-muted/50 px-4 py-3">
         <CloudDownload class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
