@@ -19,13 +19,24 @@ afterEach(() => {
 describe('reader-facing live download activity', () => {
   it('counts stories rather than issue groups and keeps connection failures honest', async () => {
     const wrapper = mount(DownloadActivity, { props: { snapshot, checkedAt: new Date() } })
-    expect(wrapper.text()).toContain('12 waiting')
+    expect(wrapper.text()).toContain('8 waiting')
+    const retry = wrapper.findAll('button').find((button) => button.text() === 'Retrying automatically (4)')!
+    await retry.trigger('click')
+    expect(wrapper.emitted('jump')).toEqual([['retrying']])
     expect(wrapper.text()).toContain('Needs attention: 27')
     expect(wrapper.text()).toContain('Auto-updating')
     await wrapper.setProps({ error: true })
     expect(wrapper.text()).toContain('Updates paused')
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('refresh')).toHaveLength(1)
+    wrapper.unmount()
+  })
+  it('keeps idle counts visible without offering empty destinations', () => {
+    const totals = { running: 0, queued: 0, retrying: 0, attention: 0 }
+    const wrapper = mount(DownloadActivity, { props: { snapshot: { ...snapshot, totals, storyCounts: totals } } })
+    expect(wrapper.text()).toContain('0 in progress')
+    expect(wrapper.text()).toContain('0 waiting')
+    expect(wrapper.findAll('button')).toHaveLength(1)
     wrapper.unmount()
   })
   it('shows the current chapter, illustration and last activity without exposing internal codes', () => {
