@@ -51,6 +51,18 @@ class SolverTest(unittest.TestCase):
             self.assertEqual(call.call_args.args[0], {'cmd': 'sessions.destroy', 'session': session})
             self.assertIsNone(self.transport.session)
 
+    def test_automatic_mode_reads_public_pages_without_starting_a_browser(self):
+        self.transport.prefer_direct = True
+        page = (200, b'<p>Story</p>', URL)
+        with patch.object(SafeTransport, '_request', return_value=page) as direct, patch.object(self.transport, 'call_solver', return_value=self.result) as solver:
+            self.assertEqual(self.transport.request('GET', URL), page)
+            solver.assert_not_called()
+            self.transport.request('POST', URL, {'form': 'value'})
+            self.assertEqual(direct.call_count, 1)
+            self.assertEqual(solver.call_args.args[0]['cmd'], 'request.post')
+            self.transport.request('GET', URL)
+            self.assertEqual(direct.call_count, 1)
+
     def test_images_and_other_sites_keep_the_pinned_transport(self):
         with patch.object(SafeTransport, '_request', return_value=(200, b'image', URL)) as direct, patch.object(self.transport, 'call_solver') as solver:
             for url in ['https://example.org/story', 'https://www.scribblehub.com/wp-content/uploads/cover.jpg']:

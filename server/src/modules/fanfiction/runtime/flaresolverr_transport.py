@@ -28,6 +28,7 @@ class FlareSolverrTransport(SafeTransport):
         self.session_id = session_id
         self.hosts = set()
         self.session = None
+        self.prefer_direct = False
         self.endpoint = urlsplit(endpoint)
         if (self.endpoint.scheme != 'http' or not self.endpoint.hostname
                 or self.endpoint.username or self.endpoint.password
@@ -48,6 +49,16 @@ class FlareSolverrTransport(SafeTransport):
             return super()._request(method, url, parameters, headers)
         if method not in ('GET', 'POST'):
             raise PolicyError('Unsupported request method', code='source_request_unsupported')
+        if self.prefer_direct and self.session is None and method == 'GET':
+            try:
+                direct = super()._request(method, url, parameters, headers)
+            except BrowserVerification:
+                pass
+            else:
+                if validate_url(direct[2])[1] not in self.hosts:
+                    raise PolicyError('Response left the requested website', code='source_redirect_blocked')
+                if direct[0] != 403:
+                    return direct
         public_addresses(hostname)
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
